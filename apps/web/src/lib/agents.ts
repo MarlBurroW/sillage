@@ -134,10 +134,10 @@ export function versionMismatch(entry: AgentAvailabilityDto | undefined): string
  * Models declared by the installed CLI in the protocol's shared format. Nothing is hardcoded:
  * updating the CLI exposes new models without changing Sillage.
  */
-export function useAgentModels(agent: AgentKind, enabled = true) {
+export function useAgentModels(agent: AgentKind, enabled = true, account: string | null = null) {
   return useQuery({
-    queryKey: ['agents', agent, 'models'],
-    queryFn: () => api.get<AgentModelsDto>(`/api/agents/${agent}/models`),
+    queryKey: ['agents', agent, 'models', account],
+    queryFn: () => api.get<AgentModelsDto>(`/api/agents/${agent}/models${account ? `?account=${encodeURIComponent(account)}` : ''}`),
     // The probe starts a CLI: do not rerun it on every composer mount or for conversations using another agent.
     staleTime: 60 * 60 * 1000,
     retry: false,

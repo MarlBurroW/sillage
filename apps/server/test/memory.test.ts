@@ -107,12 +107,12 @@ test('outils MCP : Codex lit, écrit et retire des notes, l’index suit', async
   const { memoryDir, mcp, memory } = await harness(t)
   await memory()
 
-  assert.match(mcp('read_memory').text, /Mémoire vide/)
+  assert.match(mcp('read_memory').text, /Memory is empty/)
   assert.equal(mcp('write_memory', { file: '../evil.md', content: 'x' }).isError, true)
 
   const written = mcp('write_memory', { file: 'port-du-serveur.md', content: NOTE })
   assert.equal(written.isError, undefined)
-  assert.match(written.text, /ajoutée à MEMORY\.md/)
+  assert.match(written.text, /added to MEMORY\.md/)
   assert.equal(
     await readFile(join(memoryDir, 'MEMORY.md'), 'utf8'),
     '- [port-du-serveur](port-du-serveur.md) — Le serveur de dev écoute sur 4242\n',
@@ -121,7 +121,7 @@ test('outils MCP : Codex lit, écrit et retire des notes, l’index suit', async
   mcp('write_memory', { file: 'port-du-serveur.md', content: NOTE.replace('4242.', '4243.') })
   assert.equal((await readFile(join(memoryDir, 'MEMORY.md'), 'utf8')).split('\n').filter(Boolean).length, 1)
   assert.match(mcp('read_memory', { file: 'port-du-serveur.md' }).text, /4243/)
-  assert.match(mcp('read_memory').text, /Notes : port-du-serveur\.md/)
+  assert.match(mcp('read_memory').text, /Notes: port-du-serveur\.md/)
 
   assert.equal(mcp('delete_memory', { file: 'port-du-serveur.md' }).isError, undefined)
   assert.equal(mcp('delete_memory', { file: 'port-du-serveur.md' }).isError, true)
@@ -132,11 +132,11 @@ test('Codex : l’index et le dossier en début de session', async (t) => {
   const { memoryDir, memory } = await harness(t)
   await memory()
   assert.equal(memoryAppendixForCodex(memoryDir, false), null)
-  assert.match(memoryAppendixForCodex(memoryDir, true) ?? '', /encore vide[\s\S]*write_memory/)
+  assert.match(memoryAppendixForCodex(memoryDir, true) ?? '', /Memory is empty[\s\S]*write_memory/)
 
   await writeFile(join(memoryDir, 'MEMORY.md'), '- [Port](port.md) — 4242\n')
   const text = memoryAppendixForCodex(memoryDir, false) ?? ''
-  assert.match(text, /# Mémoire du projet/)
+  assert.match(text, /# Project memory/)
   assert.ok(text.includes(memoryDir))
   assert.match(text, /- \[Port\]\(port\.md\) — 4242/)
   assert.doesNotMatch(text, /write_memory/)

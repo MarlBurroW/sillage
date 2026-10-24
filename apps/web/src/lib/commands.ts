@@ -13,11 +13,13 @@ export function useProjectCommands(
   agent: AgentKind,
   worktreeId: string | null,
   enabled: boolean,
+  account: string | null = null,
 ) {
   return useQuery({
-    queryKey: ['project-commands', projectId, agent, worktreeId],
+    queryKey: ['project-commands', projectId, agent, worktreeId, account],
     queryFn: () => {
       const params = new URLSearchParams({ agent })
+      if (account) params.set('account', account)
       if (worktreeId) params.set('worktreeId', worktreeId)
       return api.get<ProjectCommandsDto>(`/api/projects/${projectId}/commands?${params}`)
     },

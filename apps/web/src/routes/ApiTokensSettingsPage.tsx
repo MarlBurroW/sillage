@@ -2,10 +2,12 @@ import { BookOpen, Check, Copy, KeyRound, Plug, Plus, Terminal, Trash2, Unplug }
 import { useState, type FormEvent, type ReactNode } from 'react'
 import {
   DEFAULT_CONFIGS,
+  DEFAULT_ANTIGRAVITY_CONFIG,
   EFFORT_FIELD,
   apiScopeSchema,
   type CreatedApiTokenDto,
   type AgentKind,
+  type AntigravityConfig,
   type ApiScope,
   type ApiTokenDto,
 } from '@sillage/protocol'
@@ -22,6 +24,7 @@ import {
   Select,
   cx,
 } from '../components/ui'
+import { AccountChoice } from '../components/chat/AccountChoice'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ListHeading, SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
@@ -449,7 +452,8 @@ function CreateTokenCard({
   const [permissionMode, setPermissionMode] = useState<ApiPermissionMode>('manual')
   const [grokPermissionMode, setGrokPermissionMode] = useState<GrokApiPermissionMode>('default')
 
-  const { data: catalog } = useAgentModels(agent)
+  const [google, setGoogle] = useState<AntigravityConfig>(DEFAULT_ANTIGRAVITY_CONFIG)
+  const { data: catalog } = useAgentModels(agent, true, agent === 'antigravity' ? google.account : null)
   const models = catalog?.models ?? []
   const efforts = effortsFor(models, model)
 
@@ -462,7 +466,7 @@ function CreateTokenCard({
     // Send a complete configuration built from CLI defaults: the form exposes only
     // what a caller might change; everything else retains its known value.
     // The effort field uses the CLI's native name, `effort` or `reasoningEffort`.
-    const config: Record<string, unknown> = { ...DEFAULT_CONFIGS[agent], model }
+    const config: Record<string, unknown> = { ...(agent === 'antigravity' ? google : DEFAULT_CONFIGS[agent]), model }
     if (effort) config[EFFORT_FIELD[agent]] = effort
     if (agent === 'claude') config.permissionMode = permissionMode
     if (agent === 'grok') config.permissionMode = grokPermissionMode
@@ -567,6 +571,22 @@ function CreateTokenCard({
                   }))}
                 />
               ) : null}
+              {agent === 'antigravity' ? <>
+                <AccountChoice config={google} enabled onChange={(next) => { if (next.agent === 'antigravity') setGoogle(next) }} />
+                <Select
+                  label={t('apiTokens.permission.label')}
+                  value={google.permissionMode}
+                  onChange={(mode) => {
+                    setGoogle({ ...google, permissionMode: mode })
+                    if (mode === 'yolo' && !scopes.includes('tasks:autonomous')) setScopes([...scopes, 'tasks:autonomous'])
+                  }}
+                  options={[
+                    { value: 'default', label: t('composer.permission.manual'), hint: t('composer.permission.manual.hint') },
+                    { value: 'auto_edit', label: t('composer.permission.acceptEdits'), hint: t('composer.permission.acceptEdits.hint') },
+                    { value: 'yolo', label: t('composer.permission.bypass'), hint: t('composer.permission.bypass.hint') },
+                  ]}
+                />
+              </> : null}
               {agent === 'grok' ? (
                 <Select
                   label={t('apiTokens.permission.label')}

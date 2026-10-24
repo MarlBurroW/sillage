@@ -6,7 +6,7 @@ import { useTranslate } from '../../lib/i18n'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { CardGrid, ChoiceCard, Question, StepTitle, useCommit, useGate, type StepProps } from './shell'
 
-const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok']
+const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok', 'antigravity']
 
 /**
  * Welcome explains Sillage briefly then asks questions determining next steps. Save answers on

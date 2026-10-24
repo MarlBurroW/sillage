@@ -1,5 +1,6 @@
 import { Logo } from '../Logo'
 import { toolEdits } from '../../lib/tool-edits'
+import { toolWebInput } from '../../lib/tool-web-input'
 import { useToolStyle, type ToolStyle } from '../../lib/tool-style'
 import { toolLabel, toolOrigin, toolPreview, toolIntent, toolSummary, INTENT_LABELS } from '../../lib/tool-presentation'
 import {
@@ -164,8 +165,8 @@ export const ToolCall = memo(function ToolCall({
     : tool.status === 'running' ? 'tool.edit.countsPlanned' : edits?.scope === 'replacement' ? 'tool.edit.countsReplacement' : edits?.scope === 'fragment' ? 'tool.edit.countsFragment' : 'tool.edit.counts', counts) : ''
   const [preferredStyle] = useToolStyle()
   const style = variant ?? preferredStyle
-  const origin = toolOrigin(tool.name)
-  const label = toolLabel(tool.name)
+  const origin = toolOrigin(tool.name, tool.presentation)
+  const label = toolLabel(tool.name, tool.presentation)
   const statusLabel = t(tool.status === 'running' ? 'toolStyle.pending' : tool.status === 'done' ? 'toolStyle.done' : tool.status === 'failed' ? 'toolStyle.failed' : 'toolStyle.stopped')
 
 
@@ -253,8 +254,9 @@ function ToolDetail({ tool, conversationId, raw, setRaw }: {
   const legacy = useToolOutput(conversationId, tool.id, tool.outputBytes !== null && !tool.outputRef)
   const inputReady = !tool.inputRef || inputBody.data !== undefined
   const outputReady = tool.outputRef ? outputBody.data !== undefined : tool.outputBytes === null || legacy.data !== undefined
-  const input = tool.inputRef ? inputBody.data?.value : tool.input
+  const storedInput = tool.inputRef ? inputBody.data?.value : tool.input
   const output = tool.outputRef ? outputBody.data?.value : outputOf(tool, legacy.data)
+  const input = toolWebInput({ ...tool, input: storedInput, output })
   const ready = inputReady && outputReady
   const readable = ready ? readableView({ ...tool, input, output }) : null
   return <div className="sg-tool-detail flex flex-col gap-2 border-t border-line px-2.5 py-2">
@@ -334,7 +336,7 @@ function Payload({
 const NAMES_SHOWN = 3
 
 function summarizeNames(tools: ToolItem[]): string {
-  const names = [...new Set(tools.map((tool) => toolLabel(tool.name)))]
+  const names = [...new Set(tools.map((tool) => toolLabel(tool.name, tool.presentation)))]
   const shown = names.slice(0, NAMES_SHOWN).join(', ')
   return names.length > NAMES_SHOWN ? `${shown}, +${names.length - NAMES_SHOWN}` : shown
 }
@@ -379,9 +381,9 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   const failed = tools.filter((tool) => tool.status === 'failed').length
   const interrupted = tools.filter((tool) => tool.status === 'interrupted').length
   const total = tools.reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0)
-  const sillage = tools.filter((tool) => toolOrigin(tool.name).kind === 'sillage').length
-  const external = tools.filter((tool) => toolOrigin(tool.name).kind === 'mcp').length
-  const servers = [...new Set(tools.map((tool) => toolOrigin(tool.name)).filter((origin) => origin.kind === 'mcp').map((origin) => origin.server))].join(', ')
+  const sillage = tools.filter((tool) => toolOrigin(tool.name, tool.presentation).kind === 'sillage').length
+  const external = tools.filter((tool) => toolOrigin(tool.name, tool.presentation).kind === 'mcp').length
+  const servers = [...new Set(tools.map((tool) => toolOrigin(tool.name, tool.presentation)).filter((origin) => origin.kind === 'mcp').map((origin) => origin.server))].join(', ')
 
   return <div className={`sg-tool-sequence sg-tools-${style}`} data-thread-anchor={`tools-${tools[0]?.id}`} data-tool-sequence data-folded={folded}>
     {header ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}

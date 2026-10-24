@@ -1,3 +1,4 @@
+import { installAntigravity } from './antigravity/install.js'
 import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import {
@@ -86,7 +87,8 @@ export class CliInstaller {
       // npm refuses nonexistent prefixes. Create here, not startup: directory needed only when
       // installing.
       await mkdir(this.prefix, { recursive: true })
-      await this.npm(kind, pkg, version)
+      if (kind === 'antigravity') await installAntigravity(this.prefix, version, (message) => this.progress(kind, message))
+      else await this.npm(kind, pkg, version)
       this.onInstalled(kind)
       this.states.set(kind, { status: 'idle' })
     } catch (err) {

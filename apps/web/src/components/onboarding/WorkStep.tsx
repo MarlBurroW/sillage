@@ -10,7 +10,7 @@ import type { SettingGroup } from '../chat/ComposerSettings'
 import { Banner, Card, Select, cx } from '../ui'
 import { CardGrid, ChoiceCard, Question, StepTitle, Tip, useCommit, useGate, type StepProps } from './shell'
 
-const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok']
+const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok', 'antigravity']
 
 /** Relevant categories: model, effort, safeguards, budget. */
 const DETAIL_KEYS = ['model', 'effort', 'approval', 'sandbox', 'budget']

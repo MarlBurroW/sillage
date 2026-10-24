@@ -67,7 +67,7 @@ test('an action registered by an agent waits for review, and listing shows it', 
   assert.equal(row.agentConversationId, 'agent')
 
   const listed = await mcp('list_actions', {})
-  assert.match(listed.content[0]!.text, /« Tests » \(task, en attente de validation/)
+  assert.match(listed.content[0]!.text, /« Tests » \(task, awaiting user approval/)
 })
 
 test('an agent renaming keeps the review, changing the command drops it', async (t) => {

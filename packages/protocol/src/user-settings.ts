@@ -10,14 +10,17 @@ import {
   codexConfigSchema,
   opencodeConfigSchema,
   grokConfigSchema,
+  antigravityConfigSchema,
   DEFAULT_CLAUDE_CONFIG,
   DEFAULT_CODEX_CONFIG,
   DEFAULT_OPENCODE_CONFIG,
   DEFAULT_GROK_CONFIG,
+  DEFAULT_ANTIGRAVITY_CONFIG,
   type ClaudeConfig,
   type CodexConfig,
   type OpencodeConfig,
   type GrokConfig,
+  type AntigravityConfig,
 } from './agent-config.js'
 
 /**
@@ -181,7 +184,7 @@ export const DEFAULT_ONBOARDING: OnboardingState = {
 }
 
 export const onboardingAnswersSchema = z.object({
-  agents: z.array(agentKindSchema).max(4).default([]).catch([]),
+  agents: z.array(agentKindSchema).max(agentKindSchema.options.length).default([]).catch([]),
   agentsChosen: z.boolean().default(false).catch(false),
   team: z.enum(['solo', 'team']).default('solo').catch('solo'),
   devices: z.enum(['computer', 'phone']).default('phone').catch('phone'),
@@ -206,6 +209,7 @@ export interface ComposerLayout {
   codex: string[]
   opencode: string[]
   grok: string[]
+  antigravity: string[]
 }
 
 /** Nothing pinned: only the model/effort chip. */
@@ -214,6 +218,7 @@ export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = {
   codex: [],
   opencode: [],
   grok: [],
+  antigravity: [],
 }
 
 /** A category key as named by `agent-settings`, with no longer values allowed. */
@@ -224,6 +229,7 @@ export const composerLayoutSchema = z.object({
   codex: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.codex).catch(DEFAULT_COMPOSER_LAYOUT.codex),
   opencode: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.opencode).catch(DEFAULT_COMPOSER_LAYOUT.opencode),
   grok: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.grok).catch(DEFAULT_COMPOSER_LAYOUT.grok),
+  antigravity: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.antigravity).catch(DEFAULT_COMPOSER_LAYOUT.antigravity),
 })
 
 /**
@@ -251,6 +257,7 @@ export interface AgentDefaults {
   codex: CodexConfig
   opencode: OpencodeConfig
   grok: GrokConfig
+  antigravity: AntigravityConfig
 }
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
@@ -258,6 +265,7 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   codex: DEFAULT_CODEX_CONFIG,
   opencode: DEFAULT_OPENCODE_CONFIG,
   grok: DEFAULT_GROK_CONFIG,
+  antigravity: DEFAULT_ANTIGRAVITY_CONFIG,
 }
 
 /**
@@ -273,6 +281,7 @@ export const agentDefaultsSchema = z.object({
   // `default` as well as `catch`: settings predating opencode lack the key.
   opencode: opencodeConfigSchema.default(DEFAULT_OPENCODE_CONFIG).catch(DEFAULT_OPENCODE_CONFIG),
   grok: grokConfigSchema.default(DEFAULT_GROK_CONFIG).catch(DEFAULT_GROK_CONFIG),
+  antigravity: antigravityConfigSchema.default(DEFAULT_ANTIGRAVITY_CONFIG).catch(DEFAULT_ANTIGRAVITY_CONFIG),
 })
 
 export const appearancePrefsSchema = z.object({

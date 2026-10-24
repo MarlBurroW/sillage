@@ -80,7 +80,8 @@ test('une image vue par Codex est jointe en base64, dans la forme du Read de Cla
   const dir = mkdtempSync(join(tmpdir(), 'sillage-view-'))
   const png = Buffer.from('89504e470d0a1a0a', 'hex')
   writeFileSync(join(dir, 'shot.png'), png)
-  const [event] = completedItem({ type: 'imageView', id: 'view', path: 'shot.png' }, dir, 10, null)
+  const completed = completedItem({ type: 'imageView', id: 'view', path: 'shot.png' }, dir, 10, null)
+  const event = completed.find(event => event.type === 'tool.completed')
   assert.equal(event!.type, 'tool.completed')
   assert.deepEqual((event as { output: unknown }).output, [
     { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } },

@@ -63,7 +63,7 @@ profile.
 
 ## Agents
 
-Install Claude Code, Codex, OpenCode or Grok Build the usual way, or from the app,
+Install Claude Code, Codex, OpenCode, Grok Build or Google Antigravity from the app,
 which brings its own npm. At launch, the app reads the environment of your login
 shell (on Windows, your user environment): CLIs installed with Homebrew, npm, nvm or
 their own installers are found as they are in your terminal.

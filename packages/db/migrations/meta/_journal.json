@@ -379,6 +379,13 @@
       "when": 1792713612823,
       "tag": "0053_long_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1792810828102,
+      "tag": "0054_perpetual_black_panther",
+      "breakpoints": true
     }
   ]
 }

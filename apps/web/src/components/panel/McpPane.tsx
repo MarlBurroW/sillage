@@ -13,6 +13,7 @@ import { Badge, EmptyState } from '../ui'
 
 const STATE_ICONS: Record<McpServerState, ReactNode> = {
   pending: <Loader size={13} />,
+  configured: <Plug size={13} />,
   connected: <CircleCheck size={13} />,
   failed: <CircleAlert size={13} />,
   'needs-auth': <KeyRound size={13} />,
@@ -21,6 +22,7 @@ const STATE_ICONS: Record<McpServerState, ReactNode> = {
 
 const STATE_LABELS: Record<McpServerState, MessageKey> = {
   pending: 'panel.mcp.state.pending',
+  configured: 'panel.mcp.state.configured',
   connected: 'panel.mcp.state.connected',
   failed: 'panel.mcp.state.failed',
   'needs-auth': 'panel.mcp.state.needsAuth',
@@ -30,6 +32,7 @@ const STATE_LABELS: Record<McpServerState, MessageKey> = {
 /** Only failures and missing authentication require attention. */
 const STATE_TONES: Record<McpServerState, string> = {
   pending: 'text-ink-faint',
+  configured: 'text-ink-faint',
   connected: 'text-accent',
   failed: 'text-critical',
   'needs-auth': 'text-caution',

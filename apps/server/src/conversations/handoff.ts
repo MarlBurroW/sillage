@@ -68,6 +68,13 @@ export interface HandoffResult {
   omitted: number
 }
 
+/** Context inherited before this journal began, including the original cut point. */
+export interface InheritedHandoff {
+  text: string
+  fromConversationId: string
+  throughSeq: number
+}
+
 /** Clamps requested budgets to limits and uses the default when absent. */
 export function clampHandoffTokens(requested: number | undefined): number {
   if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_HANDOFF_TOKENS
@@ -75,7 +82,7 @@ export function clampHandoffTokens(requested: number | undefined): number {
 }
 
 function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}\n[... tronqué, ${text.length - max} caractères de plus]` : text
+  return text.length > max ? `${text.slice(0, max)}\n[... truncated, ${text.length - max} more characters]` : text
 }
 
 function stringify(value: unknown): string {
@@ -150,7 +157,7 @@ export function collectHandoffItems(entries: Iterable<JournalEntry>): HandoffIte
         item.isError = event.isError
         item.output =
           event.output === null && event.outputBytes !== undefined
-            ? `[sortie de ${event.outputBytes} octets, non transférée]`
+            ? `[output of ${event.outputBytes} bytes, not transferred]`
             : clip(toolOutputText(event.output), TOOL_OUTPUT_MAX)
         break
       }
@@ -225,45 +232,46 @@ const AGENT_NAMES: Record<AgentKind, string> = {
   codex: 'Codex',
   opencode: 'opencode',
   grok: 'Grok Build',
+  antigravity: 'Google Antigravity',
 }
 
 function renderItem(item: HandoffItem): string {
   switch (item.kind) {
     case 'user':
-      return `## Utilisateur (message ${item.seq})\n${item.text}`
+      return `## User (message ${item.seq})\n${item.text}`
     case 'assistant':
       return `## Agent (message ${item.seq})\n${item.text}`
     case 'tool': {
-      const lines = [`### Outil ${item.name}${item.isError ? ' (en erreur)' : ''}`]
-      if (item.input) lines.push(`Entrée : ${item.input}`)
-      lines.push(item.output ? `Sortie : ${item.output}` : 'Sortie : aucune, le tour a été interrompu avant.')
+      const lines = [`### Tool ${item.name}${item.isError ? ' (failed)' : ''}`]
+      if (item.input) lines.push(`Input: ${item.input}`)
+      lines.push(item.output ? `Output: ${item.output}` : 'Output: none; the turn was interrupted beforehand.')
       return lines.join('\n')
     }
     case 'interrupted':
       return item.reason === 'interrupted'
-        ? "[Tour interrompu par l'utilisateur : ce qui précède est un travail partiel.]"
-        : '[Tour terminé en erreur : ce qui précède est un travail partiel.]'
+        ? '[Turn interrupted by the user: the work above is partial.]'
+        : '[Turn ended in error: the work above is partial.]'
   }
 }
 
 /** Header identifying the source conversation and how to reread omissions. */
 export function renderHandoffHeader(source: HandoffSource, target: AgentKind): string {
   return [
-    `# Suite d'une conversation menée avec ${AGENT_NAMES[source.agent]}`,
+    `# Continuing a conversation with ${AGENT_NAMES[source.agent]}`,
     '',
-    `Cette conversation continue « ${source.title} » (id ${source.id}), menée avec ${AGENT_NAMES[source.agent]} dans Sillage, et poursuivie maintenant avec ${AGENT_NAMES[target]}. Ce qui suit n'est pas un résumé : ce sont des messages du fil d'origine, en entier et dans l'ordre, avec les appels d'outils qui tenaient. Le raisonnement, l'état des outils et les pièces jointes ne sont pas transférés. Les parties omises sont signalées par une référence : relis-les avec l'outil \`read_conversation\` du serveur MCP \`sillage\` (paramètres \`id\` et \`before\`) dès qu'un détail te manque, plutôt que de le deviner.`,
+    `This conversation continues “${source.title}” (id ${source.id}), previously handled by ${AGENT_NAMES[source.agent]} in Sillage and now by ${AGENT_NAMES[target]}. Below are original messages, in full and in order, with tool calls that fit; this is not a summary. Reasoning, tool state and attachments are not transferred. Omitted sections include references: read them using the \`sillage\` MCP server's \`read_conversation\` tool (\`id\` and \`before\` parameters) whenever details are missing, rather than guessing.`,
     '',
-    "La demande à traiter est le premier message de cette conversation, après ce bloc : c'est elle qui fait foi, le fil ci-dessous n'est que son contexte. Si ta mémoire de projet ou une autre session dit autre chose que ce fil, c'est ce fil que tu continues : signale la contradiction plutôt que de trancher en silence.",
+    "The request to handle is the first message in this conversation after this block: it takes precedence, and the thread below is context only. If project memory or another session contradicts this thread, you are continuing this thread: report the contradiction rather than silently choosing a side.",
   ].join('\n')
 }
 
 function renderOmitted(source: HandoffSource, omitted: NonNullable<HandoffSelection['omitted']>, before: number): string {
-  return `[${omitted.messages} message(s) omis ici, du message ${omitted.fromSeq} au message ${omitted.toSeq}. Pour les relire : read_conversation avec id="${source.id}" et before=${before}, puis remonter avec la valeur de \`before\` que l'outil annonce.]`
+  return `[${omitted.messages} message(s) omitted here, from message ${omitted.fromSeq} to ${omitted.toSeq}. To read them: read_conversation with id="${source.id}" and before=${before}, then continue backward using the \`before\` value reported by the tool.]`
 }
 
 /** Complete text ready for injection. */
 export function renderHandoff(source: HandoffSource, target: AgentKind, selection: HandoffSelection): string {
-  const parts = [renderHandoffHeader(source, target), '## Fil d\'origine']
+  const parts = [renderHandoffHeader(source, target), '## Original thread']
   if (selection.head) parts.push(renderItem(selection.head))
   if (selection.omitted) {
     const before = selection.tail[0]?.seq ?? selection.omitted.toSeq + 1
@@ -271,7 +279,7 @@ export function renderHandoff(source: HandoffSource, target: AgentKind, selectio
   }
   for (const item of selection.tail) parts.push(renderItem(item))
   if (selection.omittedTools > 0) {
-    parts.push(`[${selection.omittedTools} appel(s) d'outil de cette période omis, faute de place.]`)
+    parts.push(`[${selection.omittedTools} tool call(s) from this period omitted for space.]`)
   }
   return parts.join('\n\n')
 }
@@ -282,6 +290,7 @@ export function buildHandoff(
   source: HandoffSource,
   target: AgentKind,
   budgetTokens: number,
+  inherited?: InheritedHandoff | null,
 ): HandoffResult {
   if (items.length === 0) throw new HandoffError('handoff_empty', 'This conversation has no message to carry over.')
 
@@ -293,8 +302,18 @@ export function buildHandoff(
     throw new HandoffError('handoff_too_large', 'The handoff budget cannot even hold the references to the thread.')
   }
 
-  const selection = selectHandoff(items, budgetBytes - fixed)
-  const text = renderHandoff(source, target, selection)
+  let prefix = ''
+  if (inherited) {
+    const reference = `## Contexte hérité avant ce fil\nRelire avec read_conversation, id="${inherited.fromConversationId}" et before=${inherited.throughSeq + 1}. Ne pas inclure les échanges postérieurs à ce point.`
+    const full = reference + '\n\n' + inherited.text
+    const original = items.find((item) => item.kind === 'user')
+    // Reserve the latest thread's original request and at least half the budget
+    // for its exchanges; repeated forks must not grow instructions indefinitely.
+    const room = Math.min((budgetBytes - fixed) / 2, budgetBytes - fixed - (original ? itemBytes(original) : 0))
+    prefix = (Buffer.byteLength(full) + 2 <= room ? full : reference) + '\n\n'
+  }
+  const selection = selectHandoff(items, budgetBytes - fixed - Buffer.byteLength(prefix))
+  const text = prefix + renderHandoff(source, target, selection)
   return {
     text,
     bytes: Buffer.byteLength(text) - Buffer.byteLength(renderHandoffHeader(source, target)),
@@ -305,13 +324,13 @@ export function buildHandoff(
 }
 
 /** Conversation elements read in pages like conversation replay. */
-export function readHandoffItems(log: EventLog, conversationId: string): HandoffItem[] {
+export function readHandoffItems(log: EventLog, conversationId: string, throughSeq = Infinity): HandoffItem[] {
   const entries: JournalEntry[] = []
   let after = 0
   for (;;) {
     const page = log.readForReplay(conversationId, after, { rows: PAGE_ROWS, bytes: PAGE_BYTES })
-    entries.push(...page.entries)
-    if (page.nextAfter === after) break
+    entries.push(...page.entries.filter((entry) => entry.seq <= throughSeq))
+    if (page.nextAfter === after || page.nextAfter >= throughSeq) break
     after = page.nextAfter
   }
   return collectHandoffItems(entries)

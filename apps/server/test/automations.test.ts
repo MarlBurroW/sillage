@@ -323,9 +323,9 @@ test('the test bench evaluates a call typed on the page and returns the message 
   assert.equal(passes.verdict, 'launch')
   assert.equal(passes.subject, '7')
   assert.equal(passes.prompt, 'Traite #7 Crash {{payload.missing}}')
-  assert.match(passes.message, /\[Automatisation Sillage « Issues »/)
+  assert.match(passes.message, /\[Sillage automation “Issues”/)
   assert.match(passes.message, /<!-- sillage:session=<session> -->/)
-  assert.match(passes.message, /Événement : issues · labeled\. Sujet : 7\./)
+  assert.match(passes.message, /Event: issues · labeled\. Subject: 7\./)
 
   const ignored = await test({ call: { headers: {}, body: JSON.stringify({ action: 'closed' }) }, settings: { subjectPath: '' } })
   assert.equal(ignored.verdict, 'filtered')

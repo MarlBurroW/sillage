@@ -157,6 +157,7 @@ export function registerTaskRoutes(
         project,
         body,
         readUserSettings(ctx.db, user.id).agentDefaults,
+        (config) => sessions.modelsFor(user.id, config),
       )
 
       const clientMessageId = randomUUID()

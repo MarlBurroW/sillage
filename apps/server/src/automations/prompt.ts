@@ -14,16 +14,16 @@ export function buildWebhookPrompt(input: {
   const vars = delivery.vars ? (JSON.parse(delivery.vars) as Record<string, unknown>) : {}
 
   const header = [
-    `[Automatisation Sillage « ${task.name} » — appel reçu le ${date}${input.replay ? ', rejoué à la main' : ''}]`,
+    `[Sillage automation “${task.name}” — call received at ${date}${input.replay ? ', replayed manually' : ''}]`,
     '',
-    `Tu tournes seul, dans une session neuve ouverte par un webhook : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. La session est interrompue au bout de ${task.maxDurationMinutes} min.`,
+    `You are running unattended in a fresh session opened by a webhook: nobody is at the keyboard. Do not ask questions or request confirmation, as nobody would answer. Decide and state your assumptions in your final reply. For work requiring approval or outside your instructions, create a card (create_card) instead of doing it. The session is interrupted after ${task.maxDurationMinutes} min.`,
     '',
-    `Ce que tu publies sur une forge (issue, pull request, commentaire, revue) se termine par ${sessionMarker(input.conversationId)}, et tes messages de commit par le trailer \`Sillage-Session: ${input.conversationId}\`. Ne pose jamais un label et n'écris jamais une commande qui déclenche une automatisation, sauf si la consigne le demande.`,
+    `End anything you publish on a forge (issue, pull request, comment, review) with ${sessionMarker(input.conversationId)}, and commit messages with the trailer \`Sillage-Session: ${input.conversationId}\`. Never apply a label or post a command that triggers an automation unless instructed to do so.`,
   ]
   const facts = [
-    delivery.summary ? `Événement : ${delivery.summary}.` : null,
-    delivery.subject ? `Sujet : ${delivery.subject}.` : null,
-    delivery.deliveryId ? `Livraison : ${delivery.deliveryId}.` : null,
+    delivery.summary ? `Event: ${delivery.summary}.` : null,
+    delivery.subject ? `Subject: ${delivery.subject}.` : null,
+    delivery.deliveryId ? `Delivery: ${delivery.deliveryId}.` : null,
   ].filter((line) => line !== null)
   if (facts.length > 0) header.push('', facts.join(' '))
 

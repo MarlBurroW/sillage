@@ -66,6 +66,8 @@ export function withPermissionChoice(config: AgentConfig, choice: PermissionChoi
           bash: choice === 'bypass' ? 'allow' : 'ask',
         },
       }
+    case 'antigravity':
+      return { ...config, permissionMode: choice === 'bypass' ? 'yolo' : choice === 'acceptEdits' ? 'auto_edit' : 'default' }
     case 'grok':
       return {
         ...config,

@@ -3,6 +3,7 @@ import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.
 import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
 import { agentSkillSchema } from './skills.js'
+import { toolPresentationSchema } from './tools.js'
 
 /**
  * Normalized event schema (spec invariant I3).
@@ -12,7 +13,7 @@ import { agentSkillSchema } from './skills.js'
  * `events.raw` for specialized renderers.
  */
 
-export const agentKindSchema = z.enum(['claude', 'codex', 'opencode', 'grok'])
+export const agentKindSchema = z.enum(['claude', 'codex', 'opencode', 'grok', 'antigravity'])
 export type AgentKind = z.infer<typeof agentKindSchema>
 
 export const planStatusSchema = z.enum(['pending', 'in_progress', 'completed'])
@@ -244,8 +245,10 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   // Tools
   z.object({
     type: z.literal('tool.started'),
+    title: z.string().nullable().optional(),
     toolCallId: z.string(),
     name: z.string(),
+    presentation: toolPresentationSchema.optional(),
     input: z.unknown(),
     inputRef: eventBodyRefSchema.optional(),
     parentToolCallId: z.string().nullable(),
@@ -257,7 +260,10 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('tool.input_updated'),
+    title: z.string().nullable().optional(),
     toolCallId: z.string(),
+    name: z.string().optional(),
+    presentation: toolPresentationSchema.optional(),
     input: z.unknown(),
     inputRef: eventBodyRefSchema.optional(),
   }),

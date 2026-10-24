@@ -40,6 +40,19 @@ function journal(events: SillageEvent[]): JournalEntry[] {
 
 const bytesOf = (items: HandoffItem[]) => items.reduce((total, item) => total + itemBytes(item), 0)
 
+test('portable forks and transfers retain inherited context without exceeding their budget', () => {
+  const items: HandoffItem[] = [{ kind: 'user', seq: 1, text: 'Continue the implementation' }, { kind: 'assistant', seq: 2, text: 'The current change' }]
+  const inherited = { fromConversationId: 'earlier-session', throughSeq: 42, text: 'Keep the original requirement' }
+  const full = buildHandoff(items, SOURCE, 'antigravity', 1000, inherited)
+  assert.ok(full.text.includes(inherited.text))
+  assert.ok(full.text.includes('The current change'))
+  assert.ok(full.bytes <= 1000)
+  const bounded = buildHandoff(items, SOURCE, 'antigravity', 1000, { ...inherited, text: 'old context '.repeat(1000) })
+  assert.ok(bounded.text.includes('id="earlier-session" et before=43'))
+  assert.ok(bounded.text.includes('Continue the implementation'))
+  assert.ok(bounded.bytes <= 1000)
+})
+
 test('repli : messages du fil principal, outils avec leur sortie, tours interrompus', () => {
   const items = collectHandoffItems(journal([
     user('u1', 'Corrige le cache'),
@@ -77,8 +90,8 @@ test('repli : une sortie retirée de la relecture est signalée par sa taille, u
     done('t2', 'x'.repeat(5_000)),
   ]))
   const [big, long] = items
-  assert.ok(big?.kind === 'tool' && big.output.includes('50000 octets'))
-  assert.ok(long?.kind === 'tool' && long.output.length < 1_400 && long.output.includes('tronqué'))
+  assert.ok(big?.kind === 'tool' && big.output.includes('50000 bytes'))
+  assert.ok(long?.kind === 'tool' && long.output.length < 1_400 && long.output.includes('truncated'))
 })
 
 test('sélection : la demande d\'origine, puis la fin du fil, les messages avant les outils', () => {
@@ -139,10 +152,10 @@ test('rendu : la référence vers les messages omis cite la source et le curseur
   ]))
   const result = buildHandoff(items, SOURCE, 'codex', MIN_HANDOFF_TOKENS)
 
-  assert.ok(result.text.startsWith("# Suite d'une conversation menée avec Claude Code"))
-  assert.match(result.text, /poursuivie maintenant avec Codex/)
-  assert.match(result.text, /## Utilisateur \(message 1\)\nDemande/)
-  assert.match(result.text, /\[2 message\(s\) omis ici, du message 2 au message 3\. Pour les relire : read_conversation avec id="src" et before=4/)
+  assert.ok(result.text.startsWith("# Continuing a conversation with Claude Code"))
+  assert.match(result.text, /now by Codex/)
+  assert.match(result.text, /## User \(message 1\)\nDemande/)
+  assert.match(result.text, /\[2 message\(s\) omitted here, from message 2 to 3\. To read them: read_conversation with id="src" and before=4/)
   assert.match(result.text, /## Agent \(message 4\)\nFin$/)
   assert.equal(result.selected, 2)
   assert.equal(result.omitted, 2)
@@ -160,9 +173,9 @@ test('rendu : tout tient, aucune référence ; un tour interrompu est dit', () =
     said('a1', 'Reprise'),
   ]))
   const result = buildHandoff(items, SOURCE, 'opencode', DEFAULT_HANDOFF_TOKENS)
-  assert.doesNotMatch(result.text, /message\(s\) omis|appel\(s\) d'outil/)
-  assert.match(result.text, /### Outil Bash\nEntrée : \{"command":"sleep"\}\nSortie : aucune, le tour a été interrompu avant\./)
-  assert.match(result.text, /\[Tour interrompu par l'utilisateur/)
+  assert.doesNotMatch(result.text, /message\(s\) omitted|tool call\(s\)/)
+  assert.match(result.text, /### Tool Bash\nInput: \{"command":"sleep"\}\nOutput: none; the turn was interrupted beforehand\./)
+  assert.match(result.text, /\[Turn interrupted by the user/)
   assert.equal(result.omitted, 0)
 })
 
@@ -195,7 +208,7 @@ test('journal : la sélection se lit par pages, sans les sorties volumineuses', 
     const items = readHandoffItems(log, 'src')
     assert.deepEqual(items.map((item) => item.kind), ['user', 'tool', 'assistant'])
     const tool = items[1]
-    assert.ok(tool?.kind === 'tool' && tool.output.includes('non transférée'))
+    assert.ok(tool?.kind === 'tool' && tool.output.includes('not transferred'))
   } finally {
     sqlite.close()
   }

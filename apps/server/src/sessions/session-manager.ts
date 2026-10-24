@@ -34,7 +34,10 @@ import type { ClaudeAccountStore } from '../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
 import type { GrokAccountHomes } from '../grok-accounts/homes.js'
+import { userAntigravityHome, type AntigravityAccountHomes } from '../antigravity-accounts/homes.js'
+import { logoutAntigravity } from '../antigravity-accounts/login.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
+import type { AntigravityAccountStore } from '../antigravity-accounts/store.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -169,6 +172,7 @@ export class SessionManager {
     private readonly claudeAccounts: ClaudeAccountStore,
     private readonly codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
+    private readonly antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -640,6 +644,10 @@ export class SessionManager {
 
   /** Selected Claude account tokens placed in variables taking precedence over stored CLI authentication (probed 2.1.296). Nothing for CLI-default authentication or other agents. Missing/deleted/foreign shared-project account references do not block startup: fall back to CLI login and disclose it in history because a different subscription pays. */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
+    if (config.agent === 'antigravity') {
+      const home = this.antigravityHome(conversation.userId, config.account)
+      return { ...(home ? { GEMINI_HOME: home } : {}), SILLAGE_ANTIGRAVITY_SESSION_ROOT: this.antigravityAccounts.homes.sessions(conversation.userId) }
+    }
     if (config.agent === 'opencode' || !config.account) return {}
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
@@ -687,6 +695,36 @@ export class SessionManager {
     return { CODEX_HOME: this.codexAccounts.homes.ensure(account.id) }
   }
 
+  antigravityHome(userId: string, accountId: string | null): string | undefined {
+    if (!accountId) return undefined
+    const account = this.antigravityAccounts.store.find(userId, accountId)
+    if (!account || account.status !== 'ready') throw notFound('agent_account_not_found', 'Unknown connected Google account.')
+    return this.antigravityAccounts.homes.ensure(account.id)
+  }
+
+  modelsFor(userId: string, config: AgentConfig) {
+    return this.registry.adapter(config.agent).models(config.agent === 'antigravity' ? this.antigravityHome(userId, config.account) : undefined)
+  }
+
+  /** A disconnected account must not continue requests from another warm session. */
+  async stopAntigravityAccount(accountId: string, exceptId?: string): Promise<void> {
+    for (const [id, managed] of this.runners) {
+      const config = managed.runner.appliedConfig
+      if (id === exceptId || config.agent !== 'antigravity' || config.account !== accountId) continue
+      await this.stopRunner(id)
+      this.log.append(id, { type: 'session.ended', reason: 'interrupted' })
+      this.setStatus(id, 'idle')
+    }
+  }
+
+  /** Imports through the same event translator as live sessions, preserving tool metadata. */
+  async importNativeHistory(conversation: ConversationRow): Promise<void> {
+    const context = this.buildContext(conversation)
+    const runner = this.registry.adapter(conversation.agent).createRunner(context)
+    if (!runner.importHistory) throw new Error('This CLI does not support history import.')
+    try { await runner.importHistory() } finally { await runner.stop() }
+  }
+
   private buildContext(conversation: ConversationRow): RunnerContext {
     const memoryDirOrNull = (agent: ConversationRow['agent'], dir: string | null, sillageMcp: boolean) =>
       agent !== 'claude' && dir ? memoryAppendixForCodex(dir, sillageMcp) : null
@@ -723,6 +761,13 @@ export class SessionManager {
       // interface-installed CLIs.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
+      accountSignedOut: async () => {
+        if (config.agent !== 'antigravity') return
+        if (config.account) await this.stopAntigravityAccount(config.account, conversationId)
+        const home = this.antigravityHome(conversation.userId, config.account) ?? userAntigravityHome()
+        await logoutAntigravity(await adapter.cli.executable(), home)
+        if (config.account) this.antigravityAccounts.store.setIdentity(config.account, { authMode: null, email: null, plan: null })
+      },
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId),
         // Tells Claude Code a local host scheduled it rather than a person opening it

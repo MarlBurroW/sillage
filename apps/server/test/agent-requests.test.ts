@@ -169,7 +169,7 @@ test('human titles win over both explicit agent titles and delayed native CLI su
   titleEvents.length = 0
   const denied = await mcp('self', 'rename_session', { title: 'Agent title' })
   assert.equal(denied.isError, undefined)
-  assert.match(denied.content[0]!.text, /choisi par l'utilisateur/)
+  assert.match(denied.content[0]!.text, /user chose the title/)
   assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Late CLI summary', 'cli'), 'protected')
   assert.equal(db.select().from(conversations).get()?.title, 'Mon titre personnel')
   assert.deepEqual(titleEvents, [])
@@ -182,11 +182,11 @@ test('every CLI receives a naming instruction, respecting manual titles and disa
   const overview = (sillageMcp = true) => projectOverview(db, { projectId: 'project', conversationId: 'self', sillageMcp }) ?? ''
   for (const agent of ['claude', 'codex', 'opencode', 'grok'] as const) {
     db.update(conversations).set({ agent }).run()
-    assert.match(overview(), /appelle `rename_session`/)
+    assert.match(overview(), /call the `sillage` server's `rename_session`/)
   }
   assert.doesNotMatch(overview(false), /rename_session/)
   adoptSessionTitle(db, statusBus, 'self', 'Refonte de la sidebar', 'agent')
-  assert.match(overview(), /Conserve-le tant que le sujet principal ne change pas/)
+  assert.match(overview(), /Keep it unless the main topic changes/)
   db.update(conversations).set({ titleSetByUser: true }).run()
   assert.doesNotMatch(overview(), /rename_session/)
 })
@@ -216,7 +216,7 @@ test('start_session launches a session with the requested CLI, model and effort'
     effort: 'max',
   })
   assert.equal(result.isError, undefined, result.content[0]?.text)
-  assert.match(result.content[0]!.text, /Session lancée/)
+  assert.match(result.content[0]!.text, /Session started/)
 
   const request = db.select().from(agentRequests).get()!
   const launched = db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()!
@@ -253,7 +253,7 @@ test('start_session links a card and moves it to in progress', async (t) => {
   }).run()
 
   const result = await mcp('parent', 'start_session', { prompt: 'Traiter la carte.', card: 7 })
-  assert.match(result.content[0]!.text, /carte #7/)
+  assert.match(result.content[0]!.text, /card #7/)
   assert.equal(db.select().from(cards).get()?.column, 'in_progress')
   const request = db.select().from(agentRequests).get()!
   assert.equal(db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()?.cardId, 'card')
@@ -272,12 +272,12 @@ test('start_session refuses deep launch chains and launch storms', async (t) => 
 
   const deep = await mcp('grandchild', 'start_session', { prompt: 'encore' })
   assert.equal(deep.isError, true)
-  assert.match(deep.content[0]!.text, /lancement en chaîne/)
+  assert.match(deep.content[0]!.text, /Launch chains/)
 
   for (let i = 0; i < LAUNCHES_PER_HOUR - 1; i++) launched('root', null)
   const storm = await mcp('root', 'start_session', { prompt: 'une de trop' })
   assert.equal(storm.isError, true)
-  assert.match(storm.content[0]!.text, /dans l'heure/)
+  assert.match(storm.content[0]!.text, /in the last hour/)
 })
 
 test('create_card opens a todo card and says which session opened it', async (t) => {
@@ -335,21 +335,21 @@ test('a global MCP client writes to, steers, interrupts and answers its own sess
   assert.equal((await mcp('', 'message_session', { project: 'project', session: 'idle-one', body: '' })).isError, true)
 
   const idle = await mcp('', 'message_session', { project: 'project', session: 'idle-one', body: 'Reprends.' })
-  assert.match(idle.content[0]!.text, /elle reprend/)
+  assert.match(idle.content[0]!.text, /resuming/)
   const busy = await mcp('', 'message_session', { project: 'project', session: 'busy-one', body: 'Plus tard.' })
-  assert.match(busy.content[0]!.text, /mis en attente/)
+  assert.match(busy.content[0]!.text, /queued/)
   assert.deepEqual(sent.map((entry) => entry.text), ['Reprends.', 'Plus tard.'])
 
   const missed = await mcp('', 'steer_session', { project: 'project', session: 'busy-one', body: 'Arrête les tests.' })
-  assert.match(missed.content[0]!.text, /message ordinaire/)
+  assert.match(missed.content[0]!.text, /ordinary message/)
   assert.equal(sent.at(-1)!.text, 'Arrête les tests.')
   setSteer(true)
   const steered = await mcp('', 'steer_session', { project: 'project', session: 'busy-one', body: 'Vraiment.' })
-  assert.match(steered.content[0]!.text, /infléchi/)
+  assert.match(steered.content[0]!.text, /steered/)
   assert.equal(gestures.at(-1), 'steer busy-one: Vraiment.')
 
-  assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'idle-one' })).content[0]!.text, /rien à interrompre/)
-  assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'busy-one' })).content[0]!.text, /interrompu/)
+  assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'idle-one' })).content[0]!.text, /nothing to interrupt/)
+  assert.match((await mcp('', 'interrupt_session', { project: 'project', session: 'busy-one' })).content[0]!.text, /interrupted/)
   assert.equal(gestures.at(-1), 'interrupt busy-one')
 
   // Without open requests there is nothing to answer; otherwise responses follow request types.
@@ -372,7 +372,7 @@ test('list_models shows the catalog and the defaults a launch would use', async 
   conversation('parent')
 
   const result = await mcp('parent', 'list_models', { agent: 'codex' })
-  assert.match(result.content[0]!.text, /par défaut : modèle gpt-5\.5/)
+  assert.match(result.content[0]!.text, /defaults: model gpt-5\.5/)
   assert.match(result.content[0]!.text, /`astra-1` \(Astra\)/)
 })
 
@@ -416,8 +416,8 @@ test('MCP : relations depuis toute session du projet et lecture des deux sens', 
   await mcp('author', 'create_card', { title: 'Enfant' })
   const linked = await mcp('peer', 'link_cards', { number: 2, target: 1, kind: 'child' })
   assert.equal(linked.isError, undefined, linked.content[0]?.text)
-  assert.match((await mcp('peer', 'read_card', { number: 1 })).content[0]!.text, /Contient #2/)
-  assert.match((await mcp('peer', 'read_card', { number: 2 })).content[0]!.text, /Est un sous-ticket de #1/)
+  assert.match((await mcp('peer', 'read_card', { number: 1 })).content[0]!.text, /Contains #2/)
+  assert.match((await mcp('peer', 'read_card', { number: 2 })).content[0]!.text, /Child of #1/)
   assert.equal((await mcp('peer', 'link_cards', { number: 1, target: 1, kind: 'blocks' })).isError, true)
   assert.equal((await mcp('peer', 'link_cards', { number: 1, target: 99, kind: 'related' })).isError, true)
   const removed = await mcp('', 'unlink_cards', { project: 'project', number: 1, target: 2, kind: 'parent' })
@@ -432,12 +432,12 @@ test('MCP : les erreurs de ciblage indiquent la carte et le paramètre de la ses
   for (const [tool, fields] of [['add_card_note', { body: 'Note' }], ['update_issue', { state: 'closed' }]] as const) {
     const absent = await mcp('editor', tool, { ...fields, number: 99 })
     assert.equal(absent.isError, true)
-    assert.match(absent.content[0]!.text, /Aucune carte #99/)
+    assert.match(absent.content[0]!.text, /No card #99/)
     const invalid = await mcp('editor', tool, { ...fields, number: 'incorrect' })
     assert.equal(invalid.isError, true)
     assert.match(invalid.content[0]!.text, /`number`/)
   }
   const local = await mcp('editor', 'update_issue', { number: 1, state: 'closed' })
   assert.equal(local.isError, true)
-  assert.match(local.content[0]!.text, /carte #1 ne suit aucune issue/)
+  assert.match(local.content[0]!.text, /Card #1 does not track a GitHub issue/)
 })

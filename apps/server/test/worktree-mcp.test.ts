@@ -87,13 +87,13 @@ test('les deux outils sont proposés aux sessions', async (t) => {
 test('create_worktree : depuis la branche par défaut, rattaché sans toucher au cwd', async (t) => {
   const { db, repo, config, call } = harness(t)
 
-  assert.match((await call('list_worktrees', {})).content[0]!.text, /Aucun worktree/)
+  assert.match((await call('list_worktrees', {})).content[0]!.text, /No worktrees/)
 
   const created = await call('create_worktree', { branch: 'feat/mcp' })
   assert.equal(created.isError, undefined, created.content[0]?.text)
   const path = join(config.paths.worktrees, 'project', 'feat__mcp')
-  assert.match(created.content[0]!.text, new RegExp(`prêt dans ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
-  assert.match(created.content[0]!.text, /partie de main/)
+  assert.match(created.content[0]!.text, new RegExp(`ready at ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
+  assert.match(created.content[0]!.text, /from main/)
   // Start from main rather than the main worktree's current branch.
   assert.equal(git(path, 'rev-parse', 'HEAD'), git(repo, 'rev-parse', 'main'))
 
@@ -106,7 +106,7 @@ test('create_worktree : depuis la branche par défaut, rattaché sans toucher au
   // Requesting the same tree returns it unchanged.
   const again = await call('create_worktree', { branch: 'feat/mcp' })
   assert.equal(again.isError, undefined)
-  assert.match(again.content[0]!.text, /existait déjà/)
+  assert.match(again.content[0]!.text, /Already existed/)
 
   // Branches checked out elsewhere cannot be checked out twice: git rejects them and
   // explain this plainly to the agent.
@@ -118,28 +118,28 @@ test('create_worktree : depuis la branche par défaut, rattaché sans toucher au
   git(repo, 'branch', 'feat/kept', 'elsewhere')
   const reused = await call('create_worktree', { branch: 'feat/kept' })
   assert.equal(reused.isError, undefined, reused.content[0]?.text)
-  assert.match(reused.content[0]!.text, /reprise telle quelle/)
+  assert.match(reused.content[0]!.text, /reused as-is/)
   assert.equal(git(join(config.paths.worktrees, 'project', 'feat__kept'), 'rev-parse', 'HEAD'), git(repo, 'rev-parse', 'elsewhere'))
 
   const listed = (await call('list_worktrees', {})).content[0]!.text
-  assert.match(listed, /comparés à main/)
-  assert.match(listed, /`feat\/mcp` : fusionné/)
-  assert.match(listed, /toi y a travaillé/)
+  assert.match(listed, /compared with main/)
+  assert.match(listed, /`feat\/mcp` : merged/)
+  assert.match(listed, /you worked here/)
 })
 
 test('create_worktree refuse un nom ou une base qui serait lu comme autre chose', async (t) => {
   const { call } = harness(t)
   const missing = await call('create_worktree', {})
   assert.equal(missing.isError, true)
-  assert.match(missing.content[0]!.text, /`branch` est requis/)
+  assert.match(missing.content[0]!.text, /`branch` parameter is required/)
 
   const traversal = await call('create_worktree', { branch: 'feat/../escape' })
   assert.equal(traversal.isError, true)
-  assert.match(traversal.content[0]!.text, /Nom de worktree invalide/)
+  assert.match(traversal.content[0]!.text, /Invalid worktree name/)
 
   const option = await call('create_worktree', { branch: 'feat/option', base: '--detach' })
   assert.equal(option.isError, true)
-  assert.match(option.content[0]!.text, /Base invalide/)
+  assert.match(option.content[0]!.text, /Invalid base/)
 })
 
 test('le prompt dynamique cite les deux outils quand d’autres sessions travaillent dans le projet', async (t) => {
@@ -149,5 +149,5 @@ test('le prompt dynamique cite les deux outils quand d’autres sessions travail
     createdAt: 1, updatedAt: Date.now(),
   }).run()
   const overview = projectOverview(db, { projectId: 'project', conversationId: 'agent', sillageMcp: true }) ?? ''
-  assert.match(overview, /`list_worktrees` et `create_worktree` pour travailler dans un arbre à l'écart des autres plutôt que par `git worktree add`/)
+  assert.match(overview, /`list_worktrees` and `create_worktree` to work separately from others instead of using `git worktree add`/)
 })

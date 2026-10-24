@@ -1,7 +1,7 @@
 import type { AgentKind } from './events.js'
 
 /**
- * Each CLI's npm package and the version targeted by this Sillage release.
+ * Each CLI's distribution and the version targeted by this Sillage release.
  *
  * Sillage no longer bundles binaries: they come from the system, so versions are not fixed by
  * the release and behavior differences become user-visible. This table provides a comparison
@@ -17,7 +17,7 @@ import type { AgentKind } from './events.js'
  * separating them would invite drift at the first bump.
  */
 export interface PreferredCliRelease {
-  /** npm package used by installation from the UI. */
+  /** npm package, or the official ACP registry ID for native Antigravity archives. */
   readonly package: string
   readonly version: string
 }
@@ -26,6 +26,7 @@ export const PREFERRED_CLI_RELEASES: Record<AgentKind, PreferredCliRelease> = {
   claude: { package: '@anthropic-ai/claude-code', version: '2.1.301' },
   codex: { package: '@openai/codex', version: '0.163.0' },
   opencode: { package: 'opencode-ai', version: '1.19.3' },
+  antigravity: { package: 'antigravity-acp', version: '1.4.3' },
   grok: { package: '@xai-official/grok', version: '1.0.62' },
 }
 

@@ -80,6 +80,18 @@ async function mount(page) {
       {...tool('sillage-error','sillage/read_memory','failed'),output:'File not found.'},
       {...tool('mcp-error','github/issue_read','failed'),output:'Issue not found.'},
       {...tool('bash-success','Bash'), input:{command:'pnpm typecheck'}},
+      {...tool('web-find','WebSearch'),input:{query:''},output:{query:"'stream-json'",action:{type:'findInPage',url:null,pattern:'stream-json'},results:[{type:'text_result',snippet:'Matching result'}]}},
+      {...tool('web-multiple','WebSearch'),input:{type:'search',query:'',queries:['first query','second query']},output:{query:'',action:{type:'search',query:null,queries:['first query','second query']},results:[{snippet:'Multiple search result'}]}},
+      {...tool('web-fetch','WebFetch'),input:{query:''},output:{query:'open',action:{type:'openPage',url:'https://example.com/docs'},results:[{snippet:'Page result'}]}},
+      {...tool('web-lazy','WebSearch'),input:{query:''},output:null,outputRef:{seq:321,field:'output',bytes:1000}},
+      {...tool('claude-description','Bash'),input:{command:'tail -20 test.log',description:'Lire le rapport des tests'},output:'Report body'},
+      {...tool('harness-title','Bash'),input:{command:'pnpm test'},presentation:{title:'Vérifier les modifications'},output:'Tests passed'},
+      {...tool('harness-location','Read'),input:{},presentation:{paths:['src/main.ts']}},
+      {...tool('parsed-command','Bash'),input:{command:'/bin/zsh -lc cat src/a.ts',commandActions:[{type:'read',path:'src/a.ts',name:'a.ts'}]}},
+      {...tool('task-id','TaskUpdate'),input:{taskId:'17',status:'completed'}},
+      {...tool('skill-name','Skill'),input:{skill:'frontend-design'}},
+      {...tool('dynamic-native','functions/custom'),input:{path:'src/a.ts'},presentation:{origin:'native'}},
+      {...tool('connector-label','github/search'),input:{query:'bugs in the parser'},presentation:{origin:'mcp',label:'Rechercher des tickets'}},
       tool('active','Read','running'),
     ]
     window.makeItems = (mode) => [...history, ...examples.map((t,i)=> mode==='running'&&i===examples.length-1?{...t,status:'running',durationMs:null}:t), ...(mode==='text'?[message('100','Le filtre est corrigé. Les tests passent.')]:[])]
@@ -133,6 +145,11 @@ try {
     await page.locator('#settings > summary').click()
     const choices=page.getByRole('group',{name:'Outils dans les conversations'})
     assert.equal(await choices.locator('button').count(),6)
+    let webBodyRequests = 0
+    await page.route('**/api/conversations/fixture/events/321/body/output', route => {
+      webBodyRequests++
+      return route.fulfill({json:{value:{query:'loaded query',action:{type:'search',query:null,queries:null},results:[{snippet:'Loaded result'}]}}})
+    })
     await page.evaluate(()=>window.setItems(window.presentationCases))
     for(const [label,variant] of [['Lignes discrètes','inline'],['Chronologie','timeline'],['Par intention','intent'],['Aperçus utiles','cards'],['Console compacte','console'],['Classique','classic']]){
       await choices.getByRole('button',{name:new RegExp('^'+label)}).click()
@@ -143,6 +160,19 @@ try {
       assert.match(await heading('codex-edit').innerText(),/apps\/web\/src\/components\/chat\/ToolCall.tsx/)
       assert.match(await heading('codex-multi').innerText(),/src\/App.tsx · src\/styles.css/)
       assert.match(await heading('claude-edit').innerText(),/src\/legacy.ts/)
+      assert.match(await heading('web-find').innerText(),/stream-json/)
+      assert.match(await heading('web-multiple').innerText(),/first query · second query/)
+      assert.match(await heading('web-fetch').innerText(),/https:\/\/example.com\/docs/)
+      assert.equal(webBodyRequests,0,'Collapsed web calls must not fetch output bodies')
+      assert.match(await heading('claude-description').innerText(),/Lire le rapport des tests/)
+      assert.match(await heading('harness-title').innerText(),/Vérifier les modifications/)
+      assert.match(await heading('connector-label').innerText(),/Rechercher des tickets/)
+      assert.match(await heading('connector-label').innerText(),/bugs in the parser/)
+      assert.match(await heading('harness-location').innerText(),/src\/main.ts/)
+      assert.match(await heading('parsed-command').innerText(),/Lire src\/a.ts/)
+      assert.match(await heading('task-id').innerText(),/#17/)
+      assert.match(await heading('skill-name').innerText(),/frontend-design/)
+      assert.equal(await heading('dynamic-native').locator('.sg-mcp-mark').count(),0,'Dynamic native tools are not MCP')
       for (const [id,expected] of [['codex-edit','+1−1'],['claude-edit','+2−1'],['opencode-patch','+2−1'],['write','+3']]) {
         assert.equal(await heading(id).locator('.sg-tool-counts').textContent(),expected)
         const badge=await heading(id).locator('.sg-tool-counts').boundingBox()
@@ -157,6 +187,28 @@ try {
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
       await page.screenshot({path:`${output}/${variant}-${width}.png`})
     }
+    // Metadata updates must refresh the row even when arguments do not change.
+    await page.evaluate(()=>window.setItems(items=>items.map(item=>item.id==='harness-title'?{...item,presentation:{title:'Relire le résultat des tests'}}:item)))
+    await page.waitForFunction(()=>document.querySelector('[data-tool-id="harness-title"] .sg-tool-heading').textContent.includes('Relire le résultat des tests'))
+    const described=page.locator('#thread [data-tool-id="claude-description"]')
+    await described.locator('.sg-tool-heading').click()
+    assert.match(await described.locator('.sg-tool-detail').innerText(),/tail -20 test.log/,'The actual command remains available behind the human description')
+    await described.getByRole('button',{name:'Brut',exact:true}).click()
+    assert.match(await described.locator('.sg-tool-detail').innerText(),/description/)
+    await described.locator('.sg-tool-heading').click()
+    // Historical web arguments recover from inline and lazily loaded final results.
+    for (const [id, query, result] of [['web-find','stream-json','Matching result'],['web-multiple','first query','Multiple search result'],['web-fetch','https://example.com/docs','Page result'],['web-lazy','loaded query','Loaded result']]) {
+      const row=page.locator(`#thread [data-tool-id="${id}"]`)
+      await row.locator('.sg-tool-heading').click()
+      await row.locator('.sg-tool-detail').getByText(result,{exact:false}).first().waitFor()
+      assert.ok((await row.locator('.sg-tool-detail').innerText()).includes(query))
+      await row.getByRole('button',{name:'Brut',exact:true}).click()
+      const rawText=await row.locator('.sg-tool-detail').innerText()
+      assert.ok(rawText.includes(query))
+      assert.ok(!rawText.includes('"query": ""') || id==='web-multiple','Recovered raw input is no longer the empty start')
+      await row.locator('.sg-tool-heading').click()
+    }
+    assert.equal(webBodyRequests,1,'Expanded legacy call loads its final output once')
     // Readable views and raw fallback share the same final payloads.
     await page.locator('#thread [data-tool-id="codex-edit"] .sg-tool-heading').click()
     assert.match(await page.locator('#thread [data-tool-id="codex-edit"] .sg-tool-detail').innerText(), /before/)
@@ -220,6 +272,6 @@ try {
   await fresh.page.locator('#thread .sg-tools-timeline').first().waitFor()
   await fresh.context.close()
   assert.deepEqual(errors,[])
-  console.log('OK: six styles, density, settings sync, live sequence, deferred collapse, scroll, manual opening, mobile and reduced motion.')
+  console.log('OK: six styles, human metadata, tool summaries, web inputs, lazy bodies, settings sync, grouping, scroll, mobile and reduced motion.')
 } catch(error){console.error(diagnostics);throw error}
 finally{await browser?.close();vite.kill('SIGTERM');await once(vite,'exit').catch(()=>{})}

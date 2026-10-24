@@ -160,6 +160,13 @@ const SECTIONS: Section[] = [
     icon: <IdCard size={16} />,
   },
   {
+    to: 'comptes-antigravity',
+    group: 'agents',
+    labelKey: 'settings.section.antigravityAccounts',
+    descriptionKey: 'settings.section.antigravityAccounts.description',
+    icon: <IdCard size={16} />,
+  },
+  {
     to: 'secrets',
     group: 'administration',
     labelKey: 'settings.section.secrets',

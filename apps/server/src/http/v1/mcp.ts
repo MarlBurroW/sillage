@@ -77,7 +77,7 @@ class McpSession {
       this.closed = true
       for (const [id, waiting] of this.pending) {
         clearTimeout(waiting.timer)
-        waiting.resolve({ jsonrpc: '2.0', id, error: { code: -32000, message: `Le serveur MCP s'est arrêté (code ${code ?? 'inconnu'}).` } })
+        waiting.resolve({ jsonrpc: '2.0', id, error: { code: -32000, message: `MCP server stopped (code ${code ?? 'unknown'}).` } })
       }
       this.pending.clear()
       onExit(this)
@@ -101,7 +101,7 @@ class McpSession {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(key)
-        resolve({ jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'Le serveur MCP n’a pas répondu à temps.' } })
+        resolve({ jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'MCP server did not respond in time.' } })
       }, REPLY_TIMEOUT_MS)
       this.pending.set(key, { resolve, timer })
       this.child.stdin!.write(line)

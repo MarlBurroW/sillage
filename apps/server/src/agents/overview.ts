@@ -33,32 +33,32 @@ interface Row {
 /** Readable ages avoid model subtraction of absolute timestamps. */
 function ago(ts: number, now: number): string {
   const minutes = Math.max(0, Math.round((now - ts) / 60_000))
-  if (minutes < 1) return "à l'instant"
-  if (minutes < 60) return `il y a ${minutes} min`
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
   const hours = Math.round(minutes / 60)
-  return hours < 24 ? `il y a ${hours} h` : `il y a ${Math.round(hours / 24)} j`
+  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`
 }
 
 /** Rounded work size: scale matters rather than exact counts. */
 function size(tokens: number): string {
-  if (tokens < 1000) return 'quelques échanges'
-  return `~${Math.round(tokens / 1000)} k jetons`
+  if (tokens < 1000) return 'a few exchanges'
+  return `~${Math.round(tokens / 1000)} k tokens`
 }
 
 function describe(row: Row, now: number): string {
   const working = row.status === 'running' || row.background > 0 || row.loops > 0
   const state = working
     ? row.status === 'running'
-      ? 'en cours'
-      : `travail de fond en cours`
+      ? 'running'
+      : `background work running`
     : row.status === 'awaiting_input'
-      ? 'attend une réponse'
+      ? 'awaiting a reply'
       : row.status === 'interrupted'
-        ? 'interrompue'
-        : 'terminée'
+        ? 'interrupted'
+        : 'finished'
 
-  const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
-  return `- ${row.title} | ${sessionReference(row.id)}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, ouverte ${ago(row.createdAt, now)}, dernier échange ${ago(row.updatedAt, now)}`
+  const where = row.worktree ? `worktree ${row.worktree}` : 'project root'
+  return `- ${row.title} | ${sessionReference(row.id)}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, opened ${ago(row.createdAt, now)}, last exchange ${ago(row.updatedAt, now)}`
 }
 
 /** Current card and preceding sessions working on it. Unlike neighboring activity, this explains the requested work; agents resuming a fourth session otherwise would miss three previous sessions. */
@@ -79,18 +79,18 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 
   const previous = before?.total ?? 0
   const lines = [
-    `Cette conversation traite la carte #${card.number} « ${card.title} », ${COLUMN_WORDS[card.column]}.`,
+    `This conversation handles card #${card.number} “${card.title}”, ${COLUMN_WORDS[card.column]}.`,
   ]
 
   if (previous > 0) {
     lines.push(
-      `${previous} autre(s) session(s) ont déjà travaillé dessus : ce n'est pas un sujet neuf.`,
+      `${previous} other session(s) have already worked on it: this is not a new topic.`,
     )
   }
 
   if (input.sillageMcp) {
     lines.push(
-      `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. \`move_card\` la passe en « à vérifier » quand ton travail est prêt à relire ; « terminé » et « abandonné » restent à l'utilisateur, sauf s'il te le demande.`,
+      `Call \`read_card\` with number ${card.number} for its full description, local attachment paths to inspect with your reading tools, notes from previous sessions, and cards referring to it. Before finishing, use \`add_card_note\` to leave the next session information it cannot rediscover itself. Use \`move_card\` to move it to review when your work is ready; done and abandoned are for the user unless they ask you to set them.`,
     )
   }
 
@@ -99,11 +99,11 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 
 /** Readable column names: stored values are identifiers. */
 const COLUMN_WORDS: Record<string, string> = {
-  todo: 'à faire',
-  in_progress: 'en cours',
-  review: 'à vérifier',
-  done: 'marquée terminée',
-  abandoned: 'marquée abandonnée',
+  todo: 'to do',
+  in_progress: 'in progress',
+  review: 'awaiting review',
+  done: 'marked done',
+  abandoned: 'marked abandoned',
 }
 
 /** Project image reminder while missing or provisional. Navigation images aid recognition but humans forget them; agents can find repository logos. New projects may lack logos, so provisional placeholders keep reminders active until replaced. Permanent images and agents without relevant tools suppress reminders. */
@@ -117,11 +117,11 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
     .get()
 
   if (!image) {
-    return "Ce projet n'a pas d'image dans Sillage, alors que c'est elle qui permet à l'utilisateur de le reconnaître d'un coup d'œil parmi les autres. Sans détourner le travail demandé, par exemple une fois qu'il est fini, donne-lui en une avec `set_project_image`. Cherche d'abord un logo ou une icône dans le dépôt : favicon, `logo.*`, `icon.*`, dossiers `public`, `assets` ou `static`, image en tête du README. S'il n'y en a pas, dessine un SVG simple qui évoque le projet, ou génère une image si tu as un outil pour ça, et pose-la avec `provisional: true` : les sessions suivantes sauront qu'elle attend un vrai logo."
+    return "This project has no image in Sillage, which helps the user recognize it at a glance. Without distracting from the requested work, for example after finishing it, set one with `set_project_image`. First look for a logo or icon in the repository: favicon, `logo.*`, `icon.*`, `public`, `assets` or `static` folders, or the README header. If none exists, draw a simple SVG representing the project, or generate an image if you have a suitable tool, and set `provisional: true` so later sessions know it awaits a real logo."
   }
 
   if (image.provisional) {
-    return "L'image de ce projet dans Sillage est provisoire : elle a été posée faute de logo. Dès que le projet en a un vrai, et en particulier si c'est toi qui le crées ou l'ajoutes, remplace-la avec `set_project_image`."
+    return "This project's image in Sillage is provisional because no logo was available. Once the project has a real logo, particularly if you create or add it, replace the image with `set_project_image`."
   }
 
   return null
@@ -136,8 +136,8 @@ function forgeMarkerReminder(db: Db, input: OverviewInput): string | null {
     .where(eq(scheduledTasks.projectId, input.projectId))
     .all()
   if (hooks.length === 0) return null
-  const names = hooks.map((hook) => `« ${hook.name} »${hook.enabled ? '' : ' (en pause)'}`).join(', ')
-  return `Ce projet a des automatisations déclenchées par webhook (${names}). Ce que tu publies sur une forge pour lui (issue, pull request, commentaire, revue) se termine par ${sessionMarker(input.conversationId)}, et tes messages de commit par le trailer \`${sessionTrailer(input.conversationId)}\` : c'est ce qui permet à Sillage de reconnaître ton travail et d'empêcher des agents de se relancer en chaîne. Ne pose jamais un label et n'écris jamais une commande qui déclenche l'une d'elles, sauf si l'utilisateur te le demande.`
+  const names = hooks.map((hook) => `“${hook.name}”${hook.enabled ? '' : ' (paused)'}`).join(', ')
+  return `This project has webhook-triggered automations (${names}). End anything you publish on its forge (issue, pull request, comment, review) with ${sessionMarker(input.conversationId)}, and commit messages with the trailer \`${sessionTrailer(input.conversationId)}\`: Sillage uses these to recognize your work and prevent agents from triggering each other in a loop. Never apply a label or post a command that triggers an automation unless the user asks you to.`
 }
 
 /** A session-specific instruction reaches every CLI through the same startup context. */
@@ -149,9 +149,9 @@ function sessionTitleReminder(db: Db, input: OverviewInput): string | null {
     .get()
   if (!current || current.user) return null
   if (current.agent) {
-    return `Titre de cette session : ${JSON.stringify(current.title)}. Conserve-le tant que le sujet principal ne change pas. Si la demande change réellement de sujet, ajuste-le avec \`rename_session\` du serveur \`sillage\`, en 3 à 6 mots dans la langue de l'utilisateur (${MAX_SESSION_TITLE_CHARS} caractères maximum).`
+    return `This session's title is ${JSON.stringify(current.title)}. Keep it unless the main topic changes. If the request genuinely changes topic, update it with the \`sillage\` server's \`rename_session\` tool, using 3 to 6 words in the user's language (${MAX_SESSION_TITLE_CHARS} characters maximum).`
   }
-  return `Dès que tu as compris la demande, appelle \`rename_session\` du serveur \`sillage\` pour donner à cette session un titre court et parlant : vise 3 à 6 mots, ${MAX_SESSION_TITLE_CHARS} caractères maximum, dans la langue de l'utilisateur. Nomme le sujet concret, par exemple « Refonte de la sidebar » ou « Corriger la connexion », plutôt que recopier sa phrase ou annoncer un état d'avancement. Ce titre aide l'utilisateur à retrouver le fil ; fais-le sans lui demander de confirmer et sans interrompre le travail demandé. Ne le change ensuite que si le sujet principal change.`
+  return `Once you understand the request, call the \`sillage\` server's \`rename_session\` tool to give this session a short, descriptive title: aim for 3 to 6 words, at most ${MAX_SESSION_TITLE_CHARS} characters, in the user's language. Name the concrete topic, for example “Sidebar redesign” or “Fix login”, rather than copying their sentence or announcing progress. The title helps the user find the conversation; set it without asking for confirmation or interrupting the requested work. Change it later only if the main topic changes.`
 }
 
 /** Null when empty: repeated empty overviews teach models to ignore them, making future relevant content unnoticed. */
@@ -159,7 +159,7 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
   // Cards before images: requested work precedes suggestions.
   const referenceReminder = input.sillageMcp
-    ? 'Pour citer une session dans tes réponses, écris session:<id> avec son identifiant Sillage exact : l’interface en fait un lien avec son titre et ses détails. read_conversation accepte cet identifiant ou cette référence pour consulter le fil, archives comprises. Une mention seule ne demande pas d’envoyer un message à un autre agent.'
+    ? 'To cite a session in your replies, write session:<id> using its exact Sillage identifier: the interface turns it into a link with its title and details. read_conversation accepts this identifier or reference to read the thread, including archives. A mention alone is not a request to message another agent.'
     : null
   const briefing = [referenceReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
@@ -207,19 +207,19 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
 
   const parts = briefing ? [briefing] : []
   parts.push(
-    `Autres sessions Sillage sur ce projet, ${working.length > 0 ? `dont ${working.length} en cours` : 'aucune en cours'} :`,
+    `Other Sillage sessions in this project, ${working.length > 0 ? `${working.length} currently working` : 'none currently working'}:`,
     rows.map((row) => describe(row, now)).join('\n'),
   )
 
   if (working.length > 0) {
     parts.push(
-      "Une session en cours travaille peut-être dans le même arbre : avant de défaire une modification que tu n'as pas faite, regarde d'où elle vient.",
+      "An active session may be working in the same tree: before undoing a change you did not make, check where it came from.",
     )
   }
 
   if (input.sillageMcp) {
     parts.push(
-      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `send_session_message` pour prévenir l\'une d\'elles ou lui poser une question quand ça ne peut pas attendre l\'utilisateur, `notify_when_done` pour être relancé quand elle aura fini plutôt que de la surveiller, `broadcast_session_message` avant un geste qui touche toutes celles qui travaillent, `list_cards` et `read_card` pour le travail que ce projet s\'est donné, `create_card` pour y noter ce qui sort de ton sujet, `start_session` pour confier un travail à une nouvelle session quand l\'utilisateur le demande, `list_worktrees` et `create_worktree` pour travailler dans un arbre à l\'écart des autres plutôt que par `git worktree add`, que Sillage ne verrait pas, `schedule_task` pour planifier un travail récurrent ou différé qui survit à cette session, `create_automation` pour lancer une session à chaque appel d\'un webhook (une issue étiquetée, une CI en échec), `list_actions` et `register_action` pour les boutons du projet qui lancent d\'un clic un serveur, des tests ou un script.',
+      'The `sillage` server tools provide further context: `search_history` and `read_conversation` for earlier decisions, `list_sessions` and `find_file_edits` for current work by others, `send_session_message` to alert or ask another session when it cannot wait for the user, `notify_when_done` to resume when it finishes instead of polling, `broadcast_session_message` before an action affecting all working sessions, `list_cards` and `read_card` for planned project work, `create_card` to record work outside your scope, `start_session` to delegate work to a new session when the user asks, `list_worktrees` and `create_worktree` to work separately from others instead of using `git worktree add`, which Sillage would not track, `schedule_task` to schedule recurring or deferred work that survives this session, `create_automation` to start a session on webhook calls (a labeled issue or failed CI), and `list_actions` and `register_action` for project buttons that launch a server, tests or a script.',
     )
   }
 

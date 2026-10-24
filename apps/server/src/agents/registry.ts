@@ -1,3 +1,4 @@
+import { AntigravityAdapter } from './antigravity/adapter.js'
 import type {
   AgentCapabilities,
   AgentConfig,
@@ -52,12 +53,12 @@ export interface AgentAdapter {
   /** Forks persisted native sessions at cut points and returns resumable branch IDs. No runner required because the CLI already persisted data. */
   fork(target: ForkTarget, cut: unknown): Promise<string>
   /** `/api/agents/:agent/models` payload read from installed CLIs. */
-  models(): Promise<AgentModelsDto>
+  models(credential?: string): Promise<AgentModelsDto>
   usage(force: boolean): Promise<AgentUsage>
   /** Same catalog read for additional accounts. `credential` identifies accounts to CLIs: Claude tokens (`ClaudeAccountStore`), Codex `CODEX_HOME` (`CodexAccountHomes`). Optional for CLIs without additional accounts. */
   usageForAccount?(accountId: string, credential: string, force: boolean): Promise<AgentUsage>
   /** Recognized slash commands in directories without running sessions, serving drafts. Unsupported CLIs return empty lists; `force` bypasses caches for refresh buttons. */
-  commands(cwd: string, force: boolean): Promise<ProjectCommandsDto>
+  commands(cwd: string, force: boolean, credential?: string): Promise<ProjectCommandsDto>
   /** Replaces `CLI_DEFAULT` with actual CLI announcements. Unreachable catalogs leave sentinels so CLIs apply their own startup defaults correctly. */
   resolveDefaults(config: AgentConfig): Promise<AgentConfig>
   /** File effects reconstructed from native tool payloads. */
@@ -96,5 +97,6 @@ export function createAgentRegistry(config: Config): AgentRegistry {
     new CodexAdapter(config),
     new OpencodeAdapter(config),
     new GrokAdapter(config),
+    new AntigravityAdapter(config),
   ])
 }

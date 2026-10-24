@@ -12,11 +12,14 @@ import type { AgentKind } from './events.js'
 export interface AgentCapabilities {
   /** Steer the current turn without interrupting it or opening another. */
   steer: boolean
+  /** Manually summarize the current native context. */
+  compact: boolean
+  /** Reconcile turns performed outside Sillage after an initial import. */
+  resyncSessions: boolean
   /** The CLI submits plans for approval before execution (`plan.review_requested`). */
   planReview: boolean
   /**
-   * The CLI persists local sessions in a format Sillage can read: import CLI-started sessions
-   * and resynchronize the journal after using the CLI directly.
+   * Import local sessions originally started outside Sillage.
    */
   cliSessions: boolean
   /**
@@ -36,6 +39,8 @@ export interface AgentCapabilities {
 export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
   claude: {
     steer: true,
+    compact: true,
+    resyncSessions: true,
     planReview: true,
     cliSessions: true,
     stopBackgroundTask: true,
@@ -43,6 +48,8 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
   },
   codex: {
     steer: true,
+    compact: true,
+    resyncSessions: false,
     planReview: false,
     cliSessions: false,
     stopBackgroundTask: false,
@@ -53,8 +60,20 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
   // is a selectable agent; it submits nothing for approval.
   opencode: {
     steer: true,
+    compact: true,
+    resyncSessions: false,
     planReview: false,
     cliSessions: false,
+    stopBackgroundTask: false,
+    draftCommands: true,
+  },
+  // Google ACP supports native import, but neither live steering nor manual compaction.
+  antigravity: {
+    steer: false,
+    compact: false,
+    resyncSessions: false,
+    planReview: false,
+    cliSessions: true,
     stopBackgroundTask: false,
     draftCommands: true,
   },
@@ -63,6 +82,8 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
   // slash commands arrive with `initialize`, without opening a session.
   grok: {
     steer: true,
+    compact: true,
+    resyncSessions: false,
     planReview: true,
     cliSessions: false,
     stopBackgroundTask: false,

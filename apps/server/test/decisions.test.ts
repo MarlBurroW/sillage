@@ -121,7 +121,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
     expires_in_hours: 48,
   })
   assert.equal(asked.isError, false, asked.result ?? '')
-  assert.match(asked.result ?? '', /Ne l'attends pas/)
+  assert.match(asked.result ?? '', /Do not wait/)
   const row = db.select().from(decisions).get()!
   assert.deepEqual(JSON.parse(row.options), ['Yes', 'No'], 'Duplicate options are merged')
   assert.ok(row.expiresAt <= Date.now() + 12 * 3_600_000 + 1000, 'Capped by the source maximum')
@@ -142,7 +142,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   assert.equal(answered.status, 'answered')
   assert.equal(answered.answer?.byName, 'Nico')
   assert.equal(sent.at(-1)!.to, TASK_SESSION)
-  assert.match(sent.at(-1)!.text, /Réponse : « Yes »\nPrécision : But tag a release first\.\nRépondu par Nico\./)
+  assert.match(sent.at(-1)!.text, /Answer: “Yes”\nDetails: But tag a release first\.\nAnswered by Nico\./)
   assert.ok(db.select().from(decisions).get()!.deliveredAt)
   await assert.rejects(service.answer('owner', row.id, { option: 'No', text: '' }), /no longer pending/)
 
@@ -152,7 +152,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   db.update(decisions).set({ expiresAt: Date.now() - 1 }).where(eq(decisions.id, second.id)).run()
   await service.tick()
   assert.equal(db.select().from(decisions).where(eq(decisions.id, second.id)).get()!.status, 'expired')
-  assert.match(sent.at(-1)!.text, /expiré sans réponse[\s\S]*« No »/)
+  assert.match(sent.at(-1)!.text, /expired without a reply[\s\S]*“No”/)
   assert.equal(service.get('owner', second.id).answer?.option, 'No')
 
   // Agent withdrawal and withdrawal when sessions are archived.
@@ -174,7 +174,7 @@ test('decisions: offered only to allowed autonomous sessions, one at a time, ans
   assert.equal(board.source.label, 'Issue #42')
   assert.equal(board.source.cardNumber, 7)
   await service.answer('owner', board.id, { option: 'No', text: '' })
-  assert.match(db.select().from(cardNotes).where(eq(cardNotes.cardId, 'card')).all().at(-1)!.body, /Décision : Label it as a duplicate\?\n→ « No »/)
+  assert.match(db.select().from(cardNotes).where(eq(cardNotes.cardId, 'card')).all().at(-1)!.body, /Decision: Label it as a duplicate\?\n→ « No »/)
 })
 
 test('decision routes: only the owner sees and answers', async (t) => {

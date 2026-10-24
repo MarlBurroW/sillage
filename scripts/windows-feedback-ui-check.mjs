@@ -82,15 +82,15 @@ try {
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
   await page.getByText(/Codex n'est pas installé/).waitFor()
   await page.getByText(/Grok Build n'est pas installé/).waitFor()
-  assert.equal(await page.locator('input[name="draft-agent"]').count(), 4, 'claude, codex, opencode (coupé), grok proposés')
+  assert.equal(await page.locator('input[name="draft-agent"]').count(), 5, 'All five CLIs are offered')
   await page.screenshot({ path: '/tmp/sillage-wf-install-rows.png', fullPage: true })
   await page.getByRole('button', { name: 'Ne plus proposer' }).first().click()
   await page.getByText(/Codex n'est pas installé/).waitFor({ state: 'detached' })
   await page.getByText(/Masqués tant qu’ils ne sont pas installés : Codex\./).waitFor()
-  assert.equal(await page.locator('input[name="draft-agent"]').count(), 3, 'codex retiré du choix')
+  assert.equal(await page.locator('input[name="draft-agent"]').count(), 4, 'Codex is hidden')
   await page.getByRole('button', { name: 'Ne plus proposer' }).first().click()
   await page.getByText(/Masqués tant qu’ils ne sont pas installés : Codex, Grok Build\./).waitFor()
-  assert.equal(await page.locator('input[name="draft-agent"]').count(), 2, 'claude et opencode coupé')
+  assert.equal(await page.locator('input[name="draft-agent"]').count(), 3, 'Claude, OpenCode and Antigravity remain')
   // Hiding belongs to the account and survives reload.
   await page.reload()
   await page.getByText(/Masqués tant qu’ils ne sont pas installés : Codex, Grok Build\./).waitFor()
@@ -99,7 +99,7 @@ try {
   await page.screenshot({ path: '/tmp/sillage-wf-install-hidden.png', fullPage: true })
   await page.getByRole('button', { name: 'Afficher', exact: true }).click()
   await page.getByText(/Codex n'est pas installé/).waitFor()
-  assert.equal(await page.locator('input[name="draft-agent"]').count(), 4)
+  assert.equal(await page.locator('input[name="draft-agent"]').count(), 5)
 
   // 2. Installation progress: inject “running” into probe response because real
   //    installation takes several minutes.
@@ -131,6 +131,9 @@ try {
   await page.screenshot({ path: '/tmp/sillage-wf-context-conversation.png' })
   await page.keyboard.press('Escape')
   await page.getByRole('menuitem', { name: 'Renommer' }).waitFor({ state: 'detached' })
+  // Project context menus belong to the all-projects navigation.
+  await page.getByRole('button', { name: 'Changer de projet', exact: true }).click()
+  await page.getByRole('button', { name: 'Tous les projets', exact: true }).click()
   // `force`: alone, the project is not draggable and dnd-kit sets aria-disabled on
   // its header, which Playwright considers inactive.
   await page.getByRole('link', { name: 'Nimbus', exact: true }).first().click({ button: 'right', force: true })

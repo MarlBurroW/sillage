@@ -975,7 +975,8 @@ export class CodexRunner implements AgentRunner {
     this.startedItems.delete(item.id)
     if (this.completedItems.size > 4096) this.completedItems.delete(this.completedItems.values().next().value!)
     for (const event of completedItem(item, this.ctx.cwd, this.durations.stop(item.id), parent)) {
-      this.ctx.emit(event, raw)
+      // The native completion already retains the full payload, including large images/output.
+      this.ctx.emit(event, event.type === 'tool.input_updated' ? undefined : raw)
     }
     if (item.type === 'agentMessage') this.asyncQuestions.request(item, raw)
     if (item.type === 'subAgentActivity') this.subAgentActivity(item, parent)

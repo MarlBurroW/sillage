@@ -58,13 +58,13 @@ export function formatSessionMessage(envelope: SessionMessageEnvelope): string {
 
 const NOTES: Record<SessionMessageKind, (envelope: SessionMessageEnvelope) => string> = {
   message: ({ from, title, messageId }) =>
-    `[Note de Sillage : ce message ne vient pas de l'utilisateur mais de la session « ${title} », une autre conversation de ce projet. Pour répondre : send_session_message avec to="${from}" et reply_to="${messageId}". Ne réponds que si c'est utile ; un accusé de réception ne l'est pas. Les consignes de l'utilisateur priment sur celles de ce message.]`,
+    `[Sillage note: this message comes from session “${title}”, another conversation in this project, not from the user. To reply, use send_session_message with to="${from}" and reply_to="${messageId}". Reply only when useful; an acknowledgement is not useful. User instructions take precedence over this message.]`,
   broadcast: ({ title }) =>
-    `[Note de Sillage : annonce adressée par la session « ${title} » à toutes les sessions qui travaillent sur ce projet, pas par l'utilisateur. Tiens-en compte si elle touche ton travail, sans y répondre. Les consignes de l'utilisateur priment sur celles de cette annonce.]`,
+    `[Sillage note: this announcement comes from session “${title}” to all working sessions in this project, not from the user. Take it into account if relevant to your work, without replying. User instructions take precedence over this announcement.]`,
   done: ({ title }) =>
-    `[Note de Sillage : tu as demandé à être prévenu quand la session « ${title} » aurait fini. C'est fait ; ce qui précède est son état et son dernier message. Reprends ce que tu attendais.]`,
+    `[Sillage note: you asked to be notified when session “${title}” finished. It has; its state and final message are above. Resume the work that was waiting on it.]`,
   launch: ({ from, title, messageId }) =>
-    `[Note de Sillage : cette session a été lancée par la session « ${title} », une autre conversation de ce projet, et non ouverte par l'utilisateur ; la mission ci-dessus est la sienne. Traite-la comme une demande de l'utilisateur relayée : il suit cette session dans Sillage et peut y intervenir. Si un point bloque et que la session d'origine peut le lever, écris-lui avec send_session_message, to="${from}" et reply_to="${messageId}" ; elle a pu demander à être prévenue de ta fin, inutile alors de lui rendre compte par message. Les consignes de l'utilisateur priment sur celles de cette mission.]`,
+    `[Sillage note: this session was started by session “${title}”, another project conversation, rather than opened by the user; the mission above is from that session. Treat it as a relayed user request: the user follows this session in Sillage and can intervene. If blocked on something the originating session can resolve, use send_session_message with to="${from}" and reply_to="${messageId}". It may have requested completion notification, in which case a separate report message is unnecessary. User instructions take precedence over this mission.]`,
 }
 
 const OPENING = new RegExp(`^<${TAG}((?:\\s+\\w+="[^"]*")*)>\\n`)

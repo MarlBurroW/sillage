@@ -28,6 +28,15 @@ views and compact previews accept all three. Compact previews stop after 500 cha
 not concatenate an entire large output just to display one line. Raw and structured results remain
 available when opening the tool.
 
+## Codex web calls
+
+Codex 0.163.0's generated app-server schema includes search, open-page and find-in-page actions.
+The initial item can lack its final arguments. Completion refreshes the journal input before
+recording the output, preserving action fields and multiple queries. A null action query cannot
+erase a nonempty item query. Older calls recover these same arguments from the final output when
+available, including after loading an expanded tool body; collapsed rows never fetch extra bodies.
+Structured web results retain the generic JSON view instead of displaying a false “no results”.
+
 ## Counter semantics
 
 - Every style uses the same `+N` / `−N` row counters, including on phones.
@@ -61,3 +70,65 @@ completion/replay, excerpt counts, patches, malformed inputs, bounded work and M
 counters, readable diffs, failed edits, grouping and scroll stability. The Codex, OpenCode and Grok
 UI scripts cover their interactive thread flows. These components are shared by Server and Desktop;
 no authentication or edition-specific behavior changes.
+
+
+## Human descriptions and lifecycle audit (October 23)
+
+The collapsed summary prefers information authored for humans, without another model call:
+
+1. A known per-call description (`Bash`, `Agent`/`Task` input.description).
+2. A human title supplied by the harness, stored separately in `presentation.title`.
+3. A concrete action/target: Codex command analysis, edit paths, search queries, URL, shell
+   command, task subject/ID, skill name, resource URI, hook source or sleep duration.
+4. ACP locations when no more specific target is available. Unknown arguments retain generic/raw
+   details; no description is invented from an arbitrary object or a created resource's body.
+
+All six styles use the same summary provider. Human labels remain prose, targets remain monospace.
+Static connector action labels are distinct from per-call descriptions: a label such as “Search
+issues” must not hide the query in the summary. The actual command/arguments stay accessible in readable and raw details even when a title is shown.
+
+| Source checked | Retained information and lifecycle |
+| --- | --- |
+| Claude Code 2.1.301 / SDK 0.3.301 | Assistant tool_use already contains full arguments; Bash/Agent descriptions survive unchanged. TaskCreate/Update use subject before their long description, task lookup/output/stop show IDs. Read/Edit/Write, NotebookEdit, Glob/Grep, web calls, skills and MCP resource URIs retain their targets. |
+| Codex 0.163.0 app-server schema | Final tool arguments refresh before completion for command, file, web, MCP, dynamic, collaboration and image calls. Open-page completion can refine WebSearch into WebFetch. commandActions describes a single known read/list/search; compound or unknown commands retain the command. appContext.actionName supplies a human MCP label while the summary keeps its query/target. Dynamic calls and hooks remain native, not MCP just because their names include a slash. |
+| OpenCode 1.19.3 live OpenAPI | Running/completed state.title is retained even if input never changes. A later error without a title preserves the latest one. Input fields remain normalized; Skill.name becomes skill. |
+| Grok Build 1.0.62 / ACP schema | Human title and locations are independent updates, not tool identity or model arguments. Late programmatic name/MCP wrapper input can refine the canonical tool name. Partial ACP updates preserve the latest supplied rawInput value; absent/null fields do not erase it. Content/rawOutput received before a status-only completion remain available; repeated completions do not recreate empty calls. |
+
+`presentation` is optional for old journals; input updates may refine `name` and presentation
+without changing call identity, time, parent or grouping. Unknown metadata is never read as an
+input field. Codex's native completion is retained once for synthesized input refreshes, avoiding
+another copy of large output/images in raw journal entries.
+
+### Large bodies and history
+
+The bounded SQLite transport projection now retains notebook paths, task IDs, skills, resource
+URIs, query arrays, edit paths and parsed-command identifiers. Large legacy Codex web outputs
+retain a small query/action preview too, so their row can recover the search without fetching
+the result body. Nested previews keep at most 20
+entries and 512 characters per textual field; they never include partial diffs/content from which
+misleading line counts could be calculated. Complete arguments remain available on expansion.
+The disposable thread projection version is bumped and rebuilt lazily in bounded batches; no
+journal rewrite, database migration or eager fetch of collapsed bodies is introduced.
+
+Previously discarded OpenCode/Grok titles cannot be restored from normalized history alone. New
+events preserve them; old calls keep their argument-based fallback. Codex web calls can recover
+final arguments from their structured result, as described above.
+
+### Audit evidence and limits
+
+Installed versions were checked directly. Codex generated its schema under
+`/var/tmp/sillage-websearch-codex-schema`; OpenCode's `opencode:types:check` launched a disposable
+instance and confirmed current bindings. A disposable server's `/experimental/tool` inventory
+confirmed the actual built-in parameter schemas for the Anthropic/Sonnet model: `skill.name`,
+`task.description`, camelCase file fields, and notably **no Bash description argument** in this
+OpenCode version (its human title must come from tool state). The bounded report is retained at
+`/var/tmp/sillage-tool-audit-opencode-tools.json`. Claude descriptions were checked against installed SDK
+tool types, including the Bash human-description contract. Grok's installed CLI version and ACP
+schema were checked. No new paid model conversation or exhaustive third-party MCP catalogue was
+executed: arbitrary MCP payloads keep generic/raw fallbacks.
+
+Regression checks cover adapter events, schema parsing, live folding/replay, title-only updates,
+late names, status-only completion, body references and persisted projection rebuilds. Browser
+checks cover six styles on desktop/mobile, raw command access behind descriptions, all existing
+scroll/grouping rules and deferred output fetching. The normalized events and renderer are shared
+by Server and Desktop; authentication, permissions and Electron behavior are unchanged.

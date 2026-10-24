@@ -98,16 +98,16 @@ export function memoryAppendixForCodex(dir: string, sillageMcp: boolean): string
   }
   if (!index && !sillageMcp) return null
   if (index.length > MAX_INJECTED_INDEX_CHARS) {
-    index = `${index.slice(0, MAX_INJECTED_INDEX_CHARS)}\n… (index tronqué, la suite est dans ${MEMORY_INDEX_FILE})`
+    index = `${index.slice(0, MAX_INJECTED_INDEX_CHARS)}\n… (index truncated; read the rest in ${MEMORY_INDEX_FILE})`
   }
 
   const parts = [
-    `# Mémoire du projet\n\nNotes que les sessions précédentes, quel que soit leur CLI, ont prises sur ce projet. Elles sont dans \`${dir}\`, une par fichier : lis avec \`cat\` celles qui touchent ta tâche. Une note peut avoir vieilli ; vérifie-la avant de t'appuyer dessus.`,
-    index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'La mémoire est encore vide.',
+    `# Project memory\n\nNotes left by previous sessions across CLIs. They are in \`${dir}\`, one file per note: use \`cat\` to read those relevant to your task. Notes can become outdated; verify them before relying on them.`,
+    index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'Memory is empty.',
   ]
   if (sillageMcp) {
     parts.push(
-      "Pour retenir un fait qui servira aux sessions suivantes et que le dépôt ne dit pas (une préférence de l'utilisateur, une décision, un piège rencontré), écris une note avec `write_memory` du serveur `sillage` : un fichier markdown avec un en-tête `name`, `description` et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. Corrige ou retire une note fausse avec `write_memory` et `delete_memory`. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SILLAGE.md.",
+      "To retain information useful to later sessions that the repository does not provide (a user preference, decision or pitfall), use the `sillage` server's `write_memory` tool: a Markdown file with frontmatter containing `name`, `description` and `type` (`user`, `feedback`, `project` or `reference`), followed by the information. Correct or remove false notes with `write_memory` and `delete_memory`. Rules the user sets for all agents belong in SILLAGE.md instead.",
     )
   }
   return parts.join('\n\n')

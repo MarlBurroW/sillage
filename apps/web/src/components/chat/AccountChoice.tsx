@@ -1,3 +1,4 @@
+import { useAntigravityAccounts } from '../../lib/antigravity-accounts'
 import { IdCard } from 'lucide-react'
 import type { AgentConfig, AgentUsage, UsageWindow } from '@sillage/protocol'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
@@ -44,6 +45,8 @@ export function AccountChoice({
   const t = useTranslate()
   const isClaude = config.agent === 'claude'
   const isCodex = config.agent === 'codex'
+  const isAntigravity = config.agent === 'antigravity'
+  const { data: antigravityList } = useAntigravityAccounts(isAntigravity)
   const isGrok = config.agent === 'grok'
   const { data: claudeList } = useClaudeAccounts(isClaude)
   const { data: codexList } = useCodexAccounts(isCodex)
@@ -74,7 +77,7 @@ export function AccountChoice({
               label: account.label,
               kind: account.authMode === 'apiKey' ? ('apiKey' as const) : ('grok' as const),
             }))
-        : []
+        : isAntigravity ? (antigravityList?.accounts ?? []).filter((account) => account.status === 'ready').map((account) => ({ id: account.id, label: account.label, kind: account.authMode?.startsWith('oauth-') ? ('gauged' as const) : ('apiKey' as const) })) : []
 
   const chosen = config.agent === 'opencode' ? null : config.account
   // CLI login then accounts. Ungauged setup tokens cannot read their plan and API keys have none:
@@ -111,7 +114,7 @@ export function AccountChoice({
       label={t('draft.account.legend')}
       value={chosen ?? CLI_ACCOUNT}
       options={options}
-      onChange={(value) => onChange({ ...config, account: value === CLI_ACCOUNT ? null : value })}
+      onChange={(value) => onChange({ ...config, account: value === CLI_ACCOUNT ? null : value, ...(config.agent === 'antigravity' ? { model: '', reasoningEffort: '' } : {}) })}
     />
   )
 }

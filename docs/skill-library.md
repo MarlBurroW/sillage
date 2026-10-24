@@ -79,6 +79,18 @@ with opencode 1.18.25, added after the batches shipped.
 - `GROK_CLAUDE_SKILLS_ENABLED=0` prevents additionally reading `~/.claude/skills`.
   Repository `.grok/skills` and `.agents/skills` directories remain readable.
 
+**Google Antigravity, native skill directories.** Implemented against ACP 1.4.3.
+
+- Global and project library skills are copied into each session's private
+  `GEMINI_HOME/config/skills`, including supporting files. Symlinks to the shared
+  library would resolve outside the native allowed home and fail file-tool reads.
+- Native `config/skills`, project `.gemini/skills`, `antigravity-cli/skills` and
+  project `.agents/skills` remain available in their native precedence order.
+- The composer uses the skill inventory and passes an explicitly selected skill as
+  embedded Markdown context. Description-based discovery remains native.
+- Changes restart the ACP process before the next turn, resuming its history.
+  There is no native live skill-reload RPC.
+
 ## Model
 
 ### On disk

@@ -22,6 +22,7 @@ const PERMISSION_SUGGESTIONS: PermissionOption[] = [
 
 /** Permission request details shown beyond tool names. */
 export interface PermissionDetails {
+  suggestions?: PermissionOption[]
   toolName: string
   input: unknown
   /** CLI-provided labels when available, otherwise null. */
@@ -75,7 +76,7 @@ export class PendingInteractions {
       title: details.title ?? null,
       description: details.description ?? null,
       displayName: details.displayName ?? null,
-      suggestions: PERMISSION_SUGGESTIONS,
+      suggestions: details.suggestions ?? PERMISSION_SUGGESTIONS,
     })
     return requestId
   }

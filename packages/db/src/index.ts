@@ -12,6 +12,12 @@ export type Db = BetterSQLite3Database<typeof schema>
 export type SqliteHandle = InstanceType<typeof Database>
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
+/** Copy another CLI's SQLite history consistently, including committed WAL pages. */
+export async function backupSqlite(source: string, destination: string): Promise<void> {
+  const sqlite = new Database(source, { readonly: true, fileMustExist: true })
+  try { await sqlite.backup(destination) } finally { sqlite.close() }
+}
+
 /**
  * Write transaction; prefer this to `db.transaction` everywhere.
  *

@@ -845,7 +845,7 @@ export class ClaudeRunner implements AgentRunner {
         },
         (decision) => {
           if (decision === null) {
-            resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
+            resolve({ behavior: 'deny', message: 'Session ended before the reply.' })
           } else if (decision.decision === 'allowed') {
             // One-time approval changes no rules; broader approval returns CLI-proposed updates,
             // only way to stop repeat prompts.
@@ -854,7 +854,7 @@ export class ClaudeRunner implements AgentRunner {
               ...(decision.scope === 'once' ? {} : { updatedPermissions: suggestions }),
             })
           } else {
-            resolve({ behavior: 'deny', message: 'Refusé depuis Sillage.' })
+            resolve({ behavior: 'deny', message: 'Denied from Sillage.' })
           }
         },
       )
@@ -885,13 +885,13 @@ export class ClaudeRunner implements AgentRunner {
         { plan: toPlan(input), followUpOptions: PLAN_FOLLOW_UP_OPTIONS },
         (review) => {
           if (review === null) {
-            resolve({ behavior: 'deny', message: 'Session terminée avant la réponse.' })
+            resolve({ behavior: 'deny', message: 'Session ended before the reply.' })
             return
           }
           if (review.decision === 'rejected') {
             resolve({
               behavior: 'deny',
-              message: "Plan refusé : continue à planifier sans rien exécuter.",
+              message: "Plan rejected: continue planning without executing anything.",
             })
             return
           }

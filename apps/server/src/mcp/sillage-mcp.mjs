@@ -41,11 +41,11 @@ const EDIT_ROW_LIMIT = 40
 
 /** Readable board column labels. Stored values (`todo`, `in_progress`) are identifiers, not language: raw values would force models to infer that `review` means awaiting human review rather than an agent actively reviewing. */
 const COLUMN_LABELS = {
-  todo: 'à faire',
-  in_progress: 'en cours',
-  review: 'à vérifier',
-  done: 'terminé',
-  abandoned: 'abandonné',
+  todo: 'to do',
+  in_progress: 'in progress',
+  review: 'awaiting review',
+  done: 'done',
+  abandoned: 'abandoned',
 }
 
 /** Beyond this limit, boards cost more context than guidance. Report truncation. */
@@ -145,7 +145,7 @@ const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
 if (!DB_PATH) {
-  log('SILLAGE_MCP_DB est requis')
+  log('SILLAGE_MCP_DB is required')
   process.exit(1)
 }
 
@@ -158,14 +158,14 @@ function resolveUser() {
   if (USER_NAME) {
     const row = db.prepare(`SELECT ${columns} FROM users WHERE username = ?`).get(USER_NAME)
     if (!row) {
-      log(`aucun compte « ${USER_NAME} » (SILLAGE_MCP_USER)`)
+      log(`no account “${USER_NAME}” (SILLAGE_MCP_USER)`)
       process.exit(1)
     }
     return row
   }
   const rows = db.prepare(`SELECT ${columns} FROM users ORDER BY created_at LIMIT 2`).all()
   if (rows.length !== 1) {
-    log(rows.length === 0 ? 'aucun compte dans la base' : 'plusieurs comptes : SILLAGE_MCP_USER doit en nommer un')
+    log(rows.length === 0 ? 'no account in the database' : 'multiple accounts: SILLAGE_MCP_USER must select one')
     process.exit(1)
   }
   return rows[0]
@@ -187,10 +187,10 @@ const TOOLS = [
     name: 'rename_session',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
-      "Donne un titre court et parlant à ta propre session, pour la retrouver dans la sidebar. Fais-le dès que tu comprends la demande : vise 3 à 6 mots dans la langue de l'utilisateur, centrés sur le sujet concret (par exemple « Refonte de la sidebar »), sans préambule ni état d'avancement. Ne le change ensuite que si le sujet principal change. Un titre choisi manuellement par l'utilisateur reste prioritaire : si Sillage le conserve, ne réessaie pas. Cet outil ne peut pas renommer une autre session.",
+      "Give your own session a short, descriptive title for the sidebar. Do this once you understand the request: use 3 to 6 words in the user's language, naming the concrete topic (for example “Sidebar redesign”), without a preamble or progress report. Change it only if the main topic changes. A title manually chosen by the user takes priority: if Sillage preserves it, do not retry. Cannot rename another session.",
     inputSchema: {
       type: 'object',
-      properties: { title: { type: 'string', minLength: 1, maxLength: MAX_SESSION_TITLE_CHARS, description: `Titre sur une ligne, ${MAX_SESSION_TITLE_CHARS} caractères au plus.` } },
+      properties: { title: { type: 'string', minLength: 1, maxLength: MAX_SESSION_TITLE_CHARS, description: `Single-line title, at most ${MAX_SESSION_TITLE_CHARS} characters.` } },
       required: ['title'],
       additionalProperties: false,
     },
@@ -198,17 +198,17 @@ const TOOLS = [
   {
     name: 'search_history',
     description:
-      "Cherche dans les conversations passées de ce projet sur Sillage, celles menées avec ce CLI comme avec les autres. Rend une liste de conversations avec un extrait, pas leur contenu : utiliser read_conversation ensuite pour en lire une. Appelle cet outil avant de conclure qu'un sujet est neuf, quand une décision semble avoir déjà été prise, quand un bug ressemble à du déjà-vu, ou quand l'utilisateur fait référence à un travail antérieur.",
+      "Search past Sillage conversations in this project across CLIs. Returns conversations with excerpts, not their full contents; use read_conversation to read one. Call before concluding that a topic is new, when a decision may already exist, a bug seems familiar, or the user refers to earlier work.",
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Mots à chercher. Recherche plein texte sur le corps des messages.',
+          description: 'Words to search for. Full-text search over message bodies.',
         },
         limit: {
           type: 'integer',
-          description: 'Nombre maximum de conversations rendues. 10 par défaut, 50 au plus.',
+          description: 'Maximum conversations returned. Defaults to 10, at most 50.',
         },
       },
       required: ['query'],
@@ -217,15 +217,15 @@ const TOOLS = [
   {
     name: 'read_conversation',
     description:
-      "Lit le fil d'une conversation passée de ce projet, identifiée par le `id` rendu par search_history. Rend les messages de l'utilisateur et de l'agent, sans les appels d'outils. D'un fil trop long pour tenir d'un coup, rend la demande initiale et la fin, en annonçant combien de messages ont été élidés et comment les lire.",
+      "Read a past conversation in this project using the `id` returned by search_history. Returns user and agent messages without tool calls. For a thread too long to fit, returns the initial request and the end, stating how many messages were omitted and how to read them.",
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Identifiant Sillage ou référence session:<id> rendue par search_history ou list_sessions, archives comprises.' },
+        id: { type: 'string', description: 'Sillage identifier or session:<id> reference returned by search_history or list_sessions, including archived sessions.' },
         before: {
           type: 'integer',
           description:
-            "Remonte dans le fil : rend la tranche qui précède ce numéro de message, tel qu'annoncé par un appel précédent. Omettre pour lire la demande et la fin.",
+            "Read earlier messages: returns the slice before this message number, as reported by a previous call. Omit to read the initial request and the end.",
         },
       },
       required: ['id'],
@@ -234,14 +234,14 @@ const TOOLS = [
   {
     name: 'list_sessions',
     description:
-      "Liste les conversations de ce projet qui travaillent en ce moment, et celles qui ont travaillé récemment, avec leur worktree, la branche où il se trouve et son nombre de fichiers modifiés. Appelle cet outil avant d'ouvrir un chantier, pour vérifier qu'une autre session n'est pas déjà dessus, et avant toute manipulation de l'arbre de travail git : une autre conversation peut l'avoir laissé sur sa propre branche.",
+      "List conversations in this project that are working now or worked recently, with their worktree, branch and modified file count. Call before starting work to check whether another session is already handling it, and before manipulating the Git working tree: another conversation may have left it on its own branch.",
     inputSchema: {
       type: 'object',
       properties: {
         within_minutes: {
           type: 'integer',
           description:
-            "Fenêtre de « récemment », en minutes. 15 par défaut. Élargir à 1440 pour voir le travail de la journée. Les conversations qui travaillent en ce moment sont rendues quelle que soit la fenêtre.",
+            "Recent activity window in minutes. Defaults to 15. Use 1440 for the day's work. Currently working conversations are returned regardless of this window.",
         },
       },
     },
@@ -249,19 +249,19 @@ const TOOLS = [
   {
     name: 'find_file_edits',
     description:
-      "Dit quelle autre session a modifié un fichier, et ce qu'elle fait maintenant. Appelle cet outil quand tu trouves dans l'arbre de travail des modifications que tu n'as pas faites, avant de les annuler, de les contourner ou d'abandonner le tour : elles viennent souvent d'une session qui travaille en ce moment sur le même arbre, et la réponse dit si elle est encore active. Sans `path`, rend les fichiers récemment modifiés par les autres sessions du même arbre.",
+      "Find which other session edited a file and what it is doing now. Call when you find changes you did not make, before reverting or working around them or abandoning your turn: they often come from a session working in the same tree, and the result says whether it is still active. Without `path`, returns files recently edited by other sessions in the same tree.",
     inputSchema: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
           description:
-            "Chemin du fichier, relatif au répertoire de travail. À défaut de correspondance exacte, un fichier de même nom ailleurs est rendu, avec son chemin réel. Omettre pour voir tous les fichiers récemment modifiés.",
+            "File path relative to the working directory. If no exact match exists, returns a same-named file elsewhere with its actual path. Omit to see all recently edited files.",
         },
         within_minutes: {
           type: 'integer',
           description:
-            "Fenêtre de recherche, en minutes. 120 par défaut. Élargir si la réponse est vide alors qu'une modification inexpliquée est bien là : les éditions restent dans le journal indéfiniment, mais celles d'hier n'expliquent en général plus l'état de l'arbre.",
+            "Search window in minutes. Defaults to 120. Expand if unexplained changes exist but the result is empty: edits remain in the journal indefinitely, but yesterday's edits usually no longer explain the working tree.",
         },
       },
     },
@@ -269,7 +269,7 @@ const TOOLS = [
   {
     name: 'list_cards',
     description:
-      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
+      "List this project's board: cards representing work to do, in progress, awaiting review or done. A card survives the conversations working on it and can have several. Call before starting a new topic to check for an existing card, and when the user cites a card number (`#12`). Returns a summary per card; use read_card for full descriptions.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -277,7 +277,7 @@ const TOOLS = [
           type: 'string',
           enum: ['todo', 'in_progress', 'review', 'done', 'abandoned'],
           description:
-            "Ne rendre que cette colonne. Omettre pour tout le board, terminé et abandonné compris.",
+            "Return only this column. Omit for the whole board, including done and abandoned cards.",
         },
       },
     },
@@ -285,13 +285,13 @@ const TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée et les cartes qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, et les sessions passées disent ce qui a déjà été tenté. Pour changer sa colonne, move_card.",
+      "Read a project card in full: description, attachments with local paths, column, sessions that worked on it and referring cards. Call before starting work on an assigned or cited card: its description states expectations, and previous sessions show what has been tried. Use move_card to change its column.",
     inputSchema: {
       type: 'object',
       properties: {
         number: {
           type: 'integer',
-          description: "Numéro de la carte, tel qu'il s'écrit après le `#`.",
+          description: "Card number, as written after `#`.",
         },
       },
       required: ['number'],
@@ -300,20 +300,20 @@ const TOOLS = [
   {
     name: 'add_card_note',
     description:
-      "Ajoute une note au fil de n’importe quelle carte de ce projet, sans rattachement obligatoire. Sert à laisser aux sessions suivantes ce qu'elles ne pourront pas redécouvrir seules : ce qui a été fait et où en est le travail, ce qui a été essayé sans marcher et pourquoi, une décision prise en route, une contrainte trouvée dans le code. Appelle cet outil en fin de travail, et avant toute interruption longue. N'y recopie pas ce que le dépôt dit déjà, ni ce que `git log` raconte : une note utile est celle qui aurait fait gagner du temps si on l'avait lue au début. Les notes s'ajoutent et ne s'effacent pas ; pour modifier le titre ou la description, utilise update_card.",
+      "Add a note to any card in this project; attachment to the card is not required. Leave later sessions information they cannot rediscover: work completed and current state, failed attempts and why, decisions or constraints found in the code. Call when finishing work and before a long interruption. Do not duplicate repository content or `git log`: useful notes save time at the next session's start. Notes are appended, not deleted; use update_card to change the title or description.",
     inputSchema: {
       type: 'object',
       properties: {
-        number: { type: 'integer', description: 'Numéro de la carte du projet. Omis : la carte de cette conversation.' },
+        number: { type: 'integer', description: 'Project card number. Omit for this conversation\'s card.' },
         body: {
           type: 'string',
           description:
-            "Texte de la note, en markdown. Quelques phrases ou une courte liste, pas un rapport : elle sera relue en entier au début de chaque session suivante.",
+            "Note in Markdown. A few sentences or a short list, not a report: later sessions read it in full at startup.",
         },
         github: {
           type: 'boolean',
           description:
-            "Sur une carte qui suit une issue GitHub (read_card le dit) : publier aussi la note en commentaire sur l'issue, visible de tous si le dépôt est public. Sillage y ajoute ta marque de session, invisible, et la signature du board s'il en a une. Par défaut, la note reste locale.",
+            "For a card tracking a GitHub issue (shown by read_card), also publish the note as an issue comment, visible to everyone if the repository is public. Sillage adds your invisible session marker and the board signature if configured. Notes stay local by default.",
         },
       },
       required: ['body'],
@@ -322,22 +322,22 @@ const TOOLS = [
   {
     name: 'move_card',
     description:
-      "Change la colonne de n’importe quelle carte du projet, sans rattachement obligatoire. Fais évoluer les cartes concernées par ton travail, en « à vérifier » (review) quand tu as fini et qu'une personne doit relire. Ne passe une carte en « terminé » ou « abandonné » de toi-même que si l'utilisateur l'a dit : c'est lui qui juge qu'un travail est clos. Une ligne dans l'activité de la carte garde la trace du déplacement. Sur une carte qui suit une issue GitHub, Sillage reporte la colonne sur l'issue (étiquette, fermeture ou réouverture).",
+      "Change the column of any project card; attachment is not required. Move cards affected by your work to review when ready for a person to check. Set done or abandoned only when the user asks: they decide when work is closed. The move is recorded in card activity. For cards tracking a GitHub issue, Sillage synchronizes the column through labels, closing or reopening.",
     inputSchema: {
       type: 'object',
       properties: {
         number: {
           type: 'integer',
-          description: "Numéro de la carte, tel qu'il s'écrit après le `#`. Omis : la carte de cette conversation.",
+          description: "Card number as written after `#`. Omit for this conversation's card.",
         },
         column: {
           type: 'string',
           enum: ['todo', 'in_progress', 'review', 'done', 'abandoned'],
-          description: 'Colonne d’arrivée : todo (à faire), in_progress (en cours), review (à vérifier), done (terminé), abandoned (abandonné).',
+          description: 'Destination column: todo, in_progress, review (awaiting human review), done, abandoned.',
         },
         reason: {
           type: 'string',
-          description: "Pourquoi, en une phrase, ajoutée à la ligne d'activité. Facultatif.",
+          description: "Optional one-sentence reason, added to the activity entry.",
         },
       },
       required: ['column'],
@@ -345,12 +345,12 @@ const TOOLS = [
   },
   ...['link_cards', 'unlink_cards'].map((name) => ({
     name,
-    description: `${name === 'link_cards' ? 'Ajoute' : 'Supprime'} une relation explicite entre deux cartes du projet, sans rattachement obligatoire. Le sens se lit depuis number vers target : blocks = bloque, blocked_by = est bloqué par, related = est lié à, duplicates = est un doublon de, duplicated_by = a pour doublon, parent = contient le sous-ticket, child = est un sous-ticket de, replaces = remplace, replaced_by = est remplacé par. Le lien inverse apparaît automatiquement. Les relations restent locales à Sillage, sans changement de colonne ni synchronisation GitHub. Lis les cartes avant de modifier leurs relations.`,
+    description: `${name === 'link_cards' ? 'Add' : 'Remove'} an explicit relation between two project cards; attachment is not required. Direction runs from number to target: blocks, blocked_by, related, duplicates, duplicated_by, parent (contains target as a sub-ticket), child (is a sub-ticket of target), replaces, replaced_by. The inverse link appears automatically. Relations stay local to Sillage, without column changes or GitHub synchronization. Read cards before changing their relations.`,
     inputSchema: {
       type: 'object',
       properties: {
-        number: { type: 'integer', description: 'Numéro de la carte de départ dans le projet.' },
-        target: { type: 'integer', description: 'Numéro de la carte cible dans le même projet.' },
+        number: { type: 'integer', description: 'Source card number in this project.' },
+        target: { type: 'integer', description: 'Target card number in the same project.' },
         // Must match cardRelationKindSchema in @sillage/protocol.
         kind: { type: 'string', enum: ['blocks', 'blocked_by', 'related', 'duplicates', 'duplicated_by', 'parent', 'child', 'replaces', 'replaced_by'] },
       },
@@ -360,13 +360,13 @@ const TOOLS = [
   {
     name: 'update_card',
     description:
-      "Modifie le titre ou la description de n’importe quelle carte de ce projet, sans rattachement obligatoire. Lis la carte avant de la modifier pour préserver les informations utiles. La description fournie remplace le texte entier ; une chaîne vide l’efface. Sur une carte liée à GitHub, les modifications sont aussi synchronisées sur l’issue. Pour ajouter une note, utilise add_card_note ; pour changer de colonne, move_card.",
+      "Edit the title or description of any card in this project; attachment is not required. Read the card first to preserve useful information. The supplied description replaces the full text; an empty string clears it. Changes to GitHub-linked cards are also synchronized to the issue. Use add_card_note for notes and move_card to change columns.",
     inputSchema: {
       type: 'object',
       properties: {
-        number: { type: 'integer', description: 'Numéro de la carte dans ce projet.' },
-        title: { type: 'string', description: 'Nouveau titre, non vide (200 caractères au plus).' },
-        description: { type: 'string', description: 'Nouvelle description complète en markdown (20 000 caractères au plus).' },
+        number: { type: 'integer', description: 'Card number in this project.' },
+        title: { type: 'string', description: 'New nonempty title (at most 200 characters).' },
+        description: { type: 'string', description: 'New full description in Markdown (at most 20,000 characters).' },
       },
       required: ['number'],
     },
@@ -374,23 +374,23 @@ const TOOLS = [
   {
     name: 'create_card',
     description:
-      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Pour compléter une carte existante, utilise update_card. Pour changer la colonne d'une carte, move_card.",
+      "Create a card in this project's todo column to retain work outside this conversation's scope: a bug, technical debt or a follow-up mentioned by the user. This is the default for discoveries you make yourself; start a session with start_session only when the user asks. Call list_cards first to avoid duplicates. Use update_card to extend an existing card and move_card to change columns.",
     inputSchema: {
       type: 'object',
       properties: {
         title: {
           type: 'string',
-          description: 'Titre court, à la manière d\'un ticket : ce qu\'il faut faire, pas ce qu\'on a vu.',
+          description: 'Short ticket-style title: what needs doing, not what was observed.',
         },
         description: {
           type: 'string',
           description:
-            "Description en markdown, compréhensible sans ce fil : symptôme, fichiers et lignes en cause, comment reproduire, piste de correction si tu en as une. `#12` cite une autre carte.",
+            "Markdown description understandable without this thread: symptoms, relevant files and lines, reproduction steps and a possible fix. Use `#12` to cite another card.",
         },
         github: {
           type: 'boolean',
           description:
-            "Seulement si le board est relié à GitHub (list_cards le dit en tête) : true publie la carte comme issue sur le dépôt, visible de tous s'il est public ; false la garde locale. Omis, le réglage du board décide, et list_cards dit lequel. Ne force true que si l'utilisateur te l'a demandé ; une issue publique se rédige pour des inconnus, sans détail interne.",
+            "Only for boards linked to GitHub (reported by list_cards): true publishes an issue, visible to everyone if the repository is public; false keeps the card local. If omitted, the board setting applies, as shown by list_cards. Force true only at the user's request; write public issues for outsiders, without internal details.",
         },
       },
       required: ['title'],
@@ -399,24 +399,24 @@ const TOOLS = [
   {
     name: 'request_decision',
     description:
-      "Demande une décision à l'utilisateur, sans attendre sa réponse. Réservé aux sessions autonomes (tâche planifiée, automatisation, maintenance du board) dont la source le permet. Sers-t'en quand tes instructions prévoient de demander, ou qu'un choix sort de ce qu'elles couvrent ; pour le reste, décide seul : une session qui demande tout ne sert plus à rien. La demande apparaît dans « À décider » et notifie l'utilisateur. Ensuite, termine ton tour ou continue ce qui n'en dépend pas : la réponse t'arrivera en message. Une seule demande en attente à la fois.",
+      "Request a user decision without waiting for the answer. Only for autonomous sessions (scheduled tasks, automations, board maintenance) whose source allows it. Use when instructed to ask or when a choice exceeds your instructions; otherwise decide yourself. The request appears in Decisions and notifies the user. Then end your turn or continue independent work; the reply arrives as a message. Only one pending request at a time.",
     inputSchema: {
       type: 'object',
       properties: {
-        question: { type: 'string', description: 'La question, courte (300 caractères au plus), compréhensible sans le reste.' },
+        question: { type: 'string', description: 'Short, self-contained question (at most 300 characters).' },
         context: {
           type: 'string',
-          description: "Ce qu'il faut savoir pour trancher, en markdown : ce que tu as trouvé, les liens (PR, issue, fichiers), les conséquences de chaque choix.",
+          description: "Context needed to decide, in Markdown: findings, links (PR, issue, files), and consequences of each choice.",
         },
         options: {
           type: 'array',
           items: { type: 'string' },
-          description: '2 à 6 réponses proposées, courtes. Une réponse libre reste toujours possible.',
+          description: '2 to 6 short suggested answers. A free-text answer is always available.',
         },
-        default: { type: 'string', description: "Le choix appliqué si personne ne répond à temps ; il reprend exactement l'un des `options`." },
+        default: { type: 'string', description: "Choice applied if nobody answers in time; must exactly match one of `options`." },
         expires_in_hours: {
           type: 'number',
-          description: "Délai de réponse en heures ; borné par le maximum réglé pour la source, qui s'applique s'il est omis.",
+          description: "Response deadline in hours, bounded by the source's maximum, which applies when omitted.",
         },
       },
       required: ['question'],
@@ -425,25 +425,25 @@ const TOOLS = [
   {
     name: 'withdraw_decision',
     description:
-      "Retire ta demande de décision en attente, quand elle n'a plus lieu d'être (la situation a changé, tu as trouvé la réponse ailleurs).",
+      "Withdraw your pending decision request when it no longer applies, for example because the situation changed or you found the answer elsewhere.",
     inputSchema: {
       type: 'object',
-      properties: { reason: { type: 'string', description: 'Pourquoi, en une phrase : l’utilisateur la lira dans l’historique.' } },
+      properties: { reason: { type: 'string', description: 'One-sentence reason shown to the user in history.' } },
     },
   },
   {
     name: 'update_issue',
     description:
-      "Ferme ou rouvre l'issue GitHub que suit une carte de ce projet, sans rattachement obligatoire. Fermée comme terminée, la carte passe en « Terminé » ; comme non prévue, en « Abandonné » ; rouverte, en « À faire ». Sillage l'applique sur GitHub dans les secondes qui suivent. Refusé sur une carte locale.",
+      "Close or reopen the GitHub issue tracked by a project card; attachment is not required. Closing as completed moves the card to done, not_planned to abandoned, and reopening to todo. Sillage applies the change on GitHub within seconds. Refused for local cards.",
     inputSchema: {
       type: 'object',
       properties: {
-        number: { type: 'integer', description: 'Numéro de la carte du projet. Omis : la carte de cette conversation.' },
-        state: { type: 'string', enum: ['closed', 'open'], description: 'closed pour fermer, open pour rouvrir.' },
+        number: { type: 'integer', description: 'Project card number. Omit for this conversation\'s card.' },
+        state: { type: 'string', enum: ['closed', 'open'], description: 'closed to close, open to reopen.' },
         reason: {
           type: 'string',
           enum: ['completed', 'not_planned'],
-          description: 'Pour une fermeture : completed (traitée, par défaut) ou not_planned (ne sera pas faite).',
+          description: 'When closing: completed (default) or not_planned.',
         },
       },
       required: ['state'],
@@ -452,81 +452,81 @@ const TOOLS = [
   {
     name: 'list_actions',
     description:
-      "Liste les actions de ce projet : les boutons de l'onglet Actions du panneau Sillage, qui lancent une commande d'un clic (serveur de dev, tests, seed…). Rend pour chacune son identifiant, sa nature, sa commande et si l'utilisateur l'a validée. Appelle-le avant register_action, pour modifier un bouton existant plutôt que d'en créer un doublon.",
+      "List project actions: buttons in Sillage's Actions panel that run a command (development server, tests, seed). Returns each action's ID, kind, command and user approval status. Call before register_action to update an existing button instead of creating a duplicate.",
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'register_action',
     description:
-      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Sillage, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd sillage-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une action créée, ou dont tu changes la commande, la nature ou le dossier, attend que l'utilisateur la valide avant son premier lancement d'un clic. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
+      `Create or update a project action: a button the user runs from Sillage in the worktree of the conversation where they click. Use at their request, or when setting up a command they will reuse: development server, tests, debug script or database seed. Not for one-off commands. Two kinds: \`service\` runs continuously in a sillage-app-* systemd unit, visible on Services and surviving this session; \`task\` finishes in a panel terminal with an exit code. Nothing is written to the repository. New actions, or changes to their command, kind or directory, require user approval before their first one-click launch. Supply \`id\` to update an existing action; only supplied fields change.`,
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: "Identifiant d'une action existante à modifier (voir list_actions). Omettre pour en créer une." },
-        label: { type: 'string', description: `Libellé du bouton, court (${MAX_ACTION_LABEL_CHARS} caractères au plus) : « Serveur de dev », « Tests e2e ».` },
-        kind: { type: 'string', enum: ['task', 'service'], description: '`service` pour ce qui tourne en continu, `task` pour ce qui se termine.' },
+        id: { type: 'string', description: "ID of an existing action to update (see list_actions). Omit to create one." },
+        label: { type: 'string', description: `Short button label (at most ${MAX_ACTION_LABEL_CHARS} characters), such as “Dev server” or “E2E tests”.` },
+        kind: { type: 'string', enum: ['task', 'service'], description: '`service` runs continuously; `task` finishes.' },
         command: {
           type: 'string',
-          description: `Commande shell (${MAX_ACTION_COMMAND_CHARS} caractères au plus), jouée par \`$SHELL -lc\`. Écris-la pour qu'elle marche depuis n'importe quel worktree du projet : pas de chemin absolu vers ce worktree-ci. Un serveur doit écouter sur 127.0.0.1.`,
+          description: `Shell command (at most ${MAX_ACTION_COMMAND_CHARS} characters), run by \`$SHELL -lc\`. It must work from any project worktree: no absolute path to the current one. Servers must listen on 127.0.0.1.`,
         },
-        description: { type: 'string', description: 'Une phrase qui dit ce que fait le bouton, montrée sous son libellé.' },
-        subdir: { type: 'string', description: 'Sous-dossier relatif où lancer la commande (ex. `apps/web`). Omettre pour la racine du worktree.' },
+        description: { type: 'string', description: 'One sentence explaining the button, shown below its label.' },
+        subdir: { type: 'string', description: 'Relative subdirectory to run in (e.g. `apps/web`). Omit for the worktree root.' },
         url: {
           type: 'string',
           description:
-            "Pour un `service` : l'adresse où l'ouvrir, affichée en lien quand il tourne. `{port}` y est remplacé par le port sur lequel il écoute (ex. `http://mon-hote:{port}`). Elle doit être joignable depuis le navigateur de l'utilisateur : pas `localhost` si Sillage tourne sur une autre machine que la sienne ; reprends l'adresse que donnent tes consignes s'il y en a une.",
+            "For a `service`: URL displayed as a link while running. `{port}` is replaced by its listening port (e.g. `http://my-host:{port}`). It must be reachable from the user's browser: do not use localhost when Sillage runs on another machine; use the address in your instructions if provided.",
         },
       },
     },
   },
   {
     name: 'remove_action',
-    description: "Supprime une action du projet, et arrête son service s'il tourne. Seulement à la demande de l'utilisateur, ou pour un bouton que tu as créé et qui n'a plus d'objet.",
+    description: "Delete a project action and stop its service if running. Only at the user's request, or for a button you created that is no longer needed.",
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: "Identifiant de l'action (voir list_actions)." } },
+      properties: { id: { type: 'string', description: "Action ID (see list_actions)." } },
       required: ['id'],
     },
   },
   {
     name: 'run_action',
     description:
-      "Lance une action du projet dans le worktree de cette conversation, comme le ferait un clic de l'utilisateur. Un `service` démarre son unité systemd : la réponse dit s'il tient, ses ports, et comment lire son journal. Une `task` s'ouvre dans un terminal du panneau, sous les yeux de l'utilisateur, mais tu n'en lis pas la sortie : pour exploiter un résultat, exécute plutôt la commande dans ton shell. Une exécution qui tourne encore n'est pas doublée.",
+      "Run a project action in this conversation's worktree, as a user click would. A `service` starts its systemd unit; the result reports whether it stayed up, its ports and how to read logs. A `task` opens in a panel terminal visible to the user, but you cannot read its output: run the command in your shell if you need the result yourself. An already running action is not duplicated.",
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: "Identifiant de l'action (voir list_actions)." } },
+      properties: { id: { type: 'string', description: "Action ID (see list_actions)." } },
       required: ['id'],
     },
   },
   {
     name: 'create_automation',
     description:
-      "Crée une automatisation déclenchée par webhook dans ce projet : chaque appel reçu qui passe ses conditions ouvre une session neuve, que l'utilisateur suit comme les autres. Sert quand l'utilisateur te le demande (« lance un agent quand une issue est étiquetée sillage », « corrige la CI quand elle échoue »). Rend l'adresse et le secret de signature, à brancher chez l'appelant : pour GitHub, avec `gh api repos/OWNER/REPO/hooks`. Les modèles préremplissent conditions, sujet et prompt : `github_issue_label` (issue étiquetée `sillage`), `github_comment_command` (commentaire qui commence par `/sillage`), `github_pr_opened` (relecture de PR), `github_ci_failed` (workflow en échec), `gitlab_generic`. Le prompt cite l'appel par `{{payload.…}}` et `{{headers.…}}`. Une session que tu lances ainsi suit les mêmes limites de chaîne que start_session ; laisse dans ce que tu publies sur la forge la marque que donnent tes consignes. L'utilisateur affine le reste (conditions, script, garde-fous) dans la vue Automatisations.",
+      "Create a webhook-triggered automation in this project: each matching call opens a new session visible to the user. Use when requested, for example to handle labeled issues or failed CI. Returns the URL and signing secret to configure at the caller, using `gh api repos/OWNER/REPO/hooks` for GitHub. Templates prefill conditions, subject and prompt: `github_issue_label` (label `sillage`), `github_comment_command` (comment starting with `/sillage`), `github_pr_opened` (PR review), `github_ci_failed` (failed workflow), `gitlab_generic`. Reference call data with `{{payload.…}}` and `{{headers.…}}`. Launch-chain limits match start_session; include the session marker from your instructions in forge publications. The user adjusts conditions, scripts and safeguards in Automations.",
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: "Nom court de l'automatisation." },
+        name: { type: 'string', description: "Short automation name." },
         template: {
           type: 'string',
           enum: ['github_issue_label', 'github_comment_command', 'github_pr_opened', 'github_ci_failed', 'gitlab_generic'],
-          description: 'Modèle de départ. Omettre pour un webhook générique (donne alors `prompt` et `conditions`).',
+          description: 'Starting template. Omit for a generic webhook and provide `prompt` and `conditions`.',
         },
-        prompt: { type: 'string', description: "Consigne de chaque session, avec des `{{payload.chemin}}`. Facultative avec un modèle, qui en fournit une." },
+        prompt: { type: 'string', description: "Instructions for each session, with `{{payload.path}}` placeholders. Optional with a template, which provides a prompt." },
         conditions: {
           type: 'array',
-          description: "Remplace les conditions du modèle. Chaque règle : `path` (ex. `headers.x-github-event`, `payload.action`, `payload.issue.labels.*.name`), `op` (equals, not_equals, contains, not_contains, in, matches, exists, missing), `value`.",
+          description: "Replace template conditions. Each rule: `path` (e.g. `headers.x-github-event`, `payload.action`, `payload.issue.labels.*.name`), `op` (equals, not_equals, contains, not_contains, in, matches, exists, missing), `value`.",
           items: {
             type: 'object',
             properties: { path: { type: 'string' }, op: { type: 'string' }, value: { type: 'string' } },
             required: ['path', 'op'],
           },
         },
-        match: { type: 'string', enum: ['all', 'any'], description: 'Toutes les conditions (défaut) ou au moins une.' },
-        subject_path: { type: 'string', description: 'Chemin du sujet (ex. `payload.issue.number`) : deux appels en attente sur le même sujet fusionnent.' },
-        verification: { type: 'string', enum: ['github', 'gitlab', 'none'], description: 'Remplace la vérification du modèle.' },
-        agent: { type: 'string', description: 'CLI des sessions : claude, codex, opencode ou grok. Par défaut, le tien.' },
-        model: { type: 'string', description: 'Modèle des sessions (voir list_models).' },
-        effort: { type: 'string', description: "Niveau d'effort des sessions." },
+        match: { type: 'string', enum: ['all', 'any'], description: 'Match all conditions (default) or at least one.' },
+        subject_path: { type: 'string', description: 'Subject path (e.g. `payload.issue.number`): pending calls with the same subject merge.' },
+        verification: { type: 'string', enum: ['github', 'gitlab', 'none'], description: 'Override template verification.' },
+        agent: { type: 'string', description: 'Session CLI: claude, codex, opencode, grok or antigravity. Defaults to yours.' },
+        model: { type: 'string', description: 'Session model (see list_models).' },
+        effort: { type: 'string', description: 'Session effort level.' },
       },
       required: ['name'],
     },
@@ -534,41 +534,41 @@ const TOOLS = [
   {
     name: 'start_session',
     description:
-      "Lance une nouvelle conversation Sillage dans ce projet, que l'utilisateur suit et reprend comme les autres. Sert quand l'utilisateur te demande de confier un travail à une autre session (« lance ça dans une autre session », « lance une session Codex en effort max pour… »), ou de traiter une carte du board à part. Pas pour ce que tu découvres seul sans qu'on te l'ait demandé : crée plutôt une carte avec create_card. Pas non plus pour un travail qui sert ta propre tâche : tes sous-agents sont faits pour ça. La nouvelle session ne connaît rien de ce fil : `prompt` doit se suffire. Elle démarre avec les réglages par défaut du projet pour ce CLI (permissions comprises), modèle et effort en plus si tu les donnes. Rend son identifiant : enchaîne avec notify_when_done si tu dois reprendre quand elle aura fini.",
+      "Start a new Sillage conversation in this project, visible and resumable by the user. Use when the user asks to delegate work to another session, such as a Codex session at maximum effort, or to handle a board card separately. For unsolicited discoveries, use create_card instead. For subtasks supporting your own task, use your subagents instead. The new session has no context from this thread: `prompt` must stand alone. It starts with project defaults for that CLI, including permissions, plus model and effort if supplied. Returns its ID; use notify_when_done if you need to resume when it finishes.",
     inputSchema: {
       type: 'object',
       properties: {
         prompt: {
           type: 'string',
-          description: `La mission, en markdown, ${MAX_LAUNCH_PROMPT_CHARS} caractères au plus. Elle doit se comprendre seule : contexte, fichiers en cause, ce qui est attendu, comment vérifier, et ce qu'il ne faut pas toucher. Ne cite pas « ce dont on parlait » : la session n'a pas ce fil.`,
+          description: `Self-contained mission in Markdown, at most ${MAX_LAUNCH_PROMPT_CHARS} characters: context, relevant files, expectations, verification and what must remain untouched. Do not refer to “what we discussed”: the session cannot see this thread.`,
         },
         title: {
           type: 'string',
-          description: 'Titre de la conversation dans Sillage. Omettre pour le laisser venir de la mission.',
+          description: 'Conversation title in Sillage. Omit to derive it from the mission.',
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode', 'grok'],
-          description: 'CLI de la session. Omettre pour le même que le tien.',
+          enum: ['claude', 'codex', 'opencode', 'grok', 'antigravity'],
+          description: 'Session CLI. Omit to use yours.',
         },
         model: {
           type: 'string',
           description:
-            "Modèle, par sa valeur ou son nom affiché tel que l'utilisateur le dit (« opus », « Astra »). Omettre pour le défaut du projet. list_models donne ce qui existe.",
+            "Model value or display name as named by the user (“opus”, “Astra”). Omit for the project default. Use list_models for available models.",
         },
         effort: {
           type: 'string',
           description:
-            "Niveau d'effort (`low`, `medium`, `high`…, selon le modèle). `max` désigne le niveau de ce nom, ou à défaut le plus haut que le modèle accepte. Omettre pour le défaut du projet.",
+            "Effort level (`low`, `medium`, `high`, etc., depending on the model). `max` uses that level if available, otherwise the highest supported level. Omit for the project default.",
         },
         worktree: {
           type: 'string',
           description:
-            "Où elle travaille. Omettre pour le même arbre que toi. `@root` pour la racine du projet. Sinon le nom d'un worktree existant, ou d'une branche à créer en worktree depuis HEAD (par exemple `fix/titre-tronque`) : à préférer pour un travail sans rapport avec le tien, pour que vos modifications ne se mêlent pas.",
+            "Working location. Omit for your current tree; `@root` for the project root; otherwise an existing worktree name or a branch to create as a worktree from HEAD (e.g. `fix/truncated-title`). Prefer a separate worktree for unrelated work to avoid mixing changes.",
         },
         card: {
           type: 'integer',
-          description: 'Numéro de la carte que la session traite. Elle y est rattachée et passe « en cours » si elle était « à faire ».',
+          description: 'Card number to handle. The session is attached to it; todo cards move to in_progress.',
         },
       },
       required: ['prompt'],
@@ -577,18 +577,18 @@ const TOOLS = [
   {
     name: 'create_worktree',
     description:
-      "Crée un worktree git de ce projet, par Sillage, et y rattache ta session : l'utilisateur la voit avec sa branche et l'état de l'arbre dans la barre latérale, et retrouve l'arbre dans la vue Chantiers, d'où il le nettoie une fois fusionné. C'est la façon de travailler à l'écart de l'arbre principal : n'utilise pas `git worktree add` toi-même, Sillage ne saurait ni que l'arbre existe ni que tu y travailles. Ton répertoire de travail ne change pas : tu travailles dans l'arbre par chemins absolus, que la réponse te donne. Appelle list_worktrees avant, pour reprendre un arbre qui existe plutôt que d'en créer un second. Pour confier un travail à une nouvelle session dans un arbre à part, préfère start_session avec `worktree`.",
+      "Create a Git worktree through Sillage and attach your session to it. The user sees its branch and state in the sidebar and can clean it up after merging from Worktrees. Use this to work separately from the main tree; do not run `git worktree add` yourself, as Sillage would not track the tree or your work in it. Your working directory does not change: use the absolute paths returned. Call list_worktrees first to reuse an existing tree. To delegate work to a new session in a separate tree, prefer start_session with `worktree`.",
     inputSchema: {
       type: 'object',
       properties: {
         branch: {
           type: 'string',
           description:
-            "Nom de la branche, qui nomme aussi l'arbre : lettres, chiffres, . _ - /, par exemple `fix/titre-tronque`. Une branche existante est reprise telle quelle ; un worktree Sillage du même nom est rendu sans être recréé.",
+            "Branch name, also used for the worktree: letters, digits, . _ - /, e.g. `fix/truncated-title`. Existing branches are reused as-is; an existing Sillage worktree with this name is returned without recreation.",
         },
         base: {
           type: 'string',
-          description: "D'où part une branche neuve. Omettre pour la branche par défaut du projet (celle que désigne origin/HEAD, sinon main).",
+          description: "Starting point for a new branch. Omit for the project's default branch (origin/HEAD, otherwise main).",
         },
       },
       required: ['branch'],
@@ -597,67 +597,67 @@ const TOOLS = [
   {
     name: 'list_worktrees',
     description:
-      "Liste les worktrees de ce projet, y compris ceux créés hors de Sillage, avec leur état par rapport à la branche par défaut (non commité, à fusionner, fusionné, introuvable) et les sessions qui y travaillent. Sert avant create_worktree, pour reprendre un arbre existant, et pour savoir si un chantier est déjà fusionné.",
+      "List project worktrees, including those created outside Sillage, with their state relative to the default branch (uncommitted, awaiting merge, merged, missing) and sessions working in them. Use before create_worktree to reuse a tree and check whether work is already merged.",
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'schedule_task',
     description:
-      "Crée une tâche planifiée dans ce projet : Sillage rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet, avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne exactement une cadence parmi `every_minutes`, `cron` et `at`.",
+      "Create a scheduled project task: Sillage replays `prompt` at the requested cadence in a fresh session, even with no open sessions and after restarts. This durable scheduler works across CLIs; session-specific loops (`/loop`, `CronCreate`) die with their session. Use only when the user requests recurring or deferred work: each run consumes quota. Runs are unattended, at the project root, with project default permissions for the CLI. They appear under the task rather than in the session list; the user manages them in Scheduling. Supply exactly one of `every_minutes`, `cron` and `at`.",
     inputSchema: {
       type: 'object',
       properties: {
         name: {
           type: 'string',
-          description: 'Nom court de la tâche, tel qu\'il apparaîtra dans la sidebar : « Veille des CLI », « Audit des dépendances ».',
+          description: 'Short task name shown in the sidebar, such as “CLI watch” or “Dependency audit”.',
         },
         prompt: {
           type: 'string',
-          description: `La consigne rejouée à chaque tir, en markdown, ${MAX_SCHEDULE_PROMPT_CHARS} caractères au plus. Elle doit se comprendre seule, la session ne connaissant rien de ce fil : quoi vérifier, où, quoi faire d'une trouvaille (ouvrir une carte, écrire un rapport), et quoi ne pas toucher. Sillage y ajoute la date du tir, la date et le lien du tir précédent et sa dernière réponse ; \`{{date}}\`, \`{{previous_run_date}}\`, \`{{previous_run_url}}\` et \`{{previous_run_summary}}\` les placent où tu veux.`,
+          description: `Instructions replayed at each run, in Markdown, at most ${MAX_SCHEDULE_PROMPT_CHARS} characters. Must stand alone: what to check, where, how to handle findings (card, report), and what to leave untouched. Sillage adds the run date and the previous run's date, link and final answer; use \`{{date}}\`, \`{{previous_run_date}}\`, \`{{previous_run_url}}\` and \`{{previous_run_summary}}\` to place them.`,
         },
         every_minutes: {
           type: 'integer',
-          description: `Intervalle entre deux tirs, en minutes, ${MIN_AGENT_SCHEDULE_MINUTES} au moins. Le premier tir part un intervalle après la création.`,
+          description: `Interval in minutes, at least ${MIN_AGENT_SCHEDULE_MINUTES}. The first run starts one interval after creation.`,
         },
         cron: {
           type: 'string',
           description:
-            "Motif cron à cinq champs (minute heure jour mois jour-de-semaine), lu à l'heure du serveur : `0 9 * * 1` pour chaque lundi à 9 h.",
+            "Five-field cron pattern (minute hour day month weekday), in server time: `0 9 * * 1` for Mondays at 09:00.",
         },
         at: {
           type: 'string',
-          description: 'Date et heure d\'un tir unique, ISO 8601 avec fuseau : `2026-10-12T09:00:00+02:00`.',
+          description: 'Date and time for a single run, ISO 8601 with timezone: `2026-10-12T09:00:00+02:00`.',
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode', 'grok'],
-          description: 'CLI des tirs. Omettre pour le même que le tien.',
+          enum: ['claude', 'codex', 'opencode', 'grok', 'antigravity'],
+          description: 'CLI for runs. Omit to use yours.',
         },
         model: {
           type: 'string',
-          description: 'Modèle, par sa valeur ou son nom affiché. Omettre pour le défaut du projet. list_models donne ce qui existe.',
+          description: 'Model value or display name. Omit for the project default. Use list_models for available models.',
         },
         effort: {
           type: 'string',
-          description: "Niveau d'effort, comme pour start_session. Omettre pour le défaut du projet.",
+          description: 'Effort level, as in start_session. Omit for the project default.',
         },
         max_duration_minutes: {
           type: 'integer',
-          description: `Durée au-delà de laquelle un tir est interrompu. ${DEFAULT_SCHEDULE_DURATION_MINUTES} par défaut.`,
+          description: `Maximum run duration in minutes before interruption. Defaults to ${DEFAULT_SCHEDULE_DURATION_MINUTES}.`,
         },
         overlap: {
           type: 'string',
           enum: ['skip', 'wait'],
           description:
-            'Quand un tir arrive alors que le précédent tourne encore : `skip` le saute (défaut), `wait` le fait partir dès que le précédent a fini.',
+            'If the previous run is still active: `skip` skips this run (default); `wait` starts it once the previous run finishes.',
         },
         check_script: {
           type: 'string',
-          description: `Script de vérification joué par Sillage avant chaque tour, pour ne réveiller le LLM que quand il y a quelque chose à faire (une version publiée, un fichier changé, un test qui casse). Shell par défaut, ou tout langage avec un shebang ; ${MAX_CHECK_SCRIPT_CHARS} caractères au plus. Il tourne à la racine du projet. Code de sortie : 0 lance le tour, ${CHECK_SKIP_EXIT_CODE} l'écarte sans session (la première ligne de sa sortie sert de raison), tout autre code est une erreur et rien n'est lancé. Sa sortie standard est transmise au tour (\`{{check_output}}\` la place dans le prompt). Variables : SILLAGE_STATE_DIR (dossier conservé d'un tir à l'autre, pour comparer avec la dernière fois), SILLAGE_FIRED_AT, SILLAGE_TRIGGER, SILLAGE_PREVIOUS_RUN_AT, SILLAGE_PROJECT_DIR. Le script ne tournera qu'une fois validé par l'utilisateur : dis-le-lui.`,
+          description: `Check script run by Sillage before each turn, waking the LLM only when work is needed (new release, changed file, failing test). Shell by default, or any language with a shebang; at most ${MAX_CHECK_SCRIPT_CHARS} characters. Runs at the project root. Exit 0 starts the turn; ${CHECK_SKIP_EXIT_CODE} skips it without a session (first stdout line gives the reason); any other code fails without starting a session. Stdout is passed to the turn (place it with \`{{check_output}}\`). Variables: SILLAGE_STATE_DIR (persistent across runs for comparisons), SILLAGE_FIRED_AT, SILLAGE_TRIGGER, SILLAGE_PREVIOUS_RUN_AT, SILLAGE_PROJECT_DIR. The script runs only after user approval: tell them.`,
         },
         check_timeout_seconds: {
           type: 'integer',
-          description: `Délai du script de vérification, en secondes. ${DEFAULT_CHECK_TIMEOUT_SECONDS} par défaut.`,
+          description: `Check script timeout in seconds. Defaults to ${DEFAULT_CHECK_TIMEOUT_SECONDS}.`,
         },
       },
       required: ['name', 'prompt'],
@@ -666,14 +666,14 @@ const TOOLS = [
   {
     name: 'list_models',
     description:
-      "Liste les modèles que chaque CLI propose, avec leurs niveaux d'effort, et les réglages par défaut d'une session lancée dans ce projet. Appelle cet outil quand l'utilisateur nomme un modèle pour start_session et que tu n'es pas sûr de sa valeur.",
+      "List models offered by each CLI, their effort levels, and defaults for sessions in this project. Call when the user names a model for start_session and you are unsure of its value.",
     inputSchema: {
       type: 'object',
       properties: {
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode', 'grok'],
-          description: 'Ne rendre que ce CLI. Omettre pour tous.',
+          enum: ['claude', 'codex', 'opencode', 'grok', 'antigravity'],
+          description: 'Return only this CLI. Omit for all.',
         },
       },
     },
@@ -681,19 +681,19 @@ const TOOLS = [
   {
     name: 'set_project_image',
     description:
-      "Pose ou remplace l'image de ce projet dans Sillage, celle qui le fait reconnaître d'un coup d'œil dans la navigation. Elle s'affiche en tout petit, dans un carré : préfère une icône ou un logo sans texte à une bannière. Sources, dans l'ordre : un logo ou une icône déjà dans le dépôt ; à défaut un SVG simple que tu dessines pour évoquer le projet, ou une image générée si tu as un outil pour ça, et dans ces deux cas passe `provisional: true`. Appelle aussi cet outil quand le projet gagne un vrai logo ou en change, pour que l'image suive.",
+      "Set or replace the project image used for recognition in Sillage navigation. It appears in a small square: prefer a text-free icon or logo to a banner. First use an existing repository logo or icon; otherwise draw a simple SVG or generate an image with an available tool, setting `provisional: true` in either case. Also call when the project gains or changes its real logo.",
     inputSchema: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
           description:
-            "Chemin absolu du fichier image : PNG, JPEG, GIF, WebP ou SVG, carré de préférence, 1 Mo au plus. Le fichier est copié, il peut être supprimé ensuite.",
+            "Absolute image path: PNG, JPEG, GIF, WebP or SVG, preferably square, at most 1 MiB. The file is copied and may then be deleted.",
         },
         provisional: {
           type: 'boolean',
           description:
-            "Vrai quand l'image est une solution d'attente, dessinée ou générée faute de logo dans le projet : les sessions suivantes se verront rappeler de la remplacer dès qu'un vrai logo existe. Faux, par défaut, quand c'est le logo du projet.",
+            "True for a temporary image drawn or generated because the project lacks a logo: later sessions are reminded to replace it when a real logo exists. False by default for the project's real logo.",
         },
       },
       required: ['path'],
@@ -702,22 +702,22 @@ const TOOLS = [
   {
     name: 'send_session_message',
     description:
-      "Envoie un message à une autre conversation de ce projet, identifiée par le `id` rendu par list_sessions ou find_file_edits. Sillage le lui remet dans quelques secondes : injecté dans son tour si elle travaille, sinon en la relançant pour qu'elle le lise. Sa réponse, si elle en fait une, te parvient de la même façon. Sert quand la coordination ne peut pas attendre l'utilisateur : prévenir qu'on va toucher à un fichier qu'elle modifie, lui demander de libérer l'arbre ou une branche, lui signaler qu'un travail dont elle dépend est fini, lui poser une question sur un choix qu'elle a fait. Pas pour bavarder ni pour rendre compte : chaque message coûte un tour à son destinataire. Si tu attends une réponse pour continuer, termine ton tour après l'envoi plutôt que d'attendre en boucle ; la réponse te relancera.",
+      "Send a message to another project conversation using an `id` from list_sessions or find_file_edits. Sillage delivers it within seconds, during its turn if working or by resuming it otherwise. Any reply arrives the same way. Use when coordination cannot wait for the user: warn before editing shared files, request release of a tree or branch, announce a dependency is ready, or ask about a decision. Not for chat or reports: each message costs the recipient a turn. If you need a reply to continue, end your turn after sending; the reply resumes you. Do not poll.",
     inputSchema: {
       type: 'object',
       properties: {
         to: {
           type: 'string',
-          description: 'Identifiant de la conversation destinataire, tel que rendu par list_sessions.',
+          description: 'Recipient conversation ID from list_sessions.',
         },
         body: {
           type: 'string',
-          description: `Texte du message, en markdown, ${MAX_PEER_MESSAGE_CHARS} caractères au plus. Il doit se comprendre seul : le destinataire ne connaît ni ton fil ni ce que l'utilisateur t'a demandé.`,
+          description: `Self-contained message in Markdown, at most ${MAX_PEER_MESSAGE_CHARS} characters. The recipient cannot see your thread or the user's request to you.`,
         },
         reply_to: {
           type: 'string',
           description:
-            "Identifiant du message auquel tu réponds, quand c'en est une. Il figure dans le message reçu. Permet à Sillage de borner un échange qui tournerait en rond.",
+            "ID of the message you are replying to, if applicable, included in the received message. Allows Sillage to bound looping exchanges.",
         },
       },
       required: ['to', 'body'],
@@ -726,13 +726,13 @@ const TOOLS = [
   {
     name: 'broadcast_session_message',
     description:
-      "Annonce un message à toutes les autres conversations de ce projet qui travaillent en ce moment, et à elles seules : celles au repos ne sont pas relancées. Sert aux gestes qui touchent tout le monde : redémarrer le service Sillage ou un serveur de dev partagé, changer de branche ou faire un rebase sur l'arbre commun, régénérer des fichiers que d'autres lisent. Les destinataires n'y répondent pas. Pour une question à une session précise, utiliser send_session_message.",
+      "Broadcast to all other currently working conversations in this project only; idle sessions are not resumed. Use for actions affecting everyone: restarting Sillage or a shared development server, changing branches or rebasing a shared tree, or regenerating files others read. Recipients do not reply. Use send_session_message for a question to a specific session.",
     inputSchema: {
       type: 'object',
       properties: {
         body: {
           type: 'string',
-          description: `Texte de l'annonce, ${MAX_PEER_MESSAGE_CHARS} caractères au plus : ce que tu vas faire, quand, et ce que les autres doivent éviter d'ici là.`,
+          description: `Announcement, at most ${MAX_PEER_MESSAGE_CHARS} characters: what you will do, when, and what others should avoid until then.`,
         },
       },
       required: ['body'],
@@ -741,13 +741,13 @@ const TOOLS = [
   {
     name: 'notify_when_done',
     description:
-      "Demande à être prévenu quand une autre conversation de ce projet aura fini de travailler : plus de tour en cours, ni de travail de fond, ni de boucle. Sillage te relance alors avec son état et son dernier message. Sert quand tu dépends de son travail, ou qu'elle occupe un fichier ou l'arbre dont tu as besoin : appelle cet outil puis termine ton tour, au lieu de rappeler list_sessions en boucle. La surveillance expire au bout de 24 heures.",
+      "Request notification when another project conversation finishes working: no active turn, background work or loop. Sillage resumes you with its state and last message. Use when you depend on its work or it occupies a file or tree you need. Then end your turn instead of polling list_sessions. The watch expires after 24 hours.",
     inputSchema: {
       type: 'object',
       properties: {
         session: {
           type: 'string',
-          description: 'Identifiant de la conversation à surveiller, tel que rendu par list_sessions.',
+          description: 'Conversation ID to watch, from list_sessions.',
         },
       },
       required: ['session'],
@@ -756,13 +756,13 @@ const TOOLS = [
   {
     name: 'read_session_messages',
     description:
-      "Relit les messages échangés entre cette conversation et les autres sessions du projet, reçus comme envoyés, avec leur état de remise. Les messages reçus arrivent d'eux-mêmes dans le fil : cet outil sert à les retrouver après une compaction, à voir si un message envoyé a été remis, ou à lire un message que Sillage a retenu sans réveiller la session.",
+      "Read messages exchanged with other project sessions, sent and received, with delivery status. Incoming messages arrive automatically; use this to recover them after compaction, check delivery, or read messages held without waking the session.",
     inputSchema: {
       type: 'object',
       properties: {
         with: {
           type: 'string',
-          description: "Ne rendre que l'échange avec cette conversation. Omettre pour tous.",
+          description: 'Return exchanges with this conversation only. Omit for all.',
         },
       },
     },
@@ -770,7 +770,7 @@ const TOOLS = [
   {
     name: 'read_instructions',
     description:
-      "Lit SILLAGE.md, les consignes que Sillage injecte dans le prompt de chaque session, quel que soit son CLI : la partie de ce projet ou la partie globale. Ce que ton prompt en contient date du démarrage de la session ; lis la version courante avant de la modifier.",
+      "Read SILLAGE.md, the project or global user instructions injected into each session across CLIs. Your prompt contains the version from session startup; read the current version before editing.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -778,7 +778,7 @@ const TOOLS = [
           type: 'string',
           enum: ['project', 'global'],
           description:
-            "`project` (par défaut) pour la partie de ce projet, `global` pour celle qui vaut dans tous les projets. Écrire dans la portée globale est réservé aux comptes administrateurs.",
+            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account.",
         },
       },
     },
@@ -786,21 +786,21 @@ const TOOLS = [
   {
     name: 'edit_instructions',
     description:
-      "Modifie SILLAGE.md comme l'outil d'édition de fichiers : remplace un passage exact par un autre. `old_text` doit apparaître une seule fois, sauf avec `replace_all`. Lis d'abord avec read_instructions. Sert à ajouter, corriger ou retirer une consigne quand l'utilisateur le demande, ou à retenir une consigne durable qu'il te donne (« retiens que… », « à partir de maintenant… ») ; pas pour ce qui ne vaut que pour la tâche en cours. Prend effet aux sessions qui démarrent ensuite.",
+      "Edit SILLAGE.md like a file: replace an exact passage. `old_text` must occur once unless `replace_all` is set. Read with read_instructions first. Use to add, correct or remove instructions at the user's request, or retain durable instructions they give. Do not store task-specific details. Applies to sessions starting afterward.",
     inputSchema: {
       type: 'object',
       properties: {
         old_text: {
           type: 'string',
-          description: "Passage à remplacer, au caractère près, retours à la ligne compris. Vide pour ajouter `new_text` à la fin.",
+          description: 'Exact passage to replace, including newlines. Empty to append `new_text`.',
         },
-        new_text: { type: 'string', description: 'Texte de remplacement, vide pour supprimer le passage.' },
-        replace_all: { type: 'boolean', description: 'Remplacer toutes les occurrences. Faux par défaut.' },
+        new_text: { type: 'string', description: 'Replacement text. Empty to delete the passage.' },
+        replace_all: { type: 'boolean', description: 'Replace every occurrence. Defaults to false.' },
         scope: {
           type: 'string',
           enum: ['project', 'global'],
           description:
-            "`project` (par défaut) pour la partie de ce projet, `global` pour celle qui vaut dans tous les projets. Écrire dans la portée globale est réservé aux comptes administrateurs.",
+            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account.",
         },
       },
       required: ['old_text', 'new_text'],
@@ -809,16 +809,16 @@ const TOOLS = [
   {
     name: 'write_instructions',
     description:
-      "Réécrit entièrement une partie de SILLAGE.md, comme on réécrit un fichier : le contenu donné remplace tout l'existant. Pour une retouche, préfère edit_instructions. Lis d'abord avec read_instructions, pour ne pas effacer ce qui y était.",
+      "Rewrite an entire SILLAGE.md section: supplied content replaces everything in it. Prefer edit_instructions for small changes. Read with read_instructions first to preserve existing information.",
     inputSchema: {
       type: 'object',
       properties: {
-        content: { type: 'string', description: 'Le nouveau contenu entier, en markdown. Vide pour tout effacer.' },
+        content: { type: 'string', description: 'Full new content in Markdown. Empty to clear it.' },
         scope: {
           type: 'string',
           enum: ['project', 'global'],
           description:
-            "`project` (par défaut) pour la partie de ce projet, `global` pour celle qui vaut dans tous les projets. Écrire dans la portée globale est réservé aux comptes administrateurs.",
+            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account.",
         },
       },
       required: ['content'],
@@ -827,21 +827,21 @@ const TOOLS = [
   {
     name: 'read_memory',
     description:
-      "Lit la mémoire de ce projet, les notes que les sessions précédentes, quel que soit leur CLI, ont prises : sans `file`, l'index `MEMORY.md` et la liste des notes ; avec `file`, la note entière. Une note peut avoir vieilli : vérifie-la avant de t'appuyer dessus.",
-    inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Note à lire. Omettre pour l\'index.' } } },
+      "Read project memory left by previous sessions across CLIs. Without `file`, returns the `MEMORY.md` index and note list; with `file`, the full note. Notes can become outdated: verify them before relying on them.",
+    inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Note to read. Omit for the index.' } } },
   },
   {
     name: 'write_memory',
     description:
-      "Écrit une note dans la mémoire de ce projet, comme on écrit un fichier : le contenu remplace la note s'il y en a une. Sert à retenir ce qui servira aux sessions suivantes et que le dépôt ne dit pas : une préférence de l'utilisateur, une décision et sa raison, un piège rencontré, une ressource externe. Une note commence par un en-tête `---` avec `name`, `description` (une ligne, sert à juger de sa pertinence) et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. L'index `MEMORY.md` gagne seul une ligne pour une note nouvelle ; il s'écrit aussi directement. Mets à jour une note existante plutôt que d'en créer une seconde sur le même sujet. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SILLAGE.md.",
+      "Write a project memory note, replacing existing content like a file. Retain useful information the repository does not provide: user preferences, decisions and reasons, pitfalls or external resources. Begin with `---` frontmatter containing `name`, one-line `description` for relevance, and `type` (`user`, `feedback`, `project` or `reference`), followed by the information. New notes are automatically added to `MEMORY.md`, which can also be edited directly. Update an existing note rather than duplicating a topic. Rules the user sets for all agents belong in SILLAGE.md instead.",
     inputSchema: {
       type: 'object',
       properties: {
         file: {
           type: 'string',
-          description: "Nom du fichier, à plat et en `.md` : `MEMORY.md` pour l'index, sinon un nom court en kebab-case (`port-du-serveur-de-dev.md`).",
+          description: 'Flat `.md` filename: `MEMORY.md` for the index, otherwise a short kebab-case name (`dev-server-port.md`).',
         },
-        content: { type: 'string', description: 'Contenu entier de la note, en markdown.' },
+        content: { type: 'string', description: 'Full note content in Markdown.' },
       },
       required: ['file', 'content'],
     },
@@ -849,38 +849,38 @@ const TOOLS = [
   {
     name: 'delete_memory',
     description:
-      "Retire une note de la mémoire de ce projet, et sa ligne de l'index. Pour une note devenue fausse ou sans objet.",
+      "Remove a project memory note and its index entry when it becomes false or irrelevant.",
     inputSchema: { type: 'object', properties: { file: {
           type: 'string',
-          description: "Nom du fichier, à plat et en `.md` : `MEMORY.md` pour l'index, sinon un nom court en kebab-case (`port-du-serveur-de-dev.md`).",
+          description: 'Flat `.md` filename: `MEMORY.md` for the index, otherwise a short kebab-case name (`dev-server-port.md`).',
         }, }, required: ['file'] },
   },
   {
     name: 'count_active_sessions',
     description:
-      "Compte, sur toute l'instance et non plus sur le seul projet, les conversations en train de travailler. Sert à décider s'il est sûr de redémarrer le service Sillage, ce qui tue tous les process CLI en cours, y compris celui de cette conversation. Ne rend que des nombres : ni titres, ni projets, ni contenu.",
+      "Count working conversations across the entire instance, not just this project. Use to assess whether restarting Sillage is safe: restarting kills all running CLI processes, including this conversation's. Returns counts only, without titles, projects or content.",
     inputSchema: { type: 'object', properties: {} },
   },
 ]
 
 /** Global-only tools acting on existing sessions. Sillage sessions use send_session_message and daemon delivery instead. External clients act like interface users: inspect progress, send messages, answer requests, interrupt and wait. */
-const SESSION_PARAM = { type: 'string', description: "Identifiant de la session, tel que list_sessions ou start_session le rendent." }
+const SESSION_PARAM = { type: 'string', description: 'Session ID returned by list_sessions or start_session.' }
 const GLOBAL_ONLY_TOOLS = [
   {
     name: 'read_session',
     description:
-      "Où en est une session : son état, ce qu'elle fait en ce moment, son dernier message, et la sollicitation à laquelle elle attend une réponse s'il y en a une (question, permission, plan, saisie), avec ce qu'il faut pour y répondre par reply_session. Appelle cet outil après start_session ou message_session, et avant de répondre à une session qui « attend une réponse » dans list_sessions.",
+      "Read session progress: state, current activity, last message and any pending request (question, permission, plan, input), with the information needed for reply_session. Call after start_session or message_session, and before replying to a session listed as awaiting input.",
     inputSchema: { type: 'object', properties: { session: SESSION_PARAM }, required: ['session'] },
   },
   {
     name: 'wait_for_session',
     description:
-      "Attend qu'une session finisse son tour ou s'arrête sur une question, puis rend son état comme read_session. Bloque au plus `timeout_seconds` ; au-delà, rend l'état tel quel, la session continue. Sert après start_session ou message_session, pour lire la réponse sans interroger en boucle.",
+      "Wait until a session finishes its turn or pauses for a question, then return its state as read_session does. Blocks up to `timeout_seconds`; on timeout, returns current state while the session continues. Use after start_session or message_session to avoid polling.",
     inputSchema: {
       type: 'object',
       properties: {
         session: SESSION_PARAM,
-        timeout_seconds: { type: 'integer', description: `Attente maximale, en secondes. 60 par défaut, ${MAX_WAIT_SECONDS} au plus.` },
+        timeout_seconds: { type: 'integer', description: `Maximum wait in seconds. Defaults to 60, at most ${MAX_WAIT_SECONDS}.` },
       },
       required: ['session'],
     },
@@ -888,45 +888,45 @@ const GLOBAL_ONLY_TOOLS = [
   {
     name: 'message_session',
     description:
-      "Envoie un message à une session existante, comme si l'utilisateur l'avait tapé dans Sillage : une session au repos reprend avec son contexte, une session qui travaille le reçoit à la fin de son tour. Pour une mission neuve, préfère start_session ; pour corriger le tir pendant un tour, steer_session.",
+      "Send a message to an existing session as if typed by the user in Sillage. An idle session resumes with its context; a working session receives it after its turn. Prefer start_session for a new mission and steer_session for mid-turn corrections.",
     inputSchema: {
       type: 'object',
-      properties: { session: SESSION_PARAM, body: { type: 'string', description: 'Le message, en markdown.' } },
+      properties: { session: SESSION_PARAM, body: { type: 'string', description: 'Message in Markdown.' } },
       required: ['session', 'body'],
     },
   },
   {
     name: 'steer_session',
     description:
-      "Infléchit le tour en cours d'une session : le CLI lit le message tout de suite, au milieu de son travail, sans attendre la fin du tour. Si aucun tour n'est en cours, ou si son CLI ne sait pas faire, le message part comme un message ordinaire.",
+      "Steer a session's current turn: the CLI reads the message immediately during work. If no turn is active or the CLI does not support steering, sends an ordinary message instead.",
     inputSchema: {
       type: 'object',
-      properties: { session: SESSION_PARAM, body: { type: 'string', description: "L'inflexion, courte : ce qu'il faut changer ou arrêter de faire." } },
+      properties: { session: SESSION_PARAM, body: { type: 'string', description: 'Short correction: what to change or stop doing.' } },
       required: ['session', 'body'],
     },
   },
   {
     name: 'interrupt_session',
     description:
-      "Arrête le tour en cours d'une session. Elle garde son contexte : un message_session la fait reprendre. Pour une session qui part dans la mauvaise direction et qu'une inflexion ne suffirait pas à ramener.",
+      "Interrupt a session's current turn. Context is retained; message_session resumes it. Use when a session heads in the wrong direction and steering would not suffice.",
     inputSchema: { type: 'object', properties: { session: SESSION_PARAM }, required: ['session'] },
   },
   {
     name: 'reply_session',
     description:
-      "Répond à ce qu'une session attend, tel que read_session le décrit. Les champs dépendent de la sollicitation : une permission prend `decision` (allowed ou denied) et `scope` (once, session, always) ; une question prend `answers`, un objet { id de question: [réponses] }, ou `status: cancelled` ; un plan prend `decision` (approved ou rejected) et `followUpMode` facultatif ; une saisie prend `action` (accept, decline, cancel) et `content`. Sans `request_id`, répond à la sollicitation ouverte s'il n'y en a qu'une.",
+      "Answer a session's pending request as described by read_session. Fields depend on the request: permission takes `decision` (allowed or denied) and `scope` (once, session, always); question takes `answers`, an object { question ID: [answers] }, or `status: cancelled`; plan takes `decision` (approved or rejected) and optional `followUpMode`; input takes `action` (accept, decline, cancel) and `content`. Without `request_id`, answers the pending request if exactly one exists.",
     inputSchema: {
       type: 'object',
       properties: {
         session: SESSION_PARAM,
-        request_id: { type: 'string', description: 'Identifiant de la sollicitation, rendu par read_session.' },
-        decision: { type: 'string', description: 'Permission : allowed ou denied. Plan : approved ou rejected.' },
-        scope: { type: 'string', enum: ['once', 'session', 'always'], description: "Permission : portée de l'accord, once par défaut." },
-        answers: { type: 'object', description: 'Question : { "<id>": ["réponse"] }, plusieurs réponses si la question le permet.' },
-        status: { type: 'string', enum: ['answered', 'cancelled'], description: 'Question : cancelled pour ne pas répondre.' },
-        followUpMode: { type: 'string', description: "Plan accepté : l'identifiant d'une suite proposée par read_session." },
-        action: { type: 'string', enum: ['accept', 'decline', 'cancel'], description: 'Saisie MCP : accepter avec `content`, ou refuser.' },
-        content: { type: 'object', description: 'Saisie MCP : les valeurs demandées.' },
+        request_id: { type: 'string', description: 'Request ID returned by read_session.' },
+        decision: { type: 'string', description: 'Permission: allowed or denied. Plan: approved or rejected.' },
+        scope: { type: 'string', enum: ['once', 'session', 'always'], description: 'Permission scope, once by default.' },
+        answers: { type: 'object', description: 'Question: { "<id>": ["answer"] }, multiple answers if allowed.' },
+        status: { type: 'string', enum: ['answered', 'cancelled'], description: 'Question: cancelled to decline answering.' },
+        followUpMode: { type: 'string', description: 'Accepted plan: follow-up identifier offered by read_session.' },
+        action: { type: 'string', enum: ['accept', 'decline', 'cancel'], description: 'MCP input: accept with `content`, or decline.' },
+        content: { type: 'object', description: 'MCP input: requested values.' },
       },
       required: ['session'],
     },
@@ -937,7 +937,7 @@ const GLOBAL_ONLY_TOOLS = [
 const LIST_PROJECTS = {
   name: 'list_projects',
   description:
-    "Liste les projets de cette instance Sillage, avec leur dossier, leurs sessions en train de travailler et leur dernière activité. Les autres outils prennent un paramètre `project` : le nom ou l'identifiant rendus ici. Appelle cet outil en premier quand tu ne sais pas sous quel nom Sillage connaît un projet.",
+    "List projects on this Sillage instance, their directories, working sessions and latest activity. Other tools accept `project`: a name or ID returned here. Call first when you do not know a project's Sillage name.",
   inputSchema: { type: 'object', properties: {} },
 }
 
@@ -956,11 +956,11 @@ const PROJECT_OPTIONAL_TOOLS = new Set(['count_active_sessions', 'read_instructi
 
 const PROJECT_PARAM = {
   type: 'string',
-  description: 'Projet visé : son nom ou son identifiant, tels que list_projects les rend.',
+  description: 'Target project name or ID from list_projects.',
 }
 
 /** `card` replaces the current conversation's card, unavailable to external clients. */
-const CARD_PARAM = { type: 'integer', description: 'Numéro de la carte visée, tel que list_cards le donne.' }
+const CARD_PARAM = { type: 'integer', description: 'Target card number from list_cards.' }
 
 function globalTools() {
   return [
@@ -973,17 +973,17 @@ function globalTools() {
         Object.entries(tool.inputSchema.properties ?? {}).map(([key, value]) =>
           // Outside sessions, 'yours' identifies no CLI: the daemon selects Claude.
           key === 'agent' && typeof value.description === 'string'
-            ? [key, { ...value, description: value.description.replace('Omettre pour le même que le tien.', 'Omettre pour Claude.') }]
+            ? [key, { ...value, description: value.description.replace('Omit to use yours.', 'Omit to use Claude.').replace('Defaults to yours.', 'Defaults to Claude.') }]
             : [key, value],
         ),
       )
       return {
         ...tool,
-        description: byCard ? tool.description.replace(/de cette conversation|que traite cette conversation/, 'désignée par `card`') : tool.description,
+        description: byCard ? `${tool.description} Outside a session, select the card with the required card parameter.` : tool.description,
         inputSchema: {
           ...tool.inputSchema,
           properties: {
-            project: optional ? { ...PROJECT_PARAM, description: `${PROJECT_PARAM.description} Omis : ${tool.name === 'count_active_sessions' ? 'toute l\'instance' : 'seulement avec scope global'}.` } : PROJECT_PARAM,
+            project: optional ? { ...PROJECT_PARAM, description: `${PROJECT_PARAM.description} Omit for ${tool.name === 'count_active_sessions' ? 'the whole instance' : 'global scope only'}.` } : PROJECT_PARAM,
             ...(byCard ? { card: CARD_PARAM } : {}),
             ...properties,
           },
@@ -1004,7 +1004,7 @@ function selectProject(name, args) {
       MEMORY_DIR = ''
       return null
     }
-    return { ...text('Le paramètre `project` est requis : le nom ou l\'identifiant d\'un projet, voir list_projects.'), isError: true }
+    return { ...text('The `project` parameter is required: a project name or ID from list_projects.'), isError: true }
   }
   const rows = visibleProjects()
   const lower = wanted.toLowerCase()
@@ -1015,8 +1015,8 @@ function selectProject(name, args) {
     return {
       ...text(
         found.length === 0
-          ? `Aucun projet « ${wanted} ». list_projects donne les noms et identifiants.`
-          : `Plusieurs projets répondent à « ${wanted} » : ${found.map((row) => `${row.name} (${row.id})`).join(', ')}. Précise.`,
+          ? `No project “${wanted}”. Use list_projects for names and IDs.`
+          : `Multiple projects match “${wanted}”: ${found.map((row) => `${row.name} (${row.id})`).join(', ')}. Be more specific.`,
       ),
       isError: true,
     }
@@ -1055,12 +1055,12 @@ function listProjects() {
 }
 
 function renderProjects(rows) {
-  if (rows.length === 0) return 'Aucun projet dans cette instance.'
+  if (rows.length === 0) return 'No projects in this instance.'
   return [
-    `${rows.length} projet(s) :`,
+    `${rows.length} project(s):`,
     ...rows.map(
       (row) =>
-        `- ${row.name} (id ${row.id}) — ${row.path}${row.working ? ` — ${row.working} session(s) en train de travailler` : ''}${row.lastActivity ? ` — dernière activité ${ago(row.lastActivity)}` : ' — aucune conversation'}`,
+        `- ${row.name} (id ${row.id}) — ${row.path}${row.working ? ` — ${row.working} working session(s)` : ''}${row.lastActivity ? ` — latest activity ${ago(row.lastActivity)}` : ' — no conversations'}`,
     ),
   ].join('\n')
 }
@@ -1178,7 +1178,7 @@ function gitState(path, cache) {
     })
     const [head = '', ...files] = out.split('\n').filter(Boolean)
     const branch = head.startsWith('## HEAD (no branch)')
-      ? 'HEAD détachée'
+      ? 'detached HEAD'
       : head.replace(/^## (No commits yet on )?/, '').split('...')[0].split(' ')[0]
     state = { branch, dirty: files.length }
   } catch {
@@ -1347,10 +1347,10 @@ function queryEdits({ path, byName, withinMinutes }) {
        JOIN conversations AS c ON c.id = e.conversation_id
        LEFT JOIN worktrees AS w ON w.id = c.worktree_id
        WHERE ${filters.join(' AND ')}
-       -- Sur les expressions et non sur les alias : la table worktrees a une colonne
-       -- path et la table events une colonne ts, que SQLite préfère aux alias de
-       -- sortie. Le regroupement se faisait alors par conversation seulement, avec des
-       -- comptes cumulés sur tous les fichiers et un chemin pris au hasard dans le lot.
+       -- Group by expressions rather than aliases: worktrees has a path column
+       -- and events has a ts column, which SQLite prefers over output aliases.
+       -- Grouping by aliases used to group only by conversation, accumulating
+       -- counts across files and choosing an arbitrary path from each group.
        GROUP BY e.conversation_id, e.payload ->> '$.path'
        ORDER BY max(e.ts) DESC
        LIMIT ${EDIT_ROW_LIMIT}`,
@@ -1390,61 +1390,61 @@ const asDate = (ts) => new Date(ts).toISOString().slice(0, 10)
 /** Readable age avoids requiring models to subtract absolute timestamps. */
 function ago(ts) {
   const minutes = Math.max(0, Math.round((Date.now() - ts) / 60_000))
-  if (minutes < 1) return "à l'instant"
-  if (minutes < 60) return `il y a ${minutes} min`
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
   const hours = Math.round(minutes / 60)
-  return hours < 24 ? `il y a ${hours} h` : `il y a ${Math.round(hours / 24)} j`
+  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`
 }
 
 const STATUS_LABELS = {
-  running: 'en cours',
-  idle: 'au repos',
-  awaiting_input: 'attend une réponse',
-  interrupted: 'interrompue',
-  error: 'en erreur',
+  running: 'running',
+  idle: 'idle',
+  awaiting_input: 'awaiting a reply',
+  interrupted: 'interrupted',
+  error: 'failed',
 }
 
 /** Conversation activity summarized in one clause combining status and detached work. */
 function describeActivity(row) {
   const parts = [STATUS_LABELS[row.status] ?? row.status]
-  if (row.background > 0) parts.push(`${row.background} travail(aux) de fond`)
-  if (row.loops > 0) parts.push(`${row.loops} boucle(s)`)
+  if (row.background > 0) parts.push(`${row.background} background job(s)`)
+  if (row.loops > 0) parts.push(`${row.loops} loop(s)`)
   return parts.join(', ')
 }
 
 function renderSessions(rows, withinMinutes) {
   if (rows.length === 0) {
-    return `Aucune autre conversation de ce projet n'a travaillé dans les ${withinMinutes} dernières minutes.`
+    return `No other project conversation has worked in the last ${withinMinutes} minutes.`
   }
 
   const cache = new Map()
   const lines = rows.map((row) => {
-    const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
+    const where = row.worktree ? `worktree ${row.worktree}` : 'project root'
     const git = row.path ? gitState(row.path, cache) : null
     const tree = git
-      ? `, branche ${git.branch}${git.dirty > 0 ? `, ${git.dirty} fichier(s) modifié(s)` : ''}`
+      ? `, branch ${git.branch}${git.dirty > 0 ? `, ${git.dirty} modified file(s)` : ''}`
       : ''
     return `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
   })
-  return `${rows.length} conversation(s), fenêtre de ${withinMinutes} min :\n${lines.join('\n')}`
+  return `${rows.length} conversation(s), ${withinMinutes} min window:\n${lines.join('\n')}`
 }
 
-const ACTION_LABELS = { created: 'créé', modified: 'modifié', deleted: 'supprimé' }
+const ACTION_LABELS = { created: 'created', modified: 'modified', deleted: 'deleted' }
 
 /** Lead with a conclusion instead of a table requiring interpretation. Called when uncertain whether to wait or proceed, so explicitly report ongoing work rather than bury it in statuses. */
 function renderFileEdits(rows, { path, withinMinutes, older }) {
   if (rows.length === 0) {
-    const scope = path ? `n'a touché à « ${path} »` : `n'a modifié de fichier`
-    const head = `Aucune autre session de cet arbre de travail ${scope} dans les ${withinMinutes} dernières minutes.`
+    const scope = path ? `touched “${path}”` : 'edited any file'
+    const head = `No other session in this working tree ${scope} in the last ${withinMinutes} minutes.`
     return older === null
-      ? `${head} Rien de plus ancien non plus.`
-      : `${head} La dernière fois remonte à ${ago(older)} : rappeler avec une fenêtre plus large pour la voir.`
+      ? `${head} No older edits either.`
+      : `${head} The latest edit was ${ago(older)}: call again with a wider window to see it.`
   }
 
   const busy = rows.filter((row) => row.status === 'running' || row.background > 0 || row.loops > 0)
   const lead = busy.length > 0
-    ? `Attention, ${busy.length} de ces sessions travaillent encore : attendre peut valoir mieux qu'annuler leurs modifications.`
-    : "Aucune de ces sessions ne travaille plus : leurs modifications sont figées."
+    ? `Warning: ${busy.length} of these sessions are still working; waiting may be preferable to undoing their changes.`
+    : 'None of these sessions is still working: their changes are no longer evolving.'
 
   // Two groupings answer different questions. With paths, each row describes a session
   // that touched the file. Without paths, group by session:
@@ -1453,7 +1453,7 @@ function renderFileEdits(rows, { path, withinMinutes, older }) {
   const lines = path ? renderByFile(rows) : renderBySession(rows)
   const capped =
     rows.length >= EDIT_ROW_LIMIT
-      ? `\n\n[Liste plafonnée à ${EDIT_ROW_LIMIT} couples session-fichier : il peut en manquer.]`
+      ? `\n\n[List capped at ${EDIT_ROW_LIMIT} session/file pairs; some may be missing.]`
       : ''
 
   return `${lead}\n\n${lines.join('\n')}${capped}`
@@ -1461,9 +1461,9 @@ function renderFileEdits(rows, { path, withinMinutes, older }) {
 
 function renderByFile(rows) {
   return rows.map((row) => {
-    const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
-    const times = row.edits > 1 ? ` (${row.edits} fois)` : ''
-    return `- ${row.path} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  par ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
+    const where = row.worktree ? `worktree ${row.worktree}` : 'project root'
+    const times = row.edits > 1 ? ` (${row.edits} times)` : ''
+    return `- ${row.path} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  by ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
   })
 }
 
@@ -1479,7 +1479,7 @@ function renderBySession(rows) {
   }
 
   return [...sessions.values()].map(({ head, files }) => {
-    const where = head.worktree ? `worktree ${head.worktree}` : 'racine du projet'
+    const where = head.worktree ? `worktree ${head.worktree}` : 'project root'
     // Sort by edit count rather than date: heavily edited files carry higher collision
     // risk and belong first.
     const sorted = [...files].sort((a, b) => b.edits - a.edits)
@@ -1487,9 +1487,9 @@ function renderBySession(rows) {
       .slice(0, FILES_PER_SESSION)
       .map((file) => `${file.path}${file.edits > 1 ? ` (${file.edits}×)` : ''}`)
     const rest = sorted.length - shown.length
-    const tail = rest > 0 ? `, et ${rest} autre(s)` : ''
+    const tail = rest > 0 ? `, and ${rest} other(s)` : ''
 
-    return `- ${head.id} (${head.agent}, ${describeActivity(head)}, ${where}), ${ago(head.ts)}\n  ${head.title}\n  ${files.length} fichier(s) : ${shown.join(', ')}${tail}`
+    return `- ${head.id} (${head.agent}, ${describeActivity(head)}, ${where}), ${ago(head.ts)}\n  ${head.title}\n  ${files.length} file(s): ${shown.join(', ')}${tail}`
   })
 }
 
@@ -1535,14 +1535,14 @@ function listActions() {
 
 function renderActions(actions) {
   if (actions.length === 0) {
-    return "Aucune action dans ce projet. register_action en crée une : un bouton que l'utilisateur lance d'un clic."
+    return 'No actions in this project. Use register_action to create a button the user can run with one click.'
   }
   return actions
     .map((action) => {
-      const status = action.approvedAt ? 'validée' : "en attente de validation par l'utilisateur"
-      const where = action.subdir ? ` — dans \`${action.subdir}\`` : ''
+      const status = action.approvedAt ? 'approved' : 'awaiting user approval'
+      const where = action.subdir ? ` — in \`${action.subdir}\`` : ''
       const about = action.description ? `\n  ${action.description}` : ''
-      const link = action.url ? `\n  ouvre ${action.url}` : ''
+      const link = action.url ? `\n  open ${action.url}` : ''
       return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
     })
     .join('\n')
@@ -1587,9 +1587,9 @@ function readCard(number) {
 
   // Labels must match protocol CARD_RELATION_INVERSE.
   const labels = {
-    blocks: ['Bloque', 'Est bloqué par'], related: ['Est lié à', 'Est lié à'],
-    duplicates: ['Est un doublon de', 'A pour doublon'], parent: ['Contient', 'Est un sous-ticket de'],
-    replaces: ['Remplace', 'Est remplacé par'],
+    blocks: ['Blocks', 'Blocked by'], related: ['Related to', 'Related to'],
+    duplicates: ['Duplicates', 'Duplicated by'], parent: ['Contains', 'Child of'],
+    replaces: ['Replaces', 'Replaced by'],
   }
   card.relations = db.prepare(
     `SELECT r.source_id AS sourceId, r.kind, c.number, c.title, c.column
@@ -1634,9 +1634,9 @@ function cardIssue(cardId) {
 function describeBoardLink(link) {
   const where =
     link.newCards === 'github'
-      ? 'les cartes neuves deviennent des issues GitHub, create_card compris sauf `github: false`'
-      : 'les cartes neuves restent locales, sauf `github: true` sur create_card'
-  return `Board relié aux issues de github.com/${link.repo} : une carte marquée « GitHub #n » est une issue, publique si le dépôt l'est ; les autres sont locales. Ici, ${where}.`
+      ? 'new cards become GitHub issues, including create_card unless `github: false`'
+      : 'new cards stay local unless create_card uses `github: true`'
+  return `Board linked to issues at github.com/${link.repo}: a card marked “GitHub #n” is an issue, public if the repository is public; other cards are local. Here, ${where}.`
 }
 
 /** Card handled by the current conversation, if any. */
@@ -1778,7 +1778,7 @@ function saveInstructions(projectId, transform, fixMode) {
     if (typeof result !== 'string') return result
     if (result.length > MAX_INSTRUCTIONS_CHARS) {
       return {
-        error: `SILLAGE.md dépasserait ${MAX_INSTRUCTIONS_CHARS} caractères dans cette portée (${result.length}). Elle entre dans le contexte de chaque session : resserre-la.`,
+        error: `SILLAGE.md would exceed ${MAX_INSTRUCTIONS_CHARS} characters in this scope (${result.length}). It enters every session's context: shorten it.`,
       }
     }
 
@@ -1809,7 +1809,7 @@ function instructionsTarget(args, writing) {
     if (writing && !(USER ? Boolean(USER.admin) : conversationOwnerIsAdmin())) {
       return {
         refusal:
-          "La partie globale de SILLAGE.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et cette conversation n'appartient pas à l'un d'eux. Écris dans la partie du projet (`scope: project`), ou propose à l'utilisateur de faire la modification lui-même.",
+          "Global SILLAGE.md instructions enter every session on this instance. Only administrators can edit them, and this conversation does not belong to one. Use project scope (`scope: project`), or ask the user to make the change themselves.",
       }
     }
     return { scope, projectId: null, fixMode: false }
@@ -1819,13 +1819,13 @@ function instructionsTarget(args, writing) {
   if (mode === 'repo') {
     return {
       refusal:
-        "Ce projet garde ses consignes dans son dépôt, dans `AGENTS.md` ou `CLAUDE.md` : lis-les et modifie-les avec tes outils de fichiers. Les outils SILLAGE.md ne servent pour lui qu'à la partie globale (`scope: global`).",
+        "This project keeps instructions in its repository's `AGENTS.md` or `CLAUDE.md`: read and edit them with your file tools. SILLAGE.md tools apply only to global instructions (`scope: global`).",
     }
   }
   return { scope, projectId: PROJECT_ID, fixMode: !chosen }
 }
 
-const scopeLabel = (scope) => (scope === 'global' ? 'partie globale' : 'partie de ce projet')
+const scopeLabel = (scope) => (scope === 'global' ? 'global section' : 'project section')
 
 /** Memory notes, index first. */
 function memoryFiles() {
@@ -1932,8 +1932,8 @@ function renderCards(rows, column) {
 
   if (shown.length === 0) {
     return column
-      ? `Aucune carte dans la colonne « ${COLUMN_LABELS[column]} » de ce projet.`
-      : "Ce projet n'a aucune carte. Le board est vide, ce qui ne veut pas dire qu'il n'y a rien à faire : tout n'y est pas forcément décrit."
+      ? `No cards in this project's “${COLUMN_LABELS[column]}” column.`
+      : 'This project has no cards. An empty board does not mean there is no work: not everything is necessarily recorded.'
   }
 
   const mine = currentCard()?.number ?? null
@@ -1943,20 +1943,20 @@ function renderCards(rows, column) {
       ? `\n  ${excerpt.length > CARD_EXCERPT_CHARS ? `${excerpt.slice(0, CARD_EXCERPT_CHARS)}...` : excerpt}`
       : ''
     const sessions = row.sessions > 0 ? `, ${row.sessions} session(s)` : ''
-    const self = row.number === mine ? ' <- celle de cette conversation' : ''
+    const self = row.number === mine ? ' <- this conversation\'s card' : ''
     const issue =
       row.issue === null || row.issue === undefined
         ? ''
         : row.detached
-          ? ` (venue de l'issue GitHub #${row.issue}, détachée)`
-          : ` (GitHub #${row.issue}${row.issueAuthor ? ` de @${row.issueAuthor}` : ''})`
+          ? ` (from GitHub issue #${row.issue}, detached)`
+          : ` (GitHub #${row.issue}${row.issueAuthor ? ` by @${row.issueAuthor}` : ''})`
     return `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}${issue}${sessions}${self}${summary}`
   })
 
   const link = boardLink()
-  const head = `${link ? `${describeBoardLink(link)}\n\n` : ''}${shown.length} carte(s)${column ? ` en « ${COLUMN_LABELS[column]} »` : ''} :`
+  const head = `${link ? `${describeBoardLink(link)}\n\n` : ''}${shown.length} card(s)${column ? ` in “${COLUMN_LABELS[column]}”` : ''}:`
   const tail = truncated
-    ? `\n\n${rows.length - CARD_LIMIT} carte(s) de plus ne sont pas rendues. Filtrer par colonne pour voir le reste.`
+    ? `\n\n${rows.length - CARD_LIMIT} additional card(s) omitted. Filter by column to see more.`
     : ''
   return `${head}\n${lines.join('\n')}${tail}`
 }
@@ -1969,28 +1969,28 @@ function renderCard(card) {
   if (card.issue && !card.issue.detached) {
     const labels = JSON.parse(card.issue.labels || '[]')
     parts.push(
-      `Issue GitHub #${card.issue.number} (${card.issue.state === 'open' ? 'ouverte' : 'fermée'}${card.issue.author ? `, par @${card.issue.author}` : ''}${labels.length ? `, labels : ${labels.join(', ')}` : ''}) : ${card.issue.url}\n` +
-        "Le titre, la description et les commentaires sont synchronisés avec GitHub ; update_card modifie le titre ou la description ; les notes « @login » sont des commentaires écrits là-bas. Tes notes restent locales, sauf `github: true` sur add_card_note ; update_issue ferme ou rouvre l'issue.",
+      `GitHub issue #${card.issue.number} (${card.issue.state === 'open' ? 'open' : 'closed'}${card.issue.author ? `, by @${card.issue.author}` : ''}${labels.length ? `, labels: ${labels.join(', ')}` : ''}): ${card.issue.url}\n` +
+        "Title, description and comments synchronize with GitHub; update_card edits the title or description. Notes labeled @login are GitHub comments. Your notes stay local unless add_card_note uses `github: true`; update_issue closes or reopens the issue.",
     )
   } else if (card.issue) {
-    parts.push(`Venue de l'issue GitHub #${card.issue.number} (${card.issue.url}), détachée : la carte est locale, l'issue n'est plus suivie.`)
+    parts.push(`From GitHub issue #${card.issue.number} (${card.issue.url}), detached: the card is local and the issue is no longer tracked.`)
   }
 
-  parts.push(card.description.trim() || '(aucune description)')
+  parts.push(card.description.trim() || '(no description)')
   if (card.attachments.length) {
-    parts.push('Pièces jointes — fichiers locaux consultables avec tes outils de lecture :\n' +
+    parts.push('Attachments — local files to inspect with your reading tools:\n' +
       card.attachments.map((file) => JSON.stringify(file)).join('\n'))
   }
 
   if (card.sessions.length > 0) {
     const lines = card.sessions.map((session) => {
-      const where = session.worktree ? `worktree ${session.worktree}` : 'racine du projet'
-      const self = session.id === CURRENT_CONVERSATION ? ' <- celle-ci' : ''
+      const where = session.worktree ? `worktree ${session.worktree}` : 'project root'
+      const self = session.id === CURRENT_CONVERSATION ? ' <- this session' : ''
       return `- ${session.agent} | ${describeActivity(session)} | ${where} | ${ago(session.updatedAt)}${self}\n  ${session.title}`
     })
-    parts.push(`${card.sessions.length} session(s) sur cette carte :\n${lines.join('\n')}`)
+    parts.push(`${card.sessions.length} session(s) on this card:\n${lines.join('\n')}`)
   } else {
-    parts.push("Aucune session n'a encore travaillé sur cette carte.")
+    parts.push('No session has worked on this card yet.')
   }
 
   const notes = cardNotes(card.id)
@@ -1998,52 +1998,52 @@ function renderCard(card) {
     const lines = notes.map((note) => {
       const published =
         note.publication === 'published'
-          ? ', publiée sur GitHub'
+          ? ', published on GitHub'
           : note.publication === 'pending'
-            ? ', en cours de publication sur GitHub'
+            ? ', publishing on GitHub'
             : note.publication === 'failed'
-              ? ', publication sur GitHub refusée'
+              ? ', GitHub publication refused'
               : ''
       const who = note.githubAuthor
-        ? `@${note.githubAuthor} sur GitHub`
+        ? `@${note.githubAuthor} on GitHub`
         : note.userName
         ? `${note.userName}${published}`
         : note.conversationId === CURRENT_CONVERSATION
-          ? 'cette conversation'
+          ? 'this conversation'
           : `session ${note.agent ?? '?'}${note.conversationTitle ? ` « ${note.conversationTitle} »` : ''}`
       const tail = note.githubAuthor || note.userName ? '' : published
       return `[${who}${tail}, ${ago(note.createdAt)}]\n${note.body}`
     })
-    parts.push(`${notes.length} note(s) laissée(s) sur cette carte :\n\n${lines.join('\n\n')}`)
+    parts.push(`${notes.length} note(s) on this card:\n\n${lines.join('\n\n')}`)
   }
 
   const link = (rows) =>
     rows.map((row) => `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}`).join('\n')
   if (card.relations.length > 0) {
-    parts.push(`Relations (locales à Sillage) :\n${card.relations.map(r => `- ${r.label} #${r.number} « ${r.title} » (${COLUMN_LABELS[r.column]})`).join('\n')}`)
+    parts.push(`Relations (local to Sillage):\n${card.relations.map(r => `- ${r.label} #${r.number} “${r.title}” (${COLUMN_LABELS[r.column]})`).join('\n')}`)
   }
-  if (card.references.length > 0) parts.push(`Cette carte cite :\n${link(card.references)}`)
-  if (card.referencedBy.length > 0) parts.push(`Citée par :\n${link(card.referencedBy)}`)
+  if (card.references.length > 0) parts.push(`This card references:\n${link(card.references)}`)
+  if (card.referencedBy.length > 0) parts.push(`Referenced by:\n${link(card.referencedBy)}`)
 
   return parts.join('\n\n')
 }
 
 const DELIVERY_LABELS = {
-  steer: 'remis dans son tour en cours',
-  queue: 'remis à la fin de son tour',
-  wake: 'remis en la relançant',
-  read: 'lu par read_session_messages',
-  failed: 'remise échouée',
-  discarded: 'écarté par une personne',
-  expired: 'expiré sans être remis',
-  skipped: "pas remis, elle ne travaillait plus",
+  steer: 'delivered during the current turn',
+  queue: 'delivered at the end of the turn',
+  wake: 'delivered by resuming the session',
+  read: 'read through read_session_messages',
+  failed: 'delivery failed',
+  discarded: 'discarded by a person',
+  expired: 'expired without delivery',
+  skipped: 'not delivered; the session had stopped working',
 }
 
-const KIND_LABELS = { message: '', broadcast: 'annonce ', done: 'fin de travail ' }
+const KIND_LABELS = { message: '', broadcast: 'broadcast ', done: 'work completed ' }
 
 function renderPeerMessages(rows) {
   if (rows.length === 0) {
-    return "Aucun message échangé avec les autres sessions de ce projet."
+    return 'No messages exchanged with other project sessions.'
   }
 
   const lines = rows.map((row) => {
@@ -2052,12 +2052,12 @@ function renderPeerMessages(rows) {
     const who = `${other}${row.otherTitle ? ` « ${row.otherTitle} »` : ''}`
     const state = row.deliveredAt === null
       ? outgoing
-        ? 'pas encore remis'
-        : 'retenu, lu à l\'instant'
+        ? 'not delivered yet'
+        : 'held, just read'
       : DELIVERY_LABELS[row.via] ?? row.via
-    const reply = row.replyTo ? `, en réponse à ${row.replyTo}` : ''
+    const reply = row.replyTo ? `, replying to ${row.replyTo}` : ''
     const kind = KIND_LABELS[row.kind] ?? ''
-    return `[${kind}${outgoing ? 'envoyé à' : 'reçu de'} ${who}, ${ago(row.createdAt)}, ${state}${reply}] id ${row.id}\n${row.body}`
+    return `[${kind}${outgoing ? 'sent to' : 'received from'} ${who}, ${ago(row.createdAt)}, ${state}${reply}] id ${row.id}\n${row.body}`
   })
   return lines.join('\n\n')
 }
@@ -2066,21 +2066,21 @@ function renderCount(state) {
   if (state.working === 0) {
     const suffix =
       state.awaiting > 0
-        ? ` ${state.awaiting} attend(ent) une réponse : un redémarrage expirera ces sollicitations.`
+        ? ` ${state.awaiting} awaiting a reply: restarting will expire those requests.`
         : ''
-    return `Aucune conversation ne travaille sur l'instance.${suffix}`
+    return `No conversations are working on this instance.${suffix}`
   }
 
-  const parts = [`${state.working} conversation(s) travaillent sur l'instance`]
-  if (state.here > 0) parts.push(`dont ${state.here} dans ce projet`)
-  if (state.includesSelf) parts.push('dont celle-ci')
-  if (state.oldest !== null) parts.push(`la plus ancienne active depuis ${ago(state.oldest)}`)
+  const parts = [`${state.working} conversation(s) working on this instance`]
+  if (state.here > 0) parts.push(`${state.here} in this project`)
+  if (state.includesSelf) parts.push('including this one')
+  if (state.oldest !== null) parts.push(`oldest active since ${ago(state.oldest)}`)
 
   const awaiting =
     state.awaiting > 0
-      ? ` ${state.awaiting} autre(s) attend(ent) une réponse : un redémarrage expirera ces sollicitations.`
+      ? ` ${state.awaiting} other(s) awaiting a reply: restarting will expire those requests.`
       : ''
-  return `${parts.join(', ')}. Un redémarrage du service les coupe toutes.${awaiting}`
+  return `${parts.join(', ')}. Restarting the service interrupts all of them.${awaiting}`
 }
 
 function clip(text, max) {
@@ -2089,17 +2089,17 @@ function clip(text, max) {
 
 function renderSearch(query, results) {
   if (results.length === 0) {
-    return `Aucune conversation de ce projet ne contient « ${query} ».`
+    return `No conversation in this project contains “${query}”.`
   }
 
   const lines = results.map(
     (row) =>
-      `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | échange du ${asDate(row.ts)}${row.archivedAt !== null ? ' | archivée' : ''} | ${row.title}\n  ${row.excerpt}`,
+      `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | exchange on ${asDate(row.ts)}${row.archivedAt !== null ? ' | archived' : ''} | ${row.title}\n  ${row.excerpt}`,
   )
-  return `${results.length} conversation(s) pour « ${query} » :\n${lines.join('\n')}`
+  return `${results.length} conversation(s) for “${query}”:\n${lines.join('\n')}`
 }
 
-const block = (role, body) => `## ${role === 'user' ? 'Utilisateur' : 'Agent'}\n${body}`
+const block = (role, body) => `## ${role === 'user' ? 'User' : 'Agent'}\n${body}`
 
 /** Fills budgets newest first while retaining chronological order. Return single oversized messages truncated rather than an empty range that leaves callers no recourse. */
 function fillFromEnd(messages, budget) {
@@ -2121,11 +2121,11 @@ function renderThread(found, before) {
   // Say 'opened on' rather than bare dates: search_history dates matching messages,
   // while this date marks conversation creation. Both correct dates otherwise look
   // contradictory without identifying what they measure.
-  const header = `${conversation.title} | ${sessionReference(conversation.id)} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
-  if (messages.length === 0) return `${header}\n\nAucun message dans ce fil.`
+  const header = `${conversation.title} | ${sessionReference(conversation.id)} (${conversation.agent}, opened on ${asDate(conversation.createdAt)})`
+  if (messages.length === 0) return `${header}\n\nNo messages in this thread.`
 
   const scoped = before === null ? messages : messages.filter((message) => message.seq < before)
-  if (scoped.length === 0) return `${header}\n\nAucun message avant ${before} dans ce fil.`
+  if (scoped.length === 0) return `${header}\n\nNo messages before ${before} in this thread.`
 
   // Include the original request only on first reads: callers paging backward already
   // have it, and repeating it consumes the budget for sought content.
@@ -2139,7 +2139,7 @@ function renderThread(found, before) {
   const elided = rest.length - tail.length
   if (elided > 0) {
     parts.push(
-      `[${elided} message(s) élidés. Rappeler read_conversation avec before=${tail[0].seq} pour lire ce qui précède.]`,
+      `[${elided} message(s) omitted. Call read_conversation with before=${tail[0].seq} to read earlier messages.]`,
     )
   }
   for (const message of tail) parts.push(block(message.role, message.body))
@@ -2169,8 +2169,8 @@ async function requestDaemon(kind, payload) {
   return {
     ...text(
       kind === 'start_session'
-        ? "Sillage n'a pas encore fini de lancer la session (le CLI met du temps à démarrer, ou le service ne tourne pas). Ne relance pas la demande : vérifie avec list_sessions dans un moment."
-        : "Sillage n'a pas répondu à temps : le service ne tourne peut-être pas. Réessaie plus tard.",
+        ? 'Sillage has not finished starting the session (the CLI is slow to start, or the service is not running). Do not resubmit: check list_sessions later.'
+        : 'Sillage did not respond in time; the service may not be running. Try again later.',
     ),
     isError: true,
   }
@@ -2252,33 +2252,33 @@ function digestSession(id) {
 /** Open request with everything needed to answer it. */
 function renderPending(pending) {
   const { event } = pending
-  const head = `Elle attend une réponse (${pending.kind}, request_id ${pending.requestId}, ${ago(pending.at)}) :`
+  const head = `Awaiting a reply (${pending.kind}, request_id ${pending.requestId}, ${ago(pending.at)}):`
   if (pending.kind === 'permission') {
-    return `${head}\n  Permission pour l'outil ${event.toolName}${event.input !== undefined ? `, entrée ${clip(JSON.stringify(event.input), 600)}` : ''}.\n  reply_session avec decision allowed ou denied, scope once, session ou always.`
+    return `${head}\n  Permission for tool ${event.toolName}${event.input !== undefined ? `, input ${clip(JSON.stringify(event.input), 600)}` : ''}.\n  Use reply_session with decision allowed or denied, scope once, session or always.`
   }
   if (pending.kind === 'question') {
     const questions = (event.questions ?? []).map((question) => {
       const options = (question.options ?? []).map((option) => `« ${option.label}${option.description ? ` : ${option.description}` : ''} »`).join(', ')
-      return `  - [${question.id}] ${question.question}${options ? ` Options : ${options}.` : ''}${question.multiSelect ? ' Plusieurs réponses possibles.' : ''}${question.allowOther ? ' Réponse libre acceptée.' : ''}`
+      return `  - [${question.id}] ${question.question}${options ? ` Options: ${options}.` : ''}${question.multiSelect ? ' Multiple answers allowed.' : ''}${question.allowOther ? ' Free-text answer allowed.' : ''}`
     })
-    return `${head}\n${questions.join('\n')}\n  reply_session avec answers { "<id>": ["réponse"] }, ou status cancelled.`
+    return `${head}\n${questions.join('\n')}\n  Use reply_session with answers { "<id>": ["answer"] }, or status cancelled.`
   }
   if (pending.kind === 'plan') {
     const follow = (event.followUpOptions ?? []).map((option) => `${option.id} (${option.label})`).join(', ')
-    return `${head}\n  Plan proposé :\n${clip(event.plan ?? '', 4000)}\n  reply_session avec decision approved ou rejected${follow ? `, et followUpMode parmi ${follow}` : ''}.`
+    return `${head}\n  Proposed plan:\n${clip(event.plan ?? '', 4000)}\n  Use reply_session with decision approved or rejected${follow ? `, and followUpMode from ${follow}` : ''}.`
   }
-  return `${head}\n  Saisie demandée : ${event.message ?? ''}${event.requestedSchema ? `\n  Schéma : ${clip(JSON.stringify(event.requestedSchema), 1500)}` : ''}\n  reply_session avec action accept et content, ou action decline.`
+  return `${head}\n  Requested input: ${event.message ?? ''}${event.requestedSchema ? `\n  Schema: ${clip(JSON.stringify(event.requestedSchema), 1500)}` : ''}\n  Use reply_session with action accept and content, or action decline.`
 }
 
 function renderSession(row) {
   const { activity, lastMessage, pending } = digestSession(row.id)
   const lines = [
-    `Session « ${row.title} » (${row.id}), ${row.agent}, ${describeActivity(row)}, ${row.worktree ? `worktree ${row.worktree}` : 'racine du projet'}, dernière activité ${ago(row.updatedAt)}.`,
+    `Session “${row.title}” (${row.id}), ${row.agent}, ${describeActivity(row)}, ${row.worktree ? `worktree ${row.worktree}` : 'project root'}, latest activity ${ago(row.updatedAt)}.`,
   ]
-  if (row.status === 'running' && activity) lines.push(`En train d'appeler l'outil ${activity.name} (depuis ${ago(activity.at)}).`)
+  if (row.status === 'running' && activity) lines.push(`Calling tool ${activity.name} (since ${ago(activity.at)}).`)
   if (pending) lines.push(renderPending(pending))
-  lines.push(lastMessage ? `Dernier message de la session (${ago(lastMessage.at)}) :\n${clip(lastMessage.text, MAX_MESSAGE_CHARS)}` : "Elle n'a encore rien répondu.")
-  if (row.status === 'idle' && !pending) lines.push('Elle est au repos : message_session la fait reprendre, avec son contexte.')
+  lines.push(lastMessage ? `Latest session message (${ago(lastMessage.at)}):\n${clip(lastMessage.text, MAX_MESSAGE_CHARS)}` : 'No reply yet.')
+  if (row.status === 'idle' && !pending) lines.push('Idle: message_session resumes it with its context.')
   return lines.join('\n\n')
 }
 
@@ -2300,13 +2300,13 @@ async function waitForSession(id, timeoutSeconds) {
 }
 
 const NO_CARD =
-  "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Donne le numéro de la carte du projet avec `number`, ou rattache la conversation dans l’interface de Sillage."
+  'This conversation is not attached to a card, so there is no card thread to write to. Supply a project card number with `number`, or attach the conversation in Sillage.'
 function missingTargetCard(args) {
   const number = GLOBAL ? (args?.card ?? args?.number) : args?.number
   if (!GLOBAL && number === undefined) return NO_CARD
-  if (Number.isInteger(number)) return `Aucune carte #${number} dans ce projet. Appelle list_cards pour voir celles qui existent.`
+  if (Number.isInteger(number)) return `No card #${number} in this project. Use list_cards to see available cards.`
   const parameter = GLOBAL && (args?.card != null || args?.number === undefined) ? 'card' : 'number'
-  return `Le paramètre \`${parameter}\` doit être le numéro entier d’une carte de ce projet, voir list_cards.`
+  return `The \`${parameter}\` parameter must be an integer card number in this project; see list_cards.`
 }
 
 async function callTool(name, args) {
@@ -2316,23 +2316,23 @@ async function callTool(name, args) {
 
   if (name === 'read_session' || name === 'wait_for_session') {
     const id = typeof args?.session === 'string' ? args.session.trim() : ''
-    if (!id) return { ...text('Le paramètre `session` est requis.'), isError: true }
+    if (!id) return { ...text('The `session` parameter is required.'), isError: true }
     let row = sessionRow(id)
     if (!row || row.userId !== USER?.id) {
-      return { ...text(`Aucune session « ${id} » à toi dans ce projet. list_sessions donne celles qui existent.`), isError: true }
+      return { ...text(`No session “${id}” belonging to you in this project. Use list_sessions to see available sessions.`), isError: true }
     }
     if (name === 'wait_for_session') {
       const asked = Number.isInteger(args?.timeout_seconds) ? args.timeout_seconds : 60
       const waited = await waitForSession(id, Math.min(Math.max(asked, 1), MAX_WAIT_SECONDS))
       row = waited.row ?? row
-      if (waited.timedOut) return text(`Toujours en cours après ${Math.min(Math.max(asked, 1), MAX_WAIT_SECONDS)} s. ${renderSession(row)}`)
+      if (waited.timedOut) return text(`Still running after ${Math.min(Math.max(asked, 1), MAX_WAIT_SECONDS)} s. ${renderSession(row)}`)
     }
     return text(renderSession(row))
   }
 
   if (name === 'search_history') {
     const query = typeof args?.query === 'string' ? args.query : ''
-    if (!query.trim()) return { ...text('Le paramètre `query` est requis.'), isError: true }
+    if (!query.trim()) return { ...text('The `query` parameter is required.'), isError: true }
 
     const asked = Number.isInteger(args?.limit) ? args.limit : 10
     const limit = Math.min(Math.max(asked, 1), 50)
@@ -2344,7 +2344,7 @@ async function callTool(name, args) {
     const found = id ? readConversation(id) : null
     if (!found) {
       return {
-        ...text(`Aucune conversation « ${id} » dans ce projet.`),
+        ...text(`No conversation “${id}” in this project.`),
         isError: true,
       }
     }
@@ -2388,12 +2388,12 @@ async function callTool(name, args) {
   if (name === 'read_card') {
     const number = Number.isInteger(args?.number) ? args.number : null
     if (number === null) {
-      return { ...text('Le paramètre `number` est requis, et doit être un entier.'), isError: true }
+      return { ...text('The `number` parameter is required and must be an integer.'), isError: true }
     }
     const card = readCard(number)
     if (!card) {
       return {
-        ...text(`Aucune carte #${number} dans ce projet. Appeler list_cards pour voir celles qui existent.`),
+        ...text(`No card #${number} in this project. Use list_cards to see available cards.`),
         isError: true,
       }
     }
@@ -2402,7 +2402,7 @@ async function callTool(name, args) {
 
   if (name === 'add_card_note') {
     const body = typeof args?.body === 'string' ? args.body.trim() : ''
-    if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
+    if (!body) return { ...text('The `body` parameter is required.'), isError: true }
 
     const card = targetCard(args)
     if (!card) return { ...text(missingTargetCard(args)), isError: true }
@@ -2412,25 +2412,25 @@ async function callTool(name, args) {
       const issue = cardIssue(card.id)
       if (!link || !issue || issue.detached) {
         return {
-          ...text(`La carte #${card.number} ne suit aucune issue GitHub : la note ne peut être que locale. Recommence sans \`github\`.`),
+          ...text(`Card #${card.number} does not track a GitHub issue: the note can only be local. Retry without \`github\`.`),
           isError: true,
         }
       }
       addCardNote(card.id, body, true)
       const signed = link.identity === 'ai' && (link.signature ?? '').trim()
       return text(
-        `Note ajoutée à la carte #${card.number} et mise en file pour l'issue GitHub #${issue.number} (${issue.url}) : Sillage la publie dans quelques secondes, avec ta marque de session${signed ? ` et la signature ${JSON.stringify(link.signature.trim())}` : ', sans signature visible'}.`,
+        `Note added to card #${card.number} and queued for GitHub issue #${issue.number} (${issue.url}): Sillage publishes it within seconds with your session marker${signed ? ` and signature ${JSON.stringify(link.signature.trim())}` : ', without a visible signature'}.`,
       )
     }
 
     addCardNote(card.id, body, false)
-    return text(`Note ajoutée à la carte #${card.number} « ${card.title} ».`)
+    return text(`Note added to card #${card.number} “${card.title}”.`)
   }
 
   if (name === 'move_card') {
     const column = typeof args?.column === 'string' && COLUMN_LABELS[args.column] ? args.column : null
     if (!column) {
-      return { ...text('Le paramètre `column` vaut todo, in_progress, review, done ou abandoned.'), isError: true }
+      return { ...text('The `column` parameter must be todo, in_progress, review, done or abandoned.'), isError: true }
     }
     const number = Number.isInteger(args?.number) ? args.number : null
     const target = number !== null ? { number } : GLOBAL ? null : currentCard()
@@ -2438,8 +2438,8 @@ async function callTool(name, args) {
       return {
         ...text(
           GLOBAL
-            ? 'Le paramètre `number` est requis : il désigne la carte à déplacer.'
-            : "Cette conversation n'est rattachée à aucune carte : donne le numéro de celle à déplacer (`number`).",
+            ? 'The `number` parameter is required to select the card to move.'
+            : 'This conversation is not attached to a card: supply its `number` to move one.',
         ),
         isError: true,
       }
@@ -2449,51 +2449,51 @@ async function callTool(name, args) {
       .get(PROJECT_ID, target.number)
     if (!card) {
       return {
-        ...text(`Aucune carte #${target.number} dans ce projet. Appeler list_cards pour voir celles qui existent.`),
+        ...text(`No card #${target.number} in this project. Use list_cards to see available cards.`),
         isError: true,
       }
     }
     if (card.column === column) {
-      return text(`La carte #${card.number} « ${card.title} » est déjà en « ${COLUMN_LABELS[column]} ».`)
+      return text(`Card #${card.number} “${card.title}” is already in “${COLUMN_LABELS[column]}”.`)
     }
     moveCard(card.id, column)
     const reason = typeof args?.reason === 'string' ? args.reason.trim().slice(0, 500) : ''
     addCardNote(
       card.id,
-      `Déplacée de « ${COLUMN_LABELS[card.column]} » vers « ${COLUMN_LABELS[column]} ».${reason ? ` ${reason}` : ''}`,
+      `Moved from “${COLUMN_LABELS[card.column]}” to “${COLUMN_LABELS[column]}”.${reason ? ` ${reason}` : ''}`,
       false,
     )
     const issue = cardIssue(card.id)
     const tracked = issue && !issue.detached && boardLink()
     return text(
-      `Carte #${card.number} « ${card.title} » passée de « ${COLUMN_LABELS[card.column]} » à « ${COLUMN_LABELS[column]} ».` +
-        (tracked ? ` L'issue #${issue.number} suivra sur GitHub dans quelques secondes.` : ''),
+      `Card #${card.number} “${card.title}” moved from “${COLUMN_LABELS[card.column]}” to “${COLUMN_LABELS[column]}”.` +
+        (tracked ? ` Issue #${issue.number} will follow on GitHub within seconds.` : ''),
     )
   }
 
   if (name === 'update_issue') {
     const state = args?.state === 'open' ? 'open' : args?.state === 'closed' ? 'closed' : null
-    if (!state) return { ...text('Le paramètre `state` vaut closed ou open.'), isError: true }
+    if (!state) return { ...text('The `state` parameter must be closed or open.'), isError: true }
     const card = targetCard(args)
     if (!card) return { ...text(missingTargetCard(args)), isError: true }
     const issue = cardIssue(card.id)
     if (!issue || issue.detached || !boardLink()) {
       return {
         ...text(
-          `La carte #${card.number} ne suit aucune issue GitHub : il n'y a rien à fermer ni rouvrir.`,
+          `Card #${card.number} does not track a GitHub issue: there is nothing to close or reopen.`,
         ),
         isError: true,
       }
     }
     const column = state === 'open' ? 'todo' : args?.reason === 'not_planned' ? 'abandoned' : 'done'
     moveCard(card.id, column)
-    const verb = state === 'open' ? 'rouverte' : column === 'abandoned' ? 'fermée comme non prévue' : 'fermée comme terminée'
-    return text(`Carte #${card.number} passée en « ${COLUMN_LABELS[column]} » : l'issue #${issue.number} sera ${verb} sur GitHub dans quelques secondes.`)
+    const verb = state === 'open' ? 'reopened' : column === 'abandoned' ? 'closed as not planned' : 'closed as completed'
+    return text(`Card #${card.number} moved to “${COLUMN_LABELS[column]}”: issue #${issue.number} will be ${verb} on GitHub within seconds.`)
   }
 
   if (name === 'set_project_image') {
     const path = typeof args?.path === 'string' ? args.path.trim() : ''
-    if (!path) return { ...text('Le paramètre `path` est requis.'), isError: true }
+    if (!path) return { ...text('The `path` parameter is required.'), isError: true }
     const provisional = args?.provisional === true
 
     const file = resolve(path)
@@ -2502,24 +2502,24 @@ async function callTool(name, args) {
       // Check size before reading: accidentally referenced videos or archives must
       // not enter memory merely to be rejected.
       const info = statSync(file)
-      if (!info.isFile()) return { ...text(`${file} n'est pas un fichier.`), isError: true }
+      if (!info.isFile()) return { ...text(`${file} is not a file.`), isError: true }
       if (info.size > MAX_PROJECT_IMAGE_BYTES) {
         return {
           ...text(
-            `Image trop lourde (${Math.round(info.size / 1024)} Ko, ${MAX_PROJECT_IMAGE_BYTES / 1024} Ko au plus). Elle s'affiche en quelques dizaines de pixels : réduis-la à 256 pixels de côté et recommence.`,
+            `Image too large (${Math.round(info.size / 1024)} KiB, maximum ${MAX_PROJECT_IMAGE_BYTES / 1024} KiB). It is displayed at a small size: resize to 256 pixels per side and retry.`,
           ),
           isError: true,
         }
       }
       data = readFileSync(file)
     } catch (error) {
-      return { ...text(`Lecture de ${file} impossible : ${error.message}`), isError: true }
+      return { ...text(`Cannot read ${file}: ${error.message}`), isError: true }
     }
 
     const mimeType = sniffProjectImage(data)
     if (!mimeType) {
       return {
-        ...text(`${file} n'est pas une image reconnue. Formats acceptés : PNG, JPEG, GIF, WebP, SVG.`),
+        ...text(`${file} is not a recognized image. Accepted formats: PNG, JPEG, GIF, WebP, SVG.`),
         isError: true,
       }
     }
@@ -2527,8 +2527,8 @@ async function callTool(name, args) {
     setProjectImage(mimeType, data, provisional)
     return text(
       provisional
-        ? "Image du projet posée, marquée provisoire : les sessions suivantes se verront rappeler de la remplacer quand le projet aura un vrai logo."
-        : 'Image du projet mise à jour.',
+        ? 'Project image set as provisional: later sessions will be reminded to replace it when the project has a real logo.'
+        : 'Project image updated.',
     )
   }
 
@@ -2536,99 +2536,99 @@ async function callTool(name, args) {
     const to = typeof args?.to === 'string' ? args.to.trim() : ''
     const body = typeof args?.body === 'string' ? args.body.trim() : ''
     const replyTo = typeof args?.reply_to === 'string' && args.reply_to.trim() ? args.reply_to.trim() : null
-    if (!to || !body) return { ...text('Les paramètres `to` et `body` sont requis.'), isError: true }
+    if (!to || !body) return { ...text('The `to` and `body` parameters are required.'), isError: true }
     if (body.length > MAX_PEER_MESSAGE_CHARS) {
       return {
-        ...text(`Message trop long (${body.length} caractères, ${MAX_PEER_MESSAGE_CHARS} au plus). Résume, ou mets le détail dans un fichier et donne son chemin.`),
+        ...text(`Message too long (${body.length} characters, maximum ${MAX_PEER_MESSAGE_CHARS}). Summarize or put details in a file and provide its path.`),
         isError: true,
       }
     }
     if (!CURRENT_CONVERSATION) {
-      return { ...text("Cette session ne sait pas qui elle est : elle ne peut pas signer un message."), isError: true }
+      return { ...text('This session has no identity and cannot sign a message.'), isError: true }
     }
     if (to === CURRENT_CONVERSATION) {
-      return { ...text("C'est l'identifiant de cette conversation-ci."), isError: true }
+      return { ...text('That is the ID of this conversation.'), isError: true }
     }
 
     const peer = peerConversation(to)
     if (!peer) {
       return {
-        ...text(`Aucune conversation « ${to} » dans ce projet. Appeler list_sessions pour voir celles qui existent.`),
+        ...text(`No conversation “${to}” in this project. Use list_sessions to see available sessions.`),
         isError: true,
       }
     }
     if (peer.archivedAt !== null) {
-      return { ...text(`La conversation « ${peer.title} » est archivée : personne ne lira ce message.`), isError: true }
+      return { ...text(`Conversation “${peer.title}” is archived: nobody will read this message.`), isError: true }
     }
 
     const id = sendSessionMessage({ to, body, replyTo })
     if (peer.status === 'running' || peer.status === 'awaiting_input') {
       return text(
-        `Message ${id} déposé pour « ${peer.title} » (${peer.agent}). Elle travaille en ce moment : il lui sera remis dans son tour, ou juste après. Si tu attends sa réponse, termine ton tour : elle te relancera.`,
+        `Message ${id} queued for “${peer.title}” (${peer.agent}). It is working: delivery will occur during or just after its turn. If you need a reply, end your turn; its reply will resume you.`,
       )
     }
 
     const held = predictHold(to, replyTo)
     if (held) {
       const why = held === 'loop'
-        ? `votre échange compte déjà ${MAX_HOPS} allers-retours`
-        : `elle a déjà été relancée ${WAKES_PER_HOUR} fois dans l'heure par d'autres sessions`
+        ? `your exchange has already reached ${MAX_HOPS} hops`
+        : `other sessions have already resumed it ${WAKES_PER_HOUR} times in the last hour`
       return text(
-        `Message ${id} déposé pour « ${peer.title} », mais il ne la relancera pas : ${why}. Il est retenu, et son fil le montre jusqu'à ce qu'une personne le remette ou l'écarte ; il lui sera aussi remis si elle se remet à travailler. Ne compte pas sur une réponse rapide, et ne renvoie pas le message.`,
+        `Message ${id} queued for “${peer.title}”, but it will not resume the session: ${why}. It is held and visible in the thread until a person delivers or discards it; it will also be delivered if the session resumes work. Do not expect a quick reply or resend it.`,
       )
     }
     return text(
-      `Message ${id} déposé pour « ${peer.title} » (${peer.agent}). Elle est ${STATUS_LABELS[peer.status] ?? peer.status} : Sillage va la relancer pour qu'elle le lise. Si tu attends sa réponse, termine ton tour : elle te relancera.`,
+      `Message ${id} queued for “${peer.title}” (${peer.agent}). It is ${STATUS_LABELS[peer.status] ?? peer.status}: Sillage will resume it to read the message. If you need a reply, end your turn; its reply will resume you.`,
     )
   }
 
   if (name === 'broadcast_session_message') {
     const body = typeof args?.body === 'string' ? args.body.trim() : ''
-    if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
+    if (!body) return { ...text('The `body` parameter is required.'), isError: true }
     if (body.length > MAX_PEER_MESSAGE_CHARS) {
       return {
-        ...text(`Annonce trop longue (${body.length} caractères, ${MAX_PEER_MESSAGE_CHARS} au plus).`),
+        ...text(`Announcement too long (${body.length} characters, maximum ${MAX_PEER_MESSAGE_CHARS}).`),
         isError: true,
       }
     }
     if (!CURRENT_CONVERSATION) {
-      return { ...text("Cette session ne sait pas qui elle est : elle ne peut pas signer une annonce."), isError: true }
+      return { ...text('This session has no identity and cannot sign an announcement.'), isError: true }
     }
     const sent = broadcast(body)
     return text(
       sent === 0
-        ? "Aucune autre session de ce projet ne travaille en ce moment : l'annonce n'a été envoyée à personne."
-        : `Annonce déposée pour ${sent} session(s) en train de travailler. Elle leur sera remise dans leur tour ; celles qui auront fini d'ici là ne la recevront pas.`,
+        ? 'No other project session is working: the announcement was not sent to anyone.'
+        : `Announcement queued for ${sent} working session(s). Delivered during their turns; sessions that finish before delivery will not receive it.`,
     )
   }
 
   if (name === 'notify_when_done') {
     const target = typeof args?.session === 'string' ? args.session.trim() : ''
-    if (!target) return { ...text('Le paramètre `session` est requis.'), isError: true }
+    if (!target) return { ...text('The `session` parameter is required.'), isError: true }
     if (!CURRENT_CONVERSATION) {
-      return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas qui prévenir."), isError: true }
+      return { ...text('This session has no identity: Sillage would not know whom to notify.'), isError: true }
     }
     if (target === CURRENT_CONVERSATION) {
-      return { ...text("C'est l'identifiant de cette conversation-ci."), isError: true }
+      return { ...text('That is the ID of this conversation.'), isError: true }
     }
     const peer = peerConversation(target)
     if (!peer) {
       return {
-        ...text(`Aucune conversation « ${target} » dans ce projet. Appeler list_sessions pour voir celles qui existent.`),
+        ...text(`No conversation “${target}” in this project. Use list_sessions to see available sessions.`),
         isError: true,
       }
     }
     if (!isWorking(peer) && peer.status !== 'awaiting_input') {
       return text(
-        `« ${peer.title} » ne travaille pas : elle est ${STATUS_LABELS[peer.status] ?? peer.status}. Il n'y a rien à attendre ; read_conversation dit où elle s'est arrêtée.`,
+        `“${peer.title}” is not working: it is ${STATUS_LABELS[peer.status] ?? peer.status}. Nothing to wait for; read_conversation shows where it stopped.`,
       )
     }
     const created = watch(target)
     const pause = peer.status === 'awaiting_input'
-      ? " Elle attend en ce moment une réponse de l'utilisateur : la surveillance ne se déclenchera qu'après."
+      ? ' It is currently awaiting a user reply: the watch will fire only afterward.'
       : ''
     return text(
-      `${created ? 'Surveillance posée' : 'Une surveillance était déjà posée'} sur « ${peer.title} ». Tu seras relancé quand elle aura fini.${pause} Termine ton tour maintenant si tu n'as rien d'autre à faire en attendant.`,
+      `${created ? 'Watch registered' : 'Watch already registered'} for “${peer.title}”. You will resume when it finishes.${pause} End your turn now if you have no independent work to do.`,
     )
   }
 
@@ -2664,89 +2664,89 @@ async function callTool(name, args) {
     name === 'list_worktrees'
   ) {
     if (!CURRENT_CONVERSATION && !USER) {
-      return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
+      return { ...text('This session has no identity: Sillage would not know whom to act for.'), isError: true }
     }
     if (name === 'rename_session') {
       const title = typeof args?.title === 'string' ? args.title.trim() : ''
       if (!title || title.length > MAX_SESSION_TITLE_CHARS) {
-        return { ...text(`Le paramètre \`title\` doit contenir entre 1 et ${MAX_SESSION_TITLE_CHARS} caractères.`), isError: true }
+        return { ...text(`The \`title\` parameter must contain 1 to ${MAX_SESSION_TITLE_CHARS} characters.`), isError: true }
       }
     }
     if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
-      return { ...text('Le paramètre `question` est requis.'), isError: true }
+      return { ...text('The `question` parameter is required.'), isError: true }
     }
     if (name === 'create_card' && !(typeof args?.title === 'string' && args.title.trim())) {
-      return { ...text('Le paramètre `title` est requis.'), isError: true }
+      return { ...text('The `title` parameter is required.'), isError: true }
     }
     if (name === 'start_session') {
       const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : ''
-      if (!prompt) return { ...text('Le paramètre `prompt` est requis.'), isError: true }
+      if (!prompt) return { ...text('The `prompt` parameter is required.'), isError: true }
       if (prompt.length > MAX_LAUNCH_PROMPT_CHARS) {
         return {
-          ...text(`Mission trop longue (${prompt.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`),
+          ...text(`Mission too long (${prompt.length} characters, maximum ${MAX_LAUNCH_PROMPT_CHARS}). Put details in a file and cite it.`),
           isError: true,
         }
       }
     }
     if (name === 'schedule_task') {
       if (!(typeof args?.name === 'string' && args.name.trim())) {
-        return { ...text('Le paramètre `name` est requis.'), isError: true }
+        return { ...text('The `name` parameter is required.'), isError: true }
       }
       const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : ''
-      if (!prompt) return { ...text('Le paramètre `prompt` est requis.'), isError: true }
+      if (!prompt) return { ...text('The `prompt` parameter is required.'), isError: true }
       if (prompt.length > MAX_SCHEDULE_PROMPT_CHARS) {
         return {
-          ...text(`Consigne trop longue (${prompt.length} caractères, ${MAX_SCHEDULE_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`),
+          ...text(`Instructions too long (${prompt.length} characters, maximum ${MAX_SCHEDULE_PROMPT_CHARS}). Put details in a file and cite it.`),
           isError: true,
         }
       }
       if (typeof args?.check_script === 'string' && args.check_script.length > MAX_CHECK_SCRIPT_CHARS) {
-        return { ...text(`Script de vérification trop long (${MAX_CHECK_SCRIPT_CHARS} caractères au plus).`), isError: true }
+        return { ...text(`Check script too long (maximum ${MAX_CHECK_SCRIPT_CHARS} characters).`), isError: true }
       }
     }
     if (name === 'create_worktree' && !(typeof args?.branch === 'string' && args.branch.trim())) {
-      return { ...text('Le paramètre `branch` est requis, par exemple `fix/titre-tronque`.'), isError: true }
+      return { ...text('The `branch` parameter is required, e.g. `fix/truncated-title`.'), isError: true }
     }
     if (name === 'create_automation' && !(typeof args?.name === 'string' && args.name.trim())) {
-      return { ...text('Le paramètre `name` est requis.'), isError: true }
+      return { ...text('The `name` parameter is required.'), isError: true }
     }
     if ((name === 'remove_action' || name === 'run_action') && !(typeof args?.id === 'string' && args.id.trim())) {
-      return { ...text('Le paramètre `id` est requis (voir list_actions).'), isError: true }
+      return { ...text('The `id` parameter is required (see list_actions).'), isError: true }
     }
     return requestDaemon(name, args ?? {})
   }
 
   if (name === 'read_memory' || name === 'write_memory' || name === 'delete_memory') {
-    if (!MEMORY_DIR) return { ...text("La mémoire n'est pas disponible dans cette session."), isError: true }
+    if (!MEMORY_DIR) return { ...text('Memory is unavailable in this session.'), isError: true }
     const file = typeof args?.file === 'string' ? args.file.trim() : ''
 
     if (name === 'read_memory') {
       if (!file) {
         const files = memoryFiles()
-        if (files.length === 0) return text(`Mémoire vide (${MEMORY_DIR}).`)
+        if (files.length === 0) return text(`Memory is empty (${MEMORY_DIR}).`)
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `Mémoire du projet, dans ${MEMORY_DIR} :`,
-            index ? `${MEMORY_INDEX} :\n\n${index.trim()}` : `Pas de ${MEMORY_INDEX}.`,
-            `Notes : ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'aucune'}.`,
+            `Project memory in ${MEMORY_DIR}:`,
+            index ? `${MEMORY_INDEX}:\n\n${index.trim()}` : `No ${MEMORY_INDEX}.`,
+            `Notes: ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'none'}.`,
           ].join('\n\n'),
         )
       }
       const content = MEMORY_FILE_PATTERN.test(file) ? readMemoryFile(file) : null
-      if (content === null) return { ...text(`Aucune note « ${file} ». read_memory sans \`file\` les liste.`), isError: true }
+      if (content === null) return { ...text(`No note “${file}”. Use read_memory without \`file\` to list notes.`), isError: true }
       return text(content)
     }
 
     if (!MEMORY_FILE_PATTERN.test(file)) {
       return {
-        ...text("`file` doit être un nom de fichier `.md` à plat : lettres, chiffres, points, tirets et soulignés, sans dossier."),
+        ...text('`file` must be a flat `.md` filename: letters, digits, dots, hyphens and underscores, without directories.'),
         isError: true,
       }
     }
 
     if (name === 'delete_memory') {
-      if (readMemoryFile(file) === null) return { ...text(`Aucune note « ${file} ».`), isError: true }
+      if (readMemoryFile(file) === null) return { ...text(`No note “${file}”.`), isError: true }
       rmSync(join(MEMORY_DIR, file), { force: true })
       if (file !== MEMORY_INDEX) {
         const index = readMemoryFile(MEMORY_INDEX)
@@ -2755,18 +2755,18 @@ async function callTool(name, args) {
           writeFileSync(join(MEMORY_DIR, MEMORY_INDEX), kept.join('\n'))
         }
       }
-      return text(`Note « ${file} » retirée de la mémoire.`)
+      return text(`Note “${file}” removed from memory.`)
     }
 
-    if (typeof args?.content !== 'string') return { ...text('Le paramètre `content` est requis.'), isError: true }
+    if (typeof args?.content !== 'string') return { ...text('The `content` parameter is required.'), isError: true }
     if (args.content.length > MAX_MEMORY_FILE_CHARS) {
-      return { ...text(`Note trop longue (${args.content.length} caractères, ${MAX_MEMORY_FILE_CHARS} au plus).`), isError: true }
+      return { ...text(`Note too long (${args.content.length} characters, maximum ${MAX_MEMORY_FILE_CHARS}).`), isError: true }
     }
     mkdirSync(MEMORY_DIR, { recursive: true })
     writeFileSync(join(MEMORY_DIR, file), args.content)
     const indexed = file !== MEMORY_INDEX && indexNote(file, args.content)
     return text(
-      `Note « ${file} » écrite dans la mémoire du projet${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, quel que soit leur CLI, la verront.`,
+      `Note “${file}” written to project memory${indexed ? ` and added to ${MEMORY_INDEX}` : ''}. Future sessions across CLIs will see it.`,
     )
   }
 
@@ -2774,8 +2774,8 @@ async function callTool(name, args) {
     const target = instructionsTarget(args, false)
     if (target.refusal) return { ...text(target.refusal), isError: true }
     const row = readInstructionsRow(target.projectId)
-    if (!row?.content.trim()) return text(`SILLAGE.md, ${scopeLabel(target.scope)} : vide.`)
-    return text(`SILLAGE.md, ${scopeLabel(target.scope)} (${row.content.length} caractères) :\n\n${row.content}`)
+    if (!row?.content.trim()) return text(`SILLAGE.md, ${scopeLabel(target.scope)}: empty.`)
+    return text(`SILLAGE.md, ${scopeLabel(target.scope)} (${row.content.length} characters):\n\n${row.content}`)
   }
 
   if (name === 'edit_instructions' || name === 'write_instructions') {
@@ -2784,13 +2784,13 @@ async function callTool(name, args) {
 
     let transform
     if (name === 'write_instructions') {
-      if (typeof args?.content !== 'string') return { ...text('Le paramètre `content` est requis.'), isError: true }
+      if (typeof args?.content !== 'string') return { ...text('The `content` parameter is required.'), isError: true }
       transform = () => args.content
     } else {
       const oldText = typeof args?.old_text === 'string' ? args.old_text : null
       const newText = typeof args?.new_text === 'string' ? args.new_text : null
       if (oldText === null || newText === null) {
-        return { ...text('Les paramètres `old_text` et `new_text` sont requis.'), isError: true }
+        return { ...text('The `old_text` and `new_text` parameters are required.'), isError: true }
       }
       transform = (current) => {
         if (oldText === '') {
@@ -2799,10 +2799,10 @@ async function callTool(name, args) {
         }
         const count = current.split(oldText).length - 1
         if (count === 0) {
-          return { error: "`old_text` n'apparaît pas dans SILLAGE.md. Relis la version courante avec read_instructions : elle a pu changer depuis le début de la session." }
+          return { error: '`old_text` was not found in SILLAGE.md. Read the current version with read_instructions: it may have changed since session startup.' }
         }
         if (count > 1 && args?.replace_all !== true) {
-          return { error: `\`old_text\` apparaît ${count} fois. Donne plus de contexte pour n'en désigner qu'une, ou passe \`replace_all: true\`.` }
+          return { error: `\`old_text\` occurs ${count} times. Supply more context to select one occurrence, or use \`replace_all: true\`.` }
         }
         return args?.replace_all === true ? current.split(oldText).join(newText) : current.replace(oldText, () => newText)
       }
@@ -2811,14 +2811,14 @@ async function callTool(name, args) {
     const result = saveInstructions(target.projectId, transform, target.fixMode)
     if (result.error) return { ...text(result.error), isError: true }
     return text(
-      `SILLAGE.md mis à jour (${scopeLabel(target.scope)}, ${result.content.length} caractères). Vaut pour les sessions qui démarrent ensuite, quel que soit leur CLI (OpenCode dès son prochain message) ; l'utilisateur voit la modification dans Sillage.`,
+      `SILLAGE.md updated (${scopeLabel(target.scope)}, ${result.content.length} characters). Applies to sessions starting afterward across CLIs (OpenCode from its next message); the user sees the change in Sillage.`,
     )
   }
 
-  return { ...text(`Outil inconnu : ${name}`), isError: true }
+  return { ...text(`Unknown tool: ${name}`), isError: true }
 }
 
-log(GLOBAL ? `prêt, mode global, compte=${USER.username}` : `prêt, projet=${PROJECT_ID}`)
+log(GLOBAL ? `ready, global mode, account=${USER.username}` : `ready, project=${PROJECT_ID}`)
 
 /** Serialize tool calls. Calls are normally fast and CLIs seldom overlap them, but global projects are process state: interleaved calls on different projects would write into each other's project. */
 let calls = Promise.resolve()
@@ -2830,7 +2830,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   try {
     msg = JSON.parse(line)
   } catch {
-    log('ligne illisible, ignorée')
+    log('unreadable line, ignored')
     return
   }
 
@@ -2868,13 +2868,13 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       let result
       try {
         result = GLOBAL && SESSION_ONLY_TOOLS.has(name)
-          ? { ...text(`Outil ${name} indisponible hors session : il n'y a ni session pour signer ni tour où recevoir.`), isError: true }
+          ? { ...text(`Tool ${name} is unavailable outside a session: no session identity or turn to receive messages.`), isError: true }
           : (GLOBAL && selectProject(name, args)) || (await callTool(name, args))
       } catch (err) {
         // Return tool results rather than JSON-RPC errors so models can correct requests;
         // protocol errors provide no useful guidance.
-        log(`échec de ${name} : ${err.message}`)
-        result = { ...text(`La recherche a échoué : ${err.message}`), isError: true }
+        log(`tool ${name} failed: ${err.message}`)
+        result = { ...text(`Tool call failed: ${err.message}`), isError: true }
       }
       send({ jsonrpc: '2.0', id: msg.id, result })
     })
@@ -2892,6 +2892,6 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   send({
     jsonrpc: '2.0',
     id: msg.id,
-    error: { code: -32601, message: `méthode inconnue : ${msg.method}` },
+    error: { code: -32601, message: `unknown method: ${msg.method}` },
   })
 })

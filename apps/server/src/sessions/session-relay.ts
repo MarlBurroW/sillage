@@ -34,9 +34,9 @@ type Outcome =
   | { via: 'held'; reason: 'loop' | 'rate' }
 
 const STATUS_WORDS: Record<string, string> = {
-  idle: 'au repos',
-  interrupted: 'interrompue',
-  error: 'en erreur',
+  idle: 'idle',
+  interrupted: 'interrupted',
+  error: 'failed',
 }
 
 export class SessionRelay {
@@ -292,9 +292,9 @@ export class SessionRelay {
       if (working) continue
 
       const body = !target
-        ? "Cette session n'existe plus."
+        ? 'This session no longer exists.'
         : target.archivedAt !== null
-          ? 'Cette session a été archivée.'
+          ? 'This session was archived.'
           : this.doneBody(watch.targetConversationId, target.status)
 
       this.db
@@ -314,13 +314,13 @@ export class SessionRelay {
   }
 
   private doneBody(conversationId: string, status: string): string {
-    const state = `La session est ${STATUS_WORDS[status] ?? status}.`
+    const state = `The session is ${STATUS_WORDS[status] ?? status}.`
     const last = this.lastAgentText(conversationId)
-    if (!last) return `${state} Elle n'a laissé aucun message.`
+    if (!last) return `${state} It left no message.`
 
     const clipped =
       last.length > DONE_EXCERPT_CHARS ? `${last.slice(0, DONE_EXCERPT_CHARS)}\n[...]` : last
-    return `${state} Son dernier message :\n\n${clipped
+    return `${state} Its last message:\n\n${clipped
       .split('\n')
       .map((line) => `> ${line}`)
       .join('\n')}`

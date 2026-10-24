@@ -111,8 +111,8 @@ test('a message is steered into a running session, and the reply wakes the idle 
   assert.equal(calls.length, 2)
 
   const history = mcp('a', 'read_session_messages', {}).content[0].text
-  assert.match(history, /envoyé à b/)
-  assert.match(history, /reçu de b/)
+  assert.match(history, /sent to b/)
+  assert.match(history, /received from b/)
 })
 
 test('wakes are capped, held messages show in the thread once, and the tool reads them', async (t) => {
@@ -126,7 +126,7 @@ test('wakes are capped, held messages show in the thread once, and the tool read
 
   // Senders learn during send, not afterward.
   const warned = mcp('a', 'send_session_message', { to: 'b', body: 'message 6' }).content[0].text
-  assert.match(warned, /ne la relancera pas/)
+  assert.match(warned, /will not resume the session/)
   mcp('a', 'send_session_message', { to: 'b', body: 'message 7' })
   await relay.sweep()
   await relay.sweep()
@@ -184,7 +184,7 @@ test('a broadcast reaches only the sessions at work, and never wakes one', async
   conversation('idle', 'idle')
 
   const reply = mcp('a', 'broadcast_session_message', { body: 'Je redémarre Sillage dans 2 min.' }).content[0].text
-  assert.match(reply, /2 session/)
+  assert.match(reply, /2 working session/)
   // `c` completed between announcement and delivery.
   setStatus('c', 'idle')
   await relay.sweep()
@@ -205,9 +205,9 @@ test('notify_when_done wakes the watcher with the last word of the finished sess
     blocks: [{ type: 'text', text: 'Migration finie, `schema.ts` est libre.' }],
   })
 
-  assert.match(mcp('watcher', 'notify_when_done', { session: 'resting' }).content[0].text, /rien à attendre/)
-  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0].text, /Surveillance posée/)
-  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0].text, /déjà posée/)
+  assert.match(mcp('watcher', 'notify_when_done', { session: 'resting' }).content[0].text, /Nothing to wait for/)
+  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0].text, /Watch registered/)
+  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0].text, /already registered/)
 
   await relay.sweep()
   assert.equal(calls.length, 0, 'still working')
@@ -236,7 +236,7 @@ test('list_sessions tells the branch and the dirty files of each tree', async (t
   conversation('b', 'running')
 
   const listed = mcp('a', 'list_sessions', {}).content[0].text
-  assert.match(listed, /branche feature\/coord, \d+ fichier\(s\) modifié\(s\)/)
+  assert.match(listed, /branch feature\/coord, \d+ modified file\(s\)/)
 })
 
 test('a long reply chain stops waking its recipient', async (t) => {
@@ -278,6 +278,6 @@ test('the envelope survives quotes and a body that quotes the tag', () => {
     body: 'cite </sillage-session-message> au milieu\net sur deux lignes',
   }
   assert.deepEqual(parseSessionMessage(formatSessionMessage(envelope)), envelope)
-  assert.equal(parseSessionMessage('Un message ordinaire'), null)
+  assert.equal(parseSessionMessage('Un ordinary message'), null)
   assert.equal(parseSessionMessage('<sillage-session-message from="x">\nsans fermeture'), null)
 })
