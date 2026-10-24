@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Sillage · A workspace for coding agents</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A workspace for Claude Code, Codex, OpenCode and Grok Build, on a server you reach from any device or as a desktop app on your workstation. Connect GitHub issues, automate tasks and choose the account for each session.">
+  <meta name="description" content="A workspace for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, on a server you reach from any device or as a desktop app on your workstation. Connect GitHub issues, automate tasks and choose the account for each session.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <!-- Change ?v= whenever style.css/main.js changes: GitHub Pages caches them for
      ten minutes, and a new page with an old stylesheet breaks. -->
@@ -85,7 +85,7 @@
         <h1>Keep your work<br>within reach.</h1>
         <div>
           <p class="lede">A workspace for your coding agents.<br>Continue from your phone. Turn issues and events into work. Keep the decisions within reach.</p>
-          <p class="hero-detail">Claude Code, Codex, OpenCode and Grok Build run with their native tools and your accounts. Run Sillage on a server you reach from any device, or as a desktop app on your workstation.</p>
+          <p class="hero-detail">Claude Code, Codex, OpenCode, Grok Build and Google Antigravity run with their native tools and your accounts. Run Sillage on a server you reach from any device, or as a desktop app on your workstation.</p>
           <p class="actions">
             <a class="btn primary" href="#editions">Install Sillage <span aria-hidden="true">↗</span></a>
             <a class="text-link" data-desktop-download hidden href="#install-desktop">Download Sillage Desktop <span aria-hidden="true">↓</span></a>
@@ -219,12 +219,13 @@
       <div class="section-label">04 / Multi-CLI by design</div>
       <div class="section-body">
         <h2>Native harnesses.<br>A shared workspace.</h2>
-        <p class="section-lede">Choose Claude Code, Codex, OpenCode or Grok Build for each conversation. Keep the project around it.</p>
-        <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code, Codex, OpenCode and Grok Build are supported today. OpenCode brings any provider and model it can reach, including local ones; Grok Build is driven through the Agent Client Protocol.</p></div>
+        <p class="section-lede">Choose Claude Code, Codex, OpenCode, Grok Build or Google Antigravity for each conversation. Keep the project around it.</p>
+        <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code, Codex, OpenCode, Grok Build and Google Antigravity are supported today. OpenCode brings any provider and model it can reach, including local ones; Grok Build is driven through the Agent Client Protocol.</p></div>
         <dl class="tool-reference">
           <div><dt>Choose the account, too</dt><dd>Add Claude and Codex subscriptions or API keys from the interface, then choose an account for each conversation. Subscription usage helps you choose; extra Claude accounts need a separate sign-in for their gauge. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md">Account setup and limits ↗</a></dd></div>
+          <div><dt>Google Gemini</dt><dd>Use Google’s official Antigravity agent with Google sign-in or a Gemini API key, model-specific thinking levels, skills and MCP. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/antigravity-integration.md">Integration and limitations ↗</a></dd></div>
           <div><dt>Keep your settings close</dt><dd>Model and effort sit in one chip under the message box. Pin the other controls you use next to it, from permissions and account to speed or advisor when the CLI supports them, in the order you want. Each CLI keeps its own composer layout.</dd></div>
-          <div><dt>Continue in another CLI</dt><dd>Hand a conversation from Claude Code to Codex, OpenCode or Grok Build, and back. The new agent receives a budgeted selection of the thread, full messages rather than a summary, with references it can read back through Sillage's MCP server. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/cli-handoff.md">How the handoff is built ↗</a></dd></div>
+          <div><dt>Continue in another CLI</dt><dd>Hand a conversation from Claude Code to Codex, OpenCode, Grok Build or Google Antigravity, and back. The new agent receives a budgeted selection of the thread, full messages rather than a summary, with references it can read back through Sillage's MCP server. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/cli-handoff.md">How the handoff is built ↗</a></dd></div>
         </dl>
         <div class="agent-links"><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/claude">Claude Code adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/codex">Codex adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/opencode">OpenCode adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/grok">Grok Build adapter ↗</a></div>
       </div>
@@ -235,7 +236,7 @@
       <div class="section-label">05 / Shared context</div>
       <div class="section-body">
         <h2>One set of instructions.<br>One memory.</h2>
-        <p class="section-lede">Claude Code reads <code>CLAUDE.md</code> and keeps its memory under <code>~/.claude</code>. Codex reads <code>AGENTS.md</code>, OpenCode and Grok Build either one. Sillage gives all four the same context.</p>
+        <p class="section-lede">Claude Code reads <code>CLAUDE.md</code> and keeps its memory under <code>~/.claude</code>. Codex reads <code>AGENTS.md</code>, OpenCode and Grok Build either one. Sillage gives the agents the same shared context.</p>
         <div class="prose-columns"><p><strong>Instructions</strong> are the rules you set, in a <code>SILLAGE.md</code> with a global part and one per project. They are added to each CLI's prompt: when a session starts for Claude Code and Codex, when it is created for Grok Build, with every message for OpenCode. A project can keep them in Sillage, and the repository's <code>CLAUDE.md</code> and <code>AGENTS.md</code> are then hidden from agents so nothing arrives twice, or keep them in its repository, edited from the same panel.</p><p><strong>Memory</strong> is what agents learn while working: one per project, in the format Claude Code already uses. Claude writes it as its native memory, pointed at Sillage's folder; Codex, OpenCode and Grok Build get the index and write through Sillage's tools. What one CLI learns, the others know, and you can read and correct every note.</p></div>
         <dl class="tool-reference">
           <div><dt>When you change the rules</dt><dd>Ask an agent to revise the instructions; it edits them like a file.<code>read_instructions · edit_instructions · write_instructions</code></dd></div>
@@ -259,7 +260,7 @@
           </picture></button>
           <figcaption>Scheduled tasks and webhooks live under Automations, with settings and a history for each task.</figcaption>
         </figure>
-        <div class="prose-columns"><p><strong>On a schedule.</strong> Run a prompt at an interval, with a cron expression or on a single date. Each run gets a fresh session of Claude Code, Codex, OpenCode or Grok Build, the task's model and permissions, and the previous run's last reply. Set a maximum duration and decide whether overlapping runs wait or are skipped.</p><p><strong>On an event.</strong> Connect a webhook, inspect its payload, and use its fields in conditions and prompts. Start from GitHub templates for labeled issues, comment commands, new pull requests or failed CI, or connect another service. Simulate a delivery to check what would run; deduplication and hourly limits bound the launches.</p></div>
+        <div class="prose-columns"><p><strong>On a schedule.</strong> Run a prompt at an interval, with a cron expression or on a single date. Each run gets a fresh session of Claude Code, Codex, OpenCode, Grok Build or Google Antigravity, the task's model and permissions, and the previous run's last reply. Set a maximum duration and decide whether overlapping runs wait or are skipped.</p><p><strong>On an event.</strong> Connect a webhook, inspect its payload, and use its fields in conditions and prompts. Start from GitHub templates for labeled issues, comment commands, new pull requests or failed CI, or connect another service. Simulate a delivery to check what would run; deduplication and hourly limits bound the launches.</p></div>
         <dl class="tool-reference">
           <div><dt>Check before waking the agent</dt><dd>An optional script can check whether anything changed. Exit 0 starts the session with its output; exit 10 skips it without spending model tokens. Scripts written by an agent wait for your review.</dd></div>
           <div><dt>Keep decisions within reach</dt><dd>Enable decision requests for a schedule, webhook or GitHub maintenance rule. The agent can leave a question in Decisions, with a deadline and an optional fallback. Your answer goes back to its session. This is off by default and separate from native CLI permissions.</dd></div>
@@ -378,7 +379,7 @@
                    alt="A Codex conversation in Sillage">
             </picture>
           </button>
-          <figcaption>Claude Code, Codex, OpenCode and Grok Build sit side by side in the sidebar. Same interface, same history, same board.</figcaption>
+          <figcaption>Claude Code, Codex, OpenCode, Grok Build and Google Antigravity sit side by side in the sidebar. Same interface, same history, same board.</figcaption>
         </figure>
         <figure id="shot-7" role="tabpanel" aria-labelledby="tab-7" hidden>
           <button type="button" data-zoom>
@@ -400,7 +401,7 @@
       <ul>
         <li><h3>A queue you can steer</h3><p>Write while the agent runs. Queue a follow-up, withdraw it, or send a correction into the current turn.</p></li>
         <li><h3>Dictation with project vocabulary</h3><p>Transcription uses a lexicon from your repository and current branch. An optional cleanup pass restores exact spellings. Bring an OpenAI-compatible endpoint.</p></li>
-        <li><h3>Shared skills &amp; MCP tools</h3><p>Keep reusable skills in a central library for Claude Code, Codex, OpenCode and Grok Build. Declare external MCP servers once and choose which agents receive them.</p></li>
+        <li><h3>Shared skills &amp; MCP tools</h3><p>Keep reusable skills in a central library for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity. Declare external MCP servers once and choose which agents receive them.</p></li>
         <li><h3>A task API</h3><p>Create projects and tasks, follow events, answer requests and receive completion webhooks through <code>/api/v1</code>. Tokens have scopes and optional project restrictions. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/api.md">API guide ↗</a></p></li>
         <li><h3>Processes in view</h3><p>On Linux, inspect commands and services attached to Sillage, their ports and originating conversations. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/services.md">Detection and limits ↗</a></p></li>
         <li><h3>Each turn, reversible</h3><p>With turn checkpoints on, every turn lists the files it changed and can be reverted to the state before it, with an optional fork of the conversation from that point.</p></li>
@@ -520,6 +521,7 @@ curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh 
       <div class="install-intro">
         <p class="section-label">Install Sillage Desktop</p><h2 id="install-desktop-title">A workspace<br>on your desk.</h2>
         <p>For the computer you code on. No server to set up, no account to create: the app bundles the server and its own Node, and opens Sillage in its own window.</p>
+        <p>The window header follows your theme, with native window buttons. Windows and Linux have a compact application menu; macOS keeps its traffic lights and system menu.</p>
         <p>Your agents use your CLIs and their sign-ins, and work while the app is open. Everything stays on this computer: no access from your phone, no push notifications, no webhooks from the Internet.</p>
       </div>
 

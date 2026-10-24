@@ -10,6 +10,13 @@ To follow your agents from a phone or another computer and leave them working,
 [Sillage Server](../README.md#install-the-server) is the edition to install
 ([compare the two](../README.md#server-or-desktop)).
 
+## Window controls
+
+The draggable window header follows the application's theme. Windows and Linux keep
+their native minimize, maximize and close buttons; the menu button opens application
+commands, and keyboard shortcuts remain available. On macOS, the traffic lights sit
+at the left of the header and the application menu stays in the system menu bar.
+
 ## Download
 
 Every release ships the app next to the server archives. Each link downloads the

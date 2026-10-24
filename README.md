@@ -52,6 +52,9 @@ starting a separate workspace.
 Download the app and follow the setup tour. It helps you choose your agents,
 permissions and first project.
 
+The window header follows your theme, with native window controls and a compact
+application menu on Windows and Linux. macOS keeps its traffic lights and system menu.
+
 | Your computer | Download |
 |---|---|
 | Windows · x64 | [Windows installer](https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe) |
