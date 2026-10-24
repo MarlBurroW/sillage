@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { accessSync, constants } from 'node:fs'
 import nodePath from 'node:path'
 import { promisify } from 'node:util'
-import type { AgentAvailabilityDto, AgentKind } from '@sillage/protocol'
+import { PREFERRED_CLI_RELEASES, type AgentAvailabilityDto, type AgentKind } from '@sillage/protocol'
 import { CachedProbe } from './cached-probe.js'
 import { launchOf } from './launch.js'
 
@@ -56,6 +56,10 @@ export function resolveBinary(
   // This is also the only way to honor
   // 'Sillage uses this specific version' when systems
   // already have another installed.
+  if (managedDir && (binary === 'agy_acp_server.par' || binary === 'agy_acp_server.exe')) {
+    const native = paths.join(managedDir, 'antigravity', PREFERRED_CLI_RELEASES.antigravity.version, binary)
+    if (exists(native)) return native
+  }
   const dirs = managedDir ? [windows ? managedDir : paths.join(managedDir, 'bin')] : []
   dirs.push(...(pathValue(env) ?? '').split(paths.delimiter).filter((dir) => dir.length > 0))
   for (const dir of dirs) {
@@ -97,14 +101,14 @@ async function probeVersion(binary: string): Promise<string | null> {
   }
 }
 
-async function probe(binary: string, managedDir: string): Promise<CliStatus> {
+async function probe(binary: string, managedDir: string, versionReader = probeVersion): Promise<CliStatus> {
   const path = resolveBinary(binary, managedDir)
   if (!path) {
     // Distinguish missing files from nonexecutable binaries:
     // one needs installation, the other `chmod`.
     return { found: false, reason: nodePath.isAbsolute(binary) ? 'not_executable' : 'not_on_path' }
   }
-  return { found: true, path, version: await probeVersion(path) }
+  return { found: true, path, version: await versionReader(path) }
 }
 
 /** Agent CLI location, version and usability. One instance per adapter because caches and shared in-flight probes belong to CLIs, not callers. Includes API formatting otherwise duplicated across adapters. */
@@ -117,9 +121,10 @@ export class CliBinary {
     private readonly enabled: boolean,
     /** Managed CLI npm prefix. */
     readonly managedDir: string,
+    versionReader?: (binary: string) => Promise<string | null>,
   ) {
     this.cache = new CachedProbe(TTL_MS, async () => ({
-      status: await probe(configured, managedDir),
+      status: await probe(configured, managedDir, versionReader),
     }))
   }
 

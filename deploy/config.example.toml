@@ -33,3 +33,9 @@ enabled = true
 [agents.grok]
 binary = "grok"
 enabled = true
+
+[agents.antigravity]
+# Optional override; the built-in installer resolves its managed native archive.
+# On Windows the executable is agy_acp_server.exe.
+binary = "agy_acp_server.par"
+enabled = true

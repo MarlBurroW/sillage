@@ -1,5 +1,5 @@
-import type { GrokConfig, McpServer } from '@sillage/protocol'
-import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
+import type { GrokConfig } from '@sillage/protocol'
+export { toAcpMcpServer } from '../acp/mcp.js'
 
 /** How Sillage launches `grok agent stdio` and its environment. All claims probed on Grok Build 1.0.62. */
 
@@ -50,23 +50,4 @@ export function grokLaunch(config: GrokConfig, pluginDirs: string[]): GrokLaunch
 
 export function sameLaunch(a: GrokLaunch, b: GrokLaunch): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
-}
-
-/** ACP registry server shape: environments and headers are pair lists rather than maps. */
-export function toAcpMcpServer(server: McpServer): AcpMcpServer {
-  const { transport } = server
-  if (transport.type === 'stdio') {
-    return {
-      name: server.name,
-      command: transport.command,
-      args: transport.args,
-      env: Object.entries(transport.env).map(([name, value]) => ({ name, value })),
-    }
-  }
-  return {
-    type: transport.type,
-    name: server.name,
-    url: transport.url,
-    headers: Object.entries(transport.headers).map(([name, value]) => ({ name, value })),
-  }
 }

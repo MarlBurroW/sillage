@@ -12,6 +12,8 @@ export type AttachmentRow = typeof attachments.$inferSelect
 
 /** File signatures. Determine types by content rather than client-provided extensions, which callers choose and therefore prove nothing about contents. */
 const SIGNATURES: { mime: string; bytes: number[] }[] = [
+  { mime: 'audio/mpeg', bytes: [0x49, 0x44, 0x33] },
+  { mime: 'audio/flac', bytes: [0x66, 0x4c, 0x61, 0x43] },
   { mime: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47] },
   { mime: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
   { mime: 'image/gif', bytes: [0x47, 0x49, 0x46, 0x38] },
@@ -27,6 +29,8 @@ function looksLikeUtf8Text(buffer: Buffer): boolean {
 }
 
 export function sniffMimeType(buffer: Buffer, filename: string): string {
+  if (buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WAVE') return 'audio/wav'
+  if (buffer.subarray(0, 4).toString() === 'OggS' && (buffer.includes(Buffer.from('OpusHead'), 20) || buffer.includes(Buffer.from('vorbis'), 20))) return 'audio/ogg'
   // WebP uses RIFF containers, so check before simple signatures.
   if (buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP') {
     return 'image/webp'

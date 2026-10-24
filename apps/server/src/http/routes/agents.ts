@@ -7,7 +7,9 @@ import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../../codex-accounts/store.js'
 import type { GrokAccountHomes } from '../../grok-accounts/homes.js'
+import type { AntigravityAccountHomes } from '../../antigravity-accounts/homes.js'
 import type { GrokAccountStore } from '../../grok-accounts/store.js'
+import type { AntigravityAccountStore } from '../../antigravity-accounts/store.js'
 import { projectCwd } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
@@ -16,6 +18,7 @@ import { requireUser } from '../require-user.js'
 const commandsQuerySchema = z.object({
   agent: agentKindSchema,
   worktreeId: z.string().optional(),
+  account: z.string().optional(),
   refresh: z.string().optional(),
 })
 
@@ -40,6 +43,7 @@ export function registerAgentRoutes(
   claudeAccounts: ClaudeAccountStore,
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
+  antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
 ): void {
   /** CLI names come from requests: unknown names return 404 rather than silently defaulting. */
   /** Resolves additional account references with their owner: browser-provided IDs belonging to someone else must reveal neither tokens nor usage. Null for unknown accounts or CLIs without accounts. */
@@ -58,6 +62,10 @@ export function registerAgentRoutes(
     if (agent === 'grok') {
       const account = grokAccounts.store.find(userId, accountId)
       return account && account.status === 'ready' ? grokAccounts.homes.ensure(accountId) : null
+    }
+    if (agent === 'antigravity') {
+      const account = antigravityAccounts.store.find(userId, accountId)
+      return account && account.status === 'ready' ? antigravityAccounts.homes.ensure(accountId) : null
     }
     return null
   }
@@ -128,11 +136,14 @@ export function registerAgentRoutes(
   })
 
   app.get('/api/agents/:agent/models', async (request) => {
-    requireUser(request)
+    const user = requireUser(request)
     const adapter = resolveAdapter(paramsAgent(request.params))
+    const { account } = request.query as { account?: string }
+    const credential = account ? accountCredential(adapter.kind, user.id, account) : undefined
+    if (account && credential == null) throw new HttpError(404, 'agent_account_not_found', 'Unknown account for this CLI.')
 
     try {
-      return await adapter.models()
+      return await adapter.models(credential ?? undefined)
     } catch (err) {
       throw cliUnavailable(
         adapter,
@@ -147,12 +158,14 @@ export function registerAgentRoutes(
   app.get('/api/projects/:id/commands', async (request): Promise<ProjectCommandsDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const { agent, worktreeId, refresh } = commandsQuerySchema.parse(request.query)
+    const { agent, worktreeId, refresh, account } = commandsQuerySchema.parse(request.query)
     const cwd = projectCwd(ctx.db, id, user.id, worktreeId)
     const adapter = resolveAdapter(agent)
 
+    const credential = account ? accountCredential(agent, user.id, account) : undefined
+    if (account && credential == null) throw new HttpError(404, 'agent_account_not_found', 'Unknown account for this CLI.')
     try {
-      return await adapter.commands(cwd, refresh === '1')
+      return await adapter.commands(cwd, refresh === '1', credential ?? undefined)
     } catch (err) {
       throw cliUnavailable(
         adapter,

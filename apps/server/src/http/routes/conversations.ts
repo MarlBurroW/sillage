@@ -40,6 +40,7 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { createConversation } from '../../conversations/create.js'
+import { readUserSettings } from '../../settings/user-settings.js'
 import {
   buildHandoff,
   clampHandoffTokens,
@@ -409,11 +410,15 @@ export function registerConversationRoutes(
       throw badRequest('fork_point_unknown', 'This cut point is beyond the end of the thread.')
     }
 
-    let agentSessionId: string
+    let portable: ReturnType<typeof buildHandoff> | null = null
+    let agentSessionId: string | null
+    const handoff = ctx.db.select().from(conversationHandoffs).where(eq(conversationHandoffs.conversationId, id)).get()
     try {
-      agentSessionId = await sessions.forkSession(id, body.throughSeq)
+      portable = source.agent === 'antigravity' ? buildHandoff(readHandoffItems(log, id, body.throughSeq), { id, title: source.title, agent: source.agent }, source.agent, clampHandoffTokens(undefined), handoff) : null
+      agentSessionId = portable ? null : await sessions.forkSession(id, body.throughSeq)
     } catch (err) {
       if (err instanceof ForkError) throw badRequest('fork_failed', err.message)
+      if (err instanceof HandoffError) throw badRequest(err.code, err.message)
       throw err
     }
 
@@ -428,6 +433,7 @@ export function registerConversationRoutes(
       ...source,
       id: randomUUID(),
       userId: user.id,
+      ...(source.agent === 'antigravity' && source.userId !== user.id ? { config: JSON.stringify(readUserSettings(ctx.db, user.id).agentDefaults.antigravity) } : {}),
       title: body.title ?? `${source.title} (branche)`,
       titleSetByUser: body.title !== undefined,
       titleSetByAgent: false,
@@ -457,12 +463,10 @@ export function registerConversationRoutes(
 
     // Forks of continuations remain continuations: context arrives through the system
     // prompt on every start and would be lost without a dedicated row.
-    const handoff = ctx.db
-      .select()
-      .from(conversationHandoffs)
-      .where(eq(conversationHandoffs.conversationId, id))
-      .get()
-    if (handoff) {
+    if (portable) {
+      ctx.db.insert(conversationHandoffs).values({ conversationId: row.id, fromConversationId: id, throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens, text: portable.text, createdAt: now }).run()
+      log.append(row.id, { type: 'agent.notice', code: 'portable_fork', level: 'info', message: 'Antigravity does not provide native forks. This new session receives the retained conversation as portable context.', details: { throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens } })
+    } else if (handoff) {
       ctx.db.insert(conversationHandoffs).values({ ...handoff, conversationId: row.id }).run()
     }
 
@@ -471,7 +475,7 @@ export function registerConversationRoutes(
       .status(201)
       .send(
         conversationToDto(
-          { ...row, lastSeq: copied },
+          { ...row, lastSeq: copied + (portable ? 1 : 0) },
           user.id,
           0,
           readCardLink(ctx, row.cardId),
@@ -499,6 +503,7 @@ export function registerConversationRoutes(
         { id: source.id, title: source.title, agent: source.agent },
         body.agent,
         budgetTokens,
+        ctx.db.select().from(conversationHandoffs).where(eq(conversationHandoffs.conversationId, id)).get(),
       )
     } catch (err) {
       if (err instanceof HandoffError) throw badRequest(err.code, err.message)

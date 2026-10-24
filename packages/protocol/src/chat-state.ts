@@ -36,6 +36,8 @@ export interface MessageItem {
 }
 
 export interface ToolItem {
+  /** Human-facing action supplied by the harness, separate from tool arguments. */
+  title?: string | null
   kind: 'tool'
   id: string
   /** Call start time: the only basis for a running timer. */
@@ -117,6 +119,7 @@ export interface NoticeItem {
   kind: 'notice'
   id: string
   text: string
+  code?: string
   translation?:
     | { key: 'activity.modelChanged'; model: string }
     | { key: 'checkpoint.restored.notice'; written: number; deleted: number }
@@ -580,9 +583,10 @@ function toolStatus(state: ChatState, toolCallId: string): ToolItem['status'] | 
   return item && item.kind === 'tool' ? item.status : null
 }
 
-function closeRunningTools(state: ChatState): void {
+function closeRunningTools(state: ChatState, preserveBackground = false): void {
   state.items.forEach((item, index) => {
     if (item.kind === 'tool' && item.status === 'running') {
+      if (preserveBackground && state.background.some((task) => task.id === item.id)) return
       replaceItem(state, index, { ...item, status: 'interrupted' as const })
     }
   })
@@ -676,7 +680,7 @@ export function applyEvent(
       state.turnRunning = false
       state.planId = null
       state.diffId = null
-      closeRunningTools(state)
+      closeRunningTools(state, true)
       // Fallback: compaction ending without a boundary or error would otherwise leave the indicator
       // on until reload.
       state.compacting = false
@@ -785,6 +789,7 @@ export function applyEvent(
         id: event.toolCallId,
         ts,
         name: event.name,
+        title: event.title,
         input: event.input,
         inputRef: event.inputRef,
         output: null,
@@ -798,7 +803,7 @@ export function applyEvent(
 
     case 'tool.input_updated': {
       const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === event.toolCallId)
-      if (index !== -1) replaceItem(state, index, { ...(state.items[index] as ToolItem), input: event.input, inputRef: event.inputRef })
+      if (index !== -1) replaceItem(state, index, { ...(state.items[index] as ToolItem), input: event.input, inputRef: event.inputRef, ...(event.title !== undefined ? { title: event.title } : {}) })
       break
     }
 
@@ -1053,7 +1058,7 @@ export function applyEvent(
       const id = event.id ?? `notice-${seq}`
       const index = findLastIndex(state.items, (item) => item.kind === 'notice' && item.id === id)
       const item: NoticeItem = {
-        kind: 'notice', id, text: event.message,
+        kind: 'notice', id, text: event.message, code: event.code,
         level: event.level, details: event.details,
       }
       if (index === -1) appendItem(state, item)

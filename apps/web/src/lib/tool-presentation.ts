@@ -94,8 +94,9 @@ export function toolPreview(tool: ToolItem): string {
   return translate('toolStyle.outputEmpty')
 }
 
-/** One-line identifiers for the normalized payloads produced by all four adapters. */
+/** One-line identifiers for the normalized payloads produced by all adapters. */
 export function toolSummary(tool: ToolItem, edits: EditPresentation | null = toolEdits(tool)): { text: string; mono: boolean } | null {
+  if (tool.title) return { text: tool.title, mono: false }
   const input = fields(tool.input)
   const description = text(input, 'description')
   if (description) return { text: description, mono: false }

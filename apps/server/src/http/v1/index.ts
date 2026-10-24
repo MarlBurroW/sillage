@@ -24,7 +24,7 @@ export function registerV1Routes(
   registry: AgentRegistry,
   webhooks: WebhookService,
 ): void {
-  registerDiscoveryRoutes(app, ctx, registry)
+  registerDiscoveryRoutes(app, ctx, registry, sessions)
   registerProjectCreationRoutes(app, ctx)
   registerTaskRoutes(app, ctx, log, sessions, registry, webhooks)
   registerMcpRoutes(app, ctx)

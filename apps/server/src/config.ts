@@ -56,6 +56,7 @@ const configSchema = z.object({
       opencode: z
         .object({ binary: z.string().default('opencode'), enabled: z.boolean().default(true) })
         .default({}),
+      antigravity: z.object({ binary: z.string().default(process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par'), enabled: z.boolean().default(true) }).default({}),
       grok: z
         .object({ binary: z.string().default('grok'), enabled: z.boolean().default(true) })
         .default({}),
@@ -81,6 +82,8 @@ export interface Paths {
   skillSourcesCache: string
   /** One `CODEX_HOME` per additional Codex account; see `codex-accounts/homes.ts`. */
   codexAccounts: string
+  /** Isolated Google credentials and owner-scoped native histories. */
+  antigravityAccounts: string
   /** One `GROK_HOME` per additional Grok account; see `grok-accounts/homes.ts`. */
   grokAccounts: string
   /** One login per Claude subscription solely for usage gauges; see `claude-accounts/gauges.ts`. */
@@ -117,6 +120,7 @@ function resolvePaths(): Paths {
     skillLibrary: join(data, 'skill-library'),
     memory: join(data, 'memory'),
     codexAccounts: join(data, 'codex-accounts'),
+    antigravityAccounts: join(data, 'antigravity-accounts'),
     grokAccounts: join(data, 'grok-accounts'),
     claudeAccounts: join(data, 'claude-accounts'),
     // Per data directory: test servers beside daemons share preconfigured source IDs

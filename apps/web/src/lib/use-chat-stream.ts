@@ -226,6 +226,11 @@ export function useChatStream(
             return
           }
           pending.push({ seq, ts, event })
+          if (event.type === 'agent.notice' && event.code === 'antigravity_account_signed_out') {
+            void queryClient.invalidateQueries({ queryKey: ['antigravity-accounts'] })
+            void queryClient.invalidateQueries({ queryKey: ['agents', 'antigravity'] })
+            void queryClient.invalidateQueries({ queryKey: ['usage', 'antigravity'] })
+          }
           if (flushTimer === null) flushTimer = window.setTimeout(flush, FLUSH_INTERVAL_MS)
         },
         onStatus: (next, isWarm, applied) => {

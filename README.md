@@ -2,7 +2,7 @@
 
 **Work with your coding agents from your computer or phone.**
 
-Sillage runs Claude Code, Codex, OpenCode and Grok Build in one workspace, using
+Sillage runs Claude Code, Codex, OpenCode, Grok Build and Google Antigravity in one workspace, using
 your existing agent accounts. You can review their changes beside the conversation.
 
 Use the desktop app on your own computer, or host Sillage Server to reach your
@@ -108,9 +108,12 @@ wherever you are.
 
 ### Pick the agent for the next step
 
-Start with Claude Code, then continue with Codex, OpenCode or Grok Build. The next
+Start with Claude Code, then continue with Codex, OpenCode, Grok Build or Google Antigravity. The next
 agent receives context from the conversation, and your project’s instructions,
 memory and skills stay available across sessions.
+
+Google Gemini uses Google's official Antigravity ACP distribution.
+[Supported features, accounts and native limitations](docs/antigravity-integration.md).
 
 ### Keep parallel work organized
 

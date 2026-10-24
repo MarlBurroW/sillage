@@ -86,6 +86,8 @@ export type McpServer = z.infer<typeof mcpServerSchema>
  */
 export const mcpServerStateSchema = z.enum([
   'pending',
+  /** Passed to a CLI that does not report server health; a successful call confirms connection. */
+  'configured',
   'connected',
   'failed',
   /** Server responds but requires authentication Sillage cannot perform. */

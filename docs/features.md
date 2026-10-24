@@ -15,7 +15,7 @@ explains the differences.
   Sillage is running, the agent keeps working and the thread replays as it happened.
 - **A queue, and steering.** Write while a turn runs. The message waits on the
   server and can be withdrawn, or goes straight into the turn already in flight.
-- **One grammar for every CLI.** Claude Code, Codex, OpenCode and Grok Build are translated
+- **One grammar for every CLI.** Claude Code, Codex, OpenCode, Grok Build and Google Antigravity are translated
   into a single event schema, so history, search, the board and the panel behave the
   same way whichever one ran the conversation.
 - **The repository, one panel away.** File explorer, editor, diffs, a branch graph
@@ -100,7 +100,7 @@ explains the differences.
   optional fallback choice. This is separate from the CLI's permission requests
   and is off by default for each source.
 - **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
-  all four CLIs, editable from the interface, which agents can read and rewrite.
+  all five CLIs, editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).
 - **Installable PWA with notifications.** In-app toasts for questions and decisions,
   push notifications on other devices, and silence while you already have the
@@ -108,11 +108,11 @@ explains the differences.
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
 - **Continue a conversation in another CLI.** From Claude Code to Codex, OpenCode or
-  Grok Build and back: the new agent receives a budgeted selection of the thread, full messages rather
+  Grok Build or Google Antigravity and back: the new agent receives a budgeted selection of the thread, full messages rather
   than a summary, with references it can read back through the Sillage MCP server.
   [How the handoff is built](cli-handoff.md).
 - **MCP servers** declared once and handed to the agents that should get them.
-- **A shared skill library** for Claude Code, Codex, OpenCode and Grok Build, with global and
+- **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, with global and
   project skills managed from the interface. [Skill library](skill-library.md).
 - **Extra accounts.** Register other Claude subscriptions or API keys, other Codex
   subscriptions or API keys, and other Grok subscriptions or xAI API keys from the
@@ -121,6 +121,11 @@ explains the differences.
   extra Claude subscriptions need a separate guided sign-in to enable their gauge.
   Added accounts belong to the Sillage user who registered them.
   [Extra accounts](accounts.md).
+- **Google Gemini through Antigravity.** Native commands, model-specific thinking levels,
+  permissions, skills, MCP, account selection and history import. Google ACP has no
+  native fork: Sillage starts a new session with portable context through the selected
+  turn. Manual compaction and live steering are unavailable in this protocol.
+  [Coverage and limitations](antigravity-integration.md).
 - **A composer you can arrange.** Model and effort sit in one chip under the
   message box; pin the other settings you use next to it: permissions, speed,
   account, advisor or other controls supported by that CLI, and order them. Each
