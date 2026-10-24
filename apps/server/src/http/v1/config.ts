@@ -6,6 +6,7 @@ import {
   type AgentConfig,
   type AgentDefaults,
   type AgentKind,
+  type AgentModelsDto,
   type CreateTaskBody,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
@@ -25,6 +26,7 @@ export async function resolveTaskConfig(
   project: ProjectRow,
   body: CreateTaskBody,
   defaults: AgentDefaults,
+  modelsFor?: (config: AgentConfig) => Promise<AgentModelsDto>,
 ): Promise<{ agent: AgentKind; config: AgentConfig }> {
   const agent = body.agent ?? token.agent
   const base = baseConfigFor(agent, token, project, defaults)
@@ -50,7 +52,7 @@ export async function resolveTaskConfig(
   }
 
   if (typeof body.config?.model === 'string' && body.config.model.length > 0) {
-    await assertModelExists(registry, agent, body.config.model)
+    await assertModelExists(registry, agent, body.config.model, modelsFor ? () => modelsFor(merged) : undefined)
   }
 
   // Check the resolved configuration rather than the token configuration: the base
@@ -97,10 +99,11 @@ async function assertModelExists(
   registry: AgentRegistry,
   agent: AgentKind,
   model: string,
+  catalogFor?: () => Promise<AgentModelsDto>,
 ): Promise<void> {
   let known: string[]
   try {
-    const catalog = await registry.adapter(agent).models()
+    const catalog = await (catalogFor ? catalogFor() : registry.adapter(agent).models())
     known = catalog.models.map((entry) => entry.value)
   } catch {
     return

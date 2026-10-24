@@ -99,12 +99,12 @@ export function toolPreview(tool: ToolItem): string {
   return translate('toolStyle.outputEmpty')
 }
 
-/** One-line identifiers for the normalized payloads produced by all four adapters. */
+/** One-line identifiers for the normalized payloads produced by all adapters. */
 export function toolSummary(tool: ToolItem, edits: EditPresentation | null = toolEdits(tool)): { text: string; mono: boolean } | null {
   const input = fields(toolWebInput(tool))
   // Only known descriptive arguments are activity metadata. A card/task's description is its body.
   const description = ['Bash', 'Agent', 'Task'].includes(tool.name) ? text(input, 'description')?.trim() : null
-  const title = description || tool.presentation?.title?.trim()
+  const title = tool.title?.trim() || description || tool.presentation?.title?.trim()
   if (title) return { text: title, mono: false }
   if (tool.name === 'Bash') {
     const action = commandSummary(input?.commandActions)

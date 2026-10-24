@@ -241,3 +241,18 @@ test('final Codex command, MCP, dynamic and image inputs retain metadata through
     if (end.type === 'dynamicToolCall') assert.equal(toolOrigin(item.name, item.presentation).kind, 'native')
   }
 })
+
+test('Antigravity action titles survive replay and partial updates alongside presentation metadata', () => {
+  let state = emptyChatState()
+  const emit = (event: unknown, seq: number) => { state = applyEvent(state, seq, seq, sillageEventSchema.parse(event)) }
+  emit({ type: 'tool.started', toolCallId: 'google', name: 'sillage/create_card', title: 'Record the discovered issue', input: { description: 'Resource body' }, parentToolCallId: null }, 1)
+  const current = () => state.items.find((item): item is ToolItem => item.kind === 'tool')!
+  assert.equal(toolSummary(current())?.text, 'Record the discovered issue')
+  emit({ type: 'tool.input_updated', toolCallId: 'google', input: { description: 'Updated body' }, presentation: { origin: 'mcp' } }, 2)
+  assert.equal(toolSummary(current())?.text, 'Record the discovered issue')
+  emit({ type: 'tool.input_updated', toolCallId: 'google', input: { description: 'Updated body' }, title: 'Save the follow-up' }, 3)
+  assert.equal(toolSummary(current())?.text, 'Save the follow-up')
+  assert.equal(current().presentation?.origin, 'mcp')
+  emit({ type: 'tool.input_updated', toolCallId: 'google', input: { query: 'remaining work' }, title: null }, 4)
+  assert.equal(toolSummary(current())?.text, 'remaining work')
+})

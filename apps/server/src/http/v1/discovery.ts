@@ -8,6 +8,8 @@ import {
   type TaskProjectDto,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
+import type { SessionManager } from '../../sessions/session-manager.js'
+import { readUserSettings } from '../../settings/user-settings.js'
 import { readGitStatus } from '../../git.js'
 import type { AppContext } from '../context.js'
 import { requireScope } from '../require-user.js'
@@ -22,6 +24,7 @@ export function registerDiscoveryRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   registry: AgentRegistry,
+  sessions: SessionManager,
 ): void {
   app.get('/api/v1/projects', async (request) => {
     const { token, user } = requireScope(request, 'projects:read')
@@ -78,7 +81,7 @@ export function registerDiscoveryRoutes(
    * call because of an agent the caller does not use.
    */
   app.get('/api/v1/agents', async (request) => {
-    requireScope(request, 'projects:read')
+    const { token, user } = requireScope(request, 'projects:read')
 
     const agents = await Promise.all(
       registry.all().map(async (adapter): Promise<TaskAgentDto> => {
@@ -92,7 +95,8 @@ export function registerDiscoveryRoutes(
         }
 
         try {
-          const catalog = await adapter.models()
+          const config = token.agent === adapter.kind ? JSON.parse(token.config) as AgentConfig : readUserSettings(ctx.db, user.id).agentDefaults[adapter.kind]
+          const catalog = await sessions.modelsFor(user.id, config)
           return {
             ...base,
             available: true,

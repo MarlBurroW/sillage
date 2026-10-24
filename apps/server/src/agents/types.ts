@@ -71,6 +71,8 @@ export interface RunnerContext {
   setAgentSessionId(sessionId: string): void
   /** Persists session-initiated configuration changes, such as plan-approved permission modes. Otherwise settings and resume would revert to old values. */
   updateConfig(config: AgentConfig): void
+  /** Reflect successful native /logout commands in the selected managed account. */
+  accountSignedOut?(): Promise<void>
   /** Registers pending permissions and returns request IDs. */
   openPermissionRequest(toolName: string, input: unknown): string
   closePermissionRequest(requestId: string, decision: PermissionDecision): void
@@ -104,6 +106,8 @@ export interface AgentRunner {
   readonly appliedConfig: AgentConfig
   /** Starts processes and normalizes streams into journals. */
   start(): Promise<void>
+  /** Replay an adopted native session into a new journal, without a model request. */
+  importHistory?(): Promise<void>
   /** Skills arrive by name while mentions arrive resolved. Deliberate: servers know disk paths, but only CLIs know published skill inventories. Unknown names are ignored. */
   send(
     text: string,

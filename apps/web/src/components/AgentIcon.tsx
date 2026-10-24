@@ -11,6 +11,7 @@ const BRAND: Record<AgentKind, string> = {
   opencode: 'currentColor',
   // So is Grok: xAI uses black or white depending on background.
   grok: 'currentColor',
+  antigravity: 'currentColor',
 }
 
 /**
@@ -62,6 +63,13 @@ function OpencodeMark({ size }: { size: number }) {
  * Grok mark from @lobehub/icons-static-svg (MIT). Use Grok's recognizable symbol rather than xAI's,
  * like Claude versus Claude Code. Nominative use; Sillage is not affiliated with xAI.
  */
+/** Official Antigravity ACP registry icon; nominative use. */
+function AntigravityMark({ size }: { size: number }) {
+  return <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor" aria-hidden>
+    <path d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z" />
+  </svg>
+}
+
 function GrokMark({ size }: { size: number }) {
   return (
     <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill={BRAND.grok} fillRule="evenodd" aria-hidden>
@@ -102,6 +110,7 @@ export const AGENT_META: Record<AgentKind, AgentMeta> = {
     blurb: translate('agent.blurb.opencode'),
     Mark: OpencodeMark,
   },
+  antigravity: { label: 'Google Antigravity', vendor: 'Google', blurb: translate('agent.blurb.antigravity'), Mark: AntigravityMark },
   grok: {
     label: 'Grok Build',
     vendor: 'xAI',

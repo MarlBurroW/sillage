@@ -47,6 +47,7 @@ import { registerGitCredentialRoutes } from './routes/git-credentials.js'
 import { registerClaudeAccountRoutes } from './routes/claude-accounts.js'
 import { registerCodexAccountRoutes } from './routes/codex-accounts.js'
 import { registerGrokAccountRoutes } from './routes/grok-accounts.js'
+import { registerAntigravityAccountRoutes } from './routes/antigravity-accounts.js'
 import { CloneJobs } from '../clone-jobs.js'
 import { GitHubRepoCatalog } from '../git-credentials/github.js'
 import type { GitCredentialStore } from '../git-credentials/store.js'
@@ -56,10 +57,14 @@ import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexLoginService } from '../codex-accounts/login.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
 import type { GrokAccountHomes } from '../grok-accounts/homes.js'
+import type { AntigravityAccountHomes } from '../antigravity-accounts/homes.js'
 import type { GrokLoginService } from '../grok-accounts/login.js'
+import type { AntigravityLoginService } from '../antigravity-accounts/login.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
+import type { AntigravityAccountStore } from '../antigravity-accounts/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
+import { registerAntigravitySessionRoutes } from './routes/antigravity-sessions.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
 import { registerBoardLinkRoutes } from './routes/board-link.js'
@@ -123,7 +128,9 @@ export async function buildApp(
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   codexLogin: CodexLoginService,
   grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
+  antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
   grokLogin: GrokLoginService,
+  antigravityLogin: AntigravityLoginService,
   webhooks: WebhookService,
   scheduler: Scheduler,
   relay: SessionRelay,
@@ -216,6 +223,7 @@ export async function buildApp(
   registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
+  registerAntigravitySessionRoutes(app, ctx, sessions, registry)
   registerFsRoutes(app)
   registerAgentRoutes(
     app,
@@ -225,6 +233,7 @@ export async function buildApp(
     claudeAccounts,
     codexAccounts,
     grokAccounts,
+    antigravityAccounts,
   )
   registerMcpRoutes(app, ctx)
   // Sources read the library to install skills; the library reads source catalogs
@@ -245,6 +254,7 @@ export async function buildApp(
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
+  registerAntigravityAccountRoutes(app, antigravityAccounts.store, antigravityLogin)
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments, board)
   registerBoardLinkRoutes(app, ctx, board)

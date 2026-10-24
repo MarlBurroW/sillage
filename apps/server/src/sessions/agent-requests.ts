@@ -407,9 +407,7 @@ export class AgentRequests {
       return this.registry.adapter(agent).resolveDefaults(base)
     }
 
-    const catalog = await this.registry
-      .adapter(agent)
-      .models()
+    const catalog = await (agent === 'antigravity' ? this.sessions.modelsFor(userId, base) : this.registry.adapter(agent).models())
       .then((listing) => listing.models)
       .catch((): AgentModelDto[] => [])
 
@@ -1022,9 +1020,7 @@ export class AgentRequests {
     const sections: string[] = []
     for (const agent of agents) {
       const defaults = await this.launchConfig(agent, project, requester.userId, {}).catch(() => null)
-      const models = await this.registry
-        .adapter(agent)
-        .models()
+      const models = await (defaults?.agent === 'antigravity' ? this.sessions.modelsFor(requester.userId, defaults) : this.registry.adapter(agent).models())
         .then((listing) => listing.models)
         .catch(() => null)
       const head = defaults
@@ -1127,7 +1123,7 @@ function withEffort(config: AgentConfig, effort: string): AgentConfig {
   // Schemas reject unsupported Claude levels later; the cast merely passes
   // the string through to validation.
   if (config.agent === 'claude') return { ...config, effort: effort as typeof config.effort }
-  if (config.agent === 'codex' || config.agent === 'grok') return { ...config, reasoningEffort: effort }
+  if (config.agent === 'codex' || config.agent === 'grok' || config.agent === 'antigravity') return { ...config, reasoningEffort: effort }
   return { ...config, variant: effort }
 }
 

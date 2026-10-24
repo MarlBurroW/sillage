@@ -10,7 +10,8 @@ The choice lives in the conversation's configuration, under **Account** in the
 composer, in **Settings › CLI defaults**, and in a project's presets. Changing it on a
 running conversation restarts the session, as the permission mode does. When the
 chosen account no longer exists, the session starts on the CLI's own sign-in and says
-so in the thread.
+so in the thread. Antigravity requires choosing another connected account explicitly,
+so an unavailable Google account never silently changes who pays for the request.
 
 On the new-session screen, an **Account** choice sits right under the CLI choice as
 soon as an extra account exists. Each option shows where its account stands: the two
@@ -148,3 +149,34 @@ Same design as Codex: Grok Build keeps one sign-in per `GROK_HOME`, in its `auth
 - Usage is read per account through Grok's `_x.ai/billing` extension: the share of the
   weekly or monthly credit allowance, the on-demand cap and the prepaid balance.
 - Probed on Grok Build 1.0.62.
+
+## Google Antigravity
+
+Settings › **Google accounts** supports personal Google OAuth, enterprise OAuth
+(with a Google Cloud project), a Gemini API key, and Agent Platform (API key or
+project/location with Application Default Credentials on the host).
+
+Open the Google authorization link from the account card. On a remote Server, the
+browser's final loopback callback cannot reach the CLI: copy that failed page's
+address into the card. Sillage forwards it only to the pending login's exact
+loopback endpoint and checks its OAuth state. Desktop can complete the local
+callback directly. Google owns OAuth and refreshes its own credentials.
+
+Each account has a private `GEMINI_HOME` under `<data>/antigravity-accounts/<id>`.
+File credential storage is forced to keep accounts separate on macOS too. API keys
+are stored with mode `0600`, passed only to their native process and never returned
+to the browser. The native API-key authentication step records configuration; Google
+validates it on the first model request, so these cards say **Configured**.
+
+Model catalogs, thinking choices and usage probes use the selected account.
+Changing accounts restarts the process and resumes the same history; unavailable
+model names are replaced by the new account's native default with a notice.
+Histories are shared only within one Sillage user's accounts. Artifacts survive
+account deletion; credentials do not travel with a conversation.
+
+Signing out, reconnecting or deleting an account stops its running sessions first.
+Native `/logout` also updates the Sillage account and stops its other sessions.
+Quota gauges use the native `/usage` report when available; unsupported gauges
+remain unavailable instead of showing an invented balance.
+
+See [the integration inventory and validation limits](antigravity-integration.md).

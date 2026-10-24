@@ -897,7 +897,8 @@ export function Composer({
                 <Paperclip size={16} />
               </TooltipButton>
               {narrow ? null : dictate}
-              {narrow || split ? null : <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />}
+              {/* Keep measured tool width stable when pins wrap, or the split threshold oscillates. */}
+              {narrow ? null : <span aria-hidden className={cx('mx-0.5 h-4 w-px bg-line', split && 'invisible')} />}
             </div>
             <div ref={trail} className="order-3 ml-auto flex shrink-0 items-center gap-1">
               {mcp ? cloneElement(mcp, { narrow }) : null}

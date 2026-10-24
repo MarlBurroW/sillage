@@ -1468,6 +1468,24 @@ export const grokAccounts = sqliteTable(
   (t) => [uniqueIndex('idx_grok_accounts_owner_label').on(t.ownerId, t.label)],
 )
 
+/** Google accounts; credentials stay in their private CLI homes. */
+export const antigravityAccounts = sqliteTable(
+  'antigravity_accounts',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    authMode: text('auth_mode').$type<'oauth-personal' | 'oauth-business' | 'gemini-api-key' | 'agent-platform'>(),
+    email: text('email'),
+    plan: text('plan'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_antigravity_accounts_owner_label').on(t.ownerId, t.label)],
+)
+
 /**
  * API tokens carrying machine-client identities.
  *
@@ -1645,3 +1663,5 @@ export const threadProjectionRows = sqliteTable('thread_projection_rows', {
   index('idx_thread_projection_related').on(t.conversationId, t.related),
   index('idx_thread_projection_kind').on(t.conversationId, t.itemKind, t.position),
 ])
+
+export type AntigravityAccountRow = typeof antigravityAccounts.$inferSelect
