@@ -105,7 +105,7 @@ test('un tour : réflexion, texte, outils normalisés, sortie en flux, édition,
   assert.deepEqual(started[0]!.input, { file_path: `${f.cwd}/a.txt` })
   assert.deepEqual(started[3]!.input, { number: 3 })
   assert.deepEqual(f.events.find((event) => event.type === 'tool.input_updated'),
-    { type: 'tool.input_updated', toolCallId: 'c3', input: { file_path: `${f.cwd}/a.txt`, old_string: 'a', new_string: 'b', replace_all: false } })
+    { type: 'tool.input_updated', toolCallId: 'c3', name: 'Edit', presentation: {}, input: { file_path: `${f.cwd}/a.txt`, old_string: 'a', new_string: 'b', replace_all: false } })
   assert.deepEqual(f.events.filter((event) => event.type === 'tool.output_delta').map((event) => event.chunk), ['hi\n', 'there\n'])
   const completed = f.events.filter((event) => event.type === 'tool.completed')
   assert.deepEqual(completed.map((event) => [event.toolCallId, event.output, event.isError]), [
@@ -309,4 +309,28 @@ test('steer par _x.ai/interject, compaction par _x.ai/compact_conversation', asy
   assert.deepEqual(f.events.find((event) => event.type === 'context.compacted'),
     { type: 'context.compacted', trigger: 'manual', preTokens: 900, postTokens: 300 })
   assert.equal(f.count('context.compaction_started'), 1)
+})
+
+
+test('ACP title, location, late MCP identity and pre-completion output survive independent updates', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({ steps: [
+    update({ sessionUpdate: 'tool_call', toolCallId: 'late', title: 'use_tool', rawInput: {}, _meta: tool('use_tool', 'use_tool') }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'late', title: 'Read the project card', rawInput: { tool_name: 'sillage__read_card', tool_input: { number: 3 } } }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'late', locations: [{ path: 'src/a.ts', line: 3 }], rawOutput: { type: 'MCP', output: { OkayOutput: 'Card body' } } }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'late', status: 'completed' }),
+    update({ sessionUpdate: 'tool_call', toolCallId: 'text', title: 'Reading source', rawInput: {} }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'text', name: 'read_file', title: 'Read the entry point', rawInput: { target_file: 'src/main.ts' }, content: [{ type: 'content', content: { type: 'text', text: 'Source content' } }] }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'text', status: 'completed' }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'text', status: 'completed' }),
+  ] })
+  assert.equal(f.events.filter(event => event.type === 'tool.started').length, 2, 'A repeated completion must not recreate the tool')
+  const updates = f.events.filter(event => event.type === 'tool.input_updated')
+  const last = updates.filter(event => event.toolCallId === 'late').at(-1)!
+  assert.equal(last.name, 'sillage/read_card')
+  assert.deepEqual(last.input, { number: 3 })
+  assert.deepEqual(last.presentation, { title: 'Read the project card', paths: ['src/a.ts'] })
+  assert.equal(updates.find(event => event.toolCallId === 'text')?.name, 'Read')
+  assert.deepEqual(f.events.filter(event => event.type === 'tool.completed').map(event => event.output), ['Card body', 'Source content'])
+  for (const event of f.events) sillageEventSchema.parse(event)
 })

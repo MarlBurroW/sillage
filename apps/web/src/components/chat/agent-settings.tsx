@@ -1,3 +1,4 @@
+import { useAntigravityAccounts } from '../../lib/antigravity-accounts'
 import { BookOpen, Box, Brain, Compass, FilePen, Globe, IdCard, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Wallet, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
@@ -12,6 +13,7 @@ import {
   type CodexConfig,
   type CodexMode,
   type GrokConfig,
+  type AntigravityConfig,
   type McpServerStatus,
   type OpencodePermission,
   type OpencodePermissions,
@@ -330,7 +332,7 @@ export function useAgentSettings({
 }: AgentSettingsParams): AgentSettings {
   const t = useTranslate()
   // Probe only the selected agent: each probe starts its corresponding server-side CLI.
-  const { data: catalog, error: catalogError } = useAgentModels(config.agent)
+  const { data: catalog, error: catalogError } = useAgentModels(config.agent, true, config.agent === 'antigravity' ? config.account : null)
 
   // Constant configuration copies: TypeScript does not preserve parameter narrowing inside
   // rendering functions built below.
@@ -338,6 +340,7 @@ export function useAgentSettings({
   const codex = config.agent === 'codex' ? config : null
   const opencode = config.agent === 'opencode' ? config : null
   const grok = config.agent === 'grok' ? config : null
+  const antigravity = config.agent === 'antigravity' ? config : null
 
   /**
    * Actually effective model. `CLI_DEFAULT` matches no catalog entry: displaying it directly left
@@ -457,7 +460,7 @@ export function useAgentSettings({
   }, [catalog, claude, t])
 
   /** Same effort sentinel, which only Codex leaves empty: display the selected model's advertised default. */
-  const effortSetting = codex ?? grok
+  const effortSetting = codex ?? grok ?? antigravity
   const resolvedEffort = effortSetting
     ? effortSetting.reasoningEffort ||
       catalogModel(catalog?.models, resolvedModel)?.defaultEffort ||
@@ -585,15 +588,16 @@ export function useAgentSettings({
   const { data: codexAccountList } = useCodexAccounts(codex !== null)
   // Grok follows Codex: one home per account, connected or not.
   const { data: grokAccountList } = useGrokAccounts(grok !== null)
+  const { data: antigravityAccountList } = useAntigravityAccounts(antigravity !== null)
   const accountOptions = useMemo((): SettingChoice<string>[] => {
-    const chosen = claude?.account ?? codex?.account ?? grok?.account ?? null
+    const chosen = claude?.account ?? codex?.account ?? grok?.account ?? antigravity?.account ?? null
     const accounts = claude
       ? (claudeAccountList?.accounts ?? [])
       : codex
         ? (codexAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
         : grok
           ? (grokAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
-          : null
+          : antigravity ? (antigravityAccountList?.accounts ?? []).filter((account) => account.status === 'ready') : null
     if (accounts === null) return []
     if (accounts.length === 0 && !chosen) return []
     const known: SettingChoice<string>[] = [
@@ -606,7 +610,7 @@ export function useAgentSettings({
       known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
     return known
-  }, [claudeAccountList, codexAccountList, grokAccountList, claude, codex, grok, t])
+  }, [claudeAccountList, codexAccountList, grokAccountList, antigravityAccountList, claude, codex, grok, antigravity, t])
   const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
 
   const permissionOptionList = permissionOptions(t)
@@ -615,6 +619,11 @@ export function useAgentSettings({
   const ultracodeOptionList = ultracodeOptions(t)
   const opencodePermissionList = opencodePermissionOptions(t)
   const grokPermissionList = grokPermissionOptions(t)
+  const antigravityPermissionList: SettingChoice<AntigravityConfig['permissionMode']>[] = [
+    { value: 'default', label: t('composer.permission.manual'), hint: t('composer.permission.manual.hint') },
+    { value: 'auto_edit', label: t('composer.permission.acceptEdits'), hint: t('composer.permission.acceptEdits.hint') },
+    { value: 'yolo', label: t('composer.permission.bypass'), hint: t('composer.permission.bypass.hint'), tone: 'caution' },
+  ]
   const webSearchOptionList = webSearchOptions(t)
 
   let groups: SettingGroup[] = []
@@ -1155,6 +1164,101 @@ export function useAgentSettings({
         onSelectedChange={(ids) => onConfigChange({ ...grok, mcpServers: ids })}
         sillage={sillageAvailable ? grok.sillageMcp : null}
         onSillageChange={(sillageMcp) => onConfigChange({ ...grok, sillageMcp })}
+        strict={null}
+        onStrictChange={() => {}}
+        disabled={disabled}
+      />
+    )
+  } else if (antigravity) {
+    const applied = appliedConfig?.agent === 'antigravity' ? appliedConfig : null
+
+    groups = [
+      setting({
+        key: 'model',
+        label: t('composer.setting.model'),
+        icon: <Sparkles size={15} />,
+        options: modelOptions,
+        value: resolvedModel,
+        onChange: (model) =>
+          onConfigChange({ ...antigravity, model, reasoningEffort: clampEffort(model, antigravity.reasoningEffort) }),
+      }),
+      ...(effortOptions.length > 0
+        ? [
+            setting({
+              key: 'effort',
+              label: t('composer.setting.effort'),
+              icon: <Brain size={15} />,
+              options: effortOptions,
+              value: resolvedEffort,
+              onChange: (reasoningEffort) => onConfigChange({ ...antigravity, reasoningEffort }),
+            }),
+          ]
+        : []),
+      setting({
+        key: 'permission',
+        label: t('composer.setting.permission'),
+        icon: <ShieldCheck size={15} />,
+        options: antigravityPermissionList,
+        value: antigravity.permissionMode,
+        onChange: (permissionMode) => onConfigChange({ ...antigravity, permissionMode }),
+      }),
+      ...(accountOptions.length > 0
+        ? [
+            setting({
+              key: 'account',
+              label: t('composer.setting.account'),
+              icon: <IdCard size={15} />,
+              options: accountOptions,
+              value: accountChoice(antigravity.account),
+              onChange: (choice) =>
+                onConfigChange({ ...antigravity, account: choice === CLI_DEFAULT_CHOICE ? null : choice, model: '', reasoningEffort: '' }),
+              // Account identifies process GEMINI_HOME: changes await session restart.
+              notice: notice(
+                appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(antigravity.account), accountOptions),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(libraryAvailable
+        ? [
+            setting({
+              key: 'skillLibrary',
+              label: t('composer.setting.skillLibrary'),
+              icon: <BookOpen size={15} />,
+              options: libraryOptionList,
+              active: 'on',
+              value: libraryChoice(antigravity.skillLibrary),
+              onChange: (choice) => onConfigChange({ ...antigravity, skillLibrary: choice === 'on' }),
+              // Native skill discovery runs when the process starts.
+              notice: notice(
+                appliedLabel(
+                  applied ? libraryChoice(applied.skillLibrary) : undefined,
+                  libraryChoice(antigravity.skillLibrary),
+                  libraryOptionList,
+                ),
+                t,
+              ),
+            }),
+          ]
+        : []),
+    ]
+
+    summary = [
+      segment('model', modelOptions, resolvedModel),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      ...(antigravity.account ? [segment('account', accountOptions, antigravity.account)] : []),
+      segment('permission', antigravityPermissionList, antigravity.permissionMode),
+    ]
+
+    mcp = (
+      <McpControl
+        servers={mcpServers}
+        inventory={mcpInventory}
+        selected={antigravity.mcpServers}
+        onSelectedChange={(ids) => onConfigChange({ ...antigravity, mcpServers: ids })}
+        sillage={sillageAvailable ? antigravity.sillageMcp : null}
+        onSillageChange={(sillageMcp) => onConfigChange({ ...antigravity, sillageMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}

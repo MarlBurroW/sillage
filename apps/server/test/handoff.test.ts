@@ -40,6 +40,19 @@ function journal(events: SillageEvent[]): JournalEntry[] {
 
 const bytesOf = (items: HandoffItem[]) => items.reduce((total, item) => total + itemBytes(item), 0)
 
+test('portable forks and transfers retain inherited context without exceeding their budget', () => {
+  const items: HandoffItem[] = [{ kind: 'user', seq: 1, text: 'Continue the implementation' }, { kind: 'assistant', seq: 2, text: 'The current change' }]
+  const inherited = { fromConversationId: 'earlier-session', throughSeq: 42, text: 'Keep the original requirement' }
+  const full = buildHandoff(items, SOURCE, 'antigravity', 1000, inherited)
+  assert.ok(full.text.includes(inherited.text))
+  assert.ok(full.text.includes('The current change'))
+  assert.ok(full.bytes <= 1000)
+  const bounded = buildHandoff(items, SOURCE, 'antigravity', 1000, { ...inherited, text: 'old context '.repeat(1000) })
+  assert.ok(bounded.text.includes('id="earlier-session" et before=43'))
+  assert.ok(bounded.text.includes('Continue the implementation'))
+  assert.ok(bounded.bytes <= 1000)
+})
+
 test('repli : messages du fil principal, outils avec leur sortie, tours interrompus', () => {
   const items = collectHandoffItems(journal([
     user('u1', 'Corrige le cache'),

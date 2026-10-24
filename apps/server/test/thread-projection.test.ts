@@ -124,3 +124,27 @@ test('a failed projection commit resumes from the last atomic cursor and deletio
     assert.equal((f.sqlite.prepare('select count(*) n from thread_projections').get() as { n: number }).n, 0)
   } finally { f.sqlite.close() }
 })
+
+
+test('late tool names and human metadata survive persisted pages and projection rebuilds', () => {
+  const f = fixture()
+  try {
+    f.add({ type: 'tool.started', toolCallId: 'late', name: 'WebSearch', input: { query: '' }, parentToolCallId: null })
+    f.build()
+    f.add({ type: 'tool.input_updated', toolCallId: 'late', name: 'WebFetch', input: { url: 'https://example.com' }, presentation: { title: 'Read the guide' } })
+    f.add({ type: 'tool.input_updated', toolCallId: 'late', input: { url: 'https://example.com/guide' } })
+    f.add({ type: 'tool.completed', toolCallId: 'late', output: 'Guide', isError: false, durationMs: 1 })
+    for (let i = 0; i < 2; i++) {
+      const page = f.build().page('c')
+      assert.equal(page.building, false)
+      if (page.building) throw Error('Expected built page')
+      const item = deserializeChatState(page.state).items.find(item => item.id === 'late')!
+      assert.equal(item.kind, 'tool')
+      if (item.kind !== 'tool') throw Error('Expected tool')
+      assert.equal(item.name, 'WebFetch')
+      assert.equal(item.presentation?.title, 'Read the guide')
+      assert.deepEqual(item.input, { url: 'https://example.com/guide' })
+      f.sqlite.prepare('update thread_projections set version=2').run()
+    }
+  } finally { f.sqlite.close() }
+})

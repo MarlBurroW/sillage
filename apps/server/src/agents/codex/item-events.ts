@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'node:fs'
 import { extname, isAbsolute, resolve } from 'node:path'
-import { VIEWABLE_IMAGE_TYPES, type SillageEvent } from '@sillage/protocol'
+import { codexWebSearchInput, toolPresentation, type ToolPresentation, VIEWABLE_IMAGE_TYPES, type SillageEvent } from '@sillage/protocol'
 import type { ThreadItem } from '@sillage/codex-bindings/v2'
 import { toWorkspacePath } from '../paths.js'
 
@@ -11,16 +11,16 @@ function futureItem(item: never): ThreadItem {
   return item
 }
 
-function tool(item: ThreadItem): { name: string; input: unknown } | null {
+function tool(item: ThreadItem): { name: string; input: unknown; presentation?: ToolPresentation } | null {
   switch (item.type) {
-    case 'commandExecution': return { name: 'Bash', input: { command: item.command, cwd: item.cwd } }
+    case 'commandExecution': return { name: 'Bash', input: { command: item.command, cwd: item.cwd, ...(item.commandActions?.length ? { commandActions: item.commandActions } : {}) } }
     case 'fileChange': return { name: 'Edit', input: { changes: item.changes } }
-    case 'mcpToolCall': return { name: `${item.server}/${item.tool}`, input: item.arguments }
-    case 'dynamicToolCall': return { name: [item.namespace, item.tool].filter(Boolean).join('/'), input: item.arguments }
+    case 'mcpToolCall': return { name: `${item.server}/${item.tool}`, input: item.arguments, presentation: { label: toolPresentation(item.appContext?.actionName, [item.tool]).title, origin: 'mcp' } }
+    case 'dynamicToolCall': return { name: [item.namespace, item.tool].filter(Boolean).join('/'), input: item.arguments, presentation: { origin: 'native' } }
     case 'collabAgentToolCall': return { name: `Collaboration/${item.tool}`, input: { prompt: item.prompt, agents: item.receiverThreadIds, model: item.model, reasoningEffort: item.reasoningEffort } }
     case 'webSearch': return {
       name: item.action?.type === 'openPage' ? 'WebFetch' : 'WebSearch',
-      input: { query: item.query, ...item.action },
+      input: codexWebSearchInput(item.query, item.action),
     }
     case 'imageView': return { name: 'ViewImage', input: { path: item.path } }
     case 'imageGeneration': return { name: 'ImageGeneration', input: { prompt: item.revisedPrompt } }
@@ -80,6 +80,17 @@ export function startedItem(item: ThreadItem, parentToolCallId: string | null): 
 export function completedItem(
   item: ThreadItem, cwd: string, durationMs: number, parentToolCallId: string | null,
 ): SillageEvent[] {
+  const action = tool(item)
+  // Completion may refine arguments, human metadata, or even the initial tool kind.
+  // Output-only items carry no arguments, so must not erase an earlier input.
+  const update: SillageEvent[] = action && item.type !== 'functionCallOutput'
+    ? [{ type: 'tool.input_updated', toolCallId: item.id, ...action }] : []
+  return [...update, ...completedEvents(item, cwd, durationMs, parentToolCallId)]
+}
+
+function completedEvents(
+  item: ThreadItem, cwd: string, durationMs: number, parentToolCallId: string | null,
+): SillageEvent[] {
   const finish = (output: unknown, isError = false, duration = durationMs): SillageEvent => ({
     type: 'tool.completed', toolCallId: item.id, output, isError, durationMs: duration,
   })
@@ -96,8 +107,6 @@ export function completedItem(
     }
     case 'commandExecution': return [finish(item.aggregatedOutput, item.status === 'failed' || item.status === 'declined', item.durationMs ?? durationMs)]
     case 'fileChange': return [
-      // The final item is authoritative even when no patchUpdated notification was sent.
-      { type: 'tool.input_updated', toolCallId: item.id, input: { changes: item.changes } },
       finish(item.changes, item.status === 'failed' || item.status === 'declined'),
       ...(item.status === 'completed' ? item.changes.map((change): SillageEvent => ({
         type: 'file.edited', toolCallId: item.id, path: toWorkspacePath(cwd, change.path),
@@ -108,7 +117,9 @@ export function completedItem(
       item.status === 'failed' || item.error != null, item.durationMs ?? durationMs)]
     case 'dynamicToolCall': return [finish(item.contentItems, item.status === 'failed' || item.success === false, item.durationMs ?? durationMs)]
     case 'collabAgentToolCall': return [finish(item.agentsStates, item.status === 'failed')]
-    case 'webSearch': return [finish({ query: item.query, action: item.action, results: item.results })]
+    case 'webSearch': return [
+      finish({ query: item.query, action: item.action, results: item.results }),
+    ]
     case 'imageView': return [finish(imageViewOutput(cwd, item.path))]
     case 'imageGeneration': return [
       finish({ status: item.status, revisedPrompt: item.revisedPrompt, savedPath: item.savedPath, failure: item.failure }, item.failure != null || item.status === 'failed'),

@@ -3,6 +3,8 @@ import { statSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import {
   parseSlashCommand,
+  toolPresentation,
+  type ToolPresentation,
   usableSlashCommands,
   type AgentConfig,
   type AgentQuestion,
@@ -80,6 +82,7 @@ interface OpenPart {
 
 /** Already reported tool state, to journal changes only. */
 interface ToolTrack {
+  presentation: ToolPresentation
   input: string
   output: string
 }
@@ -612,16 +615,19 @@ export class OpencodeRunner implements AgentRunner {
     const { state } = part
     const described = describeTool(part.tool, state.input, this.mcpServers.map((server) => server.name))
     const input = JSON.stringify(described.input)
-
     let track = this.tools.get(part.callID)
+    const presentation = 'title' in state && state.title !== undefined
+      ? toolPresentation(state.title, [part.tool, described.name]) : track?.presentation ?? {}
+
     if (!track) {
-      track = { input, output: '' }
+      track = { input, presentation, output: '' }
       this.tools.set(part.callID, track)
-      this.ctx.emit({ type: 'tool.started', toolCallId: part.callID, ...described, parentToolCallId: parent }, raw)
-    } else if (input !== track.input) {
+      this.ctx.emit({ type: 'tool.started', toolCallId: part.callID, ...described, presentation, parentToolCallId: parent }, raw)
+    } else if (input !== track.input || JSON.stringify(presentation) !== JSON.stringify(track.presentation)) {
       // Input empty during model writing, complete at execution.
       track.input = input
-      this.ctx.emit({ type: 'tool.input_updated', toolCallId: part.callID, input: described.input }, raw)
+      track.presentation = presentation
+      this.ctx.emit({ type: 'tool.input_updated', toolCallId: part.callID, input: described.input, presentation }, raw)
     }
 
     const metadata = 'metadata' in state ? (state.metadata ?? {}) : {}

@@ -1,4 +1,6 @@
+import type { ToolPresentation } from '@sillage/protocol'
 import { fields, text, outputText, scalar } from './tool-payload'
+import { toolWebInput } from './tool-web-input'
 import { toolEdits, type EditPresentation } from './tool-edits'
 import type { ToolItem } from './chat-fold'
 import { translate, type MessageKey } from './i18n'
@@ -6,9 +8,10 @@ import { translate, type MessageKey } from './i18n'
 export type ToolOrigin = { kind: 'native' | 'sillage' | 'mcp'; server: string; name: string }
 
 /** Les adaptateurs normalisent OpenCode en serveur/outil ; les anciens journaux restent lisibles. */
-export function toolOrigin(name: string): ToolOrigin {
+export function toolOrigin(name: string, presentation?: ToolPresentation): ToolOrigin {
+  if (presentation?.origin === 'native') return { kind: 'native', server: '', name }
   // These slash namespaces belong to the Codex adapter, not to MCP servers.
-  if (/^(Collaboration|Codex)\//.test(name)) return { kind: 'native', server: '', name }
+  if (presentation?.origin !== 'mcp' && /^(Collaboration|Codex|Hook)\//.test(name)) return { kind: 'native', server: '', name }
   const claude = /^mcp__([^]+?)__(.+)$/.exec(name)
   const slash = /^([^/]+)\/(.+)$/.exec(name)
   const legacy = name.startsWith('sillage_') ? ['','sillage',name.slice(8)] : null
@@ -62,10 +65,12 @@ const SILLAGE_LABELS: Record<string, MessageKey> = {
   list_projects: 'sillageTool.list_projects'
 }
 
-export function toolLabel(name: string): string {
-  const origin = toolOrigin(name)
+export function toolLabel(name: string, presentation?: ToolPresentation): string {
+  const origin = toolOrigin(name, presentation)
   const key = origin.kind === 'sillage' ? SILLAGE_LABELS[origin.name] : undefined
   if (key) return translate(key)
+  // Connector action names label the operation; they must not hide its query/target summary.
+  if (presentation?.label?.trim()) return presentation.label.trim()
   // Aucun sens inventé pour un serveur inconnu : on enlève seulement le préfixe et les séparateurs.
   return origin.kind === 'native' ? name : origin.name.replace(/[_-]+/g, ' ')
 }
@@ -74,7 +79,7 @@ export const INTENT_LABELS: Record<ToolIntent, MessageKey> = {
   context: 'toolStyle.context', inspect: 'toolStyle.inspect', change: 'toolStyle.change', verify: 'toolStyle.verify', other: 'toolStyle.other',
 }
 export function toolIntent(tool: ToolItem): ToolIntent {
-  const origin = toolOrigin(tool.name)
+  const origin = toolOrigin(tool.name, tool.presentation)
   if (origin.kind === 'sillage') {
     if (/^(read|list|search|find|count)_/.test(origin.name)) return 'context'
     return 'change'
@@ -94,22 +99,58 @@ export function toolPreview(tool: ToolItem): string {
   return translate('toolStyle.outputEmpty')
 }
 
-/** One-line identifiers for the normalized payloads produced by all four adapters. */
+/** One-line identifiers for the normalized payloads produced by all adapters. */
 export function toolSummary(tool: ToolItem, edits: EditPresentation | null = toolEdits(tool)): { text: string; mono: boolean } | null {
-  const input = fields(tool.input)
-  const description = text(input, 'description')
-  if (description) return { text: description, mono: false }
+  const input = fields(toolWebInput(tool))
+  // Only known descriptive arguments are activity metadata. A card/task's description is its body.
+  const description = ['Bash', 'Agent', 'Task'].includes(tool.name) ? text(input, 'description')?.trim() : null
+  const title = tool.title?.trim() || description || tool.presentation?.title?.trim()
+  if (title) return { text: title, mono: false }
+  if (tool.name === 'Bash') {
+    const action = commandSummary(input?.commandActions)
+    if (action) return { text: action, mono: false }
+  }
   if (edits?.paths.length) return { text: edits.paths.join(' · '), mono: true }
-  const keys = tool.name === 'Bash' ? ['command']
+  const web = tool.name === 'WebSearch' || tool.name === 'WebFetch'
+  if (web && Array.isArray(input?.queries) && input.queries.length > 0) {
+    const queries = input.queries.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    if (queries.length) return { text: queries.join(' · '), mono: true }
+  }
+  const subject = ['TaskCreate', 'TaskUpdate'].includes(tool.name) ? text(input, 'subject') : null
+  if (subject) return { text: subject, mono: false }
+  if (tool.name === 'Sleep' && typeof input?.durationMs === 'number' && Number.isFinite(input.durationMs)) {
+    return { text: translate('tool.summary.sleep', { seconds: input.durationMs / 1000 }), mono: false }
+  }
+  const keys = web && input?.type === 'findInPage' ? ['pattern', 'query', 'url']
+    : web && input?.type === 'openPage' ? ['url', 'query']
+    : tool.name === 'Bash' ? ['command']
+    : tool.name === 'Skill' ? ['skill', 'name']
+    : tool.name.startsWith('Hook/') ? ['source']
+    : ['TaskGet', 'TaskUpdate', 'TaskStop', 'TaskOutput'].includes(tool.name) ? ['taskId', 'task_id', 'id']
+    : ['ReadMcpResource', 'ReadMcpResourceDir'].includes(tool.name) ? ['uri', 'server']
     : tool.name === 'Grep' || tool.name === 'Glob' ? ['pattern', 'query', 'path']
     : tool.name === 'WebFetch' ? ['url', 'query']
     : tool.name === 'WebSearch' ? ['query', 'pattern', 'url']
-    : ['file_path', 'path', 'notebook_path', 'file', 'title', 'subject', 'query', 'pattern', 'skill', 'prompt', 'card_number', 'number', 'conversation_id']
+    : ['file_path', 'path', 'notebook_path', 'file', 'title', 'subject', 'query', 'pattern', 'skill', 'url', 'uri', 'command', 'prompt', 'card_number', 'number', 'issue_number', 'conversation_id', 'name']
   for (const key of keys) {
-    const numericId = key === 'card_number' || key === 'number'
+    const numericId = ['card_number', 'number', 'issue_number', 'taskId', 'task_id', 'id'].includes(key)
     const value = numericId ? scalar(input, key) : text(input, key)
     if (value !== null) return { text: numericId ? `#${value}` : value, mono: true }
   }
+  if (tool.presentation?.paths?.length) return { text: tool.presentation.paths.join(' · '), mono: true }
   if (Array.isArray(input?.todos)) return { text: translate('tool.todo.count', { count: input.todos.length }), mono: false }
+  return null
+}
+
+
+/** Use the harness parser only when it describes the entire command unambiguously. */
+function commandSummary(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length !== 1) return null
+  const action = fields(value[0])
+  const path = text(action, 'path') ?? text(action, 'name')
+  if (action?.type === 'read' && path) return translate('tool.summary.read', { path })
+  if (action?.type === 'listFiles' && path) return translate('tool.summary.list', { path })
+  const query = text(action, 'query')
+  if (action?.type === 'search' && query) return translate(path ? 'tool.summary.searchIn' : 'tool.summary.search', { query, path: path ?? '' })
   return null
 }

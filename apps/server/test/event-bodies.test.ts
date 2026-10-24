@@ -229,3 +229,50 @@ test('thread projection pages use current conversation access and validate curso
     assert.equal((await app.inject({ url: `${url}?${query}`, headers: { 'x-user': 'owner' } })).statusCode, 400)
   }
 })
+
+
+test('large calls preserve bounded paths, queries, task IDs and human metadata without loading bodies', (t) => {
+  const { log } = fixture(t)
+  const before = log.read('c', 0, 100).at(-1)!.seq
+  const examples = [
+    { name: 'Edit', input: { changes: Array.from({ length: 25 }, (_, i) => ({ path: `src/${i}.ts`, kind: { type: 'update' }, diff: huge })) } },
+    { name: 'WebSearch', input: { type: 'search', queries: ['first', 'second'], large: huge } },
+    { name: 'Bash', input: { command: huge, commandActions: [{ type: 'read', path: 'src/a.ts', name: 'a.ts', command: huge }] } },
+    { name: 'TaskUpdate', input: { taskId: '17', subject: 'Check the code', description: huge } },
+    { name: 'NotebookEdit', input: { notebook_path: 'analysis.ipynb', new_source: huge } },
+    { name: 'Skill', input: { skill: 'frontend-design', large: huge } },
+  ]
+  for (const [i, example] of examples.entries()) log.append('c', { type: 'tool.started', toolCallId: `audit-${i}`, parentToolCallId: null, presentation: { title: 'Harness description' }, ...example })
+  const projected = log.readWithBodies('c', before, 20).map(({ event }) => {
+    assert.equal(event.type, 'tool.started')
+    if (event.type !== 'tool.started') throw Error('Expected call')
+    assert.equal(event.presentation?.title, 'Harness description')
+    assert.ok(event.inputRef)
+    assert.ok(JSON.stringify(event).length < 14_000)
+    return event.input as Record<string, any>
+  })
+  assert.deepEqual(projected[0]!.changes, Array.from({ length: 20 }, (_, i) => ({ path: `src/${i}.ts` })))
+  assert.deepEqual(projected[1]!.queries, ['first', 'second'])
+  assert.equal(projected[2]!.commandActions[0].path, 'src/a.ts')
+  assert.equal(projected[2]!.commandActions[0].command.length, 512)
+  assert.equal(projected[3]!.taskId, '17')
+  assert.equal(projected[4]!.notebook_path, 'analysis.ipynb')
+  assert.equal(projected[5]!.skill, 'frontend-design')
+})
+
+
+test('old Codex web queries survive large structured output projection without fetching the body', async (t) => {
+  const { log } = fixture(t)
+  const start = log.append('c', { type: 'tool.started', toolCallId: 'legacy-web', name: 'WebSearch', input: { query: '' }, parentToolCallId: null })
+  const output = { query: "'stream-json'", action: { type: 'findInPage', pattern: 'stream-json', url: null }, results: [{ snippet: huge }] }
+  log.append('c', { type: 'tool.completed', toolCallId: 'legacy-web', output, durationMs: 1, isError: false })
+  const entries = log.readWithBodies('c', start.seq - 1, 10)
+  const final = entries[1]!.event
+  assert.equal(final.type, 'tool.completed')
+  if (final.type !== 'tool.completed') throw Error('Expected completed call')
+  assert.ok(final.outputRef)
+  assert.deepEqual(final.output, { ...output, results: null })
+  assert.ok(JSON.stringify(final).length < 1000)
+  const { toolWebInput } = await import('../../web/src/lib/tool-web-input.js')
+  assert.deepEqual(toolWebInput({ name: 'WebSearch', status: 'done', input: { query: '' }, output: final.output }), { query: "'stream-json'", type: 'findInPage', pattern: 'stream-json', url: null })
+})

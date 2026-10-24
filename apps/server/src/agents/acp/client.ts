@@ -38,6 +38,8 @@ export interface AcpClientOptions {
   onRequest?: (method: string, params: unknown) => Promise<unknown>
   /** Unexpected process death outside requested `close()`; see `CodexClientOptions.onExit`. */
   onExit?: (code: number | null, stderrTail: string) => void
+  /** Login services consume OAuth URLs privately instead of logging them. */
+  onStderr?: (text: string) => void
 }
 
 /** Retained stderr explaining startup deaths. */
@@ -63,7 +65,8 @@ export class AcpClient {
     this.child.stderr.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
       this.stderrTail = (this.stderrTail + text).slice(-STDERR_TAIL_CHARS)
-      process.stderr.write(`[${options.label}] ${text}`)
+      if (options.onStderr) options.onStderr(text)
+      else process.stderr.write(`[${options.label}] ${text}`)
     })
 
     this.reader = createInterface({ input: this.child.stdout, crlfDelay: Infinity })
@@ -205,5 +208,15 @@ export class AcpClient {
       if (child.exitCode === null && child.signalCode === null) child.kill()
     }, 2_000).unref()
     this.rejectAll(new Error(`Client ${this.options.label} fermé.`))
+  }
+
+  /** Native SQLite histories must be closed before another account resumes them. */
+  async closeAndWait(): Promise<void> {
+    if (this.child.exitCode !== null || this.child.signalCode !== null || !this.child.pid) { this.close(); return }
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => this.child.kill('SIGKILL'), 5_000)
+      this.child.once('close', () => { clearTimeout(timer); resolve() })
+      this.close()
+    })
   }
 }

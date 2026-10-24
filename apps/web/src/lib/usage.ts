@@ -43,7 +43,7 @@ export function useRefreshUsage(agent: AgentKind, account: string | null = null)
 
 /** Additional account selected by configuration, null for the CLI login. */
 export function usageAccountOf(config: { agent: AgentKind; account?: string | null } | null | undefined): string | null {
-  return config?.agent === 'claude' || config?.agent === 'codex' || config?.agent === 'grok' ? (config.account ?? null) : null
+  return config?.agent === 'claude' || config?.agent === 'codex' || config?.agent === 'grok' || config?.agent === 'antigravity' ? (config.account ?? null) : null
 }
 
 /**

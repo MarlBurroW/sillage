@@ -126,7 +126,7 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
   ]
   if (global || project) {
     parts.push(
-      "# SILLAGE.md\n\nUser instructions maintained in Sillage, shared by Claude, Codex, OpenCode and Grok. They have the same authority as a CLAUDE.md or AGENTS.md file.",
+      "# SILLAGE.md\n\nUser instructions maintained in Sillage, shared by Claude, Codex, OpenCode, Grok and Antigravity. They have the same authority as a CLAUDE.md or AGENTS.md file.",
     )
     if (global) parts.push(`## For all projects\n\n${global}`)
     if (project) parts.push(`## For this project\n\n${project}`)

@@ -13,6 +13,8 @@ import type {
 } from '@agentclientprotocol/sdk'
 import {
   grokPermissionModeSchema,
+  toolPresentation,
+  type ToolPresentation,
   parseElicitationFields,
   parseSlashCommand,
   type AgentConfig,
@@ -94,6 +96,12 @@ interface OpenText {
 /** Already-journaled tool state, preventing unchanged updates. */
 interface ToolTrack {
   native: string
+  name: string
+  rawInput: unknown
+  normalizedInput: unknown
+  rawOutput?: unknown
+  content?: unknown
+  presentation: ToolPresentation
   input: string
   output: string
   diffs: AcpDiff[]
@@ -130,6 +138,7 @@ export class GrokRunner implements AgentRunner {
 
   private open: OpenText | null = null
   private readonly tools = new Map<string, ToolTrack>()
+  private readonly closedTools = new Set<string>()
   /** Cardless calls (`ask_user_question`) whose later updates must remain hidden. */
   private readonly silentTools = new Set<string>()
   private mcpNames: string[] = []
@@ -386,14 +395,16 @@ export class GrokRunner implements AgentRunner {
         // Echo of input Sillage already journaled on send.
         return
       case 'tool_call':
+        if (this.closedTools.has(update.toolCallId)) return
         this.closeText()
-        this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification)
+        this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name)
         this.onToolUpdate(update.toolCallId, update, notification)
         return
       case 'tool_call_update':
+        if (this.closedTools.has(update.toolCallId)) return
         this.closeText()
         if (!this.tools.has(update.toolCallId) && !this.silentTools.has(update.toolCallId)) {
-          this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification)
+          this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name)
         }
         this.onToolUpdate(update.toolCallId, update, notification)
         return
@@ -516,23 +527,24 @@ export class GrokRunner implements AgentRunner {
     })
   }
 
-  private onToolCall(id: string, meta: unknown, title: unknown, rawInput: unknown, raw: unknown): void {
+  private onToolCall(id: string, meta: unknown, title: unknown, rawInput: unknown, raw: unknown, name?: unknown): void {
     if (this.tools.has(id) || this.silentTools.has(id)) return
-    const native = nativeToolName(meta, title)
+    const native = nativeToolName(meta, title, name)
     if (native === QUESTION_TOOL) {
       this.silentTools.add(id)
       return
     }
     const described = describeTool(native, rawInput)
-    this.tools.set(id, { native, input: JSON.stringify(described.input), output: '', diffs: [] })
+    const presentation = toolPresentation(title, [native, described.name])
+    this.tools.set(id, { native, name: described.name, rawInput, normalizedInput: described.input, presentation, input: JSON.stringify(described.input), output: '', diffs: [] })
     this.durations.start(id)
-    this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, parentToolCallId: null }, raw)
+    this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, presentation, parentToolCallId: null }, raw)
   }
 
   /** Tool updates refine input (Grok adds `variant`), accumulate command `rawOutput.output`, then complete calls. */
   private onToolUpdate(
     id: string,
-    update: { status?: string | null; rawInput?: unknown; rawOutput?: unknown; content?: unknown },
+    update: { status?: string | null; rawInput?: unknown; rawOutput?: unknown; content?: unknown; title?: string | null; locations?: unknown; _meta?: unknown; name?: string | null },
     raw: unknown,
   ): void {
     const track = this.tools.get(id)
@@ -541,18 +553,30 @@ export class GrokRunner implements AgentRunner {
       return
     }
 
-    if (update.rawInput !== undefined) {
-      const described = describeTool(track.native, update.rawInput)
-      const input = JSON.stringify(described.input)
-      if (input !== track.input) {
-        track.input = input
-        this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, input: described.input }, raw)
-      }
+    const native = update._meta || update.name ? nativeToolName(update._meta, track.native, update.name) : track.native
+    const inputChanged = (update.rawInput !== undefined && update.rawInput !== null) || native !== track.native
+    track.native = native
+    if (update.rawInput !== undefined && update.rawInput !== null) track.rawInput = update.rawInput
+    const described = inputChanged ? describeTool(track.native, track.rawInput) : { name: track.name, input: track.normalizedInput }
+    const presentation = { ...track.presentation }
+    if (update.title !== undefined && update.title !== null) {
+      presentation.title = toolPresentation(update.title, [track.native, described.name]).title
     }
+    if (Array.isArray(update.locations)) presentation.paths = toolPresentation(null, [], update.locations).paths
+    const input = inputChanged ? JSON.stringify(described.input) : track.input
+    if (input !== track.input || described.name !== track.name || JSON.stringify(presentation) !== JSON.stringify(track.presentation)) {
+      track.input = input
+      track.normalizedInput = described.input
+      track.name = described.name
+      track.presentation = presentation
+      this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, name: described.name, input: described.input, presentation }, raw)
+    }
+    const output = commandOutput(update.rawOutput)
+    if (update.content != null) track.content = update.content
+    if (update.rawOutput != null && !output) track.rawOutput = update.rawOutput
     const diffs = diffsOf(update.content)
     if (diffs.length > 0) track.diffs = diffs
 
-    const output = commandOutput(update.rawOutput)
     if (output !== null && output.length > track.output.length && output.startsWith(track.output)) {
       this.ctx.emit({ type: 'tool.output_delta', toolCallId: id, chunk: output.slice(track.output.length) })
       track.output = output
@@ -560,12 +584,15 @@ export class GrokRunner implements AgentRunner {
 
     if (update.status !== 'completed' && update.status !== 'failed') return
     this.tools.delete(id)
+    // A repeated terminal notification must not create an empty second call.
+    this.closedTools.add(id)
+    if (this.closedTools.size > 4096) this.closedTools.delete(this.closedTools.values().next().value!)
     const failed = update.status === 'failed'
     this.ctx.emit(
       {
         type: 'tool.completed',
         toolCallId: id,
-        output: toolOutput(update, track),
+        output: toolOutput({ content: track.content, rawOutput: track.rawOutput }, track),
         isError: failed,
         durationMs: this.durations.stop(id),
       },
@@ -619,7 +646,7 @@ export class GrokRunner implements AgentRunner {
   /** Permission requests. Grok proposes native options (`allow-once`, `allow-edits-session`, `always-allow`, `reject-once`…) and reads responses by kind; choose the user action's option while retaining its native ID. Rejections end whole turns (`PermissionRejected`), not just calls. */
   private onPermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const call = request.toolCall
-    const described = describeTool(nativeToolName(call._meta, call.title), call.rawInput)
+    const described = describeTool(nativeToolName(call._meta, call.title, call.name), call.rawInput)
     return new Promise((resolve) => {
       this.interactions.requestPermission(
         { toolName: described.name, input: described.input, title: typeof call.title === 'string' ? call.title : null },

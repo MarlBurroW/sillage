@@ -68,6 +68,13 @@ export interface HandoffResult {
   omitted: number
 }
 
+/** Context inherited before this journal began, including the original cut point. */
+export interface InheritedHandoff {
+  text: string
+  fromConversationId: string
+  throughSeq: number
+}
+
 /** Clamps requested budgets to limits and uses the default when absent. */
 export function clampHandoffTokens(requested: number | undefined): number {
   if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_HANDOFF_TOKENS
@@ -225,6 +232,7 @@ const AGENT_NAMES: Record<AgentKind, string> = {
   codex: 'Codex',
   opencode: 'opencode',
   grok: 'Grok Build',
+  antigravity: 'Google Antigravity',
 }
 
 function renderItem(item: HandoffItem): string {
@@ -282,6 +290,7 @@ export function buildHandoff(
   source: HandoffSource,
   target: AgentKind,
   budgetTokens: number,
+  inherited?: InheritedHandoff | null,
 ): HandoffResult {
   if (items.length === 0) throw new HandoffError('handoff_empty', 'This conversation has no message to carry over.')
 
@@ -293,8 +302,18 @@ export function buildHandoff(
     throw new HandoffError('handoff_too_large', 'The handoff budget cannot even hold the references to the thread.')
   }
 
-  const selection = selectHandoff(items, budgetBytes - fixed)
-  const text = renderHandoff(source, target, selection)
+  let prefix = ''
+  if (inherited) {
+    const reference = `## Contexte hérité avant ce fil\nRelire avec read_conversation, id="${inherited.fromConversationId}" et before=${inherited.throughSeq + 1}. Ne pas inclure les échanges postérieurs à ce point.`
+    const full = reference + '\n\n' + inherited.text
+    const original = items.find((item) => item.kind === 'user')
+    // Reserve the latest thread's original request and at least half the budget
+    // for its exchanges; repeated forks must not grow instructions indefinitely.
+    const room = Math.min((budgetBytes - fixed) / 2, budgetBytes - fixed - (original ? itemBytes(original) : 0))
+    prefix = (Buffer.byteLength(full) + 2 <= room ? full : reference) + '\n\n'
+  }
+  const selection = selectHandoff(items, budgetBytes - fixed - Buffer.byteLength(prefix))
+  const text = prefix + renderHandoff(source, target, selection)
   return {
     text,
     bytes: Buffer.byteLength(text) - Buffer.byteLength(renderHandoffHeader(source, target)),
@@ -305,13 +324,13 @@ export function buildHandoff(
 }
 
 /** Conversation elements read in pages like conversation replay. */
-export function readHandoffItems(log: EventLog, conversationId: string): HandoffItem[] {
+export function readHandoffItems(log: EventLog, conversationId: string, throughSeq = Infinity): HandoffItem[] {
   const entries: JournalEntry[] = []
   let after = 0
   for (;;) {
     const page = log.readForReplay(conversationId, after, { rows: PAGE_ROWS, bytes: PAGE_BYTES })
-    entries.push(...page.entries)
-    if (page.nextAfter === after) break
+    entries.push(...page.entries.filter((entry) => entry.seq <= throughSeq))
+    if (page.nextAfter === after || page.nextAfter >= throughSeq) break
     after = page.nextAfter
   }
   return collectHandoffItems(entries)

@@ -524,7 +524,7 @@ const TOOLS = [
         match: { type: 'string', enum: ['all', 'any'], description: 'Match all conditions (default) or at least one.' },
         subject_path: { type: 'string', description: 'Subject path (e.g. `payload.issue.number`): pending calls with the same subject merge.' },
         verification: { type: 'string', enum: ['github', 'gitlab', 'none'], description: 'Override template verification.' },
-        agent: { type: 'string', description: 'Session CLI: claude, codex, opencode or grok. Defaults to yours.' },
+        agent: { type: 'string', description: 'Session CLI: claude, codex, opencode, grok or antigravity. Defaults to yours.' },
         model: { type: 'string', description: 'Session model (see list_models).' },
         effort: { type: 'string', description: 'Session effort level.' },
       },
@@ -548,7 +548,7 @@ const TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode', 'grok'],
+          enum: ['claude', 'codex', 'opencode', 'grok', 'antigravity'],
           description: 'Session CLI. Omit to use yours.',
         },
         model: {
@@ -630,7 +630,7 @@ const TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode', 'grok'],
+          enum: ['claude', 'codex', 'opencode', 'grok', 'antigravity'],
           description: 'CLI for runs. Omit to use yours.',
         },
         model: {
@@ -672,7 +672,7 @@ const TOOLS = [
       properties: {
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode', 'grok'],
+          enum: ['claude', 'codex', 'opencode', 'grok', 'antigravity'],
           description: 'Return only this CLI. Omit for all.',
         },
       },

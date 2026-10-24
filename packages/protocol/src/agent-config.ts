@@ -280,11 +280,28 @@ export const grokConfigSchema = z.object({
 })
 export type GrokConfig = z.infer<typeof grokConfigSchema>
 
+/** Native ACP options advertised by Google Antigravity. */
+export const antigravityPermissionModeSchema = z.enum(['default', 'auto_edit', 'yolo'])
+export type AntigravityPermissionMode = z.infer<typeof antigravityPermissionModeSchema>
+export const antigravityConfigSchema = z.object({
+  agent: z.literal('antigravity'),
+  model: z.string(),
+  reasoningEffort: z.string().default(''),
+  permissionMode: antigravityPermissionModeSchema.default('default'),
+  additionalDirectories: z.array(z.string()).default([]),
+  mcpServers: z.array(z.string()).default([]),
+  sillageMcp: sillageMcpSchema,
+  skillLibrary: skillLibrarySchema,
+  account: z.string().nullable().default(null),
+})
+export type AntigravityConfig = z.infer<typeof antigravityConfigSchema>
+
 export const agentConfigSchema = z.discriminatedUnion('agent', [
   claudeConfigSchema,
   codexConfigSchema,
   opencodeConfigSchema,
   grokConfigSchema,
+  antigravityConfigSchema,
 ])
 export type AgentConfig = z.infer<typeof agentConfigSchema>
 
@@ -396,11 +413,18 @@ export function parseAgentConfig(stored: string): AgentConfig {
  * A table instead of a ternary: adding a CLI to the enum without a row here fails compilation,
  * whereas a binary ternary would silently give it Codex defaults.
  */
+export const DEFAULT_ANTIGRAVITY_CONFIG: AntigravityConfig = {
+  agent: 'antigravity', model: CLI_DEFAULT, reasoningEffort: CLI_DEFAULT,
+  permissionMode: 'default', additionalDirectories: [], mcpServers: [],
+  sillageMcp: true, skillLibrary: true, account: null,
+}
+
 export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
   claude: DEFAULT_CLAUDE_CONFIG,
   codex: DEFAULT_CODEX_CONFIG,
   opencode: DEFAULT_OPENCODE_CONFIG,
   grok: DEFAULT_GROK_CONFIG,
+  antigravity: DEFAULT_ANTIGRAVITY_CONFIG,
 }
 
 export function defaultConfigFor(agent: AgentConfig['agent']): AgentConfig {

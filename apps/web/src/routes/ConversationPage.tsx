@@ -548,7 +548,7 @@ export function ConversationPage() {
    */
   useEffect(() => {
     if (!conversationId || !conversation?.isOwner) return
-    if (!AGENT_CAPABILITIES[conversation.agent].cliSessions) return
+    if (!AGENT_CAPABILITIES[conversation.agent].resyncSessions) return
     syncClaudeConversation(conversationId).catch((err: unknown) => {
       // Failed catch-up does not prevent conversation use, but hiding it would make
       // apparently incomplete threads impossible to diagnose.
@@ -996,7 +996,7 @@ export function ConversationPage() {
             <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
               <Search size={18} />
             </IconButton>
-            {isOwner ? (
+            {isOwner && AGENT_CAPABILITIES[conversation.agent].compact ? (
               <IconButton
                 label={
                   compacting || stream.state.compacting
@@ -1046,7 +1046,7 @@ export function ConversationPage() {
               <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
                 {t('conversation.search')}
               </MenuItem>
-              {isOwner ? (
+              {isOwner && AGENT_CAPABILITIES[conversation.agent].compact ? (
                 <MenuItem
                   icon={<Shrink size={14} />}
                   disabled={compacting || stream.state.compacting || stream.status !== 'idle'}

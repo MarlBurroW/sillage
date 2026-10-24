@@ -33,8 +33,11 @@ import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
 import { GrokAccountHomes } from './grok-accounts/homes.js'
+import { AntigravityAccountHomes } from './antigravity-accounts/homes.js'
 import { GrokLoginService } from './grok-accounts/login.js'
+import { AntigravityLoginService } from './antigravity-accounts/login.js'
 import { GrokAccountStore } from './grok-accounts/store.js'
+import { AntigravityAccountStore } from './antigravity-accounts/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
@@ -75,8 +78,11 @@ async function main(): Promise<void> {
   // Sillage-managed binaries take precedence over PATH binaries.
   const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable())
   const grokAccounts = { store: new GrokAccountStore(db), homes: new GrokAccountHomes(config.paths.grokAccounts) }
+  const antigravityStore = new AntigravityAccountStore(db)
+  const antigravityAccounts = { store: antigravityStore, homes: new AntigravityAccountHomes(config.paths.antigravityAccounts, (id) => antigravityStore.ownerOf(id)) }
   const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
-  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts)
+  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts)
+  const antigravityLogin = new AntigravityLoginService(antigravityAccounts.homes, antigravityAccounts.store, () => registry.adapter('antigravity').cli.executable(), (id) => sessions.stopAntigravityAccount(id))
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   // Project buttons execute commands in terminals or systemd units.
@@ -128,7 +134,9 @@ async function main(): Promise<void> {
     codexAccounts,
     codexLogin,
     grokAccounts,
+    antigravityAccounts,
     grokLogin,
+    antigravityLogin,
     webhooks,
     scheduler,
     relay,
@@ -208,6 +216,7 @@ async function main(): Promise<void> {
     tasks.stop()
     board.stop()
     decisions.stop()
+    await antigravityLogin.closeAll()
     await sessions.stopAll()
     terminals.shutdown()
     await app.close()

@@ -1,3 +1,4 @@
+import { LoginControls as AntigravityLoginControls } from '../../routes/AntigravityAccountsSettingsPage'
 import { Check, Download, KeyRound, Plus, TerminalSquare } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { AgentAvailabilityDto, AgentKind } from '@sillage/protocol'
@@ -19,6 +20,7 @@ const CLI_LOGIN: Record<AgentKind, string> = {
   codex: 'codex login',
   opencode: 'opencode auth login',
   grok: 'grok login',
+  antigravity: 'Google Antigravity',
 }
 
 /** Name assigned to accounts created for onboarding login. */
@@ -26,6 +28,7 @@ const EXTRA_LABEL: Record<ExtraAccountAgent, MessageKey> = {
   claude: 'onboarding.agents.claudeLabel',
   codex: 'onboarding.agents.codexLabel',
   grok: 'onboarding.agents.grokLabel',
+  antigravity: 'onboarding.agents.antigravityLabel',
 }
 
 /**
@@ -169,7 +172,7 @@ function ExtraAccounts({ agent, cliConnected }: { agent: ExtraAccountAgent; cliC
         : null
       : agent === 'codex'
         ? extra.codexOpened && <CodexLoginControls account={extra.codexOpened} />
-        : extra.grokOpened && <GrokLoginControls account={extra.grokOpened} />
+        : extra.grokOpened ? <GrokLoginControls account={extra.grokOpened} /> : extra.antigravityOpened && <AntigravityLoginControls account={extra.antigravityOpened} />
   const add = agent === 'claude' ? () => setClaudeAdding(true) : extra.begin
 
   return (

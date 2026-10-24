@@ -28,7 +28,7 @@ import {
   unavailableReason,
   versionMismatch,
 } from '../lib/agents'
-import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
+import { useCliSessions, useImportCliSession } from '../lib/claude-sessions'
 import { useProjectCommands } from '../lib/commands'
 import { useFileDrop } from '../lib/file-drop'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
@@ -241,12 +241,14 @@ export function DraftConversationPage() {
 
   // Load only when the selected CLI persists readable local sessions.
   // A worktree hides the list: these sessions live in the project root.
-  const { data: cliSessions, error: cliSessionsError } = useClaudeSessions(
+  const { data: cliSessions, error: cliSessionsError } = useCliSessions(
     projectId,
-    AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId,
+    AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId && Boolean(project && userSettings) && availability !== undefined && blocked === null,
+    agent,
+    effective.agent !== 'opencode' ? effective.account : null,
   )
   const cliSessionList = effectiveWorktreeId ? [] : (cliSessions?.sessions ?? [])
-  const importSession = useImportClaudeSession(projectId ?? '')
+  const importSession = useImportCliSession(projectId ?? '', agent, effective.agent !== 'opencode' ? effective.account : null)
 
   // Selected CLI's slash commands, read in the target directory: otherwise typing
   // `/` here showed nothing until after the first turn.
@@ -263,6 +265,7 @@ export function DraftConversationPage() {
       availability !== undefined &&
       blocked === null &&
       !cardPending,
+    effective.agent === 'antigravity' ? effective.account : null,
   )
 
   const importAndOpen = async (sessionId: string) => {
