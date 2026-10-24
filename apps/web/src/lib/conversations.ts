@@ -40,11 +40,14 @@ export function useReorderConversations(projectId: string) {
       const previous = queryClient.getQueryData<ConversationDto[]>(ALL_CONVERSATIONS_KEY)
       if (!previous) return { previous }
 
-      // Leave other projects' conversations in place: put the reordered project conversations back
-      // in their existing slots.
+      // Leave everything else in place: put the reordered conversations back in the slots they
+      // occupied. Slots must belong to the reordered ids only; using every slot of the project
+      // shifted the active rows into the slots of archived and scheduled ones, which duplicated
+      // ids in the list until the refetch and broke dnd-kit's registrations for later drags.
       const byId = new Map(previous.map((entry) => [entry.id, entry]))
       const reordered = ids.map((id) => byId.get(id)).filter((entry) => entry !== undefined)
-      const slots = previous.flatMap((entry, index) => (entry.projectId === projectId ? [index] : []))
+      const moved = new Set(ids)
+      const slots = previous.flatMap((entry, index) => (moved.has(entry.id) ? [index] : []))
 
       const next = [...previous]
       slots.forEach((slot, index) => {

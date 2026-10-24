@@ -684,12 +684,20 @@ function ProjectGroup({
     const { active: dragged, over } = event
     if (!over || dragged.id === over.id) return
 
-    const ids = active.map((entry) => entry.id)
-    const from = ids.indexOf(String(dragged.id))
-    const to = ids.indexOf(String(over.id))
+    // Resolve the drop against the rows on screen, then place the row in the full list next to
+    // the one it landed on: the focused view hides rows beyond the first ten, so visible and
+    // stored indexes diverge and an arrayMove on stored indexes sent rows far from the drop.
+    const visible = visibleActive.map((entry) => entry.id)
+    const from = visible.indexOf(String(dragged.id))
+    const to = visible.indexOf(String(over.id))
     if (from === -1 || to === -1) return
 
-    reorder.mutate(arrayMove(ids, from, to))
+    const ids = active.map((entry) => entry.id).filter((id) => id !== dragged.id)
+    const anchor = ids.indexOf(String(over.id))
+    if (anchor === -1) return
+    ids.splice(to > from ? anchor + 1 : anchor, 0, String(dragged.id))
+
+    reorder.mutate(ids)
   }
 
   return (
