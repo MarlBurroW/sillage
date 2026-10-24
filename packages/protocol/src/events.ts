@@ -3,6 +3,7 @@ import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.
 import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
 import { agentSkillSchema } from './skills.js'
+import { toolPresentationSchema } from './tools.js'
 
 /**
  * Normalized event schema (spec invariant I3).
@@ -246,6 +247,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     type: z.literal('tool.started'),
     toolCallId: z.string(),
     name: z.string(),
+    presentation: toolPresentationSchema.optional(),
     input: z.unknown(),
     inputRef: eventBodyRefSchema.optional(),
     parentToolCallId: z.string().nullable(),
@@ -258,6 +260,8 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tool.input_updated'),
     toolCallId: z.string(),
+    name: z.string().optional(),
+    presentation: toolPresentationSchema.optional(),
     input: z.unknown(),
     inputRef: eventBodyRefSchema.optional(),
   }),

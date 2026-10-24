@@ -222,6 +222,7 @@ function matchesView(inputLabelKey: MessageKey, keys: string[]): ToolView {
       .filter((hint): hint is string => hint !== null)
       .join(' · ')
     const lines = pending(tool) ? null : outputLines(tool.output)
+    if (!pending(tool) && lines === null && tool.output != null && fields(tool.output)) return null
 
     return (
       <>
@@ -324,6 +325,7 @@ const webFetch: ToolView = (tool) => {
 
   const question = text(tool.input, 'prompt')
   const answer = pending(tool) ? null : outputText(tool.output)
+  if (!pending(tool) && answer === null && fields(tool.output)) return null
 
   return (
     <>

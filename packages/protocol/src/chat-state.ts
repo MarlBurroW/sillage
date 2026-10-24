@@ -13,6 +13,7 @@ import type {
   PlanFollowUpOption,
   SillageEvent,
   SlashCommandDto,
+  ToolPresentation,
 } from './index.js'
 
 /** Fold the event log into the display model (invariant I2: rendering is a pure function of the log, replayable from scratch).
@@ -45,6 +46,7 @@ export interface ToolItem {
   output: unknown
   inputRef?: EventBodyRef
   outputRef?: EventBodyRef
+  presentation?: ToolPresentation
   /**
    * Actual output size when `output` is only a preview, otherwise null. History replay trims large
    * outputs; the card requests the full body when opened.
@@ -785,6 +787,7 @@ export function applyEvent(
         id: event.toolCallId,
         ts,
         name: event.name,
+        presentation: event.presentation,
         input: event.input,
         inputRef: event.inputRef,
         output: null,
@@ -798,7 +801,11 @@ export function applyEvent(
 
     case 'tool.input_updated': {
       const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === event.toolCallId)
-      if (index !== -1) replaceItem(state, index, { ...(state.items[index] as ToolItem), input: event.input, inputRef: event.inputRef })
+      if (index !== -1) {
+        const previous = state.items[index] as ToolItem
+        replaceItem(state, index, { ...previous, input: event.input, inputRef: event.inputRef,
+          name: event.name ?? previous.name, presentation: event.presentation ?? previous.presentation })
+      }
       break
     }
 

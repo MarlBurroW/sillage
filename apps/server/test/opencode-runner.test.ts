@@ -322,3 +322,22 @@ test('mort du serveur : la conversation passe en erreur et la session se clôt',
   assert.equal(f.statuses.at(-1), 'error')
   assert.ok(f.events.some((event) => event.type === 'error' && event.code === 'runner_failed'))
 })
+
+
+test('human titles update independently of arguments and survive completion without a title', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn([
+    busy(), assistant('msg_a'),
+    tool('c', 'bash', { status: 'running', input: { command: 'echo hi' }, title: 'Prepare the greeting', time: { start: 1 } }),
+    tool('c', 'bash', { status: 'running', input: { command: 'echo hi' }, title: 'Print the greeting', time: { start: 1 } }),
+    tool('c', 'bash', { status: 'error', input: { command: 'echo hi' }, error: 'Failed', time: { start: 1, end: 2 } }),
+    idle(),
+  ])
+  const start = f.events.find(event => event.type === 'tool.started')!
+  assert.equal(start.type === 'tool.started' && start.presentation?.title, 'Prepare the greeting')
+  const changes = f.events.filter(event => event.type === 'tool.input_updated')
+  assert.equal(changes.length, 1)
+  assert.equal(changes[0]!.presentation?.title, 'Print the greeting')
+  assert.deepEqual(changes[0]!.input, { command: 'echo hi' })
+  for (const event of f.events) sillageEventSchema.parse(event)
+})

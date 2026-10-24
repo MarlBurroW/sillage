@@ -9,7 +9,7 @@ import type { EventLog } from './event-log.js'
 import { coalesceDeltas } from './coalesce.js'
 
 /** Bump whenever fold semantics or the stored projection format change. */
-export const THREAD_PROJECTION_VERSION = 2
+export const THREAD_PROJECTION_VERSION = 3
 const PAGE_ITEMS = 200
 const PAGE_BYTES = 512 * 1024
 const BATCH_ROWS = 256

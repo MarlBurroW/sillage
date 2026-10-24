@@ -45,8 +45,8 @@ const BUILTIN: Record<string, { name: string; input: (input: Fields) => Fields }
 export const QUESTION_TOOL = 'ask_user_question'
 
 /** Native call name declared by Grok, falling back to ACP titles. */
-export function nativeToolName(meta: unknown, title: unknown): string {
-  return text(fields(fields(meta)['x.ai/tool']).name) ?? text(title) ?? 'tool'
+export function nativeToolName(meta: unknown, title: unknown, name?: unknown): string {
+  return text(name) ?? text(fields(fields(meta)['x.ai/tool']).name) ?? text(title) ?? 'tool'
 }
 
 /** Journal tool name/input. Grok searches MCP tools (`search_tool`) then invokes `use_tool` with `server__tool`; normalize to other adapters' `server/tool` with the actual tool input. */

@@ -1,3 +1,29 @@
+import { z } from 'zod'
+
+export const toolPresentationSchema = z.object({
+  origin: z.enum(['native', 'mcp']).optional(),
+  title: z.string().optional(),
+  label: z.string().optional(),
+  paths: z.array(z.string()).optional(),
+})
+export type ToolPresentation = z.infer<typeof toolPresentationSchema>
+
+/** Preserve harness-authored labels without treating a raw tool name as a description. */
+export function toolPresentation(title: unknown, names: string[], locations?: unknown): ToolPresentation {
+  const result: ToolPresentation = {}
+  if (typeof title === 'string' && title.trim() && !names.some(name => name.toLowerCase() === title.trim().toLowerCase())) {
+    result.title = title.trim().slice(0, 512)
+  }
+  if (Array.isArray(locations)) {
+    const paths = locations.slice(0, 20).flatMap((location: unknown) => {
+      const path = (location as { path?: unknown } | null)?.path
+      return typeof path === 'string' && path.trim() ? [path.slice(0, 512)] : []
+    })
+    if (paths.length) result.paths = [...new Set(paths)]
+  }
+  return result
+}
+
 /**
  * Canonical tool names carried by `tool.started.name`.
  *

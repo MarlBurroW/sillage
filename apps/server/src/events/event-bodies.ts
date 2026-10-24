@@ -7,18 +7,34 @@ import { MAX_OUTPUT_BYTES, replayWeight } from './tool-output.js'
  * SQLite drops bodies before they cross into JS; references identify an immutable event,
  * not a tool ID that a later turn may reuse. */
 const ref = (field: string, block?: SQL) => sql`json_object('seq', ${events.seq}, 'field', ${field}${block ? sql`, 'block', ${block}` : sql``})`
-const preview = (input: SQL) => sql`case when json_type(${input}) = 'object' then
+const scalarPreview = (input: SQL) => sql`case when json_type(${input}) = 'object' then
   (select json_group_object(key, case when type = 'text' then substr(case when key = 'check_script' then ltrim(value, ' ' || char(9) || char(10) || char(13)) else value end, 1, 512) else value end)
-   from json_each(${input}) where key in ('description', 'command', 'file_path', 'path', 'file', 'title', 'query', 'pattern', 'prompt', 'card_number', 'conversation_id', 'url', 'subagent_type', 'check_script')
+   from json_each(${input}) where key in ('description', 'command', 'file_path', 'path', 'notebook_path', 'file', 'title', 'subject', 'query', 'pattern', 'prompt', 'card_number', 'number', 'issue_number', 'conversation_id', 'url', 'uri', 'server', 'subagent_type', 'check_script', 'skill', 'name', 'source', 'taskId', 'task_id', 'id', 'durationMs', 'type')
      and type in ('text', 'integer', 'real', 'true', 'false', 'null')) else null end`
+/** Arrays are bounded identifiers, not truncated patches or file contents. Full bodies stay lazy. */
+const identifiers = (input: SQL, key: string, entry: SQL, type: string) => sql`case when json_type(${input}, ${'$.' + key}) = 'array' then
+  json_object(${key}, json((select json_group_array(json(entry)) from
+    (select ${entry} as entry from json_each(${input}, ${'$.' + key}) j where j.type = ${type} limit 20)))) else '{}' end`
+const shortField = (key: string) => sql`case when json_type(j.value, ${'$.' + key}) = 'text' then substr(j.value ->> ${'$.' + key}, 1, 512) end`
+const preview = (input: SQL) => sql`json_patch(json_patch(json_patch(${scalarPreview(input)},
+  ${identifiers(input, 'changes', sql`json_object('path', ${shortField('path')})`, 'object')}),
+  ${identifiers(input, 'queries', sql`json_quote(substr(j.value, 1, 512))`, 'text')}),
+  ${identifiers(input, 'commandActions', sql`json_object('type', ${shortField('type')}, 'path', ${shortField('path')}, 'name', ${shortField('name')},
+    'query', ${shortField('query')}, 'command', ${shortField('command')})`, 'object')})`
 const input = sql`${events.payload} -> '$.input'`
 const output = sql`${events.payload} -> '$.output'`
 // Keep just enough text for collapsed summaries and the schedule approval shortcut.
-const outputPreview = sql`substr(case
+const textOutputPreview = sql`substr(case
   when json_type(${events.payload}, '$.output') = 'text' then ${events.payload} ->> '$.output'
   when json_type(${events.payload}, '$.output[0].text') = 'text' then ${events.payload} ->> '$.output[0].text'
   when json_type(${events.payload}, '$.output.content[0].text') = 'text' then ${events.payload} ->> '$.output.content[0].text'
   end, 1, 512)`
+// Keep final Codex web arguments in older journals even when their results remain lazy.
+// JSON encoding preserves structured previews while ordinary text stays a string.
+const outputPreview = sql`case when json_type(${output}, '$.query') = 'text'
+  and json_type(${output}, '$.action') in ('object', 'null') and json_type(${output}, '$.results') in ('array', 'null') then
+  json_object('query', substr(${output} ->> '$.query', 1, 512), 'action', json(${preview(sql`${output} -> '$.action'`)}), 'results', null)
+  else json_quote(${textOutputPreview}) end`
 const blocks = sql`(select json_group_array(json(case
   when b.value ->> '$.type' = 'image' and substr(b.value ->> '$.url', 1, instr(b.value ->> '$.url', ',') - 1) in ('data:image/png;base64', 'data:image/jpeg;base64', 'data:image/gif;base64', 'data:image/webp;base64', 'data:image/avif;base64') then
     json_set(b.value, '$.url', '/api/conversations/' || ${events.conversationId} || '/events/' || ${events.seq} || '/images/' || b.key,
@@ -35,7 +51,7 @@ export const bodyPayload = sql<string>`case
   when ${events.type} in ('tool.started', 'tool.input_updated') and octet_length(${input}) > ${MAX_OUTPUT_BYTES} then
     json_set(${events.payload}, '$.input', json(${preview(input)}), '$.inputRef', json(${ref('input')}))
   when ${events.type} = 'tool.completed' and (octet_length(${output}) > ${MAX_OUTPUT_BYTES} or instr(${output}, '"image"') > 0) then
-    json_set(${events.payload}, '$.output', ${outputPreview}, '$.outputBytes', octet_length(${output}), '$.outputRef', json(${ref('output')}))
+    json_set(${events.payload}, '$.output', json(${outputPreview}), '$.outputBytes', octet_length(${output}), '$.outputRef', json(${ref('output')}))
   when ${events.type} = 'diff.updated' and octet_length(${events.payload} -> '$.patch') > ${MAX_OUTPUT_BYTES} then
     json_set(${events.payload}, '$.patch', '', '$.patchRef', json(${ref('patch')}))
   else ${events.payload} end`
