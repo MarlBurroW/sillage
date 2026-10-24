@@ -148,7 +148,7 @@ function execute(
     child.stderr.on('data', (chunk: Buffer) => {
       if (stderr.length <= MAX_STDERR_CHARS) stderr += chunk.toString()
     })
-    child.on('error', (err) => finish(null, `Lancement impossible : ${err.message}`))
+    child.on('error', (err) => finish(null, `Could not start: ${err.message}`))
     child.on('close', (code) => finish(code))
   })
 }
@@ -158,12 +158,12 @@ function checkCommand(script: string, file: string): string[] {
   const shebang = script.startsWith('#!')
   if (process.platform !== 'win32') return shebang ? [file] : ['/bin/sh', file]
   const bash = gitBash()
-  if (!bash) throw new Error('Git for Windows est introuvable : son bash exécute les scripts de vérification.')
+  if (!bash) throw new Error('Git for Windows was not found: its Bash runs check scripts.')
   return shebang ? [bash, '-c', 'exec "$0"', file] : [bash, file]
 }
 
 function clip(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max)}\n[… tronqué]`
+  return text.length <= max ? text : `${text.slice(0, max)}\n[… truncated]`
 }
 
 /** First nonempty line, used as the reason displayed in history. */

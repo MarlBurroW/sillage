@@ -54,7 +54,7 @@ export class TaskScheduler {
     // the previous process. Leaving them running would block tasks forever.
     this.ctx.db
       .update(scheduledRuns)
-      .set({ status: 'failed', finishedAt: Date.now(), error: 'Interrompu par un redémarrage de Sillage pendant la vérification.' })
+      .set({ status: 'failed', finishedAt: Date.now(), error: 'Interrupted by a Sillage restart during the check.' })
       .where(eq(scheduledRuns.status, 'checking'))
       .run()
     this.timer = setInterval(() => void this.tick(), TICK_MS)
@@ -157,7 +157,7 @@ export class TaskScheduler {
             scheduledFor,
             startedAt: now,
             finishedAt: now,
-            error: 'Le tir précédent tournait encore.',
+            error: 'The previous run was still active.',
             summary: null,
           })
           .run()
@@ -209,7 +209,7 @@ export class TaskScheduler {
     if (task.checkApprovedAt === null) {
       run.status = 'skipped'
       run.finishedAt = startedAt
-      run.error = "Vérification proposée par un agent, en attente de validation : rien n'a été lancé."
+      run.error = "Agent-proposed check awaiting approval: nothing was started."
       this.ctx.db.insert(scheduledRuns).values(run).run()
       this.firing.delete(task.id)
       return run
@@ -250,7 +250,7 @@ export class TaskScheduler {
       })
 
       if (result.verdict === 'skip') {
-        update({ status: 'skipped', finishedAt: now, error: firstLine(result.stdout) ?? 'Rien à faire selon la vérification.' })
+        update({ status: 'skipped', finishedAt: now, error: firstLine(result.stdout) ?? 'Nothing to do according to the check.' })
         return
       }
       if (result.verdict === 'error') {
@@ -259,8 +259,8 @@ export class TaskScheduler {
           status: 'failed',
           finishedAt: now,
           error: result.timedOut
-            ? `Vérification interrompue au bout de ${task.checkTimeoutSeconds} s.`
-            : `Vérification en échec (code ${result.exitCode ?? '?'})${detail ? ` : ${detail}` : ''}.`,
+            ? `Check interrupted after ${task.checkTimeoutSeconds} s.`
+            : `Check failed (code ${result.exitCode ?? '?'})${detail ? ` : ${detail}` : ''}.`,
         })
         return
       }
@@ -496,7 +496,7 @@ export class TaskScheduler {
         : undefined
 
       if (!run.conversationId || !thread) {
-        this.close(run, 'failed', now, 'Le fil du tir a été supprimé avant sa fin.')
+        this.close(run, 'failed', now, 'The run conversation was deleted before completion.')
         continue
       }
 
@@ -513,7 +513,7 @@ export class TaskScheduler {
 
       if (working || (!verdict && !dead)) {
         if (now - run.startedAt < maxDurationMinutes * 60_000) continue
-        const reason = `Durée maximale atteinte (${maxDurationMinutes} min) : le tir a été interrompu.`
+        const reason = `Maximum duration reached (${maxDurationMinutes} min): the run was interrupted.`
         this.log.append(run.conversationId, {
           type: 'error',
           code: 'schedule_timeout',
@@ -526,9 +526,9 @@ export class TaskScheduler {
       }
 
       if (thread.status === 'interrupted') {
-        this.close(run, 'failed', now, 'Tir interrompu avant sa fin (arrêt manuel ou redémarrage de Sillage).')
+        this.close(run, 'failed', now, 'Run interrupted before completion (manual stop or Sillage restart).')
       } else if (thread.status === 'error' || verdict?.event.type === 'error') {
-        const message = verdict?.event.type === 'error' ? verdict.event.message : 'Le CLI a terminé en erreur.'
+        const message = verdict?.event.type === 'error' ? verdict.event.message : 'The CLI ended in error.'
         this.close(run, 'failed', now, message)
       } else {
         this.close(run, 'succeeded', now, null)
@@ -568,15 +568,15 @@ function stamp(ts: number): string {
 }
 
 const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {
-  checking: 'en vérification',
-  running: 'encore en cours',
-  succeeded: 'terminé normalement',
-  failed: 'en échec',
-  timed_out: 'interrompu pour durée maximale dépassée',
-  skipped: 'sauté',
+  checking: 'checking',
+  running: 'still running',
+  succeeded: 'completed normally',
+  failed: 'failed',
+  timed_out: 'interrupted after exceeding the maximum duration',
+  skipped: 'skipped',
 }
 
-/** First run message: agent situation followed by task prompt. Written for the model in French like other Sillage injections. First state that nobody is at the keyboard: questions or permission waits would otherwise hang until maximum duration. Fresh sessions lack previous-run context; its date, conversation link and last answer provide minimal continuity, supplemented by project memory and cards. Prompts may interpolate `{{date}}`, `{{previous_run_date}}`, `{{previous_run_url}}` and `{{previous_run_summary}}` anywhere. */
+/** First run message: agent situation followed by task prompt. Written for the model in English like other Sillage injections. First state that nobody is at the keyboard: questions or permission waits would otherwise hang until maximum duration. Fresh sessions lack previous-run context; its date, conversation link and last answer provide minimal continuity, supplemented by project memory and cards. Prompts may interpolate `{{date}}`, `{{previous_run_date}}`, `{{previous_run_url}}` and `{{previous_run_summary}}` anywhere. */
 export function buildRunPrompt(input: {
   task: Pick<ScheduledTaskRow, 'name' | 'prompt' | 'projectId' | 'maxDurationMinutes'>
   trigger: ScheduleRunTrigger
@@ -596,32 +596,32 @@ export function buildRunPrompt(input: {
   const previousSummary = previous?.summary ?? ''
 
   const header = [
-    `[Tâche planifiée Sillage « ${task.name} » — tir du ${date}${trigger === 'manual' ? ', lancé à la main' : ''}]`,
+    `[Sillage scheduled task “${task.name}” — run at ${date}${trigger === 'manual' ? ', started manually' : ''}]`,
     '',
-    `Tu tournes seul, dans une session neuve ouverte par le planificateur de Sillage : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de ${task.maxDurationMinutes} min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.`,
+    `You are running unattended in a fresh session opened by the Sillage scheduler: nobody is at the keyboard. Do not ask questions or request confirmation, as nobody would answer. Decide and state your assumptions in your final reply. For work requiring approval or outside your instructions, create a card (create_card) instead of doing it. The run is interrupted after ${task.maxDurationMinutes} min. Your final reply is passed to the next run: give a short account of your findings and actions.`,
     '',
   ]
 
   if (previous) {
     header.push(
-      `Tir précédent : ${previousDate}, ${RUN_OUTCOMES[previous.status]}${previous.error ? ` (${previous.error})` : ''}.`,
+      `Previous run: ${previousDate}, ${RUN_OUTCOMES[previous.status]}${previous.error ? ` (${previous.error})` : ''}.`,
     )
     if (previous.conversationId) {
-      header.push(`Son fil : ${previousUrl} (read_conversation avec l'id ${previous.conversationId} pour le lire).`)
+      header.push(`Its thread: ${previousUrl} (use read_conversation with id ${previous.conversationId} to read it).`)
     }
     header.push(
       previousSummary
-        ? `Sa dernière réponse :\n${previousSummary.replace(/^/gm, '> ')}`
-        : "Il n'a laissé aucune réponse.",
+        ? `Its final reply:\n${previousSummary.replace(/^/gm, '> ')}`
+        : 'It left no reply.',
     )
   } else {
-    header.push("C'est le premier tir de cette tâche.")
+    header.push('This is the first run of this task.')
   }
 
   // Check findings justify this turn: include them even when instructions omit
   // them, avoiding duplication when instructions already include them.
   if (checkOutput && !/\{\{\s*check_output\s*\}\}/.test(task.prompt)) {
-    header.push('', 'Le script de vérification de la tâche a laissé partir ce tour. Sa sortie :', '```', checkOutput, '```')
+    header.push('', 'The task check script allowed this turn to start. Its output:', '```', checkOutput, '```')
   }
 
   const variables: Record<string, string> = {

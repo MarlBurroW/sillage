@@ -125,32 +125,32 @@ export class DecisionService {
     const source = this.sourceOf(requester)
     if (!source) {
       throw new DecisionRefusal(
-        "Cet outil ne sert qu'aux sessions autonomes (tâche planifiée, automatisation, maintenance du board). Ici, une personne lit le fil : pose ta question dans ta réponse.",
+        'This tool is only for autonomous sessions (scheduled tasks, automations, board maintenance). A person is reading this thread: ask your question in your reply.',
       )
     }
     if (!source.enabled) {
-      throw new DecisionRefusal(`« ${source.label} » n'autorise pas ses sessions à demander une décision. Décide selon tes instructions.`)
+      throw new DecisionRefusal(`“${source.label}” does not allow sessions to request decisions. Decide according to your instructions.`)
     }
 
     const question = typeof payload.question === 'string' ? payload.question.trim() : ''
-    if (!question) throw new DecisionRefusal('Le paramètre `question` est requis.')
+    if (!question) throw new DecisionRefusal('The `question` parameter is required.')
     if (question.length > MAX_DECISION_QUESTION_CHARS) {
-      throw new DecisionRefusal(`Question trop longue (${MAX_DECISION_QUESTION_CHARS} caractères au plus) : mets le détail dans \`context\`.`)
+      throw new DecisionRefusal(`Question too long (maximum ${MAX_DECISION_QUESTION_CHARS} characters): put details in \`context\`.`)
     }
     const context = typeof payload.context === 'string' ? payload.context.trim() : ''
     if (context.length > MAX_DECISION_CONTEXT_CHARS) {
-      throw new DecisionRefusal(`Contexte trop long (${MAX_DECISION_CONTEXT_CHARS} caractères au plus).`)
+      throw new DecisionRefusal(`Context too long (maximum ${MAX_DECISION_CONTEXT_CHARS} characters).`)
     }
     const options = Array.isArray(payload.options)
       ? [...new Set(payload.options.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean))]
       : []
-    if (options.length > MAX_DECISION_OPTIONS) throw new DecisionRefusal(`${MAX_DECISION_OPTIONS} choix au plus.`)
+    if (options.length > MAX_DECISION_OPTIONS) throw new DecisionRefusal(`At most ${MAX_DECISION_OPTIONS} choices.`)
     if (options.some((option) => option.length > MAX_DECISION_OPTION_CHARS)) {
-      throw new DecisionRefusal(`Un choix tient en ${MAX_DECISION_OPTION_CHARS} caractères au plus.`)
+      throw new DecisionRefusal(`Each choice must fit within ${MAX_DECISION_OPTION_CHARS} characters.`)
     }
     const fallback = typeof payload.default === 'string' && payload.default.trim() ? payload.default.trim() : null
     if (fallback && !options.includes(fallback)) {
-      throw new DecisionRefusal('`default` doit reprendre exactement l’un des `options`.')
+      throw new DecisionRefusal('`default` must exactly match one of `options`.')
     }
     const asked = typeof payload.expires_in_hours === 'number' && Number.isFinite(payload.expires_in_hours) ? payload.expires_in_hours : source.maxHours
     const hours = Math.min(Math.max(asked, 0.25), source.maxHours)
@@ -162,7 +162,7 @@ export class DecisionService {
       .get()
     if (pending) {
       throw new DecisionRefusal(
-        `Une demande attend déjà sa réponse (« ${pending.question} ») : une seule à la fois. Attends-la, ou retire-la avec withdraw_decision si elle n'a plus lieu d'être.`,
+        `A request is already awaiting an answer (“${pending.question}”): only one at a time. Wait for it or withdraw it with withdraw_decision if it no longer applies.`,
       )
     }
 
@@ -195,9 +195,9 @@ export class DecisionService {
     await this.announce(row)
 
     return [
-      `Demande déposée : l'utilisateur la voit dans « À décider » et reçoit une notification.`,
-      `Ne l'attends pas : termine ton tour, ou continue ce qui n'en dépend pas. La réponse t'arrivera en message, au plus tard le ${stamp(row.expiresAt)} ; ${fallback ? `sans réponse d'ici là, Sillage répondra « ${fallback} » à sa place` : "sans réponse d'ici là, Sillage te le dira"}.`,
-      'Si elle n’a plus lieu d’être avant la réponse, retire-la avec withdraw_decision.',
+      'The request was submitted: the user sees it in Decisions and receives a notification.',
+      `Do not wait: end your turn or continue independent work. The reply will arrive as a message by ${stamp(row.expiresAt)}; ${fallback ? `if nobody replies, Sillage will answer “${fallback}”` : 'if nobody replies, Sillage will tell you'}.`,
+      'If it no longer applies before a reply arrives, withdraw it with withdraw_decision.',
     ].join('\n')
   }
 
@@ -208,9 +208,9 @@ export class DecisionService {
       .from(decisions)
       .where(and(eq(decisions.conversationId, requester.id), eq(decisions.status, 'pending')))
       .get()
-    if (!pending) throw new DecisionRefusal('Aucune demande de décision en attente pour cette session.')
+    if (!pending) throw new DecisionRefusal('No pending decision request for this session.')
     this.close(pending, { status: 'withdrawn', withdrawnReason: reason || null, deliveredAt: Date.now() })
-    return `Demande retirée (« ${pending.question} »).`
+    return `Request withdrawn (“${pending.question}”).`
   }
 
   // --- User actions ------------------------------------------------------
@@ -360,22 +360,22 @@ export class DecisionService {
   private message(row: DecisionRow): string {
     if (row.status === 'expired') {
       return [
-        '[Sillage — ta demande de décision a expiré sans réponse]',
+        '[Sillage — your decision request expired without a reply]',
         '',
         `Question : « ${row.question} »`,
         row.defaultOption
-          ? `Réponse appliquée par défaut, comme tu l'avais prévu : « ${row.defaultOption} ».`
-          : "Personne n'a répondu dans le délai, et tu n'avais pas donné de choix par défaut.",
+          ? `Default answer applied as you specified: “${row.defaultOption}”.`
+          : 'Nobody replied before the deadline, and you had not supplied a default choice.',
       ].join('\n')
     }
     const by = row.answeredBy ? this.ctx.db.select({ name: users.displayName }).from(users).where(eq(users.id, row.answeredBy)).get()?.name : null
     return [
-      '[Sillage — réponse à ta demande de décision]',
+      '[Sillage — reply to your decision request]',
       '',
       `Question : « ${row.question} »`,
-      row.answerOption ? `Réponse : « ${row.answerOption} »` : null,
-      row.answerText ? `${row.answerOption ? 'Précision' : 'Réponse'} : ${row.answerText}` : null,
-      by ? `Répondu par ${by}.` : null,
+      row.answerOption ? `Answer: “${row.answerOption}”` : null,
+      row.answerText ? `${row.answerOption ? 'Details' : 'Answer'}: ${row.answerText}` : null,
+      by ? `Answered by ${by}.` : null,
     ]
       .filter((line) => line !== null)
       .join('\n')
@@ -386,8 +386,8 @@ export class DecisionService {
     const answer =
       row.status === 'expired'
         ? row.defaultOption
-          ? `expirée, « ${row.defaultOption} » appliqué par défaut`
-          : 'expirée sans réponse'
+          ? `expired, “${row.defaultOption}” applied by default`
+          : 'expired without a reply'
         : [row.answerOption ? `« ${row.answerOption} »` : null, row.answerText].filter(Boolean).join(' — ')
     this.ctx.db
       .insert(cardNotes)
@@ -396,7 +396,7 @@ export class DecisionService {
         cardId: row.cardId!,
         conversationId: row.conversationId,
         userId: row.status === 'answered' ? row.answeredBy : null,
-        body: `Décision : ${row.question}\n→ ${answer}`,
+        body: `Decision: ${row.question}\n→ ${answer}`,
         createdAt: Date.now(),
       })
       .run()

@@ -62,10 +62,16 @@ test('without a project, the server serves the whole instance in the name of one
 test('the global tool list adds list_projects, a project parameter, and drops session-only tools', async (t) => {
   const { run } = await harness(t)
   const listing = run({ SILLAGE_MCP_USER: 'owner' }, [{ method: 'tools/list' }])
-  const tools = JSON.parse(listing.stdout).result.tools as { name: string; inputSchema: { properties: Record<string, unknown>; required?: string[] } }[]
+  const tools = JSON.parse(listing.stdout).result.tools as { name: string; description: string; inputSchema: { properties: Record<string, unknown>; required?: string[] } }[]
   const names = tools.map((tool) => tool.name)
 
   assert.equal(names[0], 'list_projects')
+  for (const tool of tools) {
+    assert.doesNotMatch(JSON.stringify(tool), /[éèàçêùîô]/, `Built-in tool text stays in English: ${tool.name}`)
+  }
+  const start = tools.find(tool => tool.name === 'start_session')!
+  assert.match(JSON.stringify(start.inputSchema.properties.agent), /Omit to use Claude/)
+
   for (const absent of ['rename_session', 'send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'request_decision']) {
     assert.ok(!names.includes(absent), absent)
   }
@@ -85,8 +91,8 @@ test('each call names its project, by id, name or unambiguous fragment', async (
   }).run()
 
   const listed = call('list_projects', {}).content[0]!.text
-  assert.match(listed, /3 projet\(s\)/)
-  assert.match(listed, /Alpha \(id alpha\).*1 session\(s\) en train de travailler/)
+  assert.match(listed, /3 project\(s\)/)
+  assert.match(listed, /Alpha \(id alpha\).*1 working session\(s\)/)
 
   assert.equal(call('list_cards', {}).isError, true)
   assert.equal(call('list_cards', { project: 'nowhere' }).isError, true)
@@ -126,11 +132,11 @@ test('direct writes carry the account, and the card comes from the call', async 
   // Memory follows each call's project below the supplied root.
   assert.equal(call('write_memory', { project: 'alpha', file: 'note.md', content: '---\nname: note\ndescription: x\n---\nx' }).isError, undefined)
   assert.match(call('read_memory', { project: 'alpha' }).content[0]!.text, new RegExp(join(dir, 'memory', 'projects', 'alpha')))
-  assert.match(call('read_memory', { project: 'gamma' }).content[0]!.text, /Mémoire vide/)
+  assert.match(call('read_memory', { project: 'gamma' }).content[0]!.text, /Memory is empty/)
 
   const peer = call('send_session_message', { project: 'alpha', to: 'x', body: 'y' })
   assert.equal(peer.isError, true)
-  assert.match(peer.content[0]!.text, /hors session/)
+  assert.match(peer.content[0]!.text, /outside a session/)
 })
 
 test('read_session and wait_for_session fold the journal into the present state of a session', async (t) => {
@@ -149,18 +155,18 @@ test('read_session and wait_for_session fold the journal into the present state 
 
   assert.equal(call('read_session', { project: 'alpha', session: 's2' }, env).isError, true)
   let state = call('read_session', { project: 'alpha', session: 's1' }, env).content[0]!.text
-  assert.match(state, /« Relire la doc » \(s1\), codex, en cours/)
-  assert.match(state, /rien répondu/)
+  assert.match(state, /“Relire la doc” \(s1\), codex, running/)
+  assert.match(state, /No reply yet/)
 
   log.append('s1', { type: 'tool.started', toolCallId: 't1', name: 'Bash', input: {}, parentToolCallId: null } as never)
   log.append('s1', { type: 'message.completed', role: 'assistant', blocks: [{ type: 'text', text: 'Je relis la doc.' }], parentToolCallId: null } as never)
   log.append('s1', { type: 'question.requested', requestId: 'q-1', questions: [{ id: 'scope', header: 'Portée', question: 'Toute la doc ?', options: [{ label: 'oui', description: '' }, { label: 'non', description: 'seulement le README' }], multiSelect: false, allowOther: true }] } as never)
   db.update(conversations).set({ status: 'awaiting_input' }).where(eq(conversations.id, 's1')).run()
   state = call('read_session', { project: 'alpha', session: 's1' }, env).content[0]!.text
-  assert.match(state, /attend une réponse \(question, request_id q-1/)
-  assert.match(state, /\[scope\] Toute la doc \? Options : « oui », « non : seulement le README »\. Réponse libre acceptée\./)
-  assert.match(state, /Dernier message de la session \(.*\) :\nJe relis la doc\./)
-  assert.doesNotMatch(state, /En train d'appeler/)
+  assert.match(state, /Awaiting a reply \(question, request_id q-1/)
+  assert.match(state, /\[scope\] Toute la doc \? Options: « oui », « non : seulement le README »\. Free-text answer allowed\./)
+  assert.match(state, /Latest session message \(.*\):\nJe relis la doc\./)
+  assert.doesNotMatch(state, /Calling tool/)
 
   // Resolved questions and completed turns make waits return state immediately.
   log.append('s1', { type: 'question.resolved', requestId: 'q-1', status: 'answered', answers: {}, decidedBy: 'owner' } as never)
@@ -168,13 +174,13 @@ test('read_session and wait_for_session fold the journal into the present state 
   const started = Date.now()
   const waited = call('wait_for_session', { project: 'alpha', session: 's1', timeout_seconds: 10 }, env).content[0]!.text
   assert.ok(Date.now() - started < 8000)
-  assert.doesNotMatch(waited, /attend une réponse|Toujours en cours/)
-  assert.match(waited, /au repos : message_session la fait reprendre/)
+  assert.doesNotMatch(waited, /Awaiting a reply|Still running/)
+  assert.match(waited, /Idle: message_session resumes it/)
 
   // Still running at deadlines: return current state without errors.
   db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, 's1')).run()
   const timedOut = call('wait_for_session', { project: 'alpha', session: 's1', timeout_seconds: 1 }, env).content[0]!.text
-  assert.match(timedOut, /Toujours en cours après 1 s/)
+  assert.match(timedOut, /Still running after 1 s/)
 
   // New tools exist only in global mode.
   const scoped = run({ SILLAGE_MCP_PROJECT: 'alpha', SILLAGE_MCP_CONVERSATION: 's1' }, [{ method: 'tools/list' }])

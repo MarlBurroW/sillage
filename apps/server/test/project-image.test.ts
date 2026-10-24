@@ -97,27 +97,27 @@ test('image envoyée par une personne : servie, versionnée, puis retirée', asy
 test("rappel aux agents : absent, puis provisoire, puis plus rien", async (t) => {
   const { dir, upload, listed, mcp, overview } = await harness(t)
 
-  assert.match(overview() ?? '', /n'a pas d'image/)
+  assert.match(overview() ?? '', /has no image/)
   // Without actionable tools, reminders add only noise.
   assert.equal(overview(false), null)
 
   await writeFile(join(dir, 'notes.txt'), 'rien à voir')
   assert.equal(mcp({ path: join(dir, 'notes.txt') }).isError, true)
   assert.equal(mcp({ path: join(dir, 'absent.png') }).isError, true)
-  assert.match(overview() ?? '', /n'a pas d'image/)
+  assert.match(overview() ?? '', /has no image/)
 
   await writeFile(join(dir, 'draft.svg'), SVG)
   assert.equal(mcp({ path: join(dir, 'draft.svg'), provisional: true }).isError, undefined)
   assert.equal((await listed()).image?.provisional, true)
-  assert.match(overview() ?? '', /provisoire/)
+  assert.match(overview() ?? '', /provisional/)
 
   await writeFile(join(dir, 'logo.png'), PNG)
   assert.equal(mcp({ path: join(dir, 'logo.png') }).isError, undefined)
   assert.equal((await listed()).image?.provisional, false)
-  assert.doesNotMatch(overview() ?? '', /n'a pas d'image|provisoire/)
+  assert.doesNotMatch(overview() ?? '', /has no image|provisional/)
 
   // User-selected images replace agent images and are never provisional.
   mcp({ path: join(dir, 'draft.svg'), provisional: true })
   assert.equal((await upload(PNG)).statusCode, 200)
-  assert.doesNotMatch(overview() ?? '', /n'a pas d'image|provisoire/)
+  assert.doesNotMatch(overview() ?? '', /has no image|provisional/)
 })

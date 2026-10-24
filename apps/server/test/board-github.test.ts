@@ -264,9 +264,9 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   db.insert(conversations).values({ id: '11111111-2222-4333-8444-555555555555', projectId: 'project', userId: 'owner', title: 'Triage', agent: 'claude', config: '{}', status: 'running', cardId: crash.id, createdAt: 1, updatedAt: 1 }).run()
   const session = '11111111-2222-4333-8444-555555555555'
   const listing = mcp('list_cards', {})
-  assert.match(listing.text, /Board relié aux issues de github\.com\/acme\/app/)
-  assert.match(listing.text, /GitHub #1 de @stranger/)
-  assert.match(mcp('read_card', { number: crash.number }).text, /@stranger sur GitHub/)
+  assert.match(listing.text, /Board linked to issues at github\.com\/acme\/app/)
+  assert.match(listing.text, /GitHub #1 by @stranger/)
+  assert.match(mcp('read_card', { number: crash.number }).text, /@stranger on GitHub/)
   assert.equal(mcp('add_card_note', { body: 'Root cause in loader.ts' }, session).isError, false)
   assert.equal(mcp('add_card_note', { body: 'Could you share your config?', github: true }, session).isError, false)
   // update_issue changes columns; the next pass closes GitHub issues.
@@ -293,7 +293,7 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
     await requests.sweep()
     return db.select().from(agentRequests).where(eq(agentRequests.id, id)).get()!
   }
-  assert.match((await ask({ title: 'Flaky test' })).result ?? '', /locale/)
+  assert.match((await ask({ title: 'Flaky test' })).result ?? '', /local/)
   const published = await ask({ title: 'Document the config', description: 'Explain each key.', github: true })
   assert.equal(published.isError, false, published.result ?? '')
   const issue = [...github.issues.values()].find((entry) => entry.title === 'Document the config')!
@@ -419,7 +419,7 @@ test('maintenance sessions: one per issue, comments follow it, archive restarts,
   assert.equal(conversation.cardId, (await byIssue(7))!.id)
   assert.equal(conversation.worktreeId, null)
   assert.equal(issue().responderId, conversation.id)
-  for (const expected of ['nouvelle issue GitHub #7', 'Reproduce, then fix and push.', 'English, short, friendly.', '_Written by an AI agent._', `<!-- sillage:session=${conversation.id} -->`, 'labels : bug']) {
+  for (const expected of ['new GitHub issue #7', 'Reproduce, then fix and push.', 'English, short, friendly.', '_Written by an AI agent._', `<!-- sillage:session=${conversation.id} -->`, 'labels: bug']) {
     assert.ok(first.text.includes(expected), `${expected} in the first prompt`)
   }
   assert.ok(!first.text.includes('Answer the question'), 'Comment instructions wait for a comment')
@@ -439,7 +439,7 @@ test('maintenance sessions: one per issue, comments follow it, archive restarts,
   db.update(boardLinks).set({ maxSessionsPerHour: 10 }).run()
   assert.equal(await responder.respond({ kind: 'comment', link: link(), issue: issue(), comments: [comment('Ping')] }), 'launched')
   assert.notEqual(sent.at(-1)!.to, conversation.id)
-  assert.ok(!sent.at(-1)!.text.includes('Written by an AI agent') && sent.at(-1)!.text.includes('aucune signature visible'))
+  assert.ok(!sent.at(-1)!.text.includes('Written by an AI agent') && sent.at(-1)!.text.includes('without a visible signature'))
   assert.ok(sent.at(-1)!.text.includes('Answer the question if you can.') && !sent.at(-1)!.text.includes('Reproduce, then fix'))
 })
 

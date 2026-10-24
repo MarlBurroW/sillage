@@ -14,7 +14,7 @@ export function describeOutgoingMessage(
     ? [
         text,
         '',
-        'Fichiers joints à ce message :',
+        'Files attached to this message:',
         ...files.map((file) => `- ${file.filename} : ${file.path}`),
       ]
         .join('\n')

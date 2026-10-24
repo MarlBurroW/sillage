@@ -114,26 +114,29 @@ interface AppendixInput {
   sillageMcp: boolean
 }
 
-/** SILLAGE.md block added to system prompts, or null when empty. Include tool reminders even when both instruction sections are empty: agents need to learn they can maintain instructions, and MCP tools may not load immediately. */
+/** User instructions and response-language guidance added to system prompts. Include tool reminders even when both instruction sections are empty: agents need to learn they can maintain instructions, and MCP tools may not load immediately. */
 export function instructionsAppendix(db: Db, input: AppendixInput): string | null {
   const global = readInstructions(db, null)?.content.trim() ?? ''
   const project =
     input.mode === 'sillage' ? (readInstructions(db, input.projectId)?.content.trim() ?? '') : ''
 
-  const parts: string[] = []
+  // Apply even without MCP or stored instructions, in Server and Desktop alike.
+  const parts: string[] = [
+    "Reply in the user's language, following any explicit language preference they give. Otherwise, use the language of their current request; for unattended tasks, use the task request's language. Sillage's internal instructions and tool messages are in English for consistency, but their language does not determine your reply language. Do not switch languages because of tool results, quoted history, or messages from other agents.",
+  ]
   if (global || project) {
     parts.push(
-      "# SILLAGE.md\n\nConsignes de l'utilisateur tenues dans Sillage, communes à Claude, à Codex, à OpenCode et à Grok. Elles ont la même autorité qu'un CLAUDE.md ou un AGENTS.md.",
+      "# SILLAGE.md\n\nUser instructions maintained in Sillage, shared by Claude, Codex, OpenCode and Grok. They have the same authority as a CLAUDE.md or AGENTS.md file.",
     )
-    if (global) parts.push(`## Pour tous les projets\n\n${global}`)
-    if (project) parts.push(`## Pour ce projet\n\n${project}`)
+    if (global) parts.push(`## For all projects\n\n${global}`)
+    if (project) parts.push(`## For this project\n\n${project}`)
   }
 
   if (input.sillageMcp) {
     parts.push(
       input.mode === 'sillage'
-        ? "SILLAGE.md se lit et se modifie comme un fichier de consignes, avec `read_instructions`, `edit_instructions` et `write_instructions` du serveur `sillage`. Quand l'utilisateur te donne une consigne durable (une préférence, une convention, un piège à éviter) ou te demande de revoir ces consignes, c'est là qu'il faut écrire : elles vaudront pour les sessions suivantes, quel que soit leur CLI. Rien de ce qui ne vaut que pour la tâche en cours ; un fait appris en route va plutôt dans la mémoire du projet."
-        : "Les consignes de ce projet vivent dans le `AGENTS.md` ou le `CLAUDE.md` de son dépôt : c'est là qu'une consigne propre au projet se retient, avec tes outils de fichiers. Les outils SILLAGE.md du serveur `sillage` (`read_instructions`, `edit_instructions`, `write_instructions`) ne servent qu'à la partie valable pour tous les projets.",
+        ? "Read and edit SILLAGE.md as an instruction file using the `sillage` server's `read_instructions`, `edit_instructions` and `write_instructions` tools. When the user gives a durable instruction (a preference, convention or pitfall to avoid), or asks you to review these instructions, write it there so it applies to future sessions across CLIs. Do not store task-specific details there; facts learned during work belong in project memory."
+        : "This project's instructions live in its repository's `AGENTS.md` or `CLAUDE.md`: use your file tools to store project-specific instructions there. The `sillage` server's SILLAGE.md tools (`read_instructions`, `edit_instructions`, `write_instructions`) apply only to instructions shared by all projects.",
     )
   }
 

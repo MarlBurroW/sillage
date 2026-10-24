@@ -157,8 +157,8 @@ test('nextScheduleRun counts an interval from the last run and never catches up'
 test('buildRunPrompt tells the agent it runs alone and hands over the previous run', () => {
   const task = { name: 'Veille', prompt: 'Compare à {{previous_run_summary}} ({{previous_run_date}}).', projectId: 'p', maxDurationMinutes: 20 }
   const first = buildRunPrompt({ task, trigger: 'schedule', firedAt: Date.now(), previous: null, publicUrl: '' })
-  assert.match(first, /personne n'est au clavier/)
-  assert.match(first, /premier tir/)
+  assert.match(first, /nobody is at the keyboard/)
+  assert.match(first, /first run/)
   assert.match(first, /20 min/)
 
   const next = buildRunPrompt({
@@ -168,7 +168,7 @@ test('buildRunPrompt tells the agent it runs alone and hands over the previous r
     previous: { startedAt: Date.now() - MINUTE, status: 'succeeded', conversationId: 'c1', summary: 'Rien de neuf.', error: null },
     publicUrl: 'https://sillage.example/',
   })
-  assert.match(next, /lancé à la main/)
+  assert.match(next, /started manually/)
   assert.match(next, /https:\/\/sillage\.example\/p\/p\/c\/c1/)
   assert.match(next, /> Rien de neuf\./)
   assert.match(next, /Compare à Rien de neuf\. \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\./)
@@ -325,9 +325,9 @@ test('schedule_task creates a task from a session, within the agent guard rails'
 
   const created = await mcp('parent', { name: 'Veille des CLI', prompt: 'Sonde les binaires.', cron: '0 9 * * 1' })
   assert.equal(created.isError, undefined, created.content[0]?.text)
-  assert.match(created.content[0]!.text, /Tâche planifiée « Veille des CLI » créée/)
+  assert.match(created.content[0]!.text, /Scheduled task “Veille des CLI” created/)
   // Defaults use manual permissions: responses must disclose this.
-  assert.match(created.content[0]!.text, /personne ne donnera/)
+  assert.match(created.content[0]!.text, /nobody will provide/)
   const row = db.select().from(scheduledTasks).get()!
   assert.equal(row.createdByConversationId, 'parent')
   assert.deepEqual(JSON.parse(row.cadence), { kind: 'cron', expression: '0 9 * * 1' })
@@ -335,17 +335,17 @@ test('schedule_task creates a task from a session, within the agent guard rails'
 
   const tooTight = await mcp('parent', { name: 'x', prompt: 'x', every_minutes: 5 })
   assert.equal(tooTight.isError, true)
-  assert.match(tooTight.content[0]!.text, /15 minutes au moins/)
+  assert.match(tooTight.content[0]!.text, /minimum 15 minutes/)
 
   const tightCron = await mcp('parent', { name: 'x', prompt: 'x', cron: '* * * * *' })
-  assert.match(tightCron.content[0]!.text, /trop serré/)
+  assert.match(tightCron.content[0]!.text, /too frequent/)
 
   const ambiguous = await mcp('parent', { name: 'x', prompt: 'x', every_minutes: 60, cron: '0 9 * * 1' })
-  assert.match(ambiguous.content[0]!.text, /exactement une cadence/)
+  assert.match(ambiguous.content[0]!.text, /exactly one cadence/)
 
   const selfReplicating = await mcp('scheduled', { name: 'x', prompt: 'x', every_minutes: 60 })
   assert.equal(selfReplicating.isError, true)
-  assert.match(selfReplicating.content[0]!.text, /elle-même un tir planifié/)
+  assert.match(selfReplicating.content[0]!.text, /itself a scheduled run/)
 
   assert.equal(db.select().from(scheduledTasks).all().length, 1)
 })
@@ -425,7 +425,7 @@ test('a checked task only wakes the LLM when its script says so', async (t) => {
   assert.equal(db.select().from(conversations).where(eq(conversations.id, launched!.conversationId!)).get()?.scheduleId, busy.id)
   // Output referenced by instructions is not repeated in headers.
   assert.match(sent[0]!.text, /Analyse : Codex 0\.161\.0 publiée$/)
-  assert.doesNotMatch(sent[0]!.text, /Sa sortie :/)
+  assert.doesNotMatch(sent[0]!.text, /Its output:/)
 
   const broken = checkedTask('echo "registre injoignable" >&2; exit 3')
   await scheduler.tick(broken.nextRunAt!)
@@ -446,7 +446,7 @@ test('a check written by an agent does not run before someone approves it', asyn
   await scheduler.tick(proposed.nextRunAt!)
   const [blocked] = await settled(proposed.id)
   assert.equal(blocked?.status, 'skipped')
-  assert.match(blocked!.error!, /en attente de validation/)
+  assert.match(blocked!.error!, /awaiting approval/)
   assert.equal(sent.length, 0)
   await assert.rejects(stat(marker))
 
@@ -478,7 +478,7 @@ test('run now can skip the check, and a restart closes a check left in flight', 
   scheduler.stop()
   const [closed] = runs()
   assert.equal(closed?.status, 'failed')
-  assert.match(closed!.error!, /redémarrage/)
+  assert.match(closed!.error!, /restart/)
 })
 
 test('schedule_task can propose a check, which waits for the user', async (t) => {
@@ -505,7 +505,7 @@ test('schedule_task can propose a check, which waits for the user', async (t) =>
   child.kill()
   const result = JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   assert.equal(result.isError, undefined, result.content[0]?.text)
-  assert.match(result.content[0]!.text, /attend la validation/)
+  assert.match(result.content[0]!.text, /awaits user approval/)
   const row = db.select().from(scheduledTasks).get()!
   assert.equal(row.checkScript, 'npm view @openai/codex version')
   assert.equal(row.checkApprovedAt, null)

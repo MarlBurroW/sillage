@@ -93,7 +93,7 @@ test('MCP HTTP : la liste blanche du jeton restreint les projets', async (t) => 
   const h = await harness(t, ['mcp'], ['shared'])
   const session = await h.initialize()
   const projects = (await h.call(session, 'list_projects', {})).content[0]!.text
-  assert.match(projects, /1 projet/)
+  assert.match(projects, /1 project/)
   assert.match(projects, /shared/)
   assert.equal((await h.call(session, 'list_cards', { project: 'mine' })).isError, true)
 })

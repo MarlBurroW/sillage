@@ -88,7 +88,7 @@ test('session context and MCP share exact IDs, archives and project isolation wi
   }
   const search = call('search_history', { query: 'Unique archived decision' }).content[0]!.text
   assert.ok(search.includes(sessionReference(id)), search)
-  assert.match(search, /archivée/)
+  assert.match(search, /archived/)
   const read = call('read_conversation', { id: sessionReference(id) })
   assert.ok(!read.isError, JSON.stringify(read))
   assert.match(read.content[0]!.text, /Unique archived decision transcript/)

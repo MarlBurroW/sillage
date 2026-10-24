@@ -75,14 +75,14 @@ test('move_card déplace la carte de la conversation ou une autre, et le note', 
   const done = await call(dbPath, 'move_card', { column: 'review', reason: 'Prête à relire.' })
   assert.ok(!done.isError, done.content[0]?.text)
   assert.equal(row(own).column, 'review')
-  assert.match(notes(own)[0]!.body, /« en cours » vers « à vérifier »\. Prête à relire\./)
+  assert.match(notes(own)[0]!.body, /“in progress” to “awaiting review”\. Prête à relire\./)
 
   const moved = await call(dbPath, 'move_card', { number: 2, column: 'abandoned' })
   assert.ok(!moved.isError, moved.content[0]?.text)
   assert.equal(row(other).column, 'abandoned')
 
   const same = await call(dbPath, 'move_card', { number: 2, column: 'abandoned' })
-  assert.match(same.content[0]!.text, /déjà/)
+  assert.match(same.content[0]!.text, /already/)
   assert.equal(notes(other).length, 1, 'rien à noter quand rien ne bouge')
 
   const missing = await call(dbPath, 'move_card', { number: 99, column: 'done' })

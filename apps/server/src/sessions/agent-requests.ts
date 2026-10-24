@@ -78,7 +78,7 @@ import { readUserSettings } from '../settings/user-settings.js'
 import { resolveConversationCwd } from '../workspace.js'
 import type { SessionManager } from './session-manager.js'
 
-/** Handles MCP daemon requests: session launches, cards, scheduling and model catalogs. MCP only has database access, deposits requests and waits for this sweep to write results. Sweep faster than relays because agents await replies. Responses are model-facing French like other tools; errors explain corrections. */
+/** Handles MCP daemon requests: session launches, cards, scheduling and model catalogs. MCP only has database access, deposits requests and waits for this sweep to write results. Sweep faster than relays because agents await replies. Responses are model-facing English like other tools; errors explain corrections. */
 
 const POLL_MS = 500
 
@@ -115,16 +115,16 @@ class Refusal extends Error {}
 /** Must match protocol `createWorktreeBodySchema`: names also become directories. */
 function assertWorktreeName(name: string): void {
   if (!/^[A-Za-z0-9._/-]+$/.test(name) || name.split('/').includes('..') || name.startsWith('/') || name.endsWith('/')) {
-    throw new Refusal(`Nom de worktree invalide « ${name} » : lettres, chiffres, . _ - / seulement, comme une branche git.`)
+    throw new Refusal(`Invalid worktree name “${name}”: use only letters, digits, . _ - /, as for a Git branch.`)
   }
 }
 
 /** Agent-facing worktree state with its implications. */
 const WORKTREE_STATE_WORDS = {
-  missing: 'introuvable (dossier disparu)',
-  dirty: 'non commité',
-  unmerged: 'commité, à fusionner',
-  merged: 'fusionné, rien à garder (à nettoyer)',
+  missing: 'missing (directory gone)',
+  dirty: 'uncommitted',
+  unmerged: 'committed, awaiting merge',
+  merged: 'merged, nothing to retain (ready for cleanup)',
 } as const
 
 /** Requester is a session or an account without sessions. Global MCP local clients (`docs/mcp.md`) supply `user_id` instead of conversations, with empty `id`, no worktree/task ancestry and no session-specific launch chains, provenance notes or decisions. Use `Pick` rather than whole rows so types expose only fields actually read. */
@@ -188,7 +188,7 @@ export class AgentRequests {
 
       for (const request of pending) {
         if (request.createdAt < Date.now() - STALE_MS) {
-          this.settle(request.id, "Demande expirée : Sillage ne l'a pas traitée à temps.", true)
+          this.settle(request.id, 'Request expired: Sillage did not process it in time.', true)
           continue
         }
         await this.handle(request)
@@ -213,38 +213,38 @@ export class AgentRequests {
             )
             .get()
         : null
-      if (request.conversationId && !conversation) throw new Refusal("La session qui demande n'existe plus dans ce projet.")
+      if (request.conversationId && !conversation) throw new Refusal('The requesting session no longer exists in this project.')
       const requester: Requester = conversation ?? this.principal(request)
       const project = this.ctx.db
         .select()
         .from(projects)
         .where(eq(projects.id, request.projectId))
         .get()
-      if (!project) throw new Refusal("Le projet n'existe plus.")
+      if (!project) throw new Refusal('The project no longer exists.')
 
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request.id, text, false, launchedId)
       } else if (request.kind === 'rename_session') {
-        if (!conversation) throw new Refusal("Cet outil ne renomme que ta propre session, pas une session désignée de l'extérieur.")
+        if (!conversation) throw new Refusal('This tool only renames your own session, not one selected externally.')
         const { title } = renameSessionBodySchema.parse(payload)
         const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, conversation.id, title, 'agent')
-        if (result === 'missing') throw new Refusal("Cette session n'existe plus.")
+        if (result === 'missing') throw new Refusal('This session no longer exists.')
         this.settle(request.id, result === 'protected'
-          ? "Le titre a été choisi par l'utilisateur : il est conservé. Ne réessaie pas de le renommer."
-          : `Titre de ta session : « ${title} ».`, false)
+          ? 'The user chose the title: it is preserved. Do not retry renaming it.'
+          : `Your session title: “${title}”.`, false)
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'request_decision' || request.kind === 'withdraw_decision') {
         // Decisions require autonomous session identities: without sessions, none.
-        if (!conversation) throw new Refusal("Cet outil ne sert qu'aux sessions autonomes : hors session, il n'y a pas de décision à demander.")
+        if (!conversation) throw new Refusal('This tool is only for autonomous sessions: there is no decision to request outside a session.')
         this.settle(request.id, await this.decide(request.kind, conversation, payload), false)
       } else if (request.kind === 'link_cards' || request.kind === 'unlink_cards') {
-        if (!Number.isInteger(payload.number)) throw new Refusal('Le numéro de la carte est requis.')
+        if (!Number.isInteger(payload.number)) throw new Refusal('The card number is required.')
         const { target, kind } = createCardRelationBodySchema.parse(payload)
         const change = request.kind === 'link_cards' ? linkCards : unlinkCards
         change(this.ctx.db, requester.projectId, payload.number as number, target, kind)
-        this.settle(request.id, request.kind === 'link_cards' ? 'Relation ajoutée.' : 'Relation supprimée.', false)
+        this.settle(request.id, request.kind === 'link_cards' ? 'Relation added.' : 'Relation removed.', false)
       } else if (request.kind === 'update_card') {
         this.settle(request.id, this.updateCard(requester, payload), false)
       } else if (request.kind === 'create_card') {
@@ -281,9 +281,9 @@ export class AgentRequests {
 
   /** Sessionless requester account named in the request. Default CLI is Claude like new interface projects; global clients specify `agent` for another, as descriptions explain. */
   private principal(request: AgentRequestRow): Requester {
-    if (!request.userId) throw new Refusal("La demande ne vient d'aucune session ni d'aucun compte : Sillage ne sait pas pour qui agir.")
+    if (!request.userId) throw new Refusal('The request has no session or account: Sillage does not know whom to act for.')
     const user = this.ctx.db.select().from(users).where(eq(users.id, request.userId)).get()
-    if (!user) throw new Refusal("Le compte au nom duquel agir n'existe plus.")
+    if (!user) throw new Refusal('The account to act for no longer exists.')
     return {
       id: '',
       projectId: request.projectId,
@@ -312,10 +312,10 @@ export class AgentRequests {
     payload: StartSessionPayload,
   ): Promise<{ text: string; launchedId: string }> {
     const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : ''
-    if (!prompt) throw new Refusal('Le paramètre `prompt` est requis : la mission de la nouvelle session.')
+    if (!prompt) throw new Refusal('The `prompt` parameter is required: the new session\'s mission.')
     if (prompt.length > MAX_LAUNCH_PROMPT_CHARS) {
       throw new Refusal(
-        `Mission trop longue (${prompt.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`,
+        `Mission too long (${prompt.length} characters, maximum ${MAX_LAUNCH_PROMPT_CHARS}). Put details in a file and cite it.`,
       )
     }
 
@@ -364,12 +364,12 @@ export class AgentRequests {
           ?.name ?? worktreeId)
       : null
     const lines = [
-      `Session lancée : « ${row.title} », id ${row.id}.`,
-      `CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}.`,
-      tree ? `Elle travaille dans le worktree « ${tree} ».` : 'Elle travaille à la racine du projet.',
-      card ? `Rattachée à la carte #${card.number} « ${card.title} ».` : null,
+      `Session started: “${row.title}”, id ${row.id}.`,
+      `CLI ${agent}, model ${describeModel(config)}, effort ${describeEffort(config)}.`,
+      tree ? `Working in worktree “${tree}”.` : 'Working at the project root.',
+      card ? `Attached to card #${card.number} “${card.title}”.` : null,
       describePermissions(config),
-      "L'utilisateur la voit dans Sillage. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire.",
+      'The user sees it in Sillage. To be notified when it finishes, call notify_when_done with this ID, then end your turn if you have no independent work.',
     ]
     return { text: lines.filter(Boolean).join('\n'), launchedId: row.id }
   }
@@ -384,7 +384,7 @@ export class AgentRequests {
     if (value === undefined || value === null || value === '') return fallback
     const parsed = agentKindSchema.safeParse(typeof value === 'string' ? value.toLowerCase() : value)
     if (!parsed.success) {
-      throw new Refusal(`CLI inconnu « ${String(value)} ». Valeurs possibles : ${agentKindSchema.options.join(', ')}.`)
+      throw new Refusal(`Unknown CLI “${String(value)}”. Available values: ${agentKindSchema.options.join(', ')}.`)
     }
     return parsed.data
   }
@@ -418,7 +418,7 @@ export class AgentRequests {
       const model = matchModel(catalog, requestedModel)
       if (!model && catalog.length > 0) {
         throw new Refusal(
-          `Modèle « ${requestedModel} » inconnu pour ${agent}. Disponibles : ${catalog.map(nameModel).join(', ')}.`,
+          `Unknown model “${requestedModel}” for ${agent}. Available: ${catalog.map(nameModel).join(', ')}.`,
         )
       }
       config = { ...config, model: model?.value ?? requestedModel }
@@ -442,15 +442,15 @@ export class AgentRequests {
       if (!effort) {
         throw new Refusal(
           efforts.length === 0
-            ? `Le modèle ${config.model} ne règle pas d'effort : omets le paramètre \`effort\`.`
-            : `Effort « ${requestedEffort} » inconnu pour ${config.model}. Niveaux : ${efforts.join(', ')}.`,
+            ? `Model ${config.model} does not support effort settings: omit \`effort\`.`
+            : `Unknown effort “${requestedEffort}” for ${config.model}. Levels: ${efforts.join(', ')}.`,
         )
       }
       config = withEffort(config, effort)
     }
 
     const parsed = agentConfigSchema.safeParse(config)
-    if (!parsed.success) throw new Refusal(`Configuration refusée : ${parsed.error.issues[0]?.message ?? 'invalide'}.`)
+    if (!parsed.success) throw new Refusal(`Configuration refused: ${parsed.error.issues[0]?.message ?? 'invalid'}.`)
     return parsed.data
   }
 
@@ -461,7 +461,7 @@ export class AgentRequests {
     value: unknown,
   ): Promise<string | null> {
     if (value === undefined || value === null || value === '') return requester.worktreeId
-    if (typeof value !== 'string') throw new Refusal('Le paramètre `worktree` doit être une chaîne.')
+    if (typeof value !== 'string') throw new Refusal('The `worktree` parameter must be a string.')
     const name = value.trim()
     if (name === '@root') return null
 
@@ -483,7 +483,7 @@ export class AgentRequests {
   /** Creates worktrees identically to the interface then attaches requesting sessions through `conversation_paths`, never `conversations.worktree_id`. The latter controls resume cwd, and changing it would lose Claude transcripts organized by working directory. Keep cwd and use absolute paths for worktree edits. New branches start from project default branches, not HEAD: requesting sessions often inhabit main trees left on unexpected branches. */
   private async createWorktreeFor(requester: Requester, project: ProjectRow, payload: Record<string, unknown>): Promise<string> {
     const branch = typeof payload.branch === 'string' ? payload.branch.trim() : ''
-    if (!branch) throw new Refusal('Le paramètre `branch` est requis : le nom de la branche, par exemple `fix/titre-tronque`.')
+    if (!branch) throw new Refusal('The `branch` parameter is required: a branch name, e.g. `fix/truncated-title`.')
     assertWorktreeName(branch)
 
     const existing = this.ctx.db
@@ -495,18 +495,18 @@ export class AgentRequests {
     let row = existing
     let origin: string
     if (row) {
-      origin = 'Il existait déjà : Sillage te le rend tel quel.'
+      origin = 'Already existed: Sillage returns it as-is.'
     } else {
       const requested = typeof payload.base === 'string' ? payload.base.trim() : ''
       // Passed unchanged to `git worktree add`: leading hyphens would become options.
       if (requested && (!/^[A-Za-z0-9._/@{}^~-]+$/.test(requested) || requested.startsWith('-'))) {
-        throw new Refusal(`Base invalide « ${requested} » : un nom de branche, de tag ou de commit.`)
+        throw new Refusal(`Invalid base “${requested}”: expected a branch, tag or commit.`)
       }
       const base = requested || (await defaultBase(project.workspacePath)) || 'HEAD'
       row = await createWorktree(this.ctx, project, requester.userId, branch, base)
       origin = row.baseRef === branch
-        ? `La branche « ${branch} » existait : elle est reprise telle quelle.`
-        : `Branche neuve, partie de ${base}.`
+        ? `Branch “${branch}” already existed and is reused as-is.`
+        : `New branch from ${base}.`
     }
 
     if (requester.id) {
@@ -523,14 +523,14 @@ export class AgentRequests {
     this.worktreeStatus?.forget(project.id)
 
     return [
-      `Worktree « ${branch} » prêt dans ${row.path}. ${origin}`,
+      `Worktree “${branch}” ready at ${row.path}. ${origin}`,
       requester.id
-        ? "Ta session y est rattachée : l'utilisateur la voit avec cette branche dans la barre latérale, et retrouve l'arbre dans la vue Chantiers, d'où il le nettoiera une fois fusionné."
-        : "Il apparaît dans la vue Chantiers du projet.",
+        ? 'Your session is attached: the user sees its branch in the sidebar and finds the tree in Worktrees for cleanup after merging.'
+        : 'It appears in the project Worktrees view.',
       requester.id
-        ? `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${row.path}, et lance tes commandes avec \`cd ${row.path} && …\` ou \`git -C ${row.path} …\`.`
+        ? `Your working directory has not changed. Use absolute paths: edit files under ${row.path}, and run commands with \`cd ${row.path} && …\` or \`git -C ${row.path} …\`. Otherwise you would edit the original tree.`
         : null,
-      `Pour qu'une autre session y travaille directement, start_session avec \`worktree: "${branch}"\`.`,
+      `To start another session directly in this tree, use start_session with \`worktree: "${branch}"\`.`,
     ]
       .filter((line) => line !== null)
       .join('\n')
@@ -538,12 +538,12 @@ export class AgentRequests {
 
   /** Project trees and progress as shown in Worktrees. Await fresh calculations rather than return interface-acceptable stale lists because agents make reuse decisions from answers. */
   private async listWorktrees(requester: Requester, project: ProjectRow): Promise<string> {
-    if (!this.worktreeStatus) throw new Refusal("L'avancement des worktrees n'est pas disponible ici.")
+    if (!this.worktreeStatus) throw new Refusal('Worktree progress is unavailable here.')
     const list = await this.worktreeStatus.current(project)
     if (list.worktrees.length === 0) {
       return list.base === null
-        ? "Ce projet n'est pas un dépôt git : il n'a pas de worktree."
-        : "Aucun worktree en dehors de l'arbre principal. create_worktree en crée un."
+        ? 'This project is not a Git repository: it has no worktrees.'
+        : 'No worktrees outside the main tree. Use create_worktree to create one.'
     }
 
     const ids = [...new Set(list.worktrees.flatMap((tree) => tree.conversations.map((entry) => entry.id)))]
@@ -554,42 +554,42 @@ export class AgentRequests {
             .from(conversations)
             .where(inArray(conversations.id, ids))
             .all()
-            .map((row) => [row.id, row.archivedAt ? `${row.title} (archivée)` : row.title])
+            .map((row) => [row.id, row.archivedAt ? `${row.title} (archived)` : row.title])
         : [],
     )
 
     const lines = list.worktrees.map((tree) => {
       const facts = [
-        tree.modified > 0 ? `${tree.modified} fichier(s) modifié(s)` : null,
-        tree.untracked > 0 ? `${tree.untracked} non suivi(s)` : null,
-        tree.ahead > 0 ? `${tree.ahead} commit(s) en avance` : null,
-        tree.behind > 0 ? `${tree.behind} en retard` : null,
-        tree.conflicts ? 'conflit prévisible' : null,
+        tree.modified > 0 ? `${tree.modified} modified file(s)` : null,
+        tree.untracked > 0 ? `${tree.untracked} untracked` : null,
+        tree.ahead > 0 ? `${tree.ahead} commit(s) ahead` : null,
+        tree.behind > 0 ? `${tree.behind} behind` : null,
+        tree.conflicts ? 'conflict expected' : null,
       ].filter(Boolean)
       const sessions = tree.conversations.map((entry) => {
-        const who = entry.id === requester.id ? 'toi' : `« ${titles.get(entry.id) ?? entry.id} »`
-        return `${who} ${entry.link === 'worktree' ? 'y travaille' : 'y a travaillé'}`
+        const who = entry.id === requester.id ? 'you' : `“${titles.get(entry.id) ?? entry.id}”`
+        return `${who} ${entry.link === 'worktree' ? 'working here' : 'worked here'}`
       })
       return [
         `- \`${tree.name}\` : ${WORKTREE_STATE_WORDS[tree.state]}${facts.length ? ` (${facts.join(', ')})` : ''}`,
-        `  ${tree.path}${tree.external ? ' · créé hors de Sillage' : ''}`,
-        sessions.length ? `  Sessions : ${sessions.join(' ; ')}` : '  Aucune session rattachée.',
+        `  ${tree.path}${tree.external ? ' · created outside Sillage' : ''}`,
+        sessions.length ? `  Sessions: ${sessions.join('; ')}` : '  No attached sessions.',
       ].join('\n')
     })
 
-    return [`Worktrees du projet, comparés à ${list.base ?? 'HEAD'} :`, ...lines].join('\n')
+    return [`Project worktrees, compared with ${list.base ?? 'HEAD'}:`, ...lines].join('\n')
   }
 
   private launchCard(projectId: string, value: unknown): { id: string; number: number; title: string } | null {
     if (value === undefined || value === null || value === '') return null
     const number = typeof value === 'number' ? value : Number(String(value).replace(/^#/, ''))
-    if (!Number.isInteger(number)) throw new Refusal('Le paramètre `card` est le numéro de la carte, par exemple 12.')
+    if (!Number.isInteger(number)) throw new Refusal('The `card` parameter is a card number, e.g. 12.')
     const card = this.ctx.db
       .select({ id: cards.id, number: cards.number, title: cards.title })
       .from(cards)
       .where(and(eq(cards.projectId, projectId), eq(cards.number, number)))
       .get()
-    if (!card) throw new Refusal(`Aucune carte #${number} dans ce projet. list_cards les montre.`)
+    if (!card) throw new Refusal(`No card #${number} in this project. Use list_cards to see cards.`)
     return card
   }
 
@@ -603,20 +603,20 @@ export class AgentRequests {
   ): Promise<string> {
     if (requester.scheduleId) {
       throw new Refusal(
-        "Refusé : cette session est elle-même un tir planifié. Une tâche qui en crée d'autres se multiplierait sans personne pour l'arrêter ; ouvre une carte avec create_card.",
+        'Refused: this session is itself a scheduled run. Tasks creating more tasks would multiply unattended; create a card with create_card instead.',
       )
     }
 
     const name = typeof payload.name === 'string' ? payload.name.trim() : ''
-    if (!name) throw new Refusal('Le paramètre `name` est requis : le nom court de la tâche.')
+    if (!name) throw new Refusal('The `name` parameter is required: a short task name.')
     if (name.length > MAX_SCHEDULE_NAME_CHARS) {
-      throw new Refusal(`Nom trop long (${MAX_SCHEDULE_NAME_CHARS} caractères au plus).`)
+      throw new Refusal(`Name too long (maximum ${MAX_SCHEDULE_NAME_CHARS} characters).`)
     }
     const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : ''
-    if (!prompt) throw new Refusal('Le paramètre `prompt` est requis : la consigne rejouée à chaque tir.')
+    if (!prompt) throw new Refusal('The `prompt` parameter is required: instructions replayed at each run.')
     if (prompt.length > MAX_SCHEDULE_PROMPT_CHARS) {
       throw new Refusal(
-        `Consigne trop longue (${prompt.length} caractères, ${MAX_SCHEDULE_PROMPT_CHARS} au plus). Mets le détail dans un fichier et cite-le.`,
+        `Instructions too long (${prompt.length} characters, maximum ${MAX_SCHEDULE_PROMPT_CHARS}). Put details in a file and cite it.`,
       )
     }
 
@@ -627,7 +627,7 @@ export class AgentRequests {
       .all()
     if ((existing?.total ?? 0) >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
       throw new Refusal(
-        `Refusé : ce projet porte déjà ${MAX_AGENT_SCHEDULES_PER_PROJECT} tâches planifiées. L'utilisateur peut en supprimer dans la vue Planification.`,
+        `Refused: this project already has ${MAX_AGENT_SCHEDULES_PER_PROJECT} scheduled tasks. The user can remove some in Scheduling.`,
       )
     }
 
@@ -640,21 +640,21 @@ export class AgentRequests {
       maxDurationMinutes > MAX_SCHEDULE_DURATION_MINUTES
     ) {
       throw new Refusal(
-        `\`max_duration_minutes\` est un entier entre ${MIN_SCHEDULE_DURATION_MINUTES} et ${MAX_SCHEDULE_DURATION_MINUTES}.`,
+        `\`max_duration_minutes\` must be an integer between ${MIN_SCHEDULE_DURATION_MINUTES} and ${MAX_SCHEDULE_DURATION_MINUTES}.`,
       )
     }
     const overlap = payload.overlap ?? 'skip'
     if (overlap !== 'skip' && overlap !== 'wait') {
-      throw new Refusal('`overlap` vaut `skip` (sauter le tir) ou `wait` (attendre la fin du précédent).')
+      throw new Refusal('`overlap` must be `skip` (skip this run) or `wait` (wait for the previous run to finish).')
     }
     const checkScript = checkScriptSchema.safeParse(payload.check_script ?? null)
     if (!checkScript.success) {
-      throw new Refusal(`\`check_script\` est le texte du script, ${MAX_CHECK_SCRIPT_CHARS} caractères au plus.`)
+      throw new Refusal(`\`check_script\` is the script text, at most ${MAX_CHECK_SCRIPT_CHARS} characters.`)
     }
     const checkTimeout = checkTimeoutSchema.safeParse(payload.check_timeout_seconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS)
     if (!checkTimeout.success) {
       throw new Refusal(
-        `\`check_timeout_seconds\` est un entier entre ${MIN_CHECK_TIMEOUT_SECONDS} et ${MAX_CHECK_TIMEOUT_SECONDS}.`,
+        `\`check_timeout_seconds\` must be an integer between ${MIN_CHECK_TIMEOUT_SECONDS} and ${MAX_CHECK_TIMEOUT_SECONDS}.`,
       )
     }
 
@@ -678,16 +678,16 @@ export class AgentRequests {
     )
 
     const lines = [
-      `Tâche planifiée « ${task.name} » créée, id ${task.id}.`,
-      `Cadence : ${describeCadence(cadence)}. Prochain tir : ${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur).`,
-      `Chaque tir ouvre une session neuve : CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}, ${task.maxDurationMinutes} min au plus, à la racine du projet.`,
+      `Scheduled task “${task.name}” created, id ${task.id}.`,
+      `Cadence: ${describeCadence(cadence)}. Next run: ${task.nextRunAt ? new Date(task.nextRunAt).toISOString() : 'none'}.`,
+      `Each run opens a new session: CLI ${agent}, model ${describeModel(config)}, effort ${describeEffort(config)}, maximum ${task.maxDurationMinutes} min, at the project root.`,
       describePermissions(config)
-        ? "Attention : avec les permissions par défaut du projet, un tir s'arrêtera pour demander un accord que personne ne donnera, jusqu'à sa durée maximale. Dis-le à l'utilisateur : il règle les permissions de la tâche dans la vue Planification."
+        ? 'Warning: with project default permissions, runs may stop for approval nobody will provide, until their maximum duration. Tell the user to adjust task permissions in Scheduling.'
         : null,
       task.checkScript
-        ? "Le script de vérification attend la validation de l'utilisateur : tant qu'il n'est pas validé, les tirs sont écartés, sans script ni session. Dis-le-lui : il peut le relire, l'essayer et le valider directement sous cet appel dans la conversation, ou depuis la vue Automatisations du projet."
+        ? 'The check script awaits user approval: until approved, runs are skipped without running the script or opening a session. Tell the user they can review, test and approve it below this tool call or in project Automations.'
         : null,
-      "L'utilisateur la retrouve dans la vue Planification du projet, où il peut la modifier, la mettre en pause, la lancer tout de suite ou la supprimer. Ses tirs n'apparaissent pas dans la liste des sessions mais sous la tâche.",
+      'The user can edit, pause, run or delete it in project Scheduling. Runs appear under the task rather than in the session list.',
     ]
     return lines.filter(Boolean).join('\n')
   }
@@ -700,25 +700,25 @@ export class AgentRequests {
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
-    if (!this.encryptionKey) throw new Refusal('Les automatisations ne sont pas disponibles sur ce serveur.')
+    if (!this.encryptionKey) throw new Refusal('Automations are unavailable on this server.')
     if (requester.scheduleId) {
       throw new Refusal(
-        "Refusé : cette session est elle-même née d'une automatisation ou d'une tâche planifiée. Une automatisation qui en crée d'autres se multiplierait sans personne pour l'arrêter ; ouvre une carte avec create_card.",
+        'Refused: this session was started by an automation or scheduled task. Automations creating more automations would multiply unattended; create a card with create_card instead.',
       )
     }
     const name = typeof payload.name === 'string' ? payload.name.trim() : ''
-    if (!name) throw new Refusal('Le paramètre `name` est requis.')
-    if (name.length > MAX_SCHEDULE_NAME_CHARS) throw new Refusal(`Nom trop long (${MAX_SCHEDULE_NAME_CHARS} caractères au plus).`)
+    if (!name) throw new Refusal('The `name` parameter is required.')
+    if (name.length > MAX_SCHEDULE_NAME_CHARS) throw new Refusal(`Name too long (maximum ${MAX_SCHEDULE_NAME_CHARS} characters).`)
 
     const template = payload.template === undefined || payload.template === null || payload.template === ''
       ? null
       : AUTOMATION_TEMPLATES.find((entry) => entry.id === payload.template)
     if (template === undefined) {
-      throw new Refusal(`Modèle inconnu « ${String(payload.template)} ». Valeurs possibles : ${AUTOMATION_TEMPLATES.map((entry) => entry.id).join(', ')}.`)
+      throw new Refusal(`Unknown template “${String(payload.template)}”. Available values: ${AUTOMATION_TEMPLATES.map((entry) => entry.id).join(', ')}.`)
     }
-    const prompt = typeof payload.prompt === 'string' && payload.prompt.trim() ? payload.prompt.trim() : (template?.prompt.fr ?? '')
-    if (!prompt) throw new Refusal('Le paramètre `prompt` est requis sans modèle : la consigne, avec des `{{payload.…}}`.')
-    if (prompt.length > MAX_SCHEDULE_PROMPT_CHARS) throw new Refusal(`Consigne trop longue (${MAX_SCHEDULE_PROMPT_CHARS} caractères au plus).`)
+    const prompt = typeof payload.prompt === 'string' && payload.prompt.trim() ? payload.prompt.trim() : (template?.prompt.en ?? '')
+    if (!prompt) throw new Refusal('Without a template, `prompt` is required: instructions with `{{payload.…}}` placeholders.')
+    if (prompt.length > MAX_SCHEDULE_PROMPT_CHARS) throw new Refusal(`Instructions too long (maximum ${MAX_SCHEDULE_PROMPT_CHARS} characters).`)
 
     const settings: Partial<WebhookSettings> = { ...template?.settings }
     if (payload.conditions !== undefined) {
@@ -734,7 +734,7 @@ export class AgentRequests {
         none: { kind: 'none' },
       }
       const chosen = presets[String(payload.verification)]
-      if (!chosen) throw new Refusal('`verification` vaut `github`, `gitlab` ou `none`.')
+      if (!chosen) throw new Refusal('`verification` must be `github`, `gitlab` or `none`.')
       settings.verification = chosen
     }
 
@@ -744,7 +744,7 @@ export class AgentRequests {
       .where(eq(scheduledTasks.projectId, project.id))
       .all()
     if ((existing?.total ?? 0) >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
-      throw new Refusal(`Refusé : ce projet porte déjà ${MAX_AGENT_SCHEDULES_PER_PROJECT} automatisations et tâches planifiées.`)
+      throw new Refusal(`Refused: this project already has ${MAX_AGENT_SCHEDULES_PER_PROJECT} automations and scheduled tasks.`)
     }
 
     const agent = this.parseAgent(payload.agent, requester.agent)
@@ -772,21 +772,21 @@ export class AgentRequests {
     const secret = revealSecret(key, hook)
 
     return [
-      `Automatisation « ${task.name} » créée (id ${task.id}), active.`,
+      `Automation “${task.name}” created (id ${task.id}), enabled.`,
       `Adresse : ${url}`,
       verification.kind === 'none'
-        ? 'Vérification : aucune, l\'adresse suffit. Préviens l\'utilisateur.'
-        : `Secret de signature : ${secret} (${verification.kind === 'hmac' ? `HMAC ${verification.algorithm} dans l'en-tête ${verification.header}` : `jeton dans l'en-tête ${verification.header}`}). Ne le recopie nulle part ailleurs que dans la configuration du webhook.`,
-      'Pour GitHub : `gh api repos/OWNER/REPO/hooks -f name=web -F active=true -f "events[]=issues" -f config[url]=<adresse> -f config[content_type]=json -f config[secret]=<secret>` (adapte les événements aux conditions).',
-      `Chaque appel retenu ouvre une session neuve (CLI ${agent}, modèle ${describeModel(config)}), une à la fois, ${DEFAULT_SCHEDULE_DURATION_MINUTES} min au plus ; au-delà de ${readSettings(hook).maxRunsPerHour} lancements par heure, elle se met en pause.`,
-      "L'utilisateur règle les conditions, le script et le prompt dans la vue Automatisations du projet, où il voit aussi chaque appel reçu et son sort.",
+        ? 'Verification: none; the URL alone is sufficient. Tell the user.'
+        : `Signing secret: ${secret} (${verification.kind === 'hmac' ? `HMAC ${verification.algorithm} in header ${verification.header}` : `token in header ${verification.header}`}). Copy it only into the webhook configuration.`,
+      'For GitHub: `gh api repos/OWNER/REPO/hooks -f name=web -F active=true -f "events[]=issues" -f config[url]=<url> -f config[content_type]=json -f config[secret]=<secret>` (adapt events to conditions).',
+      `Each accepted call opens a new session (CLI ${agent}, model ${describeModel(config)}), one at a time, maximum ${DEFAULT_SCHEDULE_DURATION_MINUTES} min; exceeding ${readSettings(hook).maxRunsPerHour} launches per hour pauses it.`,
+      'The user adjusts conditions, script and prompt in project Automations, which also shows received calls and their outcomes.',
     ].join('\n')
   }
 
   // --- request_decision / withdraw_decision --------------------------------------
 
   private async decide(kind: 'request_decision' | 'withdraw_decision', requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
-    if (!this.decisions) throw new Refusal('Les décisions ne sont pas disponibles sur ce serveur.')
+    if (!this.decisions) throw new Refusal('Decisions are unavailable on this server.')
     try {
       return kind === 'request_decision' ? await this.decisions.request(requester, payload) : this.decisions.withdraw(requester, payload)
     } catch (err) {
@@ -796,20 +796,20 @@ export class AgentRequests {
   }
 
   private updateCard(requester: Requester, payload: Record<string, unknown>): string {
-    if (!Number.isInteger(payload.number)) throw new Refusal('Le numéro de la carte est requis.')
+    if (!Number.isInteger(payload.number)) throw new Refusal('The card number is required.')
     const card = this.ctx.db.select().from(cards)
       .where(and(eq(cards.projectId, requester.projectId), eq(cards.number, payload.number as number))).get()
-    if (!card) throw new Refusal('Aucune carte de ce numéro dans ce projet.')
+    if (!card) throw new Refusal('No card with this number in the project.')
     const body = updateCardBodySchema.pick({ title: true, description: true }).parse({
       title: typeof payload.title === 'string' ? payload.title.trim() : payload.title,
       description: payload.description,
     })
     if (body.title === undefined && body.description === undefined) {
-      throw new Refusal('Donne au moins un titre ou une description à modifier.')
+      throw new Refusal('Provide at least a title or description to change.')
     }
     updateCard(this.ctx.db, card, body)
     this.board?.kick(requester.projectId)
-    return `Carte #${card.number} mise à jour.`
+    return `Card #${card.number} updated.`
   }
 
   // --- create_card ---------------------------------------------------------------
@@ -818,15 +818,15 @@ export class AgentRequests {
   private async createCard(requester: Requester, payload: Record<string, unknown>): Promise<string> {
     const title = typeof payload.title === 'string' ? payload.title.trim() : ''
     const description = typeof payload.description === 'string' ? payload.description.trim() : ''
-    if (!title) throw new Refusal('Le paramètre `title` est requis.')
-    if (title.length > 200) throw new Refusal('Titre trop long (200 caractères au plus).')
-    if (description.length > 20000) throw new Refusal('Description trop longue (20 000 caractères au plus).')
+    if (!title) throw new Refusal('The `title` parameter is required.')
+    if (title.length > 200) throw new Refusal('Title too long (maximum 200 characters).')
+    if (description.length > 20000) throw new Refusal('Description too long (maximum 20,000 characters).')
 
     // Board settings decide unless agents explicitly request otherwise based on
     // user instructions, as tool descriptions require.
     const link = this.board?.link(requester.projectId)
     if (payload.github === true && !link) {
-      throw new Refusal("Ce board n'est pas relié à GitHub : la carte ne peut être que locale. Recommence sans `github`.")
+      throw new Refusal('This board is not linked to GitHub: cards can only be local. Retry without `github`.')
     }
     const github = Boolean(link) && (typeof payload.github === 'boolean' ? payload.github : link?.newCards === 'github')
     const fields = { title, description, column: 'todo' as const }
@@ -858,24 +858,24 @@ export class AgentRequests {
 
     const issue = github ? this.board?.issueOf(card.id) : undefined
     const where = issue
-      ? ` et publiée sur GitHub comme issue #${issue.number} (${issue.url}), visible de tous si le dépôt est public`
+      ? ` and published as GitHub issue #${issue.number} (${issue.url}), visible to everyone if the repository is public`
       : link
-        ? ', locale (elle ne part pas sur GitHub)'
+        ? ', local (not published to GitHub)'
         : ''
-    return `Carte #${card.number} « ${card.title} » créée dans « à faire »${where}. Pour la faire traiter tout de suite : start_session avec card=${card.number}.`
+    return `Card #${card.number} “${card.title}” created in todo${where}. To handle it immediately, use start_session with card=${card.number}.`
   }
 
   // --- actions -------------------------------------------------------------------
 
   private projectAction(requester: Requester, id: unknown) {
-    if (typeof id !== 'string' || !id) throw new Refusal('Le paramètre `id` est requis (voir list_actions).')
+    if (typeof id !== 'string' || !id) throw new Refusal('The `id` parameter is required (see list_actions).')
     try {
       const row = loadAction(this.ctx.db, id)
       if (row.projectId === requester.projectId) return row
     } catch {
       // Same response as for another project's action.
     }
-    throw new Refusal(`Aucune action \`${id}\` dans ce projet : list_actions donne les identifiants.`)
+    throw new Refusal(`No action \`${id}\` in this project: use list_actions for IDs.`)
   }
 
   /** Create/edit as `proposed` so users review commands before clicking to launch. Renaming or redescribing reviewed buttons does not change status. */
@@ -891,25 +891,25 @@ export class AgentRequests {
       if (!parsed.success) throw new Refusal(describeZod(parsed.error))
       const next = updateAction(this.ctx.db, row, parsed.data, requester.id || null)
       return next.approvedAt
-        ? `Action « ${next.label} » mise à jour ; elle reste validée.`
-        : `Action « ${next.label} » mise à jour. Sa commande a changé : l'utilisateur doit la valider avant de la lancer d'un clic.`
+        ? `Action “${next.label}” updated; it remains approved.`
+        : `Action “${next.label}” updated. Its command changed: the user must approve it before a one-click launch.`
     }
     const parsed = createProjectActionBodySchema.safeParse(fields)
     if (!parsed.success) throw new Refusal(describeZod(parsed.error))
     const row = createAction(this.ctx.db, requester.projectId, parsed.data, requester.id || null)
-    return `Action « ${row.label} » (${row.kind}, id ${row.id}) proposée. Elle apparaît dans l'onglet Actions du panneau ; l'utilisateur la valide avant son premier lancement.`
+    return `Action “${row.label}” (${row.kind}, id ${row.id}) proposed. It appears in the Actions panel; the user approves it before the first launch.`
   }
 
   private async removeAction(requester: Requester, payload: Record<string, unknown>): Promise<string> {
     const row = this.projectAction(requester, payload.id)
     await this.actions?.forget(row)
     deleteAction(this.ctx.db, row.id)
-    return `Action « ${row.label} » supprimée${row.kind === 'service' ? ', et son service arrêté' : ''}.`
+    return `Action “${row.label}” deleted${row.kind === 'service' ? ', and its service stopped' : ''}.`
   }
 
   /** Runs actions in requester worktrees, even proposed actions: agents could run identical shell commands already. Review protects user clicks rather than agents from themselves. */
   private async runAction(requester: Requester, payload: Record<string, unknown>): Promise<string> {
-    if (!this.actions) throw new Refusal('Les actions ne sont pas disponibles sur ce serveur.')
+    if (!this.actions) throw new Refusal('Actions are unavailable on this server.')
     const row = this.projectAction(requester, payload.id)
     const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester), requester.id || null)
     if (result.service) {
@@ -930,62 +930,62 @@ export class AgentRequests {
     payload: Record<string, unknown>,
   ): Promise<string> {
     if (requester.id) {
-      throw new Refusal("Cet outil est réservé aux clients hors session : depuis une session, écris à une autre avec send_session_message.")
+      throw new Refusal('This tool is only for clients outside sessions: from a session, use send_session_message.')
     }
     const id = typeof payload.session === 'string' ? payload.session.trim() : ''
-    if (!id) throw new Refusal('Le paramètre `session` est requis : l\'identifiant que list_sessions donne.')
+    if (!id) throw new Refusal('The `session` parameter is required: its ID from list_sessions.')
     const target = this.ctx.db
       .select()
       .from(conversations)
       .where(and(eq(conversations.id, id), eq(conversations.projectId, requester.projectId), isNull(conversations.archivedAt)))
       .get()
     if (!target || target.userId !== requester.userId) {
-      throw new Refusal(`Aucune session « ${id} » à toi dans ce projet. list_sessions donne celles qui existent.`)
+      throw new Refusal(`No session “${id}” belonging to you in this project. Use list_sessions to see sessions.`)
     }
 
     if (kind === 'interrupt_session') {
-      if (target.status !== 'running') return `La session « ${target.title} » ne travaille pas (${target.status}) : rien à interrompre.`
+      if (target.status !== 'running') return `Session “${target.title}” is not working (${target.status}): nothing to interrupt.`
       await this.sessions.interrupt(target.id)
-      return `Tour de « ${target.title} » interrompu. Un message la fait reprendre, avec son contexte.`
+      return `Turn of “${target.title}” interrupted. A message resumes it with its context.`
     }
 
     if (kind === 'reply_session') return this.replyToSession(target, requester, payload)
 
     const body = typeof payload.body === 'string' ? payload.body.trim() : ''
-    if (!body) throw new Refusal('Le paramètre `body` est requis.')
+    if (!body) throw new Refusal('The `body` parameter is required.')
     if (body.length > MAX_LAUNCH_PROMPT_CHARS) {
-      throw new Refusal(`Message trop long (${body.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus).`)
+      throw new Refusal(`Message too long (${body.length} characters, maximum ${MAX_LAUNCH_PROMPT_CHARS}).`)
     }
     if (kind === 'steer_session') {
       // Steering exists only during active turns and callers often lose the
       // race: fall back to an ordinary message rather than losing the text.
       const steered = await this.sessions.steer(target.id, randomUUID(), body, [], [])
-      if (steered) return `Tour de « ${target.title} » infléchi : le CLI lit le message dans le tour en cours.`
+      if (steered) return `Turn of “${target.title}” steered: the CLI reads the message during its current turn.`
       await this.sessions.sendMessage(target.id, randomUUID(), body, [], [])
-      return `Aucun tour en cours à infléchir sur « ${target.title} » (ou son CLI ne le permet pas) : le message est parti comme un message ordinaire, qui ouvre un tour.`
+      return `No turn to steer in “${target.title}” (or its CLI does not support steering): sent as an ordinary message starting a turn.`
     }
     const busy = target.status === 'running'
     await this.sessions.sendMessage(target.id, randomUUID(), body, [], [])
     return busy
-      ? `Message mis en attente pour « ${target.title} » : elle travaille, il lui sera remis à la fin de son tour. wait_for_session puis read_session pour voir sa réponse.`
-      : `Message remis à « ${target.title} » : elle reprend, comme si l'utilisateur l'avait tapé dans Sillage. wait_for_session puis read_session pour voir sa réponse.`
+      ? `Message queued for “${target.title}”: it is working and will receive it after its turn. Use wait_for_session then read_session for its reply.`
+      : `Message delivered to “${target.title}”: resuming as if the user typed it in Sillage. Use wait_for_session then read_session for its reply.`
   }
 
   /** Answers open requests according to type, like API `replies` routes. */
   private async replyToSession(target: ConversationRow, requester: Requester, payload: Record<string, unknown>): Promise<string> {
-    if (!this.log) throw new Refusal('Les réponses aux sollicitations ne sont pas disponibles sur ce serveur.')
+    if (!this.log) throw new Refusal('Replies to requests are unavailable on this server.')
     const requestId = typeof payload.request_id === 'string' ? payload.request_id.trim() : ''
     const open = this.log.openPrompts(target.id)
     const pending = requestId ? open.find((prompt) => prompt.requestId === requestId) : open[0]
     if (!pending) {
       throw new Refusal(
         requestId
-          ? `Aucune sollicitation ouverte « ${requestId} » sur cette session : read_session dit ce qu'elle attend.`
-          : `La session « ${target.title} » n'attend aucune réponse.`,
+          ? `No pending request “${requestId}” in this session: read_session shows what it awaits.`
+          : `Session “${target.title}” is not awaiting a reply.`,
       )
     }
     const parsed = taskReplyBodySchema.safeParse({ kind: pending.kind, ...payload })
-    if (!parsed.success) throw new Refusal(`Réponse mal formée pour une sollicitation de type ${pending.kind} : ${describeZod(parsed.error)}`)
+    if (!parsed.success) throw new Refusal(`Malformed reply for request type ${pending.kind}: ${describeZod(parsed.error)}`)
     const body = parsed.data
     const decidedBy = requester.userId
     let resolved: boolean
@@ -1003,8 +1003,8 @@ export class AgentRequests {
         resolved = this.sessions.resolveElicitation(target.id, pending.requestId, { action: body.action, content: body.content, decidedBy })
         break
     }
-    if (!resolved) throw new Refusal("Cette sollicitation a expiré : la session s'est arrêtée entre-temps. Un message la fait reprendre.")
-    return `Réponse (${body.kind}) remise à « ${target.title} » : elle continue. wait_for_session puis read_session pour la suite.`
+    if (!resolved) throw new Refusal('This request expired: the session stopped in the meantime. A message resumes it.')
+    return `Reply (${body.kind}) delivered to “${target.title}”: continuing. Use wait_for_session then read_session for progress.`
   }
 
   // --- list_models ---------------------------------------------------------------
@@ -1028,19 +1028,19 @@ export class AgentRequests {
         .then((listing) => listing.models)
         .catch(() => null)
       const head = defaults
-        ? `## ${agent} — par défaut : modèle ${describeModel(defaults)}, effort ${describeEffort(defaults)}`
+        ? `## ${agent} — defaults: model ${describeModel(defaults)}, effort ${describeEffort(defaults)}`
         : `## ${agent}`
       if (!models) {
-        sections.push(`${head}\nCatalogue injoignable : le CLI n'est peut-être pas installé.`)
+        sections.push(`${head}\nCatalog unavailable: the CLI may not be installed.`)
         continue
       }
       const lines = models.map((model) => {
         const efforts = model.efforts.map((entry) => entry.value)
-        return `- \`${model.value}\` (${model.displayName})${model.isDefault ? ' [défaut du CLI]' : ''}${efforts.length > 0 ? ` — efforts : ${efforts.join(', ')}` : ''}`
+        return `- \`${model.value}\` (${model.displayName})${model.isDefault ? ' [CLI default]' : ''}${efforts.length > 0 ? ` — efforts: ${efforts.join(', ')}` : ''}`
       })
       sections.push([head, ...lines].join('\n'))
     }
-    return `${sections.join('\n\n')}\n\nDans start_session, \`model\` accepte la valeur ou le nom affiché, et \`effort: "max"\` prend le plus haut niveau quand le modèle n'en a pas de ce nom.`
+    return `${sections.join('\n\n')}\n\nIn start_session, \`model\` accepts a value or display name, and \`effort: "max"\` selects the highest level when the model has no level with that name.`
   }
 }
 
@@ -1051,7 +1051,7 @@ function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
   )
   if (given.length !== 1) {
     throw new Refusal(
-      'Donne exactement une cadence : `every_minutes` (intervalle), `cron` (motif à cinq champs) ou `at` (date et heure uniques, ISO 8601).',
+      'Provide exactly one cadence: `every_minutes` (interval), `cron` (five-field pattern), or `at` (single ISO 8601 date and time).',
     )
   }
 
@@ -1062,8 +1062,8 @@ function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
     candidate = { kind: 'cron', expression: typeof payload.cron === 'string' ? payload.cron.trim() : payload.cron }
   } else {
     const at = typeof payload.at === 'string' ? Date.parse(payload.at) : Number.NaN
-    if (Number.isNaN(at)) throw new Refusal('`at` doit être une date ISO 8601, par exemple 2026-10-12T09:00:00+02:00.')
-    if (at <= Date.now()) throw new Refusal('`at` est dans le passé.')
+    if (Number.isNaN(at)) throw new Refusal('`at` must be an ISO 8601 date, e.g. 2026-10-12T09:00:00+02:00.')
+    if (at <= Date.now()) throw new Refusal('`at` is in the past.')
     candidate = { kind: 'once', at }
   }
 
@@ -1071,29 +1071,29 @@ function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
   if (!parsed.success) {
     throw new Refusal(
       given[0] === 'cron'
-        ? `Motif cron invalide « ${String(payload.cron)} » : cinq champs (minute heure jour mois jour-de-semaine), lus à l'heure du serveur.`
-        : '`every_minutes` doit être un entier positif.',
+        ? `Invalid cron pattern “${String(payload.cron)}”: use five fields (minute hour day month weekday), in server time.`
+        : '`every_minutes` must be a positive integer.',
     )
   }
 
   const cadence = parsed.data
   if (cadence.kind === 'interval' && cadence.minutes < MIN_AGENT_SCHEDULE_MINUTES) {
-    throw new Refusal(`Intervalle trop court : ${MIN_AGENT_SCHEDULE_MINUTES} minutes au moins.`)
+    throw new Refusal(`Interval too short: minimum ${MIN_AGENT_SCHEDULE_MINUTES} minutes.`)
   }
   if (cadence.kind === 'cron') {
     const [first, second] = new Cron(cadence.expression, { paused: true }).nextRuns(2)
     if (first && second && second.getTime() - first.getTime() < MIN_AGENT_SCHEDULE_MINUTES * 60_000) {
-      throw new Refusal(`Motif trop serré : ${MIN_AGENT_SCHEDULE_MINUTES} minutes au moins entre deux tirs.`)
+      throw new Refusal(`Pattern too frequent: minimum ${MIN_AGENT_SCHEDULE_MINUTES} minutes between runs.`)
     }
   }
   return cadence
 }
 
 function describeCadence(cadence: ScheduleCadence): string {
-  if (cadence.kind === 'interval') return `toutes les ${cadence.minutes} minutes`
-  if (cadence.kind === 'cron') return `motif cron \`${cadence.expression}\``
-  if (cadence.kind === 'webhook') return 'à chaque appel de son webhook'
-  return `une seule fois, le ${new Date(cadence.at).toLocaleString('fr-FR')}`
+  if (cadence.kind === 'interval') return `every ${cadence.minutes} minutes`
+  if (cadence.kind === 'cron') return `cron pattern \`${cadence.expression}\``
+  if (cadence.kind === 'webhook') return 'on each webhook call'
+  return `once, at ${new Date(cadence.at).toISOString()}`
 }
 
 function nameModel(model: AgentModelDto): string {
@@ -1139,32 +1139,32 @@ function effortOf(config: AgentConfig): string {
 }
 
 function describeModel(config: AgentConfig): string {
-  return config.model || 'celui du CLI'
+  return config.model || 'CLI default'
 }
 
 function describeEffort(config: AgentConfig): string {
-  return effortOf(config) || 'celui du CLI'
+  return effortOf(config) || 'CLI default'
 }
 
 function describePermissions(config: AgentConfig): string | null {
   if (config.agent === 'claude' && config.permissionMode === 'manual') {
-    return "Ses permissions sont en mode manuel, comme les défauts du projet : elle s'arrêtera pour demander à l'utilisateur avant d'agir."
+    return 'Permissions are manual, following project defaults: it will pause to ask the user before acting.'
   }
   if (config.agent === 'codex' && config.askForApproval !== 'never' && config.askForApproval !== '') {
-    return "Elle demandera l'approbation de l'utilisateur pour ce qui sort de son bac à sable, comme le veulent les défauts du projet."
+    return 'It will ask for user approval outside its sandbox, following project defaults.'
   }
   if (config.agent === 'opencode' && (config.permissions.edit === 'ask' || config.permissions.bash === 'ask')) {
-    return "Elle demandera la permission de l'utilisateur avant d'écrire ou d'exécuter, comme le veulent les défauts du projet."
+    return 'It will ask for user permission before writing or executing, following project defaults.'
   }
   if (config.agent === 'grok' && (config.permissionMode === 'default' || config.permissionMode === 'plan')) {
-    return "Elle demandera la permission de l'utilisateur avant d'écrire ou d'exécuter, comme le veulent les défauts du projet."
+    return 'It will ask for user permission before writing or executing, following project defaults.'
   }
   return null
 }
 
 function describeZod(error: ZodError): string {
-  const issues = error.issues.map((issue) => `\`${issue.path.join('.') || 'paramètres'}\` : ${issue.message}`)
-  return `Paramètres invalides — ${issues.join(' ; ')}`
+  const issues = error.issues.map((issue) => `\`${issue.path.join('.') || 'parameters'}\`: ${issue.message}`)
+  return `Invalid parameters — ${issues.join('; ')}`
 }
 
 function describeRun(
@@ -1174,16 +1174,16 @@ function describeRun(
 ): string {
   if (service) {
     const ports = service.ports.length > 0 ? `, ports ${service.ports.join(', ')}` : ''
-    const state = `unité ${service.unit} : ${service.state}${ports}`
-    if (result.alreadyRunning) return `« ${label} » tournait déjà (${state}).`
+    const state = `unit ${service.unit}: ${service.state}${ports}`
+    if (result.alreadyRunning) return `“${label}” was already running (${state}).`
     if (service.state === 'failed') {
-      return `« ${label} » a échoué au démarrage (${state}). Journal : journalctl --user -u ${service.unit} -n 50`
+      return `“${label}” failed to start (${state}). Logs: journalctl --user -u ${service.unit} -n 50`
     }
-    return `« ${label} » démarré (${state}). Journal : journalctl --user -u ${service.unit} -n 50`
+    return `“${label}” started (${state}). Logs: journalctl --user -u ${service.unit} -n 50`
   }
   const terminal = result.terminal
-  if (result.alreadyRunning) return `« ${label} » tourne déjà dans le terminal « ${terminal?.title ?? label} » du panneau.`
-  return `« ${label} » lancé dans un terminal du panneau, sous les yeux de l'utilisateur. Tu n'en lis pas la sortie : pour l'exploiter toi-même, exécute la commande dans ton shell.`
+  if (result.alreadyRunning) return `“${label}” is already running in panel terminal “${terminal?.title ?? label}”.`
+  return `“${label}” started in a panel terminal visible to the user. You cannot read its output: run the command in your shell if you need the result yourself.`
 }
 
 /** Why `from` cannot launch more sessions, or null: excessive chain depth or hourly launches. Shared with webhooks: session-marked calls count as its `webhook_launch`, applying identical limits whether chains use start_session or GitHub issues. */
@@ -1207,9 +1207,9 @@ export function launchRefusal(
   if (depth >= MAX_LAUNCH_DEPTH) {
     return {
       reason: { code: 'chain_depth', params: { depth, max: MAX_LAUNCH_DEPTH } },
-      // Agent messages use French like all Sillage model-facing text;
+      // Agent messages use English like all Sillage model-facing text;
       // coded reasons go to interfaces for translation.
-      message: `Refusé : cette session a elle-même été lancée par une session qui l'avait été (${depth} niveaux). Au-delà de ${MAX_LAUNCH_DEPTH}, plus de lancement en chaîne. Crée plutôt une carte avec create_card, ou propose à l'utilisateur de lancer la session lui-même.`,
+      message: `Refused: this session was itself launched by another agent-launched session (${depth} levels). Launch chains cannot exceed ${MAX_LAUNCH_DEPTH}. Create a card with create_card, or suggest that the user start the session themselves.`,
     }
   }
 
@@ -1229,7 +1229,7 @@ export function launchRefusal(
   if ((recent?.total ?? 0) >= LAUNCHES_PER_HOUR) {
     return {
       reason: { code: 'chain_rate', params: { max: LAUNCHES_PER_HOUR } },
-      message: `Refusé : cette session a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure. Crée des cartes avec create_card pour le reste, l'utilisateur les lancera.`,
+      message: `Refused: this session has already launched ${LAUNCHES_PER_HOUR} sessions in the last hour. Create cards with create_card for the rest; the user can start them.`,
     }
   }
   return null
