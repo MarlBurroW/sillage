@@ -445,7 +445,7 @@ export interface ConversationMetrics {
 
 export interface ConversationDto {
   id: string
-  projectId: string
+  projectId: string | null
   worktreeId: string | null
   /**
    * Card handled by this conversation, or null.
@@ -1250,7 +1250,7 @@ export const SEARCH_MARK_CLOSE = '\u0002'
 
 export interface SearchMessageDto {
   conversationId: string
-  projectId: string
+  projectId: string | null
   conversationTitle: string
   agent: AgentKind
   /** Message position in the journal, used to open the thread at the right place. */

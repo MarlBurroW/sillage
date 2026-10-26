@@ -1,20 +1,20 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { MemoryFileDto, MemoryMode, ProjectMemoryDto } from '@sillage/protocol'
+import type { MemoryFileDto, MemoryMode, ProjectMemoryDto, PersonalMemoryDto } from '@sillage/protocol'
 import { api } from './api'
 
 /** Reread on every opening: agents write without using the UI. */
-const memoryKey = (projectId: string) => ['memory', projectId]
+const memoryKey = (projectId: string | null) => ['memory', projectId]
 
-export function useProjectMemory(projectId: string) {
+export function useProjectMemory(projectId: string | null) {
   return useQuery({
     queryKey: memoryKey(projectId),
-    queryFn: () => api.get<ProjectMemoryDto>(`/api/projects/${projectId}/memory`),
+    queryFn: () => api.get<ProjectMemoryDto & Partial<Pick<PersonalMemoryDto, 'changes'>>>(projectId ? `/api/projects/${projectId}/memory` : '/api/me/memory'),
   })
 }
 
 /** Project memory location, applied at the next runner launch. */
-export function useSetMemoryMode(projectId: string) {
+export function useSetMemoryMode(projectId: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (memoryMode: MemoryMode) => api.patch<{ ok: true }>(`/api/projects/${projectId}`, { memoryMode }),
@@ -25,20 +25,20 @@ export function useSetMemoryMode(projectId: string) {
   })
 }
 
-export function useWriteMemoryFile(projectId: string) {
+export function useWriteMemoryFile(projectId: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ file, content }: { file: string; content: string }) =>
-      api.put<void>(`/api/projects/${projectId}/memory/${encodeURIComponent(file)}`, { content }),
+      api.put<void>(`${projectId ? `/api/projects/${projectId}` : '/api/me'}/memory/${encodeURIComponent(file)}`, { content }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: memoryKey(projectId) }),
   })
 }
 
-export function useDeleteMemoryFile(projectId: string) {
+export function useDeleteMemoryFile(projectId: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (file: string) =>
-      api.delete<void>(`/api/projects/${projectId}/memory/${encodeURIComponent(file)}`),
+      api.delete<void>(`${projectId ? `/api/projects/${projectId}` : '/api/me'}/memory/${encodeURIComponent(file)}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: memoryKey(projectId) }),
   })
 }

@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import { createHmac, randomUUID } from 'node:crypto'
 import { and, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm'
 import {
@@ -324,7 +325,7 @@ export class WebhookService {
       clientMessageId: null,
       status: target.conversation.status,
       title: target.conversation.title,
-      url: `${this.publicUrl.replace(/\/+$/, '')}/p/${target.conversation.projectId}/c/${target.conversation.id}`,
+      url: `${this.publicUrl.replace(/\/+$/, '')}${conversationPath(target.conversation)}`,
       ...partial,
     }
 

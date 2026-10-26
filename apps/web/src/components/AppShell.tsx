@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import { sessionReference } from '@sillage/protocol'
 import { useCopy } from '../lib/clipboard'
 import { Tooltip, TooltipButton } from './ui/Tooltip'
@@ -25,6 +26,9 @@ import {
   Link2,
   ChevronRight,
   FolderPlus,
+  Brain,
+  FolderOpen,
+  MessageSquare,
   LogOut,
   MoreHorizontal,
   Palette,
@@ -211,11 +215,12 @@ export function AppShell() {
   const aside = useRef<HTMLElement>(null)
   const wide = useMediaQuery('(min-width: 48rem)')
   const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
+  const discussionRoute = useMatch('/discussions/:conversationId')
   const boardRoute = useMatch('/p/:projectId/board')
   const servicesRoute = useMatch('/services')
   const schedulesRoute = useMatch('/p/:projectId/schedules')
   const automationRoute = useMatch('/p/:projectId/schedules/:taskId')
-  const contextualHeader = Boolean(conversationRoute || boardRoute || servicesRoute || schedulesRoute || automationRoute)
+  const contextualHeader = Boolean(conversationRoute || discussionRoute || boardRoute || servicesRoute || schedulesRoute || automationRoute)
   const navInactive = wide ? hidden : !navOpen
   useVisualViewport()
   useFileDropGuard()
@@ -522,6 +527,7 @@ function Sidebar({
             {favorites.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />)}
             {!favorites.length && <li className="px-3 py-3 text-xs text-ink-faint">{t('shell.favorites.empty')}</li>}
           </ul></div>}
+          <PersonalDiscussions conversations={conversations ?? []} toggleFavorite={toggleFavorite} onNavigate={onNavigate} />
           <div className="sidebar-project-switcher">
         <ProjectSwitcher onNavigate={onNavigate} key={user?.id ?? ''} userId={user?.id ?? ''} projects={projects ?? []} selected={selectedProject}
           nameEditor={editingProject && selectedProject ? <RenameInput value={selectedProject.name} onCancel={() => setEditingProject(false)} onCommit={(draft) => {
@@ -889,6 +895,37 @@ function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigat
   )
 }
 
+function PersonalDiscussions({ conversations, toggleFavorite, onNavigate }: { conversations: ConversationDto[]; toggleFavorite: FavoriteMutation; onNavigate: () => void }) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const route = useMatch('/discussions/*')
+  const [expanded, setExpanded] = useState(false)
+  const [archives, setArchives] = useState(false)
+  const personal = conversations.filter(entry => entry.projectId === null)
+  const shown = personal.filter(entry => archives || entry.archivedAt === null)
+  const open = Boolean(route) || expanded
+  const recent = personal.find(entry => entry.archivedAt === null)
+  return <section className="sidebar-personal" aria-label={t('discussions.title')}>
+    <div className="flex min-h-11 items-center gap-1 px-3">
+      <button type="button" className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left text-xs text-ink-soft hover:text-ink" aria-expanded={open} onClick={() => {
+        if (!open) { setExpanded(true); navigate(recent ? conversationPath(recent) : '/discussions/new'); onNavigate() }
+        else if (!route) setExpanded(false)
+        else { navigate(recent ? conversationPath(recent) : '/discussions/new'); onNavigate() }
+      }}><MessageSquare size={14} /><span>{t('discussions.title')}</span></button>
+      <IconButton size="sm" label={t('discussions.new')} onClick={() => { navigate('/discussions/new'); onNavigate() }}><Plus size={15} /></IconButton>
+      <Menu trigger={<IconButton size="sm" label={t('discussions.options')}><MoreHorizontal size={15} /></IconButton>}>
+        <MenuItem icon={<Brain size={14} />} onSelect={() => { navigate('/discussions/memory'); onNavigate() }}>{t('discussions.memory')}</MenuItem>
+        <MenuItem icon={<FolderOpen size={14} />} onSelect={() => { navigate('/discussions/files'); onNavigate() }}>{t('discussions.files')}</MenuItem>
+        <MenuItem icon={<Archive size={14} />} onSelect={() => { setArchives(value => !value); setExpanded(true) }}>{t(archives ? 'discussions.hideArchives' : 'discussions.showArchives')}</MenuItem>
+      </Menu>
+    </div>
+    {open ? <ul className="max-h-64 overflow-y-auto px-2 pb-1">
+      {shown.map(conversation => <ConversationRow key={conversation.id} conversation={conversation} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />)}
+      {!shown.length ? <li className="px-3 py-2 text-xs text-ink-faint">{t('discussions.empty')}</li> : null}
+    </ul> : null}
+  </section>
+}
+
 function ConversationRow({
   conversation,
   toggleFavorite,
@@ -907,7 +944,9 @@ function ConversationRow({
   const t = useTranslate()
   const rename = useRenameConversation()
   const isArchived = conversation.archivedAt !== null
-  const openMatch = useMatch('/p/:projectId/c/:conversationId')
+  const projectMatch = useMatch('/p/:projectId/c/:conversationId')
+  const personalMatch = useMatch('/discussions/:conversationId')
+  const openMatch = projectMatch ?? personalMatch
   const contextMenu = useContextMenuEnabled()
   const [editing, setEditing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -973,7 +1012,7 @@ function ConversationRow({
         data-sidebar-session={conversation.id}
         className={cx('group/row sidebar-session', isDragging && 'relative z-10 bg-surface-high opacity-90', isActive && 'sidebar-current', unread && 'sidebar-unread')}>
         <SessionPreview conversation={conversation} metrics={metrics} signals={signals} disabled={menuOpen || contextOpen} trigger={
-          <NavLink to={`/p/${conversation.projectId}/c/${conversation.id}`} onClick={onNavigate}
+          <NavLink to={conversationPath(conversation)} onClick={onNavigate}
             onDoubleClick={event => { event.preventDefault(); if (conversation.isOwner) setEditing(true) }}
             className="sidebar-session-link">
             <AgentIcon agent={conversation.agent} size={16} />
@@ -1015,8 +1054,10 @@ function ConversationMenuItems({
   const setArchived = useArchiveConversation()
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
-  const openMatch = useMatch('/p/:projectId/c/:conversationId')
-  const projectView = useProjectView(conversation.projectId)
+  const projectMatch = useMatch('/p/:projectId/c/:conversationId')
+  const personalMatch = useMatch('/discussions/:conversationId')
+  const openMatch = projectMatch ?? personalMatch
+  const projectView = useProjectView(conversation.projectId ?? '')
   const Item = variant === 'context' ? ContextMenuItem : MenuItem
   const Separator = variant === 'context' ? ContextMenuSeparator : MenuSeparator
 
@@ -1045,14 +1086,14 @@ function ConversationMenuItems({
             icon={<Trash2 size={14} />}
             tone="critical"
             onSelect={() => {
-              if (!confirm(t('shell.conversation.deleteConfirm', { title: conversation.title })))
+              if (!confirm(t(conversation.projectId ? 'shell.conversation.deleteConfirm' : 'discussions.deleteConfirm', { title: conversation.title })))
                 return
               const wasOpen = openMatch?.params.conversationId === conversation.id
               remove.mutate(conversation.id, {
                 // Leave the view only if it is the deleted conversation, falling back to the
                 // project's usual landing view rather than choosing a new home preference.
                 onSuccess: () => {
-                  if (wasOpen) navigate(projectViewPath(conversation.projectId, projectView))
+                  if (wasOpen) navigate(conversation.projectId ? projectViewPath(conversation.projectId, projectView) : '/discussions/new')
                 },
               })
             }}

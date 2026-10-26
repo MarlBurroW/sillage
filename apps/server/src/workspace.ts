@@ -1,10 +1,12 @@
+import { readableConversation } from './conversations/access.js'
+import { personalWorkspace } from './conversations/personal-workspaces.js'
 import { createWriteStream } from 'node:fs'
 import { cp, lstat, mkdir, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { eq } from 'drizzle-orm'
-import { conversations, projects, worktrees, type ConversationRow, type Db } from '@sillage/db'
+import { projects, worktrees, type ConversationRow, type Db } from '@sillage/db'
 import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@sillage/protocol'
 import { HttpError, notFound } from './http/errors.js'
 
@@ -27,22 +29,7 @@ const MAX_ENTRIES = 1000
  * reveal to a third party that a conversation exists.
  */
 export function conversationWorkspace(db: Db, conversationId: string, userId: string): string {
-  const row = db
-    .select({
-      conversation: conversations,
-      ownerId: projects.ownerId,
-      visibility: projects.visibility,
-    })
-    .from(conversations)
-    .innerJoin(projects, eq(projects.id, conversations.projectId))
-    .where(eq(conversations.id, conversationId))
-    .get()
-
-  if (!row) throw notFound('conversation_not_found', 'Conversation not found.')
-  if (row.ownerId !== userId && row.visibility !== 'shared') {
-    throw notFound('conversation_not_found', 'Conversation not found.')
-  }
-  return resolveConversationCwd(db, row.conversation)
+  return resolveConversationCwd(db, readableConversation(db, conversationId, userId))
 }
 
 /**
@@ -82,7 +69,11 @@ export function projectCwd(
   return worktree.removedAt ? workspace : worktree.path
 }
 
-export function resolveConversationCwd(db: Db, conversation: Pick<ConversationRow, 'worktreeId' | 'projectId'>): string {
+export function resolveConversationCwd(db: Db, conversation: Pick<ConversationRow, 'worktreeId' | 'projectId'> & Partial<Pick<ConversationRow, 'workspaceId' | 'userId'>>): string {
+  if (conversation.projectId === null) {
+    if (!conversation.workspaceId || !conversation.userId) throw notFound('workspace_not_found', 'Directory not found.')
+    return personalWorkspace(db, conversation.workspaceId, conversation.userId).path
+  }
   if (conversation.worktreeId) {
     const worktree = db
       .select()

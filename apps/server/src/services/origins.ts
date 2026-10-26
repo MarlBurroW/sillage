@@ -3,7 +3,8 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 interface Origin {
-  projectId: string
+  userId?: string
+  projectId: string | null
   conversationId: string | null
 }
 
@@ -19,7 +20,7 @@ export class ProcessOrigins {
       if (!file.endsWith('.json')) continue
       try {
         const origin = JSON.parse(readFileSync(join(this.directory, file), 'utf8')) as Origin
-        if (typeof origin.projectId === 'string' &&
+        if ((origin.projectId === null || typeof origin.projectId === 'string') &&
           (origin.conversationId === null || typeof origin.conversationId === 'string')) {
           this.entries.set(file.slice(0, -5), origin)
         }
@@ -27,14 +28,14 @@ export class ProcessOrigins {
     }
   }
 
-  environment(projectId: string, conversationId: string | null): Record<string, string> {
+  environment(projectId: string | null, conversationId: string | null, userId?: string): Record<string, string> {
     for (const [token, entry] of this.entries) {
-      if (entry.projectId === projectId && entry.conversationId === conversationId) {
+      if (entry.projectId === projectId && entry.conversationId === conversationId && entry.userId === userId) {
         return { SILLAGE_PROCESS_ORIGIN: token }
       }
     }
     const token = randomUUID()
-    const origin = { projectId, conversationId }
+    const origin = { projectId, conversationId, ...(userId ? { userId } : {}) }
     writeFileSync(join(this.directory, `${token}.json`), JSON.stringify(origin), { mode: 0o600, flag: 'wx' })
     this.entries.set(token, origin)
     return { SILLAGE_PROCESS_ORIGIN: token }

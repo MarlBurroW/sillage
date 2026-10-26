@@ -25,9 +25,16 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
   const attribution = (userId: string, isAdmin: boolean) => {
     const allProjects = ctx.db.select().from(projects).all()
     const allConversations = new Map(ctx.db.select({
-      id: conversations.id, projectId: conversations.projectId, title: conversations.title,
+      id: conversations.id, userId: conversations.userId, projectId: conversations.projectId, title: conversations.title,
     }).from(conversations).all().map((row) => [row.id, row]))
     return (origin: ServiceProcess['origin']) => {
+      if (origin?.projectId === null && origin.userId) {
+        if (origin.userId !== userId) return null
+        const conversation = origin.conversationId ? allConversations.get(origin.conversationId) : null
+        return { project: null, conversation: conversation ?? null, personal: true }
+      }
+      const personal = origin?.conversationId && allConversations.get(origin.conversationId)
+      if (personal && personal.projectId === null) return personal.userId === userId ? { project: null, conversation: personal } : null
       const project = allProjects.find((candidate) => candidate.id === origin?.projectId)
       if (project ? project.ownerId !== userId && project.visibility !== 'shared' : !isAdmin) return null
       const conversation = origin?.conversationId && allConversations.get(origin.conversationId)
@@ -53,7 +60,7 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
         origin: entry.origin ? entry.origin.conversationId ? 'agent' : 'terminal' : 'unknown',
         // Control launchers through their conversation or terminal. Stopping agent tools
         // (MCP servers) here would break conversations without freeing useful resources.
-        canStop: !!entry.origin && !!project && (entry.kind === 'command' || entry.kind === 'detached'),
+        canStop: !!entry.origin && (!!project || !!linked || Boolean(seen.personal)) && (entry.kind === 'command' || entry.kind === 'detached'),
       }]
     })
   }
@@ -65,7 +72,7 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
       const seen = attribute(entry.origin)
       if (!seen) return []
       const { project, conversation } = seen
-      const manageable = !!project || isAdmin
+      const manageable = !!project || !!conversation || seen.personal || isAdmin
       const running = ['active', 'activating', 'reloading'].includes(entry.state)
       return [{
         id: entry.id, unit: entry.unit, description: entry.description, executable: entry.executable, command: entry.command,

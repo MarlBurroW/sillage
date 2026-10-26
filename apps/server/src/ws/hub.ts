@@ -1,3 +1,4 @@
+import { personalWorkspace } from '../conversations/personal-workspaces.js'
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
 import {
@@ -16,6 +17,9 @@ import { conversationWorkspace, projectWorkspace, resolveInside } from '../works
 
 /** Routes whose success changes other tabs' sidebar contents. Sockets previously pushed only statuses, leaving deleted, renamed or archived sessions stale elsewhere until reload; new sessions appeared only because initial statuses exposed unknown IDs. `personal` notifies only the caller's tabs: bookmarks concern nobody else. Exclude read cursors, which advance every two seconds during turns and would trigger constant list reloads. Scheduler and webhook creations bypass routes; their first status reveals them. */
 export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
+  'POST /api/discussions': 'personal',
+  'POST /api/discussions/order': 'personal',
+  'POST /api/conversations/:id/project': 'shared',
   'POST /api/projects/:id/conversations': 'shared',
   'POST /api/v1/projects/:id/tasks': 'shared',
   'POST /api/projects/:id/conversations/order': 'shared',
@@ -167,7 +171,7 @@ class Connection {
   }
 
   /** Aligns conversation disk watches with declared directories. Independent of journal subscriptions: side panels browse conversations without running sessions. Recheck read access on every declaration like statuses rather than retain initial permissions. */
-  watchTree(scope: 'conversation' | 'project', id: string, paths: string[]): void {
+  watchTree(scope: 'conversation' | 'project' | 'personal', id: string, paths: string[]): void {
     // Both scopes share one map: conversation and project IDs cannot collide,
     // but keys still make the scope explicit.
     const key = `${scope}:${id}`
@@ -179,7 +183,7 @@ class Connection {
         cwd =
           scope === 'conversation'
             ? conversationWorkspace(this.ctx.db, id, this.userId)
-            : projectWorkspace(this.ctx.db, id, this.userId)
+            : scope === 'personal' ? personalWorkspace(this.ctx.db, id, this.userId).path : projectWorkspace(this.ctx.db, id, this.userId)
       } catch {
         this.send({
           t: 'error',

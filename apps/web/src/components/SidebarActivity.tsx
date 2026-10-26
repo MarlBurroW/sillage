@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Activity, Check, Inbox, MessageCircleQuestion, X } from 'lucide-react'
@@ -62,9 +63,9 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   // Stable sorting retains waits first within each project.
   const visible = (view === 'all' ? [...active, ...recent] : view === 'awaiting' ? awaiting : unread)
     .sort((a, b) => {
-      const aName = projectNames.get(a.conversation.projectId) ?? t('shell.overview.unknown')
-      const bName = projectNames.get(b.conversation.projectId) ?? t('shell.overview.unknown')
-      return aName.localeCompare(bName) || a.conversation.projectId.localeCompare(b.conversation.projectId)
+      const aName = projectNames.get(a.conversation.projectId ?? '') ?? t('discussions.title')
+      const bName = projectNames.get(b.conversation.projectId ?? '') ?? t('discussions.title')
+      return aName.localeCompare(bName) || (a.conversation.projectId ?? '').localeCompare(b.conversation.projectId ?? '')
     })
   const show = (next: View = 'all') => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -129,12 +130,12 @@ function ActivityRow({ entry, project, onNavigate, compact = false }: { entry: A
     {entry.awaiting ? <MessageCircleQuestion size={12} /> : entry.running ? <RunningDot /> : entry.settledAt && entry.status === 'idle' ? <Check size={12} /> : null}{label}
   </span>
   return <li>
-    <NavLink to={`/p/${entry.conversation.projectId}/c/${entry.conversation.id}`} onClick={onNavigate} className={({ isActive }) => cx('flex items-start gap-2 border-l-2 px-2 py-2.5 hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent', entry.awaiting ? 'border-caution' : isActive ? 'border-accent' : 'border-transparent', isActive && 'bg-surface-high')}>
+    <NavLink to={conversationPath(entry.conversation)} onClick={onNavigate} className={({ isActive }) => cx('flex items-start gap-2 border-l-2 px-2 py-2.5 hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent', entry.awaiting ? 'border-caution' : isActive ? 'border-accent' : 'border-transparent', isActive && 'bg-surface-high')}>
       <span className="mt-0.5 shrink-0 text-ink-faint"><AgentIcon agent={entry.conversation.agent} size={compact ? 13 : 15} /></span>
       <span className="min-w-0 flex-1">
         <span className={cx('block break-words font-medium leading-snug text-ink', compact ? 'line-clamp-2 text-xs' : 'text-sm')}>{entry.conversation.title}</span>
         <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-ink-faint">
-          <span className={cx('flex min-w-0 items-center gap-1', !compact && 'rounded border border-line bg-surface-high px-1.5 py-0.5')}><ProjectAvatar project={project} className="size-3" /><span className="truncate">{project?.name ?? t('shell.overview.unknown')}</span></span>
+          <span className={cx('flex min-w-0 items-center gap-1', !compact && 'rounded border border-line bg-surface-high px-1.5 py-0.5')}><ProjectAvatar project={project} className="size-3" /><span className="truncate">{project?.name ?? t('discussions.title')}</span></span>
           {!compact && <span className="sm:hidden">{status}</span>}
           {compact && <span className={entry.running && entry.status !== 'running' ? '' : 'sr-only'}>{status}</span>}
         </span>

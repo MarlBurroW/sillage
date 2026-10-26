@@ -119,3 +119,6 @@
   .sg-session-info { width: 44px; min-height: 44px; }
   .sg-session-link { min-height: 44px; }
 }
+
+/* Personal discussions share the session rows; only their account-scoped section is new. */
+.sidebar-personal { flex-shrink: 0; border-bottom: 1px solid var(--sg-line); margin: 4px 0; }

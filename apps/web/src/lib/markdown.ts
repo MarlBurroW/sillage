@@ -294,7 +294,7 @@ function markSessionReferences(md: MarkdownIt): void {
     const env = state.env as MarkdownEnv
     if (!env.projectId) return
     const ranges = (value: string) => sessionReferenceRanges(value, env.origin)
-      .filter(ref => (!ref.projectId || ref.projectId === env.projectId) && (ref.explicit || env.sessionIds?.has(ref.id)))
+      .filter(ref => (env.projectId === null || !ref.projectId || ref.projectId === env.projectId) && (ref.explicit || env.sessionIds?.has(ref.id)))
     const slot = (id: string) => {
       const token = new state.Token('html_inline', '', 0)
       token.meta = { sessionReference: sessionReference(id) }

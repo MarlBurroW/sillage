@@ -11,7 +11,7 @@ import type {
 import { api } from './api'
 import { uuidv4 } from './uuid'
 
-export const conversationsKey = (projectId: string) => ['conversations', projectId]
+export const conversationsKey = (projectId: string | null) => ['conversations', projectId]
 const ALL_CONVERSATIONS_KEY = ['conversations', 'all']
 
 /** All visible conversations for the sidebar. One query rather than one per project. */
@@ -28,12 +28,12 @@ export function useAllConversations(enabled = true) {
  * Manual order within a project. Apply it locally before the server replies: waiting for a network
  * round trip makes drag-and-drop visibly laggy.
  */
-export function useReorderConversations(projectId: string) {
+export function useReorderConversations(projectId: string | null) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (ids: string[]) =>
-      api.post<{ ok: true }>(`/api/projects/${projectId}/conversations/order`, { ids }),
+      api.post<{ ok: true }>(projectId ? `/api/projects/${projectId}/conversations/order` : '/api/discussions/order', { ids }),
 
     onMutate: async (ids) => {
       await queryClient.cancelQueries({ queryKey: ALL_CONVERSATIONS_KEY })
@@ -157,7 +157,7 @@ export function useConversation(conversationId: string | undefined) {
   })
 }
 
-export function useCreateConversation(projectId: string) {
+export function useCreateConversation(projectId: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: {
@@ -177,7 +177,7 @@ export function useCreateConversation(projectId: string) {
         skills: string[]
       }
     }) =>
-      api.post<ConversationDto>(`/api/projects/${projectId}/conversations`, {
+      api.post<ConversationDto>(projectId ? `/api/projects/${projectId}/conversations` : '/api/discussions', {
         worktreeId: null,
         cardId: null,
         ...input,

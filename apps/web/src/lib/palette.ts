@@ -261,13 +261,13 @@ export function recentPalette(
         entry.id !== currentConversationId &&
         entry.archivedAt === null &&
         entry.scheduleId === null &&
-        visibleProjects.has(entry.projectId),
+        (entry.projectId === null || visibleProjects.has(entry.projectId)),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt)
   for (const entry of recent) {
-    const list = byProject.get(entry.projectId) ?? []
+    const list = byProject.get(entry.projectId ?? '') ?? []
     list.push(entry)
-    byProject.set(entry.projectId, list)
+    byProject.set(entry.projectId ?? '', list)
   }
 
   // Current-project actions precede its conversations: when opened, the palette is also the
@@ -295,7 +295,7 @@ export function recentPalette(
     const lead = projectId === currentProjectId
       ? runs.map((item): PaletteHit => ({ item, score: 0, title: [], detail: [] }))
       : []
-    return { key: projectId, projectId, hits: [...lead, ...hits], score: 0 }
+    return { key: projectId || GENERAL_GROUP, projectId: projectId || null, hits: [...lead, ...hits], score: 0 }
   })
 }
 

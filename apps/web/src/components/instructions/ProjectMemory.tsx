@@ -1,4 +1,4 @@
-import { ArrowLeft, Brain, ChevronRight, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ArrowLeft, Brain, Plus, ChevronRight, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type MemoryFileDto, type MemoryMode } from '@sillage/protocol'
 import { locale, useTranslate } from '../../lib/i18n'
@@ -14,7 +14,7 @@ import { Banner, Button, Card, CardBody, CardHeader, ChoiceList, ConfirmDialog, 
 import { HowItWorks, MEMORY_HELP } from './HowItWorks'
 import { MarkdownEditor } from './Instructions'
 
-export function ProjectMemory({ projectId }: { projectId: string }) {
+export function ProjectMemory({ projectId }: { projectId: string | null }) {
   const t = useTranslate()
   const { data, error } = useProjectMemory(projectId)
   const browser = useMemoryBrowser(data?.files)
@@ -42,11 +42,12 @@ export function ProjectMemory({ projectId }: { projectId: string }) {
 
   return (
     <Card>
-      <CardHeader title={t('memory.title')} description={t('memory.browser.description')} icon={<Brain size={16} />}
-        actions={!selected ? <IconButton label={t('memory.options')} aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}>
+      <CardHeader title={t(projectId ? 'memory.title' : 'discussions.memory')} description={t(projectId ? 'memory.browser.description' : 'discussions.memory.description')} icon={<Brain size={16} />}
+        actions={!selected && projectId ? <IconButton label={t('memory.options')} aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}>
           <SlidersHorizontal size={16} />
         </IconButton> : null} />
       <CardBody className="flex flex-col gap-3">
+        {!projectId ? <PersonalMemoryControls /> : null}
         {error || setMode.error || remove.error ? <Banner>{(error ?? setMode.error ?? remove.error)?.message}</Banner> : null}
         <div ref={list} hidden={Boolean(selected)}>
           <div className="flex flex-col gap-4">
@@ -108,8 +109,38 @@ export function ProjectMemory({ projectId }: { projectId: string }) {
   )
 }
 
+function PersonalMemoryControls() {
+  const t = useTranslate()
+  const { data } = useProjectMemory(null)
+  const write = useWriteMemoryFile(null)
+  const [adding, setAdding] = useState(false)
+  const [file, setFile] = useState('')
+  const [content, setContent] = useState('')
+  return <div className="flex flex-col gap-3">
+    <Button size="sm" variant="ghost" className="self-start" icon={<Plus size={15} />} onClick={() => setAdding(!adding)}>{t('discussions.memory.add')}</Button>
+    {adding ? <form className="flex flex-col gap-3 rounded-md border border-line p-3" onSubmit={event => {
+      event.preventDefault()
+      write.mutate({ file: file.endsWith('.md') ? file : `${file}.md`, content }, { onSuccess: () => { setAdding(false); setFile(''); setContent('') } })
+    }}>
+      <Field label={t('discussions.memory.filename')} value={file} onChange={event => setFile(event.target.value)} required pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" />
+      <label className="flex flex-col gap-2 text-sm">{t('discussions.memory.content')}<textarea className="min-h-28 rounded-md border border-line bg-canvas p-3" required maxLength={MAX_MEMORY_FILE_CHARS} value={content} onChange={event => setContent(event.target.value)} /></label>
+      {write.error ? <Banner>{write.error.message}</Banner> : null}
+      <Button type="submit" size="sm" className="self-start" disabled={write.isPending || data?.files.some(entry => entry.file === (file.endsWith('.md') ? file : `${file}.md`))}>{t('editor.save')}</Button>
+    </form> : null}
+    <details className="rounded-md border border-line px-3 py-2">
+      <summary className="cursor-pointer text-sm">{t('discussions.memory.history')}</summary>
+      <p className="mt-2 text-xs text-ink-faint">{t('discussions.memory.historyHint')}</p>
+      <div className="mt-3 max-h-80 overflow-y-auto">{data?.changes?.map(change => <details key={change.id} className="border-t border-line py-2 text-xs">
+        <summary className="cursor-pointer break-all">{change.file} · {new Date(change.createdAt).toLocaleString(locale())}</summary>
+        <p className="mt-3 font-medium">{t('discussions.memory.before')}</p><pre className="my-2 whitespace-pre-wrap break-words font-mono text-ink-soft">{change.before ?? t('discussions.memory.absent')}</pre>
+        <p className="font-medium">{t('discussions.memory.after')}</p><pre className="my-2 whitespace-pre-wrap break-words font-mono text-ink-soft">{change.after ?? t('discussions.memory.absent')}</pre>
+      </details>)}</div>
+    </details>
+  </div>
+}
+
 function MemoryEditor({ projectId, file, canEdit, active, onBack }: {
-  projectId: string; file: MemoryFileDto; canEdit: boolean; active: boolean; onBack: () => void
+  projectId: string | null; file: MemoryFileDto; canEdit: boolean; active: boolean; onBack: () => void
 }) {
   const t = useTranslate()
   const write = useWriteMemoryFile(projectId)

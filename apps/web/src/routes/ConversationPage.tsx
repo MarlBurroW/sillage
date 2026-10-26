@@ -1,3 +1,5 @@
+import { CreateProjectDialog } from '../components/chat/CreateProjectDialog'
+import { conversationPath } from '@sillage/protocol'
 import { recordPerformance } from '../lib/performance-diagnostics'
 import { useThreadLayout } from '../lib/use-thread-layout'
 import { NewsTicker } from '../components/chat/NewsTicker'
@@ -294,6 +296,7 @@ export function ConversationPage() {
   const [flashed, setFlashed] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
   /** “Continue in another CLI” dialog: switching tools requires confirmation. */
+  const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const [handoffOpen, setHandoffOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
@@ -794,7 +797,7 @@ export function ConversationPage() {
           .filter((block) => block.type === 'text')
           .map((block) => block.text)
           .join('\n\n')
-        navigate(`/p/${branch.projectId}/c/${branch.id}`, { state: { draft } })
+        navigate(conversationPath(branch), { state: { draft } })
       } catch (err) {
         setActionError(err instanceof Error ? err.message : t('conversation.fork.error'))
       } finally {
@@ -930,6 +933,7 @@ export function ConversationPage() {
           <div className="min-w-0 flex-1">
             {/* Preserve project width; truncate the branch first. */}
             <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
+              {conversation.projectId ? <>
               <Link
                 to={`/p/${conversation.projectId}`}
                 className="max-w-[60%] shrink-0 truncate rounded-sm hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
@@ -943,6 +947,7 @@ export function ConversationPage() {
                 projectGit={project?.git}
                 projectPath={project?.workspacePath}
               /> : null}
+              </> : <span>{t('discussions.personal')}</span>}
             </div>
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
 
@@ -990,7 +995,7 @@ export function ConversationPage() {
              * Instructions are frequently reread and edited while working: one action, without
              * leaving the thread or using the editor.
              */}
-            <IconButton label={t('conversation.instructions')} onClick={() => setInstructionsOpen(true)}>
+            <IconButton label={t(conversation.projectId ? 'conversation.instructions' : 'discussions.context')} onClick={() => setInstructionsOpen(true)}>
               <FileText size={18} />
             </IconButton>
             <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
@@ -1018,6 +1023,7 @@ export function ConversationPage() {
               <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
                 {t('conversation.meta.details')}
               </MenuItem>
+              {!conversation.projectId ? <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setCreateProjectOpen(true)}>{t('discussions.project.create')}</MenuItem> : null}
               <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setHandoffOpen(true)}>
                 {t('conversation.handoff.menu')}
               </MenuItem>
@@ -1034,6 +1040,7 @@ export function ConversationPage() {
               <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
                 {t('conversation.meta.details')}
               </MenuItem>
+              {!conversation.projectId ? <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setCreateProjectOpen(true)}>{t('discussions.project.create')}</MenuItem> : null}
               <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setHandoffOpen(true)}>
                 {t('conversation.handoff.menu')}
               </MenuItem>
@@ -1041,7 +1048,7 @@ export function ConversationPage() {
                 {t('conversation.usage.label')}
               </MenuItem>
               <MenuItem icon={<FileText size={14} />} onSelect={() => setInstructionsOpen(true)}>
-                {t('conversation.instructions')}
+                {t(conversation.projectId ? 'conversation.instructions' : 'discussions.context')}
               </MenuItem>
               <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
                 {t('conversation.search')}
@@ -1065,7 +1072,7 @@ export function ConversationPage() {
            * and reads this thread's working directory, including its worktree, not the
            * project's.
            */}
-          <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} />
+          {conversation.projectId ? <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} /> : null}
           <IconButton
             label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
             onClick={() => setPanelOpen(!panel.open)}
@@ -1073,6 +1080,10 @@ export function ConversationPage() {
             <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
           </IconButton>
         </header>
+        {!conversation.projectId && allConversations?.some(entry => entry.handoffFromId === conversation.id && entry.projectId) ? <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs text-ink-soft">
+          <span>{t('discussions.project.linked')}</span>
+          {allConversations.filter(entry => entry.handoffFromId === conversation.id && entry.projectId).map(entry => <Link key={entry.id} to={conversationPath(entry)} className="text-accent hover:underline">{entry.title}</Link>)}
+        </div> : null}
         <ConversationWorktreeBar key={conversation.id} conversation={conversation} canClean={project?.isOwner ?? false} />
 
         <InstructionsDialog
@@ -1117,7 +1128,7 @@ export function ConversationPage() {
                  */}
                 {origin ? (
                   <Link
-                    to={`/p/${origin.projectId}/c/${origin.id}`}
+                    to={conversationPath(origin)}
                     className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
                     title={t('conversation.meta.branchOf', { title: origin.title })}
                   >
@@ -1132,7 +1143,7 @@ export function ConversationPage() {
                  */}
                 {continued ? (
                   <Link
-                    to={`/p/${continued.projectId}/c/${continued.id}`}
+                    to={conversationPath(continued)}
                     className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
                     title={t('conversation.meta.continues', { title: continued.title, agent: AGENT_LABELS[continued.agent] })}
                   >
@@ -1237,6 +1248,7 @@ export function ConversationPage() {
           <p>{t('conversation.fork.confirm.unaffected')}</p>
         </ConfirmDialog>
 
+        {createProjectOpen ? <CreateProjectDialog source={conversation} onOpenChange={setCreateProjectOpen} /> : null}
         {handoffOpen ? (
           <HandoffDialog open={handoffOpen} onOpenChange={setHandoffOpen} source={conversation} />
         ) : null}

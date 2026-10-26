@@ -518,7 +518,6 @@ export const agentRequests = sqliteTable(
   {
     id: text('id').primaryKey(),
     projectId: text('project_id')
-      .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     /**
      * Requesting conversation. No foreign key, like inter-session messages. Empty for requests
@@ -530,6 +529,12 @@ export const agentRequests = sqliteTable(
     userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     kind: text('kind', {
       enum: [
+        'create_project',
+        'delete_project',
+        'continue_in_project',
+        'find_files',
+        'write_personal_memory',
+        'delete_personal_memory',
         'start_session',
         'rename_session',
         'create_card',
@@ -576,14 +581,35 @@ export const agentRequests = sqliteTable(
   ],
 )
 
+/** Managed personal directories outlive their conversations. A CLI continuation can reuse its source directory. */
+export const personalWorkspaces = sqliteTable('personal_workspaces', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  name: text('name').notNull(),
+  path: text('path').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+})
+
+/** Auditable personal-memory edits, including deletions; intentionally independent of session lifetime. */
+export const personalMemoryChanges = sqliteTable('personal_memory_changes', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  file: text('file').notNull(),
+  before: text('before'),
+  after: text('after'),
+  conversationId: text('conversation_id'),
+  createdAt: timestamp('created_at').notNull(),
+}, (t) => [index('idx_personal_memory_changes_user').on(t.userId, t.createdAt)])
+
 export const conversations = sqliteTable(
   'conversations',
   {
     id: text('id').primaryKey(),
     projectId: text('project_id')
-      .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    /** NULL means the agent works at the project root. */
+    /** Set only for personal discussions. Its lifetime is independent of conversation deletion. */
+    workspaceId: text('workspace_id').references(() => personalWorkspaces.id),
+    /** NULL means the project root or managed personal directory. */
     worktreeId: text('worktree_id').references(() => worktrees.id),
     /**
      * Card this conversation handles, if any.

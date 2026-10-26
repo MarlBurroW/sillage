@@ -191,7 +191,7 @@ interface ComposerProps {
    */
   draftKey: string
   /** Project and worktree used for @ completion. */
-  projectId?: string
+  projectId?: string | null
   worktreeId?: string | null
   /**
    * Status strip immediately below the field. Render here rather than beside it in callers so one
@@ -236,7 +236,7 @@ export function Composer({
   const [sessionToken, setSessionToken] = useState<MentionToken | null>(null)
   const { sessions: referenceSessions, loading: searchingSessions } = useSessionReferences(projectId)
   const sessionSuggestions = useMemo(() => matchSessions(referenceSessions, sessionToken?.query ?? '', draftKey), [referenceSessions, sessionToken, draftKey])
-  const referencedIds = useMemo(() => [...new Set(sessionReferenceRanges(text, window.location.origin).filter(ref => !ref.projectId || ref.projectId === projectId).filter(ref => ref.explicit || referenceSessions.has(ref.id)).map(ref => ref.id))], [text, referenceSessions, projectId])
+  const referencedIds = useMemo(() => [...new Set(sessionReferenceRanges(text, window.location.origin).filter(ref => projectId === null || !ref.projectId || ref.projectId === projectId).filter(ref => ref.explicit || referenceSessions.has(ref.id)).map(ref => ref.id))], [text, referenceSessions, projectId])
   const [cardToken, setCardToken] = useState<MentionToken | null>(null)
   const [sigil, setSigil] = useState<SigilToken | null>(null)
   // Shared by suggestion lists: tokens are mutually exclusive, since no cursor position opens @, /,
@@ -326,11 +326,12 @@ export function Composer({
     projectId,
     worktreeId,
     token?.query ?? null,
+    variant === 'thread' ? draftKey : undefined,
   )
   const suggestions = token ? (files ?? []) : []
 
   const { data: cardMatches, isFetching: searchingCards } = useCardSuggestions(
-    projectId,
+    projectId ?? undefined,
     cardToken?.query ?? null,
   )
   const cardSuggestions = cardToken ? (cardMatches ?? []) : []
@@ -445,7 +446,7 @@ export function Composer({
 
   const sttEnabled = useSttEnabled()
   const dictation = useDictation({
-    projectId,
+    projectId: projectId ?? undefined,
     onText: insertDictation,
     onError: setError,
   })
@@ -553,7 +554,7 @@ export function Composer({
     const sent = attachments
     // Mentions or skills deleted from text after selection must not be sent: current text is
     // authoritative, not previous clicks.
-    const urls = sessionReferenceRanges(value, window.location.origin).filter(ref => ref.projectId === projectId)
+    const urls = sessionReferenceRanges(value, window.location.origin).filter(ref => projectId === null || ref.projectId === projectId)
     for (const ref of urls.reverse()) value = `${value.slice(0, ref.start)}${sessionReference(ref.id)}${value.slice(ref.end)}`
     const paths = [...mentioned].filter((path) => value.includes(`@${path}`))
     const invocations = [...invoked].filter((name) => value.includes(`$${name}`))
@@ -902,7 +903,7 @@ export function Composer({
             </div>
             <div ref={trail} className="order-3 ml-auto flex shrink-0 items-center gap-1">
               {mcp ? cloneElement(mcp, { narrow }) : null}
-              <SkillsControl projectId={projectId} config={config} skills={skills} commands={commands} inputRef={textarea} narrow={narrow} />
+              <SkillsControl projectId={projectId ?? undefined} config={config} skills={skills} commands={commands} inputRef={textarea} narrow={narrow} />
               {context ? <span className="flex items-center px-1"><ContextMeter context={context} compact={narrow} /></span> : null}
               {narrow ? null : <ComposerSettingsButton {...settingsProps} />}
               {/* Both buttons coexist during turns: stop agents without losing typed messages, or send without stopping. */}

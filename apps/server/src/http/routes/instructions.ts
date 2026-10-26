@@ -42,7 +42,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
     return {
       content: row?.content ?? '',
       updatedAt: row?.updatedAt ?? null,
-      author: instructionsAuthor(ctx.db, row),
+      author: instructionsAuthor(ctx.db, row, user.id),
       canEdit: user.isAdmin,
     }
   }
@@ -55,7 +55,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
     return {
       content: row?.content ?? '',
       updatedAt: row?.updatedAt ?? null,
-      author: instructionsAuthor(ctx.db, row),
+      author: instructionsAuthor(ctx.db, row, user.id),
       canEdit: project.ownerId === user.id,
       mode: resolveInstructionsMode(project),
       modeChosen: project.instructionsMode !== null,

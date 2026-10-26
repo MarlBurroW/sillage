@@ -19,6 +19,7 @@ export function ConversationWorktreeBar({ conversation, canClean }: { conversati
   const workingHere = tree?.conversations.some((entry) => entry.id === conversation.id && entry.link === 'worktree')
   // Deleted trees may remain session cwd: report even when absent from Git. Formerly edited-only
   // trees need no lingering display.
+  if (!conversation.projectId) return null
   if (!tree && (!conversation.worktreeId || !data)) return null
 
   const state = tree

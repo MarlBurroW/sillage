@@ -1,3 +1,5 @@
+import { DiscussionFilesPage } from './routes/DiscussionFilesPage'
+import { PersonalMemoryPage } from './routes/PersonalMemoryPage'
 import { NewsSettingsPage } from './routes/NewsSettingsPage'
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
@@ -110,6 +112,11 @@ export function App() {
         <Route path="/bienvenue" element={<OnboardingExit />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/discussions" element={<Navigate to="/discussions/new" replace />} />
+          <Route path="/discussions/new" element={<DraftConversationPage key="personal" />} />
+          <Route path="/discussions/files" element={<DiscussionFilesPage />} />
+          <Route path="/discussions/memory" element={<PersonalMemoryPage />} />
+          <Route path="/discussions/:conversationId" element={<ConversationPage key="personal" />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />

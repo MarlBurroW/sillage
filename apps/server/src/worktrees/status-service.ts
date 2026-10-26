@@ -42,7 +42,7 @@ export class WorktreeStatusService {
         .from(conversations)
         .where(eq(conversations.id, entry.conversationId))
         .get()
-      if (!row) return
+      if (!row?.projectId) return
       this.invalidate(row.projectId)
       if (entry.event.type === 'turn.completed') this.scheduleRefresh(row.projectId)
     })

@@ -64,7 +64,7 @@ export function loadTaskForToken(
     .where(eq(conversations.id, taskId))
     .get()
 
-  if (!conversation || conversation.userId !== userId) {
+  if (!conversation || !conversation.projectId || conversation.userId !== userId) {
     throw notFound('task_not_found', 'Task not found.')
   }
   try {

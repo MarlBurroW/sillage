@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import {
   BookOpen,
   CalendarClock,
@@ -126,7 +127,7 @@ function projectItems(t: Translate, project: ProjectDto, current: boolean): Pale
   ]
 }
 
-function conversationItem(t: Translate, conversation: ConversationDto, project: ProjectDto): PaletteItem {
+function conversationItem(t: Translate, conversation: ConversationDto, project?: ProjectDto): PaletteItem {
   const card = conversation.card ? `#${conversation.card.number} ${conversation.card.title}` : undefined
   return {
     key: `conversation:${conversation.id}`,
@@ -141,10 +142,10 @@ function conversationItem(t: Translate, conversation: ConversationDto, project: 
       sentence(conversation.title),
       ...(card ? [prose(card)] : []),
       // Project-name queries list its conversations newest first.
-      projectField(project.name, { browse: true }),
+      projectField(project?.name ?? t('discussions.title'), { browse: true }),
       kindField(t('search.kind.conversation')),
     ],
-    target: { type: 'navigate', to: `/p/${conversation.projectId}/c/${conversation.id}` },
+    target: { type: 'navigate', to: conversationPath(conversation) },
     // Favorites are usually intended; archived or scheduled threads rarely are.
     boost: (conversation.favorite ? 1.5 : 0) - (conversation.archivedAt !== null ? 3 : 0) - (conversation.scheduleId ? 1 : 0),
   }
@@ -347,8 +348,8 @@ export function buildPaletteItems(sources: PaletteSources): PaletteItem[] {
   const names = new Map(sources.projects.map((project) => [project.id, project.name]))
 
   const conversations = sources.conversations.flatMap((conversation) => {
-    const project = byId.get(conversation.projectId)
-    return project ? [conversationItem(t, conversation, project)] : []
+    const project = byId.get(conversation.projectId ?? '')
+    return project || conversation.projectId === null ? [conversationItem(t, conversation, project)] : []
   })
 
   return [
@@ -406,7 +407,7 @@ export function buildMessageItems(
   const titles = new Map(conversations.map((conversation) => [conversation.id, conversation.title]))
   const seen = new Set<string>()
   return (messages ?? []).flatMap((message): PaletteItem[] => {
-    if (!visible.has(message.projectId) || seen.has(message.conversationId)) return []
+    if ((message.projectId !== null && !visible.has(message.projectId)) || seen.has(message.conversationId)) return []
     seen.add(message.conversationId)
     return [{
       key: `message:${message.conversationId}:${message.seq}`,
@@ -417,7 +418,7 @@ export function buildMessageItems(
       icon: <MessageSquare size={ICON} />,
       aside: message.role === 'user' ? t('search.role.user') : t('search.role.agent'),
       fields: [],
-      target: { type: 'navigate', to: `/p/${message.projectId}/c/${message.conversationId}?seq=${message.seq}` },
+      target: { type: 'navigate', to: `${conversationPath({ projectId: message.projectId, id: message.conversationId })}?seq=${message.seq}` },
       fixedScore: MESSAGE_SCORE,
     }]
   })

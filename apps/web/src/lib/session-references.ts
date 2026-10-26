@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import type { ConversationDto } from '@sillage/protocol'
 import { useAllConversations } from './conversations'
 
@@ -13,15 +14,16 @@ let latestIds = new Map<string, ReadonlySet<string>>()
 
 /** Reuse the sidebar's authorized list, including archives, without fetching transcripts. */
 export function useSessionReferences(projectId?: string | null) {
-  const { data, isPending } = useAllConversations(Boolean(projectId))
+  const { data, isPending } = useAllConversations(projectId !== undefined)
   let index = data ? indexes.get(data) : undefined
   if (data && !index) {
     const byProject = new Map<string, Map<string, ConversationDto>>()
     for (const session of data) {
-      const group = byProject.get(session.projectId) ?? new Map<string, ConversationDto>()
+      const group = byProject.get(session.projectId ?? '') ?? new Map<string, ConversationDto>()
       group.set(session.id, session)
-      byProject.set(session.projectId, group)
+      byProject.set(session.projectId ?? '', group)
     }
+    byProject.set('', new Map(data.map(session => [session.id, session])))
     index = new Map()
     const nextIds = new Map<string, ReadonlySet<string>>()
     for (const [id, sessions] of byProject) {
@@ -36,11 +38,11 @@ export function useSessionReferences(projectId?: string | null) {
     latestIds = nextIds
     indexes.set(data, index)
   }
-  return { ...(index?.get(projectId ?? '') ?? EMPTY), loading: isPending }
+  return { ...(projectId === undefined ? EMPTY : index?.get(projectId ?? '') ?? EMPTY), loading: isPending }
 }
 
 export function sessionHref(session: Pick<ConversationDto, 'projectId' | 'id'>): string {
-  return `/p/${session.projectId}/c/${session.id}`
+  return conversationPath(session)
 }
 
 function searchable(value: string): string {

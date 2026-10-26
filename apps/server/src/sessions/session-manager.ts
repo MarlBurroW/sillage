@@ -1,3 +1,5 @@
+import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
+import { conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
@@ -24,7 +26,7 @@ import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { publicUrlOf } from '../settings/app-settings.js'
-import { projectOverview } from '../agents/overview.js'
+import { projectOverview, sessionTitleReminder } from '../agents/overview.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
 import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
@@ -494,7 +496,7 @@ export class SessionManager {
         push: {
           title,
           body: conversation.title,
-          url: `/p/${conversation.projectId}/c/${conversationId}`,
+          url: conversationPath({ projectId: conversation.projectId, id: conversationId }),
           // Keep one displayed notification per conversation: five copies of 'agent finished'
           // add nothing beyond the latest.
           tag: conversationId,
@@ -735,6 +737,7 @@ export class SessionManager {
     // Reread on every call rather than fix here: modes may change between runner
     // starts and depend on directory contents for legacy projects.
     const instructions = () => {
+      if (conversation.projectId === null) return null
       const project = this.db
         .select({ instructionsMode: projects.instructionsMode, workspacePath: projects.workspacePath, memoryMode: projects.memoryMode })
         .from(projects)
@@ -746,6 +749,7 @@ export class SessionManager {
     // without import, moving directories would erase learning. Null in native
     // mode: each CLI retains its own memory and Sillage injects nothing.
     const memoryDir = () => {
+      if (conversation.projectId === null) return personalMemoryDir(this.config.paths.memory, conversation.userId)
       const project = instructions()
       if (project?.memoryMode === 'native') return null
       return ensureProjectMemory(this.config.paths.memory, conversation.projectId, project?.workspacePath ?? cwd)
@@ -769,7 +773,7 @@ export class SessionManager {
         if (config.account) this.antigravityAccounts.store.setIdentity(config.account, { authMode: null, email: null, plan: null })
       },
       processEnv: {
-        ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId),
+        ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId, conversation.projectId === null ? conversation.userId : undefined),
         // Tells Claude Code a local host scheduled it rather than a person opening it
         // (probed 2.1.291). Other CLIs ignore this.
         ...(conversation.scheduleId && conversation.agent === 'claude'
@@ -789,13 +793,14 @@ export class SessionManager {
           projectId: conversation.projectId,
           conversationId,
           memoryDir: memoryDir(),
+          memoryRoot: this.config.paths.memory,
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
 
       sessionReferenceContext: (text, current) => sessionReferenceContext(
         this.db, conversation.projectId, text, publicUrlOf(this.db, this.config),
-        builtinMcpEnabled(this.config.mcp.sillageServer, current),
+        builtinMcpEnabled(this.config.mcp.sillageServer, current), conversation.userId,
       ),
 
       // Follow MCP server switches except `strictMcp`, which excludes undeclared
@@ -817,6 +822,8 @@ export class SessionManager {
           .get()
         const parts = [
           handoff?.text ?? null,
+          conversation.projectId === null ? 'This is a personal Sillage discussion with its own persistent working directory. No project owns it. Sillage tools can discover and act on projects accessible to this account; supply the target project explicitly. Develop ideas here, then use continue_in_project to create a linked project session with a reviewed brief and selected files. Use native file tools elsewhere only as requested and permitted by the CLI. Cite sessions as session:<id>.' : null,
+          conversation.projectId === null ? sessionTitleReminder(this.db, { projectId: null, conversationId, sillageMcp }) : null,
           instructionsAppendix(this.db, {
             projectId: conversation.projectId,
             mode: instructions()?.mode ?? 'repo',
@@ -824,8 +831,10 @@ export class SessionManager {
           }),
           // Claude loads its memory index itself; Codex and opencode have only
           // the information supplied explicitly. Nothing in native mode.
-          memoryDirOrNull(conversation.agent, memoryDir(), sillageMcp),
-          this.config.mcp.sillageServer && current.sillageMcp
+          conversation.projectId === null
+            ? `${memoryAppendixForCodex(memoryDir()!, sillageMcp, 'personal', conversation.agent !== 'claude') ?? ''}\n\nRetain durable preferences and decisions automatically, keep notes concise, and mention meaningful memory updates to the user. Memory belongs to this account and is shared across personal discussions. Never copy it into projects automatically.`
+            : memoryDirOrNull(conversation.agent, memoryDir(), sillageMcp),
+          this.config.mcp.sillageServer && current.sillageMcp && conversation.projectId
             ? projectOverview(this.db, {
                 projectId: conversation.projectId,
                 conversationId,
@@ -844,11 +853,14 @@ export class SessionManager {
         this.config.skills.library && current.skillLibrary
           ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(conversation.projectId)
           : [],
-      workTrees: () => linkedWorktreePaths(this.db, conversationId, conversation.projectId),
+      workTrees: () => conversation.projectId ? linkedWorktreePaths(this.db, conversationId, conversation.projectId) : [],
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {
         this.log.append(conversationId, event, raw, adapter.rawFormat)
+        if (event.type === 'turn.completed' && conversation.projectId === null) {
+          void readPersonalMemory(this.db, personalMemoryDir(this.config.paths.memory, conversation.userId), conversation.userId, conversationId).catch(err => console.warn('Personal memory refresh failed', err))
+        }
         void this.notifyIfAway(conversationId, event)
         // Journals suffice for open conversations folding events; conversation lists and
         // other processes have only conversation rows to determine
@@ -1190,7 +1202,7 @@ export class SessionManager {
 
   /** Captures pre-turn workspace state when enabled. Failure never blocks delivery: snapshots are convenience; turns are the work. Outside git, do nothing silently. */
   private async openCheckpoint(conversation: ConversationRow): Promise<void> {
-    if (this.checkpoints.has(conversation.id)) return
+    if (conversation.projectId === null || this.checkpoints.has(conversation.id)) return
     const project = this.db
       .select({ turnCheckpoints: projects.turnCheckpoints })
       .from(projects)

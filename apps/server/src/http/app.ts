@@ -1,3 +1,4 @@
+import { registerDiscussionRoutes } from './routes/discussions.js'
 import { registerNewsRoutes } from './routes/news.js'
 import { existsSync } from 'node:fs'
 import { join, sep } from 'node:path'
@@ -218,7 +219,7 @@ export async function buildApp(
 
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
-  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals)
+  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals, sessions)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
   registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)
@@ -248,6 +249,7 @@ export async function buildApp(
   registerSkillLibraryRoutes(app, ctx, skillLibrary)
   registerInstructionRoutes(app, ctx)
   registerMemoryRoutes(app, ctx)
+  registerDiscussionRoutes(app, ctx)
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())

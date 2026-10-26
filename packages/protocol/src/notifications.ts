@@ -40,7 +40,7 @@ export type InAppNotification =
       kind: 'cliRequest'
       request: CliRequestKind
       conversationId: string
-      projectId: string
+      projectId: string | null
       conversationTitle: string
       /** Requested action in one line: tool and command, or the question asked. */
       detail: string | null

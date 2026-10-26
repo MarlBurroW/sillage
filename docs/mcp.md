@@ -11,7 +11,7 @@ It speaks stdio and reads the SQLite database directly. Started manually, it has
 neither port nor token: it trusts whoever can launch it. Over HTTP, the API token
 authenticates (see below). Its environment determines the scope it serves.
 
-## Two scopes
+## Project and external global scopes
 
 | Variable | Conversation mode | Global mode |
 |---|---|---|
@@ -22,7 +22,7 @@ authenticates (see below). Its environment determines the scope it serves.
 | `SILLAGE_MCP_PROJECTS` | — | comma-separated allowlist of IDs; set by the HTTP bridge from the token |
 | `SILLAGE_MCP_CONVERSATION` | current conversation, excluded from results | — |
 
-**Conversation mode.** This is what Sillage uses. Tools are scoped to the project,
+**Conversation mode.** This is what Sillage uses for project sessions. Tools are scoped to the project,
 and writes are attributed to the conversation: a card note links to the session;
 a started session receives the wrapped task, identifying who assigned it.
 
@@ -66,6 +66,44 @@ Actions going through the daemon remain subject to its guards: at most six
 launches per hour, counted together for everything coming from outside sessions;
 the daemon must be running, otherwise the request expires.
 
+## Personal discussions
+
+Discussions opened from **Discussions** in the sidebar have no project. Sillage
+mounts the same MCP server with `SILLAGE_MCP_PERSONAL=1`, no
+`SILLAGE_MCP_PROJECT`, and the current `SILLAGE_MCP_CONVERSATION`. The account is
+resolved from that conversation; `SILLAGE_MCP_USER` cannot override it.
+
+The assistant can use `list_projects`, project tools with an explicit target,
+and `create_project`, `continue_in_project`, `delete_project` and `find_files`.
+Project deletion removes Sillage data and preserves the project's disk folder.
+File discovery covers accessible project folders; native CLI tools can search
+elsewhere within the user's request and CLI permissions. Global instruction
+edits still require an administrator.
+
+Without a `project` argument, `search_history`, `read_conversation` and
+`list_sessions` cover the account's personal discussions and accessible projects.
+Memory tools default to the account's personal memory, shared across its personal
+discussions. Durable preferences and decisions are retained automatically.
+**Personal memory** allows reading, editing and deleting notes, and reviewing
+recent changes. Native memory file edits are captured when observed as well.
+Project memory stays separate.
+
+Each discussion receives a managed directory. Forks and CLI continuations reuse
+it so native sessions keep their working directory. Deleting a discussion leaves
+the directory in **Discussion folders**; deletion of an unused folder is a
+separate, explicit operation. Server stores these files on its host, Desktop on
+the local machine.
+
+`continue_in_project` creates a project and a linked session from an explicit
+brief and selected files. It copies only those files, without overwriting; the
+original discussion, its files and personal memory remain in place. The new
+session waits for its first message. The UI offers the same operation under
+**Create a project** in the conversation menu. The source discussion remains
+private even when the new project is shared.
+
+These capabilities belong to personal sessions. External global MCP clients and
+project-scoped API tokens do not gain access to personal discussions.
+
 ## Referencing sessions
 
 Use `session:<conversation UUID>` to cite a Sillage conversation. `list_sessions`,
@@ -82,7 +120,8 @@ references with `@@` completion or copy one from a session's ellipsis/context me
 The composer’s **Insert** button explains the available prefixes and opens their
 suggestions: `@` files, `@@` sessions, `#` cards, plus `/` commands and `$` skills
 when the agent publishes them. Choosing a prefix preserves the draft and does not
-send a message. Suggestions and reference resolution stay within the current project.
+send a message. Project sessions resolve references within their project; personal
+discussions resolve across sessions accessible to their account.
 
 Outgoing references add only bounded identity metadata to the model input. The
 journal keeps the original user text. Agents can read the relevant history with

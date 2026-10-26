@@ -1,3 +1,5 @@
+import { conversationPath } from '@sillage/protocol'
+import { ProjectMemory } from './ProjectMemory'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Eye, FileText, Pencil, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -136,9 +138,9 @@ function AuthorLine({ author, updatedAt }: { author: InstructionsAuthorDto | nul
       ) : (
         <>
           {t('instructions.author.session', { when })}{' '}
-          {author.projectId ? (
+          {author.title ? (
             <Link
-              to={`/p/${author.projectId}/c/${author.conversationId}`}
+              to={conversationPath({ projectId: author.projectId, id: author.conversationId })}
               className="text-accent hover:underline"
             >
               {author.title ?? t('instructions.author.session.untitled')}
@@ -314,7 +316,7 @@ export function InstructionsDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  projectId: string
+  projectId: string | null
 }) {
   const t = useTranslate()
   const [tab, setTab] = useState<'project' | 'global'>('project')
@@ -332,10 +334,10 @@ export function InstructionsDialog({
           <div className="flex items-start justify-between gap-3">
             <div>
               <Dialog.Title className="text-[0.9375rem] font-semibold tracking-tight">
-                {t('instructions.dialog.title')}
+                {t(projectId ? 'instructions.dialog.title' : 'discussions.context')}
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-ink-faint">
-                {t('instructions.dialog.description')}
+                {t(projectId ? 'instructions.dialog.description' : 'discussions.memory.description')}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
@@ -357,12 +359,12 @@ export function InstructionsDialog({
                   tab === value ? 'surface text-ink shadow-sm' : 'text-ink-faint hover:text-ink',
                 )}
               >
-                {t(value === 'project' ? 'instructions.tab.project' : 'instructions.tab.global')}
+                {t(value === 'project' ? projectId ? 'instructions.tab.project' : 'discussions.memory' : 'instructions.tab.global')}
               </button>
             ))}
           </div>
 
-          {tab === 'project' ? <ProjectInstructions projectId={projectId} /> : <GlobalInstructions />}
+          {tab === 'project' ? projectId ? <ProjectInstructions projectId={projectId} /> : <ProjectMemory projectId={null} /> : <GlobalInstructions />}
           <p className="text-xs text-ink-faint">{t('instructions.dialog.timing')}</p>
         </Dialog.Content>
       </Dialog.Portal>

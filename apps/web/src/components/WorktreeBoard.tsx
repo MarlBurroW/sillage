@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import { BrushCleaning, FolderGit2, TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -139,7 +140,7 @@ function LinkedSession({ conversation, link }: { conversation: ConversationDto; 
         <AgentIcon agent={conversation.agent} size={12} />
       </span>
       <Link
-        to={`/p/${conversation.projectId}/c/${conversation.id}`}
+        to={conversationPath(conversation)}
         className={cx('min-w-0 truncate hover:underline', conversation.archivedAt ? 'text-ink-faint' : 'text-ink-soft')}
       >
         {conversation.title}

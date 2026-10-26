@@ -9,6 +9,8 @@ import Database from 'better-sqlite3'
 const DB_PATH = process.env.SILLAGE_MCP_DB
 /** Global mode: no fixed project; each call names its own (see header). */
 const GLOBAL = !process.env.SILLAGE_MCP_PROJECT
+/** In-app personal sessions retain their identity while targeting accessible projects. */
+const PERSONAL = GLOBAL && process.env.SILLAGE_MCP_PERSONAL === '1'
 /** Served project: fixed for conversation-mode processes, set from each tool call's `project` parameter in global mode. Serialize calls to prevent interference. */
 let PROJECT_ID = process.env.SILLAGE_MCP_PROJECT ?? ''
 // Keep the reference prefix aligned with packages/protocol/src/session-references.ts.
@@ -18,7 +20,7 @@ const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
 /** Project memory directory shared with Claude automatic memory. In global mode, `SILLAGE_MCP_MEMORY` identifies the memory root (default `memory/` beside the database, like the daemon), and each call selects its project's directory. */
 let MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
 const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
-const MEMORY_ROOT = GLOBAL && DB_PATH ? process.env.SILLAGE_MCP_MEMORY || join(dirname(DB_PATH), 'memory') : ''
+const MEMORY_ROOT = GLOBAL && DB_PATH ? (PERSONAL ? process.env.SILLAGE_MCP_MEMORY_ROOT : process.env.SILLAGE_MCP_MEMORY) || join(dirname(DB_PATH), 'memory') : ''
 /** Global write identity: configured username or the database's sole account. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
 /** Global allowed project IDs, comma-separated; empty means everything visible to the account. API-token allowlist supplied by the HTTP bridge. */
@@ -60,6 +62,12 @@ const MAX_PEER_MESSAGE_CHARS = 4000
 /** How long tools wait for daemon request processing. Session starts launch CLIs and sometimes worktrees, usually seconds but longer under load. After this timeout, report that processing continues rather than remain suspended. */
 const REQUEST_WAIT_MS = {
   rename_session: 15000,
+  create_project: 30000,
+  delete_project: 60000,
+  continue_in_project: 60000,
+  find_files: 60000,
+  write_personal_memory: 15000,
+  delete_personal_memory: 15000,
   start_session: 90000,
   create_card: 15000,
   update_card: 15000,
@@ -155,6 +163,12 @@ const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
 const USER = GLOBAL ? resolveUser() : null
 function resolveUser() {
   const columns = 'id, username, display_name AS displayName, is_admin AS admin'
+  if (PERSONAL) {
+    const session = db.prepare('SELECT user_id FROM conversations WHERE id = ? AND project_id IS NULL').get(CURRENT_CONVERSATION)
+    const user = session && db.prepare(`SELECT ${columns} FROM users WHERE id = ?`).get(session.user_id)
+    if (!user) { log('Personal session identity is missing or invalid'); process.exit(1) }
+    return user
+  }
   if (USER_NAME) {
     const row = db.prepare(`SELECT ${columns} FROM users WHERE username = ?`).get(USER_NAME)
     if (!row) {
@@ -941,6 +955,38 @@ const LIST_PROJECTS = {
   inputSchema: { type: 'object', properties: {} },
 }
 
+// Project creation fields mirror createProjectBodySchema; the daemon validates them again.
+const PROJECT_CREATE_PROPERTIES = {
+  name: { type: 'string', description: 'Project name.' },
+  parentDir: { type: 'string', description: 'Existing absolute parent directory for a new folder.' },
+  directory: { type: 'string', description: 'Name of the new folder inside parentDir.' },
+  workspacePath: { type: 'string', description: 'Alternatively, register this existing absolute directory.' },
+  visibility: { type: 'string', enum: ['private', 'shared'], default: 'private' },
+}
+const PERSONAL_TOOLS = [
+  { name: 'create_project', description: 'Create a Sillage project for this account, in a new folder or an existing directory. For continuing the current idea with selected context, use continue_in_project.', inputSchema: { type: 'object', properties: PROJECT_CREATE_PROPERTIES, required: ['name'] } },
+  { name: 'continue_in_project', description: 'Create a project and a linked session using an explicit brief and selected relative file paths from this discussion. The original discussion and personal memory stay private. Only selected files are copied, without overwriting existing files. The new session waits for the user or message_session.', inputSchema: { type: 'object', properties: { project: { type: 'object', properties: PROJECT_CREATE_PROPERTIES, required: ['name'] }, brief: { type: 'string', maxLength: 40000 }, files: { type: 'array', items: { type: 'string' }, maxItems: 100 } }, required: ['project', 'brief'] } },
+  { name: 'delete_project', description: 'Delete a project owned by this account from Sillage, including its conversations and board. Its disk workspace is preserved. Use an exact project name or ID; resolve ambiguous requests before deleting.', annotations: { destructiveHint: true, readOnlyHint: false }, inputSchema: { type: 'object', properties: { project: { type: 'string' } }, required: ['project'] } },
+  { name: 'find_files', description: 'Find filenames in accessible Sillage project folders; optionally target one project. Returns absolute directory and relative file paths. To search elsewhere, use native CLI tools subject to their permissions and the user request.', annotations: { readOnlyHint: true }, inputSchema: { type: 'object', properties: { query: { type: 'string', minLength: 2 }, project: { type: 'string' } }, required: ['query'] } },
+]
+const PERSONAL_DEFAULT_TOOLS = new Set(['rename_session', 'search_history', 'read_conversation', 'list_sessions', 'read_memory', 'write_memory', 'delete_memory', 'create_project', 'continue_in_project', 'find_files'])
+
+function personalTools() {
+  return [
+    ...globalTools().map(tool => {
+      if (!PERSONAL_DEFAULT_TOOLS.has(tool.name)) return tool
+      const required = (tool.inputSchema.required ?? []).filter(key => key !== 'project')
+      const memory = MEMORY_TOOLS.has(tool.name)
+      return { ...tool,
+        description: memory ? `${tool.description} Without project, this is the account's shared personal memory. Changes are visible and editable in Sillage.` : `${tool.description} Omit project to include your personal discussions and accessible projects.`,
+        inputSchema: { ...tool.inputSchema, required },
+      }
+    }),
+    TOOLS.find(tool => tool.name === 'rename_session'),
+    ...PERSONAL_TOOLS,
+  ]
+}
+
 const SESSION_ONLY_TOOLS = new Set([
   'rename_session',
   'send_session_message',
@@ -997,9 +1043,14 @@ function globalTools() {
 /** Global call project set in `PROJECT_ID` and `MEMORY_DIR`, or rejection returned unchanged. Resolve by ID, exact name, then unique approximate name; guessing between two would write to the wrong project. */
 function selectProject(name, args) {
   if (name === 'list_projects') return null
+  if (PERSONAL && (['rename_session', 'create_project', 'continue_in_project'].includes(name) || (PERSONAL_DEFAULT_TOOLS.has(name) && !args?.project))) {
+    PROJECT_ID = ''
+    MEMORY_DIR = join(MEMORY_ROOT, 'users', USER.id)
+    return null
+  }
   const wanted = typeof args?.project === 'string' ? args.project.trim() : ''
   if (!wanted) {
-    if (name === 'count_active_sessions' || (PROJECT_OPTIONAL_TOOLS.has(name) && args?.scope === 'global')) {
+    if (name === 'count_active_sessions' || (PROJECT_OPTIONAL_TOOLS.has(name) && (args?.scope === 'global' || (PERSONAL && args?.scope !== 'project')))) {
       PROJECT_ID = ''
       MEMORY_DIR = ''
       return null
@@ -1076,7 +1127,15 @@ function toMatchQuery(input) {
 }
 
 /** Project conversations with matching messages. Retain only each conversation's highest-ranked message because agents seek conversations to open, not isolated messages; overfetch SQL results then trim. Read server-maintained `search_messages` (`apps/server/src/search/search-index.ts`), a derived index rather than authority, repairable with `pnpm search:reindex`. */
+/** Bound visibility in SQL before selecting transcripts or search excerpts. */
+function conversationScope(alias = 'c') {
+  return PERSONAL && !PROJECT_ID
+    ? { sql: `((${alias}.project_id IS NULL AND ${alias}.user_id = ?) OR ${alias}.project_id IN (SELECT id FROM projects WHERE owner_id = ? OR visibility = 'shared'))`, args: [USER.id, USER.id] }
+    : { sql: `${alias}.project_id = ?`, args: [PROJECT_ID] }
+}
+
 function searchHistory(query, limit) {
+  const scope = conversationScope()
   const match = toMatchQuery(query)
   if (!match) return []
 
@@ -1091,12 +1150,12 @@ function searchHistory(query, limit) {
        FROM search_messages AS m
        JOIN conversations AS c ON c.id = m.conversation_id
        WHERE search_messages MATCH ?
-         AND c.project_id = ?
+         AND ${scope.sql}
          AND c.id != ?
        ORDER BY bm25(search_messages)
        LIMIT ?`,
     )
-    .all(match, PROJECT_ID, CURRENT_CONVERSATION, limit * 5)
+    .all(match, ...scope.args, CURRENT_CONVERSATION, limit * 5)
 
   const best = new Map()
   for (const row of rows) {
@@ -1108,14 +1167,15 @@ function searchHistory(query, limit) {
 
 /** Conversation messages excluding tools. Match search extraction: same text blocks and exclusion of subagent messages belonging to side panels. Check `project_id` here as well as during search because agents can fabricate IDs. */
 function readConversation(id) {
+  const scope = conversationScope()
   id = id.replace(/^session:/i, '')
   const conversation = db
     .prepare(
-      `SELECT id, title, agent, created_at AS createdAt
-       FROM conversations
-       WHERE id = ? AND project_id = ?`,
+      `SELECT c.id, c.title, c.agent, c.created_at AS createdAt
+       FROM conversations AS c
+       WHERE c.id = ? AND ${scope.sql}`,
     )
-    .get(id, PROJECT_ID)
+    .get(id, ...scope.args)
   if (!conversation) return null
 
   const messages = db
@@ -1142,6 +1202,7 @@ const WORKING = `(c.status = 'running' OR c.background_count > 0 OR c.loop_count
 
 /** Working and recently seen project conversations. Include working conversations regardless of window: sessions started three hours ago but still running are precisely what must not be missed. The window limits only others. */
 function listSessions(withinMinutes) {
+  const scope = conversationScope()
   return db
     .prepare(
       `SELECT c.id AS id,
@@ -1152,18 +1213,19 @@ function listSessions(withinMinutes) {
               c.loop_count AS loops,
               c.updated_at AS updatedAt,
               w.name AS worktree,
-              coalesce(w.path, p.workspace_path) AS path
+              coalesce(w.path, p.workspace_path, d.path) AS path
        FROM conversations AS c
-       JOIN projects AS p ON p.id = c.project_id
+       LEFT JOIN projects AS p ON p.id = c.project_id
        LEFT JOIN worktrees AS w ON w.id = c.worktree_id
-       WHERE c.project_id = ?
+       LEFT JOIN personal_workspaces AS d ON d.id = c.workspace_id
+       WHERE ${scope.sql}
          AND c.id != ?
          AND c.archived_at IS NULL
          AND (${WORKING} OR c.updated_at >= ?)
        ORDER BY c.updated_at DESC
        LIMIT 50`,
     )
-    .all(PROJECT_ID, CURRENT_CONVERSATION, Date.now() - withinMinutes * 60_000)
+    .all(...scope.args, CURRENT_CONVERSATION, Date.now() - withinMinutes * 60_000)
 }
 
 /** Worktree branch and modified-file count, or null if git fails. Read disk at call time: journals cannot reliably describe current trees when sessions change branches beneath others. One call per distinct tree rather than session, so ten root sessions share one `git status`. */
@@ -1253,6 +1315,7 @@ function watch(target) {
 
 /** Current conversation worktree, or `undefined` when its identity is unknown. Compare only shared trees: identical relative paths in separate worktrees represent different disk files and cannot collide. */
 function currentWorktree() {
+  if (PERSONAL) return undefined
   const row = db
     .prepare(`SELECT worktree_id AS worktreeId FROM conversations WHERE id = ?`)
     .get(CURRENT_CONVERSATION)
@@ -1804,7 +1867,7 @@ function saveInstructions(projectId, transform, fixMode) {
 
 /** Requested scope or rejection returned unchanged. `writing` distinguishes globally readable sections, matching the interface. */
 function instructionsTarget(args, writing) {
-  const scope = args?.scope === 'global' ? 'global' : 'project'
+  const scope = args?.scope === 'global' || (PERSONAL && !PROJECT_ID) ? 'global' : 'project'
   if (scope === 'global') {
     if (writing && !(USER ? Boolean(USER.admin) : conversationOwnerIsAdmin())) {
       return {
@@ -2157,7 +2220,7 @@ async function requestDaemon(kind, payload) {
       `INSERT INTO agent_requests (id, project_id, conversation_id, user_id, kind, payload, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, PROJECT_ID, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify(payload), Date.now())
+    .run(id, PROJECT_ID || null, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify(payload), Date.now())
 
   const read = db.prepare('SELECT settled_at, result, is_error FROM agent_requests WHERE id = ?')
   const deadline = Date.now() + REQUEST_WAIT_MS[kind]
@@ -2310,6 +2373,10 @@ function missingTargetCard(args) {
 }
 
 async function callTool(name, args) {
+  if (PERSONAL && !db.prepare('SELECT id FROM conversations WHERE id = ? AND user_id = ? AND project_id IS NULL').get(CURRENT_CONVERSATION, USER.id)) return { ...text('The personal discussion no longer exists.'), isError: true }
+  if (PERSONAL && PERSONAL_TOOLS.some(tool => tool.name === name)) return requestDaemon(name, args ?? {})
+  if (PERSONAL && !PROJECT_ID && (name === 'write_memory' || name === 'delete_memory')) return requestDaemon(name === 'write_memory' ? 'write_personal_memory' : 'delete_personal_memory', args ?? {})
+
   if (name === 'list_projects') {
     return text(renderProjects(listProjects()))
   }
@@ -2727,7 +2794,7 @@ async function callTool(name, args) {
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `Project memory in ${MEMORY_DIR}:`,
+            `${PERSONAL && !PROJECT_ID ? 'Personal' : 'Project'} memory in ${MEMORY_DIR}:`,
             index ? `${MEMORY_INDEX}:\n\n${index.trim()}` : `No ${MEMORY_INDEX}.`,
             `Notes: ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'none'}.`,
           ].join('\n\n'),
@@ -2854,7 +2921,9 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     const decisions = decisionsAllowed()
     // Without memory directories (native project mode), memory tools have nothing
     // to act on: omit them instead of returning errors.
-    const tools = GLOBAL
+    const tools = PERSONAL
+      ? personalTools()
+      : GLOBAL
       ? globalTools()
       : TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name)))
     send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
@@ -2867,7 +2936,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       const args = msg.params?.arguments ?? {}
       let result
       try {
-        result = GLOBAL && SESSION_ONLY_TOOLS.has(name)
+        result = GLOBAL && SESSION_ONLY_TOOLS.has(name) && !(PERSONAL && name === 'rename_session')
           ? { ...text(`Tool ${name} is unavailable outside a session: no session identity or turn to receive messages.`), isError: true }
           : (GLOBAL && selectProject(name, args)) || (await callTool(name, args))
       } catch (err) {

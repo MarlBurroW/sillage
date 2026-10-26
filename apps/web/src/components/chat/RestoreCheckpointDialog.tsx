@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -54,7 +55,7 @@ export function RestoreCheckpointDialog({
         const branch = await forkConversation(conversationId, checkpoint.seq)
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
         onClose()
-        navigate(`/p/${branch.projectId}/c/${branch.id}`, { state: { draft: openerText } })
+        navigate(conversationPath(branch), { state: { draft: openerText } })
         return
       }
       onClose()

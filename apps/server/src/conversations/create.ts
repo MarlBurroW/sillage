@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { eq, min } from 'drizzle-orm'
+import { createPersonalWorkspace, personalWorkspace } from './personal-workspaces.js'
+import { and, eq, isNull, min } from 'drizzle-orm'
 import { conversationHandoffs, conversations, type ConversationRow, type Db } from '@sillage/db'
 import type { AgentConfig, AgentKind } from '@sillage/protocol'
 import type { OutgoingAttachment } from '../agents/types.js'
@@ -19,7 +20,9 @@ export function provisionalTitle(firstMessage: string | undefined): string {
 export interface CreateConversationInput {
   /** Explicit ID when the first message must reference it: webhook-created sessions receive the forge marker carrying their own identifier. */
   id?: string
-  projectId: string
+  projectId: string | null
+  workspaceId?: string | null
+  workspaceRoot?: string
   userId: string
   agent: AgentKind
   /** Already resolved: replace `CLI_DEFAULT` before writing. */
@@ -61,17 +64,26 @@ export async function createConversation(
   const [lowest] = db
     .select({ min: min(conversations.position) })
     .from(conversations)
-    .where(eq(conversations.projectId, input.projectId))
+    .where(input.projectId ? eq(conversations.projectId, input.projectId) : and(isNull(conversations.projectId), eq(conversations.userId, input.userId)))
     .all()
 
+  const title = input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text)
+  let workspaceId: string | null = null
+  if (input.projectId === null) {
+    if (input.worktreeId || input.cardId) throw new Error('Personal discussions cannot target a project worktree or card.')
+    if (input.workspaceId) workspaceId = personalWorkspace(db, input.workspaceId, input.userId).id
+    else if (input.workspaceRoot) workspaceId = createPersonalWorkspace(db, input.workspaceRoot, input.userId, title).id
+    else throw new Error('A personal discussion requires its managed directory.')
+  }
   const now = Date.now()
   const row: ConversationRow = {
     id: input.id ?? randomUUID(),
     projectId: input.projectId,
+    workspaceId,
     worktreeId: input.worktreeId,
     cardId: input.cardId,
     userId: input.userId,
-    title: input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text),
+    title,
     titleSetByUser: input.title !== undefined,
     titleSetByAgent: false,
     agent: input.agent,

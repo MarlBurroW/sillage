@@ -4,10 +4,13 @@ import type { ConversationDto, ProjectDto } from '@sillage/protocol'
 import { useCurrentUser } from './session'
 
 const storageKey = (userId: string) => `sillage.lastContext:${userId}`
+const personalPattern = /^\/discussions\/([\w-]+)(?:\?[^#]*)?$/
 const contextPattern = /^\/p\/([\w-]+)\/(board|c\/([\w-]+))(?:\?[^#]*)?$/
 
 /** Old bookmarks must not reopen deleted or newly private projects. */
 function accessible(path: string, projects: ProjectDto[], conversations: ConversationDto[]): boolean {
+  const personal = personalPattern.exec(path)
+  if (personal) return personal[1] === 'new' || conversations.some(entry => entry.projectId === null && entry.id === personal[1])
   const match = contextPattern.exec(path)
   if (!match || !projects.some((project) => project.id === match[1])) return false
   return match[2] === 'board' || match[3] === 'new' || conversations.some(
@@ -32,7 +35,7 @@ export function useRememberContext(): void {
     const path = pathname + search
     // Remember on navigation: waiting for lists loses short visits. Check permissions and thread
     // existence on resume.
-    if (!user || !contextPattern.test(path)) return
+    if (!user || ['/discussions/memory', '/discussions/files'].includes(pathname) || (!contextPattern.test(path) && !personalPattern.test(path))) return
     try {
       localStorage.setItem(storageKey(user.id), path)
     } catch {

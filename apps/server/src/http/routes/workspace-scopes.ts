@@ -1,3 +1,4 @@
+import { personalWorkspace } from '../../conversations/personal-workspaces.js'
 import type { Db } from '@sillage/db'
 import { conversationWorkspace, projectWorkspace } from '../../workspace.js'
 
@@ -15,4 +16,5 @@ export interface WorkspaceScope {
 export const workspaceScopes: readonly WorkspaceScope[] = [
   { base: '/api/conversations/:id', cwdOf: conversationWorkspace },
   { base: '/api/projects/:id', cwdOf: projectWorkspace },
+  { base: '/api/personal-workspaces/:id', cwdOf: (db, id, userId) => personalWorkspace(db, id, userId).path },
 ]

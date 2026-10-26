@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import { EyeOff, History, PanelRight, SquareKanban, X } from 'lucide-react'
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -153,7 +154,7 @@ export function DraftConversationPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { data: conversations } = useAllConversations()
-  const createConversation = useCreateConversation(projectId ?? '')
+  const createConversation = useCreateConversation(projectId ?? null)
   const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
 
@@ -162,7 +163,7 @@ export function DraftConversationPage() {
   const requested = agentKindSchema.safeParse(params.get('agent'))
   const suggested: AgentKind = requested.success
     ? requested.data
-    : (conversations?.find((c) => c.projectId === projectId)?.agent ?? 'claude')
+    : (conversations?.find((c) => c.projectId === (projectId ?? null))?.agent ?? 'claude')
 
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
@@ -207,7 +208,7 @@ export function DraftConversationPage() {
   // this is an initial value like the CLI, and the badge can be removed.
   const [detached, setDetached] = useState(false)
   const { data: cards } = useCards(projectId)
-  const requestedCard = params.get('card')
+  const requestedCard = projectId ? params.get('card') : null
   const card = detached ? undefined : cards?.find((entry) => entry.id === requestedCard)
   /**
    * The composer reads initial text only at mount. Rendering before the card is known would
@@ -222,7 +223,7 @@ export function DraftConversationPage() {
   const cardWorktree = card?.conversations.findLast((session) => session.worktreeId)?.worktreeId
   const [worktreeId, setWorktreeId] = useState<string | null>(null)
   const [worktreeTouched, setWorktreeTouched] = useState(false)
-  const effectiveWorktreeId = worktreeTouched ? worktreeId : (cardWorktree ?? worktreeId)
+  const effectiveWorktreeId = projectId ? worktreeTouched ? worktreeId : (cardWorktree ?? worktreeId) : null
 
   // Project preset first, then account defaults: project-specific MCP servers and
   // extra directories describe that project more precisely than universal account
@@ -270,7 +271,7 @@ export function DraftConversationPage() {
 
   const importAndOpen = async (sessionId: string) => {
     const created = await importSession.mutateAsync(sessionId)
-    navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
+    navigate(conversationPath(created), { replace: true })
   }
 
   // Drop handling follows composer state: without it (card loading) or without a CLI,
@@ -283,8 +284,6 @@ export function DraftConversationPage() {
     mentions: string[],
     skills: string[],
   ) => {
-    if (!projectId) return
-
     const created = await createConversation.mutateAsync({
       agent,
       config: effective,
@@ -298,7 +297,7 @@ export function DraftConversationPage() {
 
     // `replace`: going back must not return to a draft that no longer
     // has a purpose.
-    navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
+    navigate(conversationPath(created), { replace: true })
   }
 
   return (
@@ -328,10 +327,10 @@ export function DraftConversationPage() {
       >
         <MobileNavigationButton />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{t('draft.title')}</p>
+          <p className="truncate text-sm font-medium">{t(projectId ? 'draft.title' : 'discussions.new')}</p>
           <div className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
             <AgentIcon agent={agent} size={11} />
-            <span>{project?.name ?? AGENT_LABELS[agent]}</span>
+            <span>{project?.name ?? t('discussions.personal')}</span>
           </div>
         </div>
         {/*
@@ -368,8 +367,8 @@ export function DraftConversationPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex sg-conversation-width flex-col gap-4 px-4 py-6 md:py-10">
           <div className="mb-2 flex flex-col gap-1">
-            <h1 className="text-xl font-semibold tracking-tight">{t('draft.title')}</h1>
-            <p className="text-sm text-ink-faint">{t('draft.subtitle')}</p>
+            <h1 className="text-xl font-semibold tracking-tight">{t(projectId ? 'draft.title' : 'discussions.new')}</h1>
+            <p className="text-sm text-ink-faint">{t(projectId ? 'draft.subtitle' : 'discussions.description')}</p>
           </div>
 
           {/* Native radio buttons: compact selection with arrow-key navigation. */}
@@ -501,7 +500,7 @@ export function DraftConversationPage() {
               onSend={send}
               onInterrupt={() => {}}
               onConfigChange={setConfig}
-              projectId={projectId}
+              projectId={projectId ?? null}
               worktreeId={effectiveWorktreeId}
             />
           )}

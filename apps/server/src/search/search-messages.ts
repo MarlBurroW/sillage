@@ -22,7 +22,7 @@ function toMatchQuery(input: string): string {
 
 interface Row {
   conversationId: string
-  projectId: string
+  projectId: string | null
   conversationTitle: string
   agent: AgentKind
   seq: number
@@ -52,10 +52,10 @@ export function searchMessages(
            snippet(search_messages, 0, ${SEARCH_MARK_OPEN}, ${SEARCH_MARK_CLOSE}, '...', 12) AS excerpt
     FROM search_messages AS m
     JOIN conversations AS c ON c.id = m.conversation_id
-    JOIN projects AS p ON p.id = c.project_id
+    LEFT JOIN projects AS p ON p.id = c.project_id
     WHERE search_messages MATCH ${match}
       AND c.archived_at IS NULL
-      AND (p.owner_id = ${userId} OR p.visibility = 'shared')
+      AND ((c.project_id IS NULL AND c.user_id = ${userId}) OR p.owner_id = ${userId} OR p.visibility = 'shared')
     ORDER BY bm25(search_messages)
     LIMIT ${limit}
   `)

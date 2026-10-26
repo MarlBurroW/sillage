@@ -25,10 +25,11 @@ export interface BuiltinMcpParams {
   enabled: boolean
   config: AgentConfig
   databasePath: string
-  projectId: string
+  projectId: string | null
   conversationId: string
   /** Project memory directory where Codex `write_memory` writes. */
   /** Null in native mode, omitting memory tools. */
+  memoryRoot?: string
   memoryDir: string | null
 }
 
@@ -57,7 +58,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
       // to anyone with machine shell access.
       env: {
         SILLAGE_MCP_DB: databasePath,
-        SILLAGE_MCP_PROJECT: projectId,
+        ...(projectId ? { SILLAGE_MCP_PROJECT: projectId } : { SILLAGE_MCP_PERSONAL: '1', ...(params.memoryRoot ? { SILLAGE_MCP_MEMORY_ROOT: params.memoryRoot } : {}) }),
         SILLAGE_MCP_CONVERSATION: conversationId,
         ...(memoryDir ? { SILLAGE_MCP_MEMORY: memoryDir } : {}),
       },

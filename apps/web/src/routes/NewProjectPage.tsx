@@ -6,11 +6,11 @@ import {
   Lock,
   Sparkles,
 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { slugifyProjectName } from '@sillage/protocol'
 import { ApiRequestError } from '../lib/api'
-import { useCreateProject } from '../lib/projects'
+import { useCreateProject, type CreateProjectInput } from '../lib/projects'
 import { useCapability } from '../lib/instance'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
@@ -123,7 +123,13 @@ export function NewProjectPage() {
  * Directory name follows project name until manually edited; parent directory comes from the
  * last creation. The common case therefore requires only one field.
  */
-function NewFolderForm() {
+export function NewFolderForm({ initialName = '', onCreate, children, pending = false, error: externalError }: {
+  initialName?: string
+  onCreate?: (input: CreateProjectInput) => void
+  children?: ReactNode
+  pending?: boolean
+  error?: string
+} = {}) {
   const t = useTranslate()
   const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
@@ -131,8 +137,8 @@ function NewFolderForm() {
   const { data: settings } = useUserSettings()
   const visibilityOptions = useVisibilityOptions()
 
-  const [name, setName] = useState('')
-  const [directory, setDirectory] = useState('')
+  const [name, setName] = useState(initialName)
+  const [directory, setDirectory] = useState(slugifyProjectName(initialName))
   const [parentDir, setParentDir] = useState('')
   const [visibility, setVisibility] = useState<Visibility>('private')
   const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
@@ -150,15 +156,15 @@ function NewFolderForm() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    createProject.mutate(
-      {
+    const input = {
         name: name.trim(),
         parentDir,
         directory: directory.trim(),
         visibility,
         ...instructionsModeField(instructionsMode),
-      },
-      {
+      }
+    if (onCreate) return onCreate(input)
+    createProject.mutate(input, {
         onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
       },
     )
@@ -204,8 +210,9 @@ function NewFolderForm() {
         />
       ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
-      {error ? <Banner>{error}</Banner> : null}
-      <Button type="submit" disabled={createProject.isPending} className="self-start">
+      {children}
+      {externalError || error ? <Banner>{externalError ?? error}</Banner> : null}
+      <Button type="submit" disabled={pending || createProject.isPending} className="self-start">
         {createProject.isPending ? t('projects.create.pending') : t('projects.create.submit')}
       </Button>
     </form>

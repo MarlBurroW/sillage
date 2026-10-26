@@ -1,5 +1,8 @@
+import { continueInProject } from '../../conversations/continue-in-project.js'
+import { join } from 'node:path'
+import { readableConversation, readableConversationFilter } from '../../conversations/access.js'
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNull, min, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, min, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   cards,
@@ -167,20 +170,7 @@ export function registerConversationRoutes(
       .get() !== undefined
 
   /** Read: project owner or shared project. Write: conversation owner. */
-  const loadReadable = async (conversationId: string, userId: string) => {
-    const row = ctx.db
-      .select({ conversation: conversations, ownerId: projects.ownerId, visibility: projects.visibility })
-      .from(conversations)
-      .innerJoin(projects, eq(projects.id, conversations.projectId))
-      .where(eq(conversations.id, conversationId))
-      .get()
-
-    if (!row) throw notFound('conversation_not_found', 'Conversation not found.')
-    if (row.ownerId !== userId && row.visibility !== 'shared') {
-      throw notFound('conversation_not_found', 'Conversation not found.')
-    }
-    return row.conversation
-  }
+  const loadReadable = async (conversationId: string, userId: string) => readableConversation(ctx.db, conversationId, userId)
 
   const loadWritable = async (conversationId: string, userId: string) => {
     const conversation = await loadReadable(conversationId, userId)
@@ -208,7 +198,7 @@ export function registerConversationRoutes(
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
-      .innerJoin(projects, eq(projects.id, conversations.projectId))
+      .leftJoin(projects, eq(projects.id, conversations.projectId))
       .leftJoin(
         conversationReads,
         and(
@@ -226,7 +216,7 @@ export function registerConversationRoutes(
       // Include archived conversations: the sidebar places them in its collapsed section.
       // Separate queries would add a round trip on every expansion and require reloading
       // both lists to see unarchiving.
-      .where(or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')))
+      .where(readableConversationFilter(user.id))
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
@@ -299,7 +289,7 @@ export function registerConversationRoutes(
     )
   })
 
-  app.post('/api/projects/:id/conversations', async (request, reply) => {
+  for (const endpoint of ['/api/projects/:id/conversations', '/api/discussions']) app.post(endpoint, async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = createConversationBodySchema.parse(request.body)
@@ -308,14 +298,14 @@ export function registerConversationRoutes(
       throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
     }
 
-    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
-    if (!project) throw notFound('project_not_found', 'Project not found.')
-    if (project.ownerId !== user.id && project.visibility !== 'shared') {
-      throw notFound('project_not_found', 'Project not found.')
+    if (id) {
+      const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
+      if (!project || (project.ownerId !== user.id && project.visibility !== 'shared')) throw notFound('project_not_found', 'Project not found.')
+      if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
+      if (body.cardId) assertCardInProject(ctx, body.cardId, id)
+    } else if (body.worktreeId || body.cardId) {
+      throw badRequest('personal_project_target', 'Personal discussions cannot use a project worktree or card.')
     }
-
-    if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
-    if (body.cardId) assertCardInProject(ctx, body.cardId, id)
 
     // Resolve `CLI_DEFAULT` from CLI announcements before database writes:
     // conversations then retain explicit, stable settings.
@@ -323,7 +313,8 @@ export function registerConversationRoutes(
 
     const firstMessage = body.firstMessage
     const row = await createConversation(ctx.db, sessions, {
-      projectId: id,
+      projectId: id ?? null,
+      workspaceRoot: join(ctx.config.paths.data, 'discussions'),
       userId: user.id,
       agent: body.agent,
       config,
@@ -357,22 +348,21 @@ export function registerConversationRoutes(
   })
 
   /** Manual conversation order within a project. Clients send the complete intended list; rewriting positions together avoids gaps and ties caused by individual moves. */
-  app.post('/api/projects/:id/conversations/order', async (request) => {
+  for (const endpoint of ['/api/projects/:id/conversations/order', '/api/discussions/order']) app.post(endpoint, async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = reorderConversationsBodySchema.parse(request.body)
 
-    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
-    if (!project) throw notFound('project_not_found', 'Project not found.')
-    if (project.ownerId !== user.id && project.visibility !== 'shared') {
-      throw notFound('project_not_found', 'Project not found.')
+    if (id) {
+      const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
+      if (!project || (project.ownerId !== user.id && project.visibility !== 'shared')) throw notFound('project_not_found', 'Project not found.')
     }
 
     const known = new Set(
       ctx.db
         .select({ id: conversations.id })
         .from(conversations)
-        .where(eq(conversations.projectId, id))
+        .where(id ? eq(conversations.projectId, id) : and(isNull(conversations.projectId), eq(conversations.userId, user.id)))
         .all()
         .map((row) => row.id),
     )
@@ -400,6 +390,13 @@ export function registerConversationRoutes(
   })
 
   /** Forks a conversation at a point in its history. Source read access suffices: forking shared conversations is a read, and forks belong to their creator. Order matters: fork the native session first, the only step susceptible to external failures, so failure leaves nothing in the database. */
+  app.post('/api/conversations/:id/project', async (request, reply) => {
+    const user = requireUser(request)
+    const source = await loadWritable((request.params as { id: string }).id, user.id)
+    const result = await continueInProject(ctx, sessions, source, user.id, request.body)
+    return reply.status(201).send(conversationToDto(result.conversation, user.id, 0, null, false))
+  })
+
   app.post('/api/conversations/:id/fork', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -425,7 +422,7 @@ export function registerConversationRoutes(
     const [lowest] = ctx.db
       .select({ min: min(conversations.position) })
       .from(conversations)
-      .where(eq(conversations.projectId, source.projectId))
+      .where(source.projectId ? eq(conversations.projectId, source.projectId) : and(isNull(conversations.projectId), eq(conversations.userId, user.id)))
       .all()
 
     const now = Date.now()
@@ -513,6 +510,7 @@ export function registerConversationRoutes(
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
     const row = await createConversation(ctx.db, sessions, {
       projectId: source.projectId,
+      workspaceId: source.workspaceId,
       userId: user.id,
       agent: body.agent,
       config,
@@ -739,7 +737,10 @@ export function registerConversationRoutes(
     if (body.archived === true && conversation.archivedAt === null) void sessions.dropCheckpoints(id)
 
     if (body.cardId !== undefined) {
-      if (body.cardId) assertCardInProject(ctx, body.cardId, conversation.projectId)
+      if (body.cardId) {
+        if (!conversation.projectId) throw badRequest('personal_project_target', 'Personal discussions cannot be attached to a project card.')
+        assertCardInProject(ctx, body.cardId, conversation.projectId)
+      }
       patch.cardId = body.cardId
       // Attaching later does not advance the card: the action says this session already
       // worked on this task, rather than launching anything.
@@ -767,6 +768,7 @@ export function registerConversationRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     await loadWritable(id, user.id)
+    await sessions.terminate(id)
     // Remove git snapshots first while the row still identifies the repository.
     await sessions.dropCheckpoints(id)
     // Remove files first: database cascades only delete rows.
@@ -1001,11 +1003,11 @@ export function canReadConversation(ctx: AppContext, conversationId: string, use
   const row = ctx.db
     .select({ ownerId: projects.ownerId, visibility: projects.visibility })
     .from(conversations)
-    .innerJoin(projects, eq(projects.id, conversations.projectId))
+    .leftJoin(projects, eq(projects.id, conversations.projectId))
     .where(
       and(
         eq(conversations.id, conversationId),
-        or(eq(projects.ownerId, userId), eq(projects.visibility, 'shared')),
+        readableConversationFilter(userId),
       ),
     )
     .get()

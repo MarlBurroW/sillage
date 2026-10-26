@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -106,7 +107,7 @@ export function HandoffDialog({
       })
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       onOpenChange(false)
-      navigate(`/p/${created.projectId}/c/${created.id}`)
+      navigate(conversationPath(created))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('conversation.handoff.error'))
     } finally {

@@ -38,8 +38,8 @@ export class SkillLibraryLayout {
   }
 
   /** Plugin roots delivered to conversations: global then project. Create them including empty `skills/` directories on every call. Probing showed plugins launched without `skills/` never see subsequently added skills, even after `reloadSkills()`. Empty scopes must exist at launch so skills created during sessions are discovered. */
-  rootsFor(projectId: string): string[] {
-    return [this.ensureScope('global', null), this.ensureScope('project', projectId)]
+  rootsFor(projectId: string | null): string[] {
+    return [this.ensureScope('global', null), ...(projectId ? [this.ensureScope('project', projectId)] : [])]
   }
 
   /** Creates missing scope roots and returns them. */

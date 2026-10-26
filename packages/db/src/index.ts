@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import Database from 'better-sqlite3'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
+import { sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import * as schema from './schema.js'
 
@@ -50,5 +51,15 @@ export function openDatabase(file: string): { db: Db; sqlite: SqliteHandle } {
 }
 
 export function runMigrations(db: Db, migrationsFolder: string): void {
-  migrate(db, { migrationsFolder })
+  // SQLite ignores foreign_keys changes inside a transaction. Drizzle rebuilds tables
+  // in its migration transaction; disabling beforehand prevents DROP from cascading into journals.
+  const version = db.all<{ schema_version: number }>(sql`PRAGMA schema_version`)[0]?.schema_version
+  const enabled = db.all<{ foreign_keys: number }>(sql`PRAGMA foreign_keys`)[0]?.foreign_keys === 1
+  if (enabled) db.run(sql`PRAGMA foreign_keys = OFF`)
+  try {
+    migrate(db, { migrationsFolder })
+  } finally {
+    if (enabled) db.run(sql`PRAGMA foreign_keys = ON`)
+  }
+  if (version !== db.all<{ schema_version: number }>(sql`PRAGMA schema_version`)[0]?.schema_version && db.all(sql`PRAGMA foreign_key_check`).length) throw new Error('Foreign key violations after migration.')
 }

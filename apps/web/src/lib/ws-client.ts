@@ -9,7 +9,7 @@ import {
   type SillageEvent,
   type InAppNotification,
 } from '@sillage/protocol'
-import { decodeScope, projectScope, type WorkspaceScope } from './workspace-scope'
+import { decodeScope, personalWorkspaceScope, projectScope, type WorkspaceScope } from './workspace-scope'
 
 export interface StreamListener {
   onEvent(seq: number, ts: number, event: SillageEvent): void
@@ -347,7 +347,7 @@ class WsClient {
     // Before subscriber filtering: the explorer watches a conversation without a thread log
     // subscription, since the panel is readable before a session starts.
     if (message.t === 'tree-changed') {
-      const scope = message.scope === 'project' ? projectScope(message.id) : message.id
+      const scope = message.scope === 'project' ? projectScope(message.id) : message.scope === 'personal' ? personalWorkspaceScope(message.id) : message.id
       for (const listener of this.treeListeners) listener(scope, message.path)
       return
     }

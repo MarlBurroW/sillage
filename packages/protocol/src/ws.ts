@@ -31,7 +31,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
      * The explorer also works in project view without a conversation: watch the project
      * workspace rather than a thread's directory.
      */
-    scope: z.enum(['conversation', 'project']),
+    scope: z.enum(['conversation', 'project', 'personal']),
     id: z.string(),
     // Bounded because each directory consumes an inotify watcher, a resource counted
     // per user on the host machine.
@@ -138,7 +138,7 @@ export type ServerMessage =
    * Catches changes missed by end-of-turn refresh: panel terminals, external editors, or
    * another conversation using the same worktree.
    */
-  | { t: 'tree-changed'; scope: 'conversation' | 'project'; id: string; path: string }
+  | { t: 'tree-changed'; scope: 'conversation' | 'project' | 'personal'; id: string; path: string }
   /**
    * Lag exceeds CATCHUP_THRESHOLD: the client must reload through paginated REST instead of
    * receiving socket deltas.

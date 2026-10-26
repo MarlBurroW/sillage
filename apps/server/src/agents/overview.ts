@@ -141,11 +141,11 @@ function forgeMarkerReminder(db: Db, input: OverviewInput): string | null {
 }
 
 /** A session-specific instruction reaches every CLI through the same startup context. */
-function sessionTitleReminder(db: Db, input: OverviewInput): string | null {
+export function sessionTitleReminder(db: Db, input: { projectId: string | null; conversationId: string; sillageMcp: boolean }): string | null {
   if (!input.sillageMcp) return null
   const current = db.select({ title: conversations.title, user: conversations.titleSetByUser, agent: conversations.titleSetByAgent })
     .from(conversations)
-    .where(and(eq(conversations.id, input.conversationId), eq(conversations.projectId, input.projectId)))
+    .where(and(eq(conversations.id, input.conversationId), input.projectId ? eq(conversations.projectId, input.projectId) : isNull(conversations.projectId)))
     .get()
   if (!current || current.user) return null
   if (current.agent) {

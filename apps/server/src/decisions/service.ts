@@ -123,7 +123,7 @@ export class DecisionService {
 
   async request(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
     const source = this.sourceOf(requester)
-    if (!source) {
+    if (!source || !requester.projectId) {
       throw new DecisionRefusal(
         'This tool is only for autonomous sessions (scheduled tasks, automations, board maintenance). A person is reading this thread: ask your question in your reply.',
       )

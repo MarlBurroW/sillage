@@ -1,3 +1,8 @@
+/** Route shared by UI, notifications and agent links; personal sessions have no project segment. */
+export function conversationPath(session: { id: string; projectId: string | null }): string {
+  return session.projectId ? `/p/${session.projectId}/c/${session.id}` : `/discussions/${session.id}`
+}
+
 /** Stable across renames, archives, and Server/Desktop addresses. */
 export function sessionReference(id: string): string {
   return `session:${id}`
@@ -19,20 +24,22 @@ export interface SessionReferenceRange {
  * to local sessions. Callers supply the current origin when accepting copied browser addresses.
  */
 export function sessionReferenceRanges(text: string, origin?: string): SessionReferenceRange[] {
-  const pattern = new RegExp(`https?://[^\\s<>"\`]+|/p/${UUID}/c/${UUID}(?:[?#][^\\s<>"\`]*)?|session:${UUID}|${UUID}`, 'gi')
+  const pattern = new RegExp(`https?://[^\\s<>"\`]+|/p/${UUID}/c/${UUID}(?:[?#][^\\s<>"\`]*)?|/discussions/${UUID}(?:[?#][^\\s<>"\`]*)?|session:${UUID}|${UUID}`, 'gi')
   const ranges: SessionReferenceRange[] = []
   for (const match of text.matchAll(pattern)) {
     const start = match.index
     const value = match[0]
     if (start > 0 && /[\w/:-]/.test(text[start - 1]!)) continue
-    if (value.startsWith('/p/') && /[\w/-]/.test(text[start + value.length] ?? '')) continue
-    if (/^https?:/i.test(value) || value.startsWith('/p/')) {
+    if ((value.startsWith('/p/') || value.startsWith('/discussions/')) && /[\w/-]/.test(text[start + value.length] ?? '')) continue
+    if (/^https?:/i.test(value) || (value.startsWith('/p/') || value.startsWith('/discussions/'))) {
       const clean = value.replace(/[),.;!?]+$/, '')
       const address = /^(https?:\/\/[^/?#]+)(\/[^?#]*)?(?:[?#].*)?$/i.exec(clean)
       const normalizeOrigin = (value: string) => value.toLowerCase().replace(/\/+$/, '').replace(/^(https:.*):443$/, '$1').replace(/^(http:.*):80$/, '$1')
       if (address && (!origin || normalizeOrigin(address[1]!) !== normalizeOrigin(origin))) continue
       const pathname = address ? address[2] : clean.split(/[?#]/)[0]
       const route = new RegExp(`^/p/(${UUID})/c/(${UUID})/?$`, 'i').exec(pathname ?? '')
+      const personal = new RegExp(`^/discussions/(${UUID})/?$`, 'i').exec(pathname ?? '')
+      if (personal) ranges.push({ start, end: start + clean.length, id: personal[1]!.toLowerCase(), explicit: true })
       if (route) ranges.push({ start, end: start + clean.length, id: route[2]!.toLowerCase(), projectId: route[1]!.toLowerCase(), explicit: true })
       continue
     }

@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import type { ConversationRow } from '@sillage/db'
 import {
   parseAgentConfig,
@@ -142,7 +143,7 @@ export function taskToSummaryDto(row: ConversationRow, baseUrl: string): TaskSum
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
     },
-    url: `${baseUrl}/p/${row.projectId}/c/${row.id}`,
+    url: `${baseUrl}${conversationPath(row)}`,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }

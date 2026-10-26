@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import { CircleHelp, ShieldQuestion, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -79,7 +80,7 @@ function ToastCard({ toast }: { toast: Toast }) {
             onClick={() => {
               dismissToast(toast.id)
               if (notification.kind === 'decision') openDecision(notification.decisionId)
-              else navigate(`/p/${notification.projectId}/c/${notification.conversationId}`)
+              else navigate(conversationPath({ projectId: notification.projectId, id: notification.conversationId }))
             }}
           >
             {t(decision ? 'toast.decision.answer' : 'toast.cli.open')}

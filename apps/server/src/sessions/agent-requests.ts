@@ -1,3 +1,11 @@
+import { continueInProject } from '../conversations/continue-in-project.js'
+import { personalMemoryDir, writePersonalMemory } from '../memory/personal.js'
+import { createProject } from '../projects/create.js'
+import { deleteProject } from '../projects/delete.js'
+import { searchEntries } from '../workspace.js'
+import type { AttachmentStore } from '../attachments/store.js'
+import type { TerminalManager } from '../terminals/terminal-manager.js'
+import { memoryFileSchema, writeMemoryFileBodySchema, conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
 import { Cron } from 'croner'
 import { and, asc, count, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm'
@@ -128,7 +136,7 @@ const WORKTREE_STATE_WORDS = {
 } as const
 
 /** Requester is a session or an account without sessions. Global MCP local clients (`docs/mcp.md`) supply `user_id` instead of conversations, with empty `id`, no worktree/task ancestry and no session-specific launch chains, provenance notes or decisions. Use `Pick` rather than whole rows so types expose only fields actually read. */
-type Requester = Pick<ConversationRow, 'id' | 'projectId' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'>
+type Requester = Pick<ConversationRow, 'id' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'> & { projectId: string }
 
 interface StartSessionPayload {
   prompt?: unknown
@@ -161,6 +169,8 @@ export class AgentRequests {
     private readonly log?: EventLog,
     /** Worktree progress; absent means `list_worktrees` is rejected. */
     private readonly worktreeStatus?: WorktreeStatusService,
+    private readonly attachments?: AttachmentStore,
+    private readonly terminals?: TerminalManager,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -202,37 +212,71 @@ export class AgentRequests {
     try {
       const payload = JSON.parse(request.payload) as Record<string, unknown>
       const conversation = request.conversationId
-        ? this.ctx.db
-            .select()
-            .from(conversations)
-            .where(
-              and(
-                eq(conversations.id, request.conversationId),
-                eq(conversations.projectId, request.projectId),
-              ),
-            )
-            .get()
+        ? this.ctx.db.select().from(conversations).where(eq(conversations.id, request.conversationId)).get()
         : null
-      if (request.conversationId && !conversation) throw new Refusal('The requesting session no longer exists in this project.')
-      const requester: Requester = conversation ?? this.principal(request)
-      const project = this.ctx.db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, request.projectId))
-        .get()
-      if (!project) throw new Refusal('The project no longer exists.')
+      if (request.conversationId && !conversation) throw new Refusal('The requesting session no longer exists.')
+      if (conversation?.projectId && conversation.projectId !== request.projectId) throw new Refusal('The target must belong to the requesting project session.')
+      if (conversation && request.userId && request.userId !== conversation.userId) throw new Refusal('The request account does not match its session.')
+      const userId = conversation?.userId ?? request.userId
+      if (!userId || !this.ctx.db.select().from(users).where(eq(users.id, userId)).get()) throw new Refusal('The requesting account no longer exists.')
+
+      if (request.kind === 'rename_session') {
+        if (!conversation) throw new Refusal('This tool only renames your own session.')
+        const { title } = renameSessionBodySchema.parse(payload)
+        const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, conversation.id, title, 'agent')
+        this.settle(request.id, result === 'protected' ? 'The user chose the title; it is preserved.' : `Your session title: “${title}”.`, false)
+        return
+      }
+      if (request.kind === 'write_personal_memory' || request.kind === 'delete_personal_memory') {
+        if (!conversation || conversation.projectId !== null) throw new Refusal('Personal memory requires a personal discussion.')
+        const file = memoryFileSchema.parse(payload.file)
+        const content = request.kind === 'delete_personal_memory' ? null : writeMemoryFileBodySchema.parse(payload).content
+        await writePersonalMemory(this.ctx.db, personalMemoryDir(this.ctx.config.paths.memory, userId), userId, file, content, conversation.id)
+        this.settle(request.id, `Personal memory updated: ${file}. The change is visible and editable in Sillage.`, false)
+        return
+      }
+      if (request.kind === 'create_project' || request.kind === 'continue_in_project') {
+        if (!conversation || conversation.projectId !== null) throw new Refusal('This action requires a personal discussion.')
+        if (request.kind === 'continue_in_project') {
+          const result = await continueInProject(this.ctx, this.sessions, conversation, userId, payload)
+          this.settle(request.id, `Project “${result.project.name}” created at ${result.project.workspacePath}. Continue in session:${result.conversation.id} (${conversationPath(result.conversation)}). This discussion stays personal.`, false, result.conversation.id)
+        } else {
+          const project = await createProject(this.ctx, userId, payload)
+          this.settle(request.id, `Project “${project.name}” created: ${project.id}, ${project.workspacePath}.`, false)
+        }
+        return
+      }
+      if (request.kind === 'find_files') {
+        if (!conversation || conversation.projectId !== null) throw new Refusal('This action requires a personal discussion.')
+        const query = typeof payload.query === 'string' ? payload.query.trim() : ''
+        if (query.length < 2) throw new Refusal('Provide at least two characters to search for.')
+        const accessible = this.ctx.db.select().from(projects).all().filter(project => (project.ownerId === userId || project.visibility === 'shared') && (!request.projectId || project.id === request.projectId))
+        const results = []
+        for (const project of accessible.slice(0, 30)) {
+          const found = await searchEntries(project.workspacePath, query)
+          results.push({ project: project.name, directory: project.workspacePath, ...found })
+        }
+        this.settle(request.id, JSON.stringify({ results, truncated: accessible.length > 30, hint: 'These are accessible Sillage project folders. Use native CLI file tools to search elsewhere as requested and permitted.' }), false)
+        return
+      }
+      if (!request.projectId) throw new Refusal('Select a target project for this action.')
+      const project = this.ctx.db.select().from(projects).where(eq(projects.id, request.projectId)).get()
+      if (!project || (project.ownerId !== userId && project.visibility !== 'shared')) throw new Refusal('The target project is unavailable to this account.')
+      const requester: Requester = conversation
+        ? { ...conversation, projectId: project.id, worktreeId: conversation.projectId === project.id ? conversation.worktreeId : null }
+        : this.principal(request, project.id)
+      if (request.kind === 'delete_project') {
+        if (!conversation || conversation.projectId !== null || !this.attachments || !this.terminals) throw new Refusal('Project deletion is unavailable here.')
+        // The project's cascade must not erase this request before the caller reads its result.
+        this.ctx.db.update(agentRequests).set({ projectId: null }).where(eq(agentRequests.id, request.id)).run()
+        await deleteProject(this.ctx, project.id, userId, this.attachments, this.terminals, this.sessions)
+        this.settle(request.id, `Project “${project.name}” removed from Sillage. Its directory is preserved: ${project.workspacePath}.`, false)
+        return
+      }
 
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request.id, text, false, launchedId)
-      } else if (request.kind === 'rename_session') {
-        if (!conversation) throw new Refusal('This tool only renames your own session, not one selected externally.')
-        const { title } = renameSessionBodySchema.parse(payload)
-        const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, conversation.id, title, 'agent')
-        if (result === 'missing') throw new Refusal('This session no longer exists.')
-        this.settle(request.id, result === 'protected'
-          ? 'The user chose the title: it is preserved. Do not retry renaming it.'
-          : `Your session title: “${title}”.`, false)
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'request_decision' || request.kind === 'withdraw_decision') {
@@ -280,13 +324,13 @@ export class AgentRequests {
   }
 
   /** Sessionless requester account named in the request. Default CLI is Claude like new interface projects; global clients specify `agent` for another, as descriptions explain. */
-  private principal(request: AgentRequestRow): Requester {
+  private principal(request: AgentRequestRow, projectId: string): Requester {
     if (!request.userId) throw new Refusal('The request has no session or account: Sillage does not know whom to act for.')
     const user = this.ctx.db.select().from(users).where(eq(users.id, request.userId)).get()
     if (!user) throw new Refusal('The account to act for no longer exists.')
     return {
       id: '',
-      projectId: request.projectId,
+      projectId,
       userId: user.id,
       agent: 'claude',
       worktreeId: null,

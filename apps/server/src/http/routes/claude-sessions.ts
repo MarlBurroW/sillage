@@ -138,6 +138,7 @@ export function registerClaudeSessionRoutes(
       id: randomUUID(),
       projectId: project.id,
       worktreeId: null,
+      workspaceId: null,
       // CLI-imported sessions do not originate from cards.
       cardId: null,
       userId: user.id,

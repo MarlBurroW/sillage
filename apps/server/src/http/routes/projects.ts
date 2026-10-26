@@ -1,3 +1,5 @@
+import { deleteProject } from '../../projects/delete.js'
+import type { SessionManager } from '../../sessions/session-manager.js'
 import { resolve } from 'node:path'
 import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -23,7 +25,6 @@ import type { CloneJobs } from '../../clone-jobs.js'
 import { searchFiles } from '../../files.js'
 import { credentialEnv, credentialHelperCommand } from '../../git-credential/helper.js'
 import { listBranches, readGitStatus } from '../../git.js'
-import { dropConversation } from '../../search/search-index.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -36,7 +37,6 @@ import {
   sniffProjectImage,
   writeProjectImage,
 } from '../../projects/image.js'
-import { SkillLibrary } from '../../skill-library/store.js'
 import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
 
 /** Users see projects they own or that are shared. Only owners can edit or delete them. */
@@ -59,6 +59,7 @@ export function registerProjectRoutes(
   attachments: AttachmentStore,
   cloneJobs: CloneJobs,
   terminals: TerminalManager,
+  sessions?: SessionManager,
 ): void {
   const loadVisibleProject = async (projectId: string, userId: string) => {
     const row = (
@@ -322,31 +323,7 @@ export function registerProjectRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
 
-    const project = await loadVisibleProject(id, user.id)
-    if (project.ownerId !== user.id) {
-      throw forbidden('project_delete_forbidden', 'Only the owner can delete this project.')
-    }
-
-    // Project conversations cascade on deletion, as do their attachments:
-    // remove their disk files first.
-    const owned = ctx.db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.projectId, id))
-      .all()
-    await attachments.removeForConversations(owned.map((row) => row.id))
-    const tickets = ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.projectId, id)).all()
-    await attachments.removeForCards(tickets.map((row) => row.id))
-    // The same applies to the search index, which SQL cascades cannot reach.
-    for (const row of owned) dropConversation(ctx.db, row.id)
-
-    // Never touch the disk workspace: Sillage references it but does not own it.
-    // Project shells run on its behalf, however, and must be closed.
-    terminals.closeForProject(id)
-    // Project skills do belong to Sillage. Remove them before the cascade deletes
-    // the rows needed to locate disabled skills.
-    new SkillLibrary(ctx.db, ctx.config.paths.skillLibrary).removeProject(id)
-    await ctx.db.delete(projects).where(eq(projects.id, id))
+    await deleteProject(ctx, id, user.id, attachments, terminals, sessions)
     return reply.status(204).send()
   })
 

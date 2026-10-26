@@ -1,3 +1,4 @@
+import { conversationPath } from '@sillage/protocol'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Bot, Play, RefreshCw, RotateCw, Server, Square, SquareTerminal, Unplug, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
@@ -167,7 +168,7 @@ function Attribution({ entry }: { entry: Attributed }) {
       {entry.conversationId ? (
         <>
           <span aria-hidden className="text-ink-faint">·</span>
-          <Link to={`/p/${entry.projectId}/c/${entry.conversationId}`} className="flex min-w-0 items-center gap-1 text-accent hover:underline">
+          <Link to={conversationPath({ projectId: entry.projectId, id: entry.conversationId })} className="flex min-w-0 items-center gap-1 text-accent hover:underline">
             <span className="truncate">{entry.conversationTitle || t('services.conversation')}</span><ArrowUpRight size={12} className="shrink-0" />
           </Link>
         </>

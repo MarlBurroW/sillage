@@ -19,7 +19,7 @@ const statusKey = (projectId: string) => ['worktree-status', projectId]
  * return stale data while recalculating (`fresh: false`); retry once shortly afterward for the next
  * snapshot.
  */
-export function useWorktreeStatuses(projectId: string | undefined) {
+export function useWorktreeStatuses(projectId: string | null | undefined) {
   return useQuery({
     queryKey: statusKey(projectId ?? ''),
     queryFn: () => api.get<WorktreeStatusListDto>(`/api/projects/${projectId}/worktrees/status`),
@@ -60,7 +60,7 @@ export function worktreeCounts(list: WorktreeStatusListDto | undefined): { pendi
   return { pending, cleanable }
 }
 
-export function useWorktrees(projectId: string | undefined) {
+export function useWorktrees(projectId: string | null | undefined) {
   return useQuery({
     queryKey: worktreesKey(projectId ?? ''),
     queryFn: () => api.get<WorktreeDto[]>(`/api/projects/${projectId}/worktrees`),
@@ -81,7 +81,7 @@ export function useCreateWorktree(projectId: string) {
   })
 }
 
-export function useBranches(projectId: string | undefined) {
+export function useBranches(projectId: string | null | undefined) {
   return useQuery({
     queryKey: ['branches', projectId],
     queryFn: () =>

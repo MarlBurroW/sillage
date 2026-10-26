@@ -89,10 +89,10 @@ export async function deleteMemoryFile(dir: string, file: string): Promise<void>
 }
 
 /** Memory supplied to Codex at session start: index and note read/write instructions. Claude loads its own index and needs none. Null without both an index and a write mechanism. */
-export function memoryAppendixForCodex(dir: string, sillageMcp: boolean): string | null {
+export function memoryAppendixForCodex(dir: string, sillageMcp: boolean, scope: 'project' | 'personal' = 'project', includeIndex = true): string | null {
   let index = ''
   try {
-    index = readFileSync(join(dir, MEMORY_INDEX_FILE), 'utf8').trim()
+    if (includeIndex) index = readFileSync(join(dir, MEMORY_INDEX_FILE), 'utf8').trim()
   } catch {
     // No index yet.
   }
@@ -102,12 +102,12 @@ export function memoryAppendixForCodex(dir: string, sillageMcp: boolean): string
   }
 
   const parts = [
-    `# Project memory\n\nNotes left by previous sessions across CLIs. They are in \`${dir}\`, one file per note: use \`cat\` to read those relevant to your task. Notes can become outdated; verify them before relying on them.`,
-    index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'Memory is empty.',
+    `# ${scope === 'personal' ? 'Personal' : 'Project'} memory\n\nNotes left by previous sessions across CLIs. They are in \`${dir}\`, one file per note: use \`cat\` to read those relevant to your task. Notes can become outdated; verify them before relying on them.`,
+    ...(includeIndex ? [index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'Memory is empty.'] : []),
   ]
   if (sillageMcp) {
     parts.push(
-      "To retain information useful to later sessions that the repository does not provide (a user preference, decision or pitfall), use the `sillage` server's `write_memory` tool: a Markdown file with frontmatter containing `name`, `description` and `type` (`user`, `feedback`, `project` or `reference`), followed by the information. Correct or remove false notes with `write_memory` and `delete_memory`. Rules the user sets for all agents belong in SILLAGE.md instead.",
+      "To retain information useful to later sessions that the repository does not provide (a user preference, decision or pitfall), use the `sillage` server's `write_memory` tool: a Markdown file with frontmatter containing `name`, `description` and `type` (`user`, `feedback`, `project` or `reference`), followed by the information. Correct or remove false notes with `write_memory` and `delete_memory`. Explicit rules the user sets for all agents belong in SILLAGE.md; personal preferences belong in memory.",
     )
   }
   return parts.join('\n\n')

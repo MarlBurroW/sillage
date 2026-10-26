@@ -77,7 +77,7 @@ export function SidePanel({
   canDock = false,
   workspaceName,
 }: {
-  projectId: string
+  projectId: string | null
   /** Absent in project views, leaving directory-oriented tabs only. */
   conversationId?: string
   /** Conversation CLI for actions supported by particular CLIs. */
@@ -105,7 +105,7 @@ export function SidePanel({
   const proposedActions = (allActions ?? []).filter(
     (action) => action.projectId === projectId && action.status === 'proposed',
   ).length
-  const scope = conversationId ?? projectScope(projectId)
+  const scope = conversationId ?? projectScope(projectId ?? '')
   const { data: projects } = useProjects()
   const projectName = projects?.find((project) => project.id === projectId)?.name
   const workspaceLabel = [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
@@ -113,7 +113,7 @@ export function SidePanel({
   // Tab selection survives view changes; project views fall back from session-only tabs to Files
   // rather than displaying nothing.
   const tab: PanelTab =
-    conversationId || !['history', 'agents', 'mcp'].includes(chosenTab) ? chosenTab : 'files'
+    !projectId && ['actions', 'terminals'].includes(chosenTab) ? 'files' : conversationId || !['history', 'agents', 'mcp'].includes(chosenTab) ? chosenTab : 'files'
   const treeOpen = usePanelTree()
   const selectedSubAgent = useSelectedSubAgent()
   /**
@@ -225,6 +225,7 @@ export function SidePanel({
               onSelect={() => setPanelTab('history')}
             />
           ) : null}
+          {projectId ? <>
           <Tab
             icon={<SquareTerminal size={20} />}
             label={t('panel.tab.terminals')}
@@ -239,6 +240,7 @@ export function SidePanel({
             active={tab === 'actions'}
             onSelect={() => setPanelTab('actions')}
           />
+          </> : null}
           {conversationId ? (
             <>
               <Tab
@@ -355,15 +357,15 @@ export function SidePanel({
         )}
       >
         <div className="min-h-0 min-w-0 flex-1">
-          <TerminalsPane
+          {projectId ? <TerminalsPane
             projectId={projectId}
             conversationId={conversationId}
             visible={tab === 'terminals'}
-          />
+          /> : null}
         </div>
       </div>
 
-      {tab === 'actions' ? <ActionsPane projectId={projectId} conversationId={conversationId} /> : null}
+      {tab === 'actions' && projectId ? <ActionsPane projectId={projectId} conversationId={conversationId} /> : null}
 
       {/*
        * Mount agents only when visible: no live content is retained, all comes from logs, and
