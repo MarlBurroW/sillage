@@ -242,7 +242,7 @@ export function SettingsLayout() {
   const wide = useMediaQuery('(min-width: 64rem)')
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-6 p-4 lg:flex-row lg:gap-8 lg:p-8">
+    <div className="flex h-full min-h-0 w-full flex-col gap-6 p-4 lg:flex-row lg:gap-8 lg:p-8">
       {/*
        * Scroll the menu independently so short pages stay short and long pages retain navigation.
        * On phones, show either the menu or its detail, as both cannot fit side by side.
@@ -329,7 +329,6 @@ export function SettingsLayout() {
       <div key={pathname} className={cx(
         'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain',
         onIndex && 'hidden lg:block',
-        !['/settings/apparence', '/settings/veille'].includes(pathname) && 'lg:max-w-lg',
       )}>
         {/*
          * On large screens, `/settings` without a section would show an empty column: select

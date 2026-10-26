@@ -20,6 +20,9 @@ export const createTaskBodySchema = z.object({
   prompt: z.string().min(1),
   /** Default: CLI chosen when creating the token. */
   agent: agentKindSchema.optional(),
+  /** Convenient aliases shared with start_session; take precedence over config fields. */
+  model: z.string().optional(),
+  effort: z.string().optional(),
   /**
    * Partial override in the target CLI's native vocabulary. Deliberately not unified: Claude
    * `effort` and Codex `reasoningEffort` accept different values, so a shared field would
@@ -328,6 +331,16 @@ export function mergeAgentConfig(
   const allowed = OVERRIDABLE_CONFIG_FIELDS[base.agent]
   const rejected = Object.keys(override).filter((field) => !allowed.includes(field))
   if (rejected.length > 0) return { config: base, rejected }
+
+  if (base.agent === 'claude') {
+    // A caller may lower a configured cap, never erase it or raise it.
+    for (const field of ['maxBudgetUsd', 'maxTurns'] as const) {
+      if (base[field] !== null && field in override &&
+        (typeof override[field] !== 'number' || (override[field] as number) > base[field])) {
+        return { config: base, rejected: [field] }
+      }
+    }
+  }
 
   const merged: Record<string, unknown> = { ...base }
   for (const field of allowed) {

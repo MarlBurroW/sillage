@@ -15,6 +15,7 @@ import {
   listApiTokens,
 } from '../../auth/api-tokens.js'
 import type { AppContext } from '../context.js'
+import { assertExecutionAllowed } from '../v1/execution-policy.js'
 import { badRequest, conflict, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
@@ -70,6 +71,11 @@ export function registerApiTokenRoutes(
     // the token then carries an explicit, stable configuration.
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
 
+    if (isPermissiveConfig(config) && !body.scopes.includes('tasks:autonomous')) {
+      throw badRequest('config_requires_autonomous', 'A configuration without guardrails requires the tasks:autonomous scope.')
+    }
+    assertExecutionAllowed(body.executionPolicy, config, false)
+
     const { row, secret } = createApiToken(ctx.db, {
       userId: user.id,
       label: body.label,
@@ -77,6 +83,7 @@ export function registerApiTokenRoutes(
       projectIds: body.projectIds,
       agent: body.agent,
       config,
+      executionPolicy: body.executionPolicy,
       expiresAt: body.expiresAt,
       webhookUrl: body.webhookUrl,
     })
@@ -91,16 +98,28 @@ export function registerApiTokenRoutes(
     return reply.status(201).send(payload)
   })
 
-  /** Revocation is the only modification allowed; see `updateApiTokenBodySchema`. */
+  /** Execution limits can be changed only by the cookie-authenticated owner. */
   app.patch('/api/tokens/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    updateApiTokenBodySchema.parse(request.body)
+    const body = updateApiTokenBodySchema.parse(request.body)
 
     const row = findApiToken(ctx.db, id, user.id)
     if (!row) throw notFound('token_not_found', 'Token not found.')
     if (row.revokedAt !== null) {
       throw conflict('token_revoked', 'This token is already revoked.')
+    }
+
+    if ('executionPolicy' in body) {
+      if (body.config.agent !== body.agent) throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
+      const config = await registry.adapter(body.agent).resolveDefaults(body.config)
+      if (isPermissiveConfig(config) && !(JSON.parse(row.scopes) as string[]).includes('tasks:autonomous')) {
+        throw badRequest('config_requires_autonomous', 'A configuration without guardrails requires the tasks:autonomous scope.')
+      }
+      assertExecutionAllowed(body.executionPolicy, config, false)
+      const changed = { agent: body.agent, config: JSON.stringify(config), executionPolicy: JSON.stringify(body.executionPolicy) }
+      ctx.db.update(apiTokens).set(changed).where(eq(apiTokens.id, id)).run()
+      return apiTokenToDto({ ...row, ...changed })
     }
 
     ctx.db.update(apiTokens).set({ revokedAt: Date.now() }).where(eq(apiTokens.id, id)).run()

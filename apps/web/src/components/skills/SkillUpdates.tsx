@@ -10,7 +10,7 @@ import { useSkillPermissions } from './permissions'
 import { UpdateDialog } from './UpdateDialog'
 
 /** Combine discovery, review, and application without leaving the library. */
-export function SkillUpdates({ skills }: { skills: LibrarySkillDto[] }) {
+export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySkillDto[]; showEmpty?: boolean }) {
   const t = useTranslate()
   const queryClient = useQueryClient()
   const permissions = useSkillPermissions()
@@ -76,7 +76,7 @@ export function SkillUpdates({ skills }: { skills: LibrarySkillDto[] }) {
     setBusy(null)
   }
 
-  if (linked.size === 0) return null
+  if (linked.size === 0) return showEmpty ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.updates.noLinked')}</p> : null
   return <section className="rounded-lg border border-line p-4" aria-label={t('skills.updates.title')}>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>

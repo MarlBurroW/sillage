@@ -1,6 +1,6 @@
 import type { ApiTokenRow, ProjectRow } from '@sillage/db'
 import {
-  isPermissiveConfig,
+  EFFORT_FIELD,
   mergeAgentConfig,
   readProjectDefaults,
   type AgentConfig,
@@ -10,6 +10,8 @@ import {
   type CreateTaskBody,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
+import { readExecutionPolicy } from '../../auth/api-tokens.js'
+import { assertAgentAllowed, assertTokenExecution } from './execution-policy.js'
 import { badRequest } from '../errors.js'
 
 /**
@@ -29,44 +31,66 @@ export async function resolveTaskConfig(
   modelsFor?: (config: AgentConfig) => Promise<AgentModelsDto>,
 ): Promise<{ agent: AgentKind; config: AgentConfig }> {
   const agent = body.agent ?? token.agent
+  const policy = readExecutionPolicy(token)
+  assertAgentAllowed(policy, agent)
   const base = baseConfigFor(agent, token, project, defaults)
 
+  let catalog: AgentModelsDto | undefined
+  try {
+    catalog = await (modelsFor ? modelsFor(base) : registry.adapter(agent).models())
+  } catch {
+    // Explicit policies still apply when a CLI catalog is unavailable.
+  }
+  const override = { ...body.config }
+  const effortField = EFFORT_FIELD[agent]
+  if (body.model !== undefined) override.model = body.model
+  if (body.effort !== undefined) override[effortField] = body.effort
+  const requestedModel = override.model
+  if (typeof requestedModel === 'string' && requestedModel) {
+    const exact = catalog?.models.find((entry) => entry.value.toLowerCase() === requestedModel.toLowerCase())
+    const named = catalog?.models.filter((entry) => entry.displayName.toLowerCase() === requestedModel.toLowerCase()) ?? []
+    const model = exact ?? (named.length === 1 ? named[0] : undefined)
+    const approvedCustomModel = policy?.agents.find((rule) => rule.agent === agent)?.models?.includes(requestedModel)
+    if (!model && catalog?.models.length && !approvedCustomModel) {
+      throw badRequest('model_unknown', 'Unknown model {model} for {agent}. Known: {known}.', {
+        model: requestedModel, agent, known: catalog.models.map((entry) => entry.value).join(', '),
+      })
+    }
+    if (model) override.model = model.value
+  }
+  // Resolve the model before normalizing "max": Codex's native enum calls it "xhigh".
+  const modelConfig = await registry.adapter(agent).resolveDefaults({ ...base, ...(typeof override.model === 'string' ? { model: override.model } : {}) })
+  const model = catalog?.models.find((entry) => entry.value === modelConfig.model)
+  const requestedEffort = override[effortField]
+  if (typeof requestedEffort === 'string' && requestedEffort && model) {
+    const efforts = model.efforts.map((entry) => entry.value)
+    const effort = requestedEffort === 'max' && !efforts.includes('max') ? efforts.at(-1) : requestedEffort
+    if (!effort || !efforts.includes(effort)) {
+      throw badRequest('effort_unknown', 'Unknown effort {effort} for {model}. Allowed: {allowed}.', {
+        effort: requestedEffort, model: modelConfig.model, allowed: efforts.join(', '),
+      })
+    }
+    override[effortField] = effort
+  } else if (requestedModel && model?.defaultEffort && !model.efforts.some((entry) => entry.value === (modelConfig as unknown as Record<string, unknown>)[effortField])) {
+    override[effortField] = model.defaultEffort
+  }
   let merged: AgentConfig
   let rejected: string[]
   try {
-    ;({ config: merged, rejected } = mergeAgentConfig(base, body.config))
+    ;({ config: merged, rejected } = mergeAgentConfig(modelConfig, override))
   } catch {
-    throw badRequest(
-      'config_invalid',
-      'The configuration override is not valid for {agent}. See GET /api/v1/agents.',
-      { agent },
-    )
+    throw badRequest('config_invalid', 'The configuration override is not valid for {agent}. See GET /api/v1/agents.', { agent })
   }
-
   if (rejected.length > 0) {
-    throw badRequest(
-      'config_field_locked',
-      'These settings are fixed by the token and cannot be set per task: {fields}.',
-      { fields: rejected.join(', ') },
-    )
+    throw badRequest('config_field_locked', 'These safeguard or budget settings cannot be overridden: {fields}. Model and effort may be selected within the token permissions.', { fields: rejected.join(', ') })
   }
-
-  if (typeof body.config?.model === 'string' && body.config.model.length > 0) {
-    await assertModelExists(registry, agent, body.config.model, modelsFor ? () => modelsFor(merged) : undefined)
+  let resolved = await registry.adapter(agent).resolveDefaults(merged)
+  const cap = policy?.agents.find((rule) => rule.agent === agent)?.maxBudgetUsd
+  if (resolved.agent === 'claude' && cap != null && body.config?.maxBudgetUsd === undefined) {
+    resolved = { ...resolved, maxBudgetUsd: Math.min(resolved.maxBudgetUsd ?? cap, cap) }
   }
-
-  // Check the resolved configuration rather than the token configuration: the base
-  // can also come from the project preset when the task targets the other CLI,
-  // and that path must not bypass the scope check.
-  const scopes = JSON.parse(token.scopes) as string[]
-  if (isPermissiveConfig(merged) && !scopes.includes('tasks:autonomous')) {
-    throw badRequest(
-      'config_requires_autonomous',
-      'A configuration without guardrails requires the tasks:autonomous scope.',
-    )
-  }
-
-  return { agent, config: await registry.adapter(agent).resolveDefaults(merged) }
+  assertTokenExecution(token, resolved)
+  return { agent, config: resolved }
 }
 
 /**
@@ -85,35 +109,4 @@ function baseConfigFor(
   if (agent === token.agent) return JSON.parse(token.config) as AgentConfig
 
   return readProjectDefaults(project.defaultConfig)[agent] ?? defaults[agent]
-}
-
-/**
- * Reject an unknown requested model with the list of available models.
- *
- * Only explicitly requested values are checked: validating the token's settings
- * would reject tasks configured through the interface and require the CLI on
- * every launch. If the catalog is unreachable, allow the request, matching
- * `resolveDefaults` and its sentinel values.
- */
-async function assertModelExists(
-  registry: AgentRegistry,
-  agent: AgentKind,
-  model: string,
-  catalogFor?: () => Promise<AgentModelsDto>,
-): Promise<void> {
-  let known: string[]
-  try {
-    const catalog = await (catalogFor ? catalogFor() : registry.adapter(agent).models())
-    known = catalog.models.map((entry) => entry.value)
-  } catch {
-    return
-  }
-
-  if (known.length > 0 && !known.includes(model)) {
-    throw badRequest('model_unknown', 'Unknown model {model} for {agent}. Known: {known}.', {
-      model,
-      agent,
-      known: known.join(', '),
-    })
-  }
 }

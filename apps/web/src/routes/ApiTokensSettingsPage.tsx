@@ -5,6 +5,7 @@ import {
   DEFAULT_ANTIGRAVITY_CONFIG,
   EFFORT_FIELD,
   apiScopeSchema,
+  type ApiExecutionPolicy,
   type CreatedApiTokenDto,
   type AgentKind,
   type AntigravityConfig,
@@ -24,6 +25,8 @@ import {
   Select,
   cx,
 } from '../components/ui'
+import { ApiTokenPermissionsEditor } from '../components/ApiTokenPermissionsEditor'
+import { ApiExecutionPolicyEditor, unrestrictedAgent } from '../components/ApiExecutionPolicyEditor'
 import { AccountChoice } from '../components/chat/AccountChoice'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ListHeading, SectionHeader } from './SettingsPage'
@@ -39,18 +42,7 @@ import { copyText } from '../lib/clipboard'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 
-/**
- * API and MCP server: Sillage's two entry points for external tools, and the tokens that unlock
- * them.
- *
- * Both live under `/api/v1` and share tokens, making them look like one feature. The page
- * therefore introduces them side by side, each with its address and a button preparing an
- * appropriate token.
- *
- * For the API, this is where agent settings are chosen: CLI, model and effort are set once on
- * the token rather than requested with every task from callers unable to choose them. MCP does
- * not need them: sessions it launches use project defaults.
- */
+/** One set of keys and permissions, with two equivalent transports. */
 
 const SCOPES = apiScopeSchema.options
 
@@ -62,6 +54,15 @@ const SCOPE_HINT_KEYS: Record<ApiScope, MessageKey> = {
   'tasks:write': 'apiTokens.scope.tasks:write',
   'tasks:autonomous': 'apiTokens.scope.tasks:autonomous',
   mcp: 'apiTokens.scope.mcp',
+}
+
+const SCOPE_LABEL_KEYS: Record<ApiScope, MessageKey> = {
+  'projects:read': 'apiTokens.scopeLabel.projectsRead',
+  'projects:write': 'apiTokens.scopeLabel.projectsWrite',
+  'tasks:read': 'apiTokens.scopeLabel.tasksRead',
+  'tasks:write': 'apiTokens.scopeLabel.tasksWrite',
+  'tasks:autonomous': 'apiTokens.scopeLabel.autonomous',
+  mcp: 'apiTokens.scopeLabel.tools',
 }
 
 /**
@@ -91,14 +92,10 @@ const GROK_PERMISSION_MODE_KEYS = {
 const AGENTS = Object.keys(AGENT_LABELS) as AgentKind[]
 
 /** Token purpose determines initially selected scopes and displayed fields. */
-type TokenUse = 'api' | 'mcp'
-const PRESET_SCOPES: Record<TokenUse, ApiScope[]> = {
-  api: ['projects:read', 'tasks:read', 'tasks:write'],
-  mcp: ['mcp'],
-}
+const DEFAULT_SCOPES: ApiScope[] = ['projects:read', 'tasks:read', 'tasks:write', 'mcp']
 
-/** CLI, model and webhook are task-only: without a `tasks:*` scope, nothing reads them. */
-const launchesTasks = (scopes: ApiScope[]) => scopes.some((scope) => scope.startsWith('tasks:'))
+/** Both task operations and project tools can launch sessions. */
+const launchesTasks = (scopes: ApiScope[]) => scopes.includes('mcp') || scopes.includes('tasks:write')
 
 /** Public documentation readable without signing into the instance. */
 const DOCS = {
@@ -140,96 +137,48 @@ const errorOf = (error: unknown): string | null =>
 export function ApiTokensSettingsPage() {
   const t = useTranslate()
   const { data: tokens } = useApiTokens()
-  const [adding, setAdding] = useState<TokenUse | null>(null)
+  const [adding, setAdding] = useState(false)
   const [created, setCreated] = useState<CreatedApiTokenDto | null>(null)
 
-  const open = (use: TokenUse) => {
+  const open = () => {
     setCreated(null)
-    setAdding(use)
+    setAdding(true)
   }
 
+  const active = tokens?.filter((token) => token.revokedAt === null) ?? []
+  const revoked = tokens?.filter((token) => token.revokedAt !== null) ?? []
   return (
-    <div className="flex flex-col gap-4">
-      <SectionHeader
-        title={t('apiTokens.section.title')}
-        description={t('apiTokens.section.description')}
-      />
-
-      {/*
-       * Stack vertically: the settings column is too narrow for side-by-side addresses and
-       * their buttons on one line.
-       */}
-      <section className="flex flex-col gap-3">
-        <SurfaceCard
-          icon={<Terminal size={16} />}
-          title={t('apiTokens.surface.api.title')}
-          description={t('apiTokens.surface.api.description')}
-          endpoint={apiEndpoint()}
-          scopes={t('apiTokens.surface.api.scopes')}
-          docs={DOCS.api}
-          createLabel={t('apiTokens.surface.api.create')}
-          disabled={adding !== null}
-          onCreate={() => open('api')}
-        />
-        <SurfaceCard
-          icon={<Plug size={16} />}
-          title={t('apiTokens.surface.mcp.title')}
-          description={t('apiTokens.surface.mcp.description')}
-          endpoint={mcpEndpoint()}
-          scopes={t('apiTokens.surface.mcp.scopes')}
-          docs={DOCS.mcp}
-          createLabel={t('apiTokens.surface.mcp.create')}
-          disabled={adding !== null}
-          onCreate={() => open('mcp')}
-        >
-          {/*
-           * Collapsed: useful when connecting a client, clutter otherwise. The token no longer
-           * exists in cleartext, hence the replacement placeholder.
-           */}
-          <details className="rounded-md border border-line px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium text-ink-soft">
-              {t('apiTokens.mcpGuide.toggle')}
-            </summary>
-            <div className="pt-3">
-              <McpConnectGuide token={null} />
-            </div>
-          </details>
-        </SurfaceCard>
-      </section>
-
-      <Banner tone="info">{t('apiTokens.banner')}</Banner>
-
+    <div className="flex min-w-0 flex-col gap-6" data-api-settings>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <SectionHeader title={t('apiTokens.section.title')} description={t('apiTokens.section.description')} />
+        <Button icon={<Plus size={16} />} disabled={adding} onClick={open}>{t('apiTokens.new')}</Button>
+      </div>
       {created ? <SecretReveal created={created} onDismiss={() => setCreated(null)} /> : null}
-
-      {/*
-       * Remount on closing: reopened forms must start empty, not with the previous token's
-       * fields. The key also remounts when changing purpose.
-       */}
-      {adding ? (
-        <CreateTokenCard
-          key={adding}
-          use={adding}
-          onCreated={(token) => {
-            setCreated(token)
-            setAdding(null)
-          }}
-          onCancel={() => setAdding(null)}
-        />
-      ) : null}
-
-      <section className="flex flex-col gap-2">
-        <ListHeading title={t('apiTokens.existing.title')} count={tokens?.length} />
-
-        {tokens && tokens.length > 0 ? (
-          tokens.map((token) => <TokenCard key={token.id} token={token} />)
-        ) : (
-          <EmptyState
-            icon={<KeyRound size={22} />}
-            title={t('apiTokens.empty.title')}
-            description={t('apiTokens.empty.description')}
-          />
-        )}
-      </section>
+      {adding ? <CreateTokenCard onCreated={(token) => { setCreated(token); setAdding(false) }} onCancel={() => setAdding(false)} /> : null}
+      {!adding ? <section className="flex flex-col gap-3">
+        <ListHeading title={t('apiTokens.existing.title')} count={active.length} />
+        {active.length ? active.map((token) => <TokenCard key={token.id} token={token} />) :
+          <EmptyState icon={<KeyRound size={22} />} title={t('apiTokens.empty.title')} description={t('apiTokens.empty.description')} />}
+        {revoked.length ? <details className="border-t border-line pt-3"><summary className="cursor-pointer text-sm text-ink-faint">{t('apiTokens.revokedList', { count: revoked.length })}</summary>
+          <div className="mt-3 space-y-3">{revoked.map((token) => <TokenCard key={token.id} token={token} />)}</div>
+        </details> : null}
+      </section> : null}
+      <details className="group border-t border-line pt-4">
+        <summary className="cursor-pointer text-sm font-semibold text-ink">{t('apiTokens.connect')}</summary>
+        <p className="my-3 max-w-prose text-sm text-ink-soft">{t('apiTokens.banner')}</p>
+        <section className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
+          <SurfaceCard icon={<Terminal size={16} />} title={t('apiTokens.surface.api.title')} description={t('apiTokens.surface.api.description')}
+            endpoint={apiEndpoint()} scopes={t('apiTokens.surface.api.scopes')} docs={DOCS.api}>
+            <CopyableValue label={t('apiTokens.catalog')} value={`${apiEndpoint()}/tools`} />
+          </SurfaceCard>
+          <SurfaceCard icon={<Plug size={16} />} title={t('apiTokens.surface.mcp.title')} description={t('apiTokens.surface.mcp.description')}
+            endpoint={mcpEndpoint()} scopes={t('apiTokens.surface.mcp.scopes')} docs={DOCS.mcp}>
+            <details className="rounded-md border border-line px-3 py-2"><summary className="cursor-pointer text-sm font-medium text-ink-soft">{t('apiTokens.mcpGuide.toggle')}</summary>
+              <div className="pt-3"><McpConnectGuide token={null} /></div>
+            </details>
+          </SurfaceCard>
+        </section>
+      </details>
     </div>
   )
 }
@@ -246,9 +195,6 @@ function SurfaceCard({
   endpoint,
   scopes,
   docs,
-  createLabel,
-  disabled,
-  onCreate,
   children,
 }: {
   icon: ReactNode
@@ -257,9 +203,6 @@ function SurfaceCard({
   endpoint: string
   scopes: string
   docs: string
-  createLabel: string
-  disabled: boolean
-  onCreate: () => void
   /** Additional requirements for using this entry point, below its address. */
   children?: ReactNode
 }) {
@@ -272,9 +215,6 @@ function SurfaceCard({
         <p className="text-xs text-ink-faint">{scopes}</p>
         {children}
         <div className="mt-auto flex flex-wrap items-center gap-3">
-          <Button size="sm" icon={<Plus size={15} />} disabled={disabled} onClick={onCreate}>
-            {createLabel}
-          </Button>
           <a
             href={docs}
             target="_blank"
@@ -322,7 +262,7 @@ function SecretReveal({
          * Immediately after token creation is the only time the guide can include it:
          * afterwards it no longer exists in cleartext anywhere.
          */}
-        {created.token.scopes.includes('mcp') ? <McpConnectGuide token={created.secret} /> : null}
+        {<details open><summary className="cursor-pointer text-sm font-medium">{t('apiTokens.mcpGuide.toggle')}</summary><div className="pt-3"><McpConnectGuide token={created.secret} /></div></details>}
         <Button size="sm" variant="ghost" onClick={onDismiss} className="self-start">
           {t('apiTokens.secret.dismiss')}
         </Button>
@@ -429,11 +369,9 @@ function CopyableValue({
 }
 
 function CreateTokenCard({
-  use,
   onCreated,
   onCancel,
 }: {
-  use: TokenUse
   onCreated: (created: CreatedApiTokenDto) => void
   onCancel: () => void
 }) {
@@ -441,12 +379,14 @@ function CreateTokenCard({
   const { data: projects } = useProjects()
   const createToken = useCreateApiToken()
 
+  const [policy, setPolicy] = useState<ApiExecutionPolicy>({ agents: [unrestrictedAgent('claude')] })
   const [label, setLabel] = useState('')
   const [agent, setAgent] = useState<AgentKind>('claude')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState('')
-  const [scopes, setScopes] = useState<ApiScope[]>(PRESET_SCOPES[use])
+  const [scopes, setScopes] = useState<ApiScope[]>(DEFAULT_SCOPES)
   const [projectIds, setProjectIds] = useState<string[]>([])
+  const [projectMode, setProjectMode] = useState<'all' | 'selected'>('all')
   const [lifetime, setLifetime] = useState<LifetimeChoice>('none')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [permissionMode, setPermissionMode] = useState<ApiPermissionMode>('manual')
@@ -454,8 +394,18 @@ function CreateTokenCard({
 
   const [google, setGoogle] = useState<AntigravityConfig>(DEFAULT_ANTIGRAVITY_CONFIG)
   const { data: catalog } = useAgentModels(agent, true, agent === 'antigravity' ? google.account : null)
-  const models = catalog?.models ?? []
-  const efforts = effortsFor(models, model)
+  const rule = policy.agents.find((entry) => entry.agent === agent)
+  const models = (catalog?.models ?? []).filter((entry) => !rule?.models || rule.models.includes(entry.value))
+  const efforts = effortsFor(models, model).filter((entry) => !rule?.efforts || rule.efforts.includes(entry.value))
+  const validPolicy = policy.agents.length > 0 && policy.agents.every((entry) => entry.models?.length !== 0 && entry.efforts?.length !== 0)
+  const changePolicy = (next: ApiExecutionPolicy) => {
+    setPolicy(next)
+    const nextAgent = next.agents.find((entry) => entry.agent === agent) ?? next.agents[0]
+    if (!nextAgent) return
+    if (nextAgent.agent !== agent) setAgent(nextAgent.agent)
+    if (nextAgent.models && !nextAgent.models.includes(model)) setModel(nextAgent.models[0] ?? '')
+    if (nextAgent.efforts && !nextAgent.efforts.includes(effort)) setEffort(nextAgent.efforts[0] ?? '')
+  }
 
   const toggle = <T,>(list: T[], value: T): T[] =>
     list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]
@@ -476,7 +426,8 @@ function CreateTokenCard({
       {
         label: label.trim(),
         scopes,
-        projectIds,
+        projectIds: projectMode === 'all' ? [] : projectIds,
+        executionPolicy: policy,
         agent,
         config,
         expiresAt: days === null ? null : Date.now() + days * DAY_MS,
@@ -490,11 +441,12 @@ function CreateTokenCard({
   return (
     <Card>
       <CardHeader
-        title={use === 'mcp' ? t('apiTokens.create.title.mcp') : t('apiTokens.create.title')}
-        icon={use === 'mcp' ? <Plug size={16} /> : <Terminal size={16} />}
+        title={t('apiTokens.create.title')}
+        icon={<KeyRound size={16} />}
       />
       <CardBody>
         <form onSubmit={submit} className="flex flex-col gap-4">
+          <div className="grid items-start gap-4 sm:grid-cols-[2fr_1fr]">
           <Field
             label={t('apiTokens.label.label')}
             hint={t('apiTokens.label.hint')}
@@ -504,22 +456,70 @@ function CreateTokenCard({
             required
           />
 
-          {/*
-           * CLI, model and webhook apply only to API tasks: showing them for MCP-only tokens
-           * would imply they configure MCP sessions.
-           */}
+          <Select
+            label={t('apiTokens.lifetime.label')}
+            value={lifetime}
+            onChange={setLifetime}
+            options={[
+              { value: 'none', label: t('apiTokens.lifetime.none') },
+              { value: '30', label: t('apiTokens.lifetime.days', { days: 30 }) },
+              { value: '90', label: t('apiTokens.lifetime.days', { days: 90 }) },
+              { value: '365', label: t('apiTokens.lifetime.days', { days: 365 }) },
+            ]}
+          />
+
+          </div>
+
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1.5 text-sm font-medium text-ink-soft">
+              {t('apiTokens.scopes.label')}
+            </legend>
+            {/*
+             * One row per scope, explaining access: `tasks:write` alone does not say whether
+             * stopping tasks is allowed.
+             */}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {SCOPES.map((scope) => (
+                <label
+                  key={scope}
+                  className={cx(
+                    'flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-sm text-ink transition-colors',
+                    'has-checked:border-accent has-checked:bg-accent-wash',
+                    'border-line hover:border-line-strong',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={scopes.includes(scope)}
+                    onChange={() => setScopes(toggle(scopes, scope))}
+                    className="mt-0.5 size-4 shrink-0 accent-accent"
+                  />
+                  <span className="min-w-0">
+                    <span className="font-medium">{t(SCOPE_LABEL_KEYS[scope])}</span>
+                    <span className="block text-xs text-ink-faint">{t(SCOPE_HINT_KEYS[scope])}</span>
+                    <code className="mt-1 block font-mono text-[0.625rem] text-ink-faint">{scope}</code>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <ApiExecutionPolicyEditor value={policy} onChange={changePolicy} />
           {launchesTasks(scopes) ? (
-            <>
+            <fieldset className="min-w-0 space-y-4 border-t border-line pt-4">
+              <legend className="pt-4 text-sm font-semibold">{t('apiTokens.defaults.title')}</legend>
+              <p className="max-w-prose text-sm text-ink-soft">{t('apiTokens.defaults.hint')}</p>
               <div className="grid gap-4 sm:grid-cols-3">
                 <Select
                   label={t('apiTokens.agent.label')}
                   value={agent}
                   onChange={(value) => {
                     setAgent(value)
-                    setModel('')
-                    setEffort('')
+                    const next = policy.agents.find((entry) => entry.agent === value)
+                    setModel(next?.models?.[0] ?? '')
+                    setEffort(next?.efforts?.[0] ?? '')
                   }}
-                  options={AGENTS.map((kind) => ({
+                  options={AGENTS.filter((kind) => policy.agents.some((entry) => entry.agent === kind)).map((kind) => ({
                     value: kind,
                     label: AGENT_LABELS[kind],
                     icon: <AgentIcon agent={kind} size={13} />,
@@ -530,12 +530,13 @@ function CreateTokenCard({
                   value={model}
                   onChange={(value) => {
                     setModel(value)
-                    setEffort('')
+                    setEffort(rule?.efforts?.[0] ?? '')
                   }}
                   placeholder={t('apiTokens.model.default')}
                   options={[
-                    { value: '', label: t('apiTokens.model.default') },
+                    ...(!rule?.models ? [{ value: '', label: t('apiTokens.model.default') }] : []),
                     ...models.map((entry) => ({ value: entry.value, label: entry.displayName })),
+                    ...(rule?.models?.filter((value) => !models.some((entry) => entry.value === value)).map((value) => ({ value, label: value })) ?? []),
                   ]}
                 />
                 <Select
@@ -543,10 +544,11 @@ function CreateTokenCard({
                   value={effort}
                   onChange={setEffort}
                   placeholder={t('apiTokens.effort.default')}
-                  disabled={efforts.length === 0}
+                  disabled={efforts.length === 0 && !rule?.efforts?.length}
                   options={[
-                    { value: '', label: t('apiTokens.effort.default') },
+                    ...(!rule?.efforts ? [{ value: '', label: t('apiTokens.effort.default') }] : []),
                     ...efforts.map((entry) => ({ value: entry.value, label: effortLabel(t, entry) })),
+                    ...(rule?.efforts?.filter((value) => !efforts.some((entry) => entry.value === value)).map((value) => ({ value, label: value })) ?? []),
                   ]}
                 />
               </div>
@@ -608,6 +610,7 @@ function CreateTokenCard({
                 />
               ) : null}
 
+              <details><summary className="cursor-pointer text-sm text-ink-soft">{t('apiTokens.webhook.label')}</summary><div className="mt-3">
               <Field
                 label={t('apiTokens.webhook.label')}
                 hint={t('apiTokens.webhook.hint')}
@@ -615,67 +618,17 @@ function CreateTokenCard({
                 placeholder="https://..."
                 value={webhookUrl}
                 onChange={(event) => setWebhookUrl(event.target.value)}
-              />
-            </>
-          ) : (
-            <p className="text-sm text-ink-faint">{t('apiTokens.create.mcpOnly')}</p>
-          )}
-
-          <Select
-            label={t('apiTokens.lifetime.label')}
-            value={lifetime}
-            onChange={setLifetime}
-            className="sm:max-w-xs"
-            options={[
-              { value: 'none', label: t('apiTokens.lifetime.none') },
-              { value: '30', label: t('apiTokens.lifetime.days', { days: 30 }) },
-              { value: '90', label: t('apiTokens.lifetime.days', { days: 90 }) },
-              { value: '365', label: t('apiTokens.lifetime.days', { days: 365 }) },
-            ]}
-          />
-
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="mb-1.5 text-sm font-medium text-ink-soft">
-              {t('apiTokens.scopes.label')}
-            </legend>
-            {/*
-             * One row per scope, explaining access: `tasks:write` alone does not say whether
-             * stopping tasks is allowed.
-             */}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {SCOPES.map((scope) => (
-                <label
-                  key={scope}
-                  className={cx(
-                    'flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-sm text-ink transition-colors',
-                    'has-checked:border-accent has-checked:bg-accent-wash',
-                    'border-line hover:border-line-strong',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={scopes.includes(scope)}
-                    onChange={() => setScopes(toggle(scopes, scope))}
-                    className="mt-0.5 size-4 shrink-0 accent-accent"
-                  />
-                  <span className="min-w-0">
-                    <code className="font-mono text-xs">{scope}</code>
-                    <span className="block text-xs text-ink-faint">{t(SCOPE_HINT_KEYS[scope])}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+              /></div></details>
+            </fieldset>
+          ) : null}
 
           <fieldset className="flex flex-col gap-1.5">
             <legend className="text-sm font-medium text-ink-soft">
               {t('apiTokens.projects.label')}
             </legend>
-            {/*
-             * No selection means “all projects”, the common case. Requiring a selection would
-             * silently make restriction the default.
-             */}
-            <p className="text-xs text-ink-faint">{t('apiTokens.projects.hint')}</p>
+            <Select label={t('apiTokens.projects.access')} value={projectMode} onChange={setProjectMode}
+              options={[{ value: 'all', label: t('apiTokens.projects.all') }, { value: 'selected', label: t('apiTokens.projects.selected') }]} />
+            {projectMode === 'selected' ? <>
             <div className="flex flex-wrap gap-3">
               {(projects ?? []).map((project) => (
                 <label key={project.id} className="flex items-center gap-2 text-sm text-ink">
@@ -689,12 +642,14 @@ function CreateTokenCard({
                 </label>
               ))}
             </div>
+            {projectIds.length === 0 ? <p role="alert" className="text-xs text-critical">{t('apiTokens.projects.required')}</p> : null}
+            </> : null}
           </fieldset>
 
           {errorOf(createToken.error) ? <Banner>{errorOf(createToken.error)}</Banner> : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" disabled={createToken.isPending || scopes.length === 0}>
+            <Button type="submit" disabled={createToken.isPending || scopes.length === 0 || !validPolicy || (projectMode === 'selected' && projectIds.length === 0)}>
               {createToken.isPending ? t('apiTokens.create.pending') : t('apiTokens.create.action')}
             </Button>
             <Button type="button" variant="ghost" onClick={onCancel}>
@@ -713,6 +668,7 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
   const remove = useDeleteApiToken()
   const [confirming, setConfirming] = useState<'revoke' | 'delete' | null>(null)
   const revoked = token.revokedAt !== null
+  const [editing, setEditing] = useState(false)
 
   return (
     <Card>
@@ -724,13 +680,17 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
               {t('apiTokens.hint', { hint: token.hint })}
             </code>
             {revoked ? <Badge tone="critical">{t('apiTokens.revoked')}</Badge> : null}
-            {/* CLI settings govern tasks only: they would convey nothing true on an MCP-only token. */}
-            {launchesTasks(token.scopes) ? (
-              <Badge icon={<AgentIcon agent={token.agent} size={11} />}>{token.agent}</Badge>
-            ) : null}
             {token.scopes.map((scope) => (
-              <Badge key={scope}>{scope}</Badge>
+              <Badge key={scope}>{t(SCOPE_LABEL_KEYS[scope])}</Badge>
             ))}
+          </div>
+          <div className="my-2 flex flex-col gap-2">
+            {token.executionPolicy ? token.executionPolicy.agents.map((rule) => <div key={rule.agent} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="inline-flex items-center gap-1.5 font-medium"><AgentIcon agent={rule.agent} size={14} />{AGENT_LABELS[rule.agent]}</span>
+              <span className="break-words text-ink-soft">{rule.models?.join(', ') ?? t('apiTokens.policy.allModels')}</span>
+              <span className="text-ink-faint">{t('apiTokens.policy.efforts')}: {rule.efforts?.join(', ') ?? t('apiTokens.policy.allEfforts')}</span>
+              {rule.maxBudgetUsd !== null ? <span className="text-ink-faint">{t('apiTokens.policy.cap', { value: rule.maxBudgetUsd })}</span> : null}
+            </div>) : <p className="text-sm text-ink-soft">{t('apiTokens.policy.legacy')}</p>}
           </div>
           <p className="text-xs text-ink-faint">
             {token.projectIds.length === 0
@@ -750,6 +710,7 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
           </p>
         </div>
 
+        {!revoked && !editing ? <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>{t('apiTokens.edit.action')}</Button> : null}
         {revoked ? (
           <Button
             size="sm"
@@ -770,6 +731,7 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
           </Button>
         )}
 
+        {editing ? <ApiTokenPermissionsEditor token={token} onDone={() => setEditing(false)} /> : null}
         <ConfirmDialog
           open={confirming !== null}
           onOpenChange={(open) => setConfirming(open ? confirming : null)}

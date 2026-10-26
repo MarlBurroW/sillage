@@ -1,20 +1,20 @@
-import { GitBranch, Library, MoreHorizontal, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
-import type { SkillSearchResultDto, SkillSourceDto } from '@sillage/protocol'
+import { GitBranch, Library, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import type { SkillSourceDto } from '@sillage/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate } from '../../lib/dates'
-import { locale, useTranslate } from '../../lib/i18n'
+import { useTranslate } from '../../lib/i18n'
 import {
   shortCommit,
   useCreateSkillSource,
   useDeleteSkillSource,
   useRefreshSkillSource,
-  useSkillSearch,
   useSkillSources,
   useUpdateSkillSource,
 } from '../../lib/skill-sources'
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, Field, IconButton, Menu, MenuItem, MenuSeparator } from '../ui'
 import { CatalogDialog } from './CatalogDialog'
+import { SkillDialog } from './SkillDialog'
 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
@@ -30,7 +30,7 @@ interface Browsing {
  */
 export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
   const t = useTranslate()
-  const { data } = useSkillSources()
+  const { data, isLoading, error } = useSkillSources()
   const sources = data?.sources ?? []
   const [browsing, setBrowsing] = useState<Browsing | null>(null)
   const [adding, setAdding] = useState(false)
@@ -43,16 +43,16 @@ export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
           <p className="text-xs text-ink-faint">{t('skills.sources.description')}</p>
         </div>
         {isAdmin ? (
-          <Button size="sm" variant="secondary" icon={<Plus size={15} />} onClick={() => setAdding(!adding)}>
+          <Button size="sm" variant="secondary" icon={<Plus size={15} />} onClick={() => setAdding(true)}>
             {t('skills.sources.add')}
           </Button>
         ) : null}
       </div>
 
-      <p className="text-sm text-ink-faint">{t('skills.updates.hint')}</p>
-
-      {adding ? <AddSourceForm onDone={(id) => { setAdding(false); if (id) setBrowsing({ sourceId: id, skillName: null }) }} /> : null}
-      {isAdmin ? <SkillsShSearch onOpen={setBrowsing} /> : null}
+      {adding ? <AddSourceDialog onClose={() => setAdding(false)} onAdded={(id) => { setAdding(false); setBrowsing({ sourceId: id, skillName: null }) }} /> : null}
+      {isLoading ? <p role="status" className="text-sm text-ink-faint">{t('skills.files.loading')}</p> : null}
+      {error ? <Banner>{error.message}</Banner> : null}
+      {!isLoading && !error && sources.length === 0 ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.sources.empty')}</p> : null}
 
       {sources.map((source) => (
         <SourceRow
@@ -63,15 +63,15 @@ export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
         />
       ))}
 
-      <CatalogDialog
+      {browsing ? <CatalogDialog
         key={browsing ? `${browsing.sourceId}:${browsing.skillName ?? ''}` : 'none'}
-        open={browsing !== null}
+        open
         onClose={() => setBrowsing(null)}
         sourceId={browsing?.sourceId ?? null}
         skillName={browsing?.skillName ?? null}
         scope="global"
         projectId={null}
-      />
+      /> : null}
     </section>
   )
 }
@@ -87,7 +87,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
   return (
     <Card>
       <CardBody className="flex flex-col gap-2">
-        <div className="flex items-start gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-wash text-accent">
             <GitBranch size={15} />
           </span>
@@ -112,7 +112,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
                 : t('skills.sources.never')}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 flex-wrap items-center gap-1">
             {fetched && source.enabled ? (
               <Button size="sm" variant="ghost" icon={<Library size={14} />} onClick={onBrowse}>
                 {t('skills.sources.browse')}
@@ -144,6 +144,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
         </div>
         {source.lastError && !refresh.isPending ? <Banner tone="caution">{source.lastError}</Banner> : null}
         {errorOf(update.error) ? <Banner>{errorOf(update.error)}</Banner> : null}
+        {errorOf(refresh.error) ? <Banner>{errorOf(refresh.error)}</Banner> : null}
         <ConfirmDialog
           open={confirming}
           onOpenChange={setConfirming}
@@ -160,143 +161,34 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
   )
 }
 
-/** Declare then fetch sources immediately because empty sources are useless. */
-function AddSourceForm({ onDone }: { onDone: (sourceId: string | null) => void }) {
+/** Retain the created source on fetch failure so retry never attempts to register it again. */
+export function AddSourceDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (id: string) => void }) {
   const t = useTranslate()
   const create = useCreateSkillSource()
   const refresh = useRefreshSkillSource()
   const [url, setUrl] = useState('')
   const [ref, setRef] = useState('')
   const [subpath, setSubpath] = useState('')
+  const [created, setCreated] = useState<string | null>(null)
   const busy = create.isPending || refresh.isPending
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    create.mutate(
-      { url: url.trim(), ref: ref.trim() || null, subpath: subpath.trim().replace(/^\/|\/$/g, '') || null },
-      { onSuccess: (source) => refresh.mutate(source.id, { onSettled: () => onDone(source.id) }) },
-    )
-  }
-
-  return (
-    <Card>
-      <CardBody>
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <Field
-            label={t('skills.sources.url')}
-            hint={t('skills.sources.url.hint')}
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            required
-          />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('skills.sources.ref')} hint={t('skills.sources.ref.hint')} value={ref} onChange={(event) => setRef(event.target.value)} autoCapitalize="none" />
-            <Field label={t('skills.sources.subpath')} hint={t('skills.sources.subpath.hint')} value={subpath} onChange={(event) => setSubpath(event.target.value)} autoCapitalize="none" />
-          </div>
-          {errorOf(create.error) ? <Banner>{errorOf(create.error)}</Banner> : null}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" disabled={busy} onClick={() => onDone(null)}>{t('skills.dialog.cancel')}</Button>
-            <Button type="submit" disabled={busy || url.trim().length === 0}>
-              {busy ? t('skills.sources.adding') : t('skills.sources.add.submit')}
-            </Button>
-          </div>
-        </form>
-      </CardBody>
-    </Card>
-  )
-}
-
-/**
- * Find skills on skills.sh and install. Skills come from update-tracked sources, so automatically
- * register their repository and open its catalog at the chosen skill. Hide when the undocumented
- * directory API misbehaves because users cannot fix it.
- */
-function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
-  const t = useTranslate()
-  const [query, setQuery] = useState('')
-  // Debounce requests: the external directory is not ours.
-  const [settled, setSettled] = useState('')
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(query), 300)
-    return () => clearTimeout(timer)
-  }, [query])
-  const { data, isFetching } = useSkillSearch(settled)
-  const { data: declared } = useSkillSources()
-  const create = useCreateSkillSource()
-  const refresh = useRefreshSkillSource()
-  /** Result whose repository is being fetched. */
-  const [pending, setPending] = useState<string | null>(null)
-
-  if (data && !data.available) return null
-
-  const sourceOf = (result: SkillSearchResultDto) =>
-    declared?.sources.find((source) => source.id === result.sourceId) ?? null
-
-  const install = (result: SkillSearchResultDto) => {
-    const known = sourceOf(result)
-    const show = (sourceId: string) => onOpen({ sourceId, skillName: result.name })
-    if (known?.lastCommit) return show(known.id)
-    // Catalogs list fetched sources only: open after clone completion, otherwise display the error here.
-    const retrieve = (sourceId: string) =>
-      refresh.mutate(sourceId, {
-        onSuccess: () => show(sourceId),
-        onSettled: () => setPending(null),
+  const retrieve = (id: string) => refresh.mutate(id, { onSuccess: () => onAdded(id) })
+  return <SkillDialog open onClose={onClose} title={t('skills.sources.add')}
+    submitLabel={t(busy ? 'skills.sources.adding' : created ? 'skills.sources.retry' : 'skills.sources.add.submit')}
+    busy={busy} canSubmit={!!created || url.trim().length > 0}
+    onSubmit={() => {
+      if (created) return retrieve(created)
+      create.mutate({ url: url.trim(), ref: ref.trim() || null, subpath: subpath.trim().replace(/^\/|\/$/g, '') || null }, {
+        onSuccess: (source) => { setCreated(source.id); retrieve(source.id) },
       })
-    setPending(keyOf(result))
-    if (known) retrieve(known.id)
-    else create.mutate({ url: result.repository }, { onSuccess: (source) => retrieve(source.id), onError: () => setPending(null) })
-  }
-
-  return (
-    <Card>
-      <CardBody className="flex flex-col gap-2">
-        <Field
-          label={t('skills.search.label')}
-          hint={t('skills.search.hint')}
-          icon={<Search size={15} />}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t('skills.search.placeholder')}
-        />
-        {isFetching ? <p className="text-xs text-ink-faint">{t('skills.search.loading')}</p> : null}
-        {data && settled.trim().length >= 2 && data.results.length === 0 && !isFetching ? (
-          <p className="text-xs text-ink-faint">{t('skills.search.empty')}</p>
-        ) : null}
-        {data && settled.trim().length >= 2 ? (
-          <ul className="flex flex-col gap-1">
-            {data.results.map((result) => {
-              const source = sourceOf(result)
-              return (
-                <li key={keyOf(result)} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-surface-high">
-                  {/* Name then repository/audience on separate lines to prevent touch overlap. */}
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-mono text-sm">{result.name}</span>
-                    <span className="truncate text-xs text-ink-faint">
-                      <span className="font-mono">{result.repository}</span>
-                      {' · '}
-                      {t('skills.search.installs', { count: result.installs.toLocaleString(locale()) })}
-                    </span>
-                  </span>
-                  {source && !source.enabled ? (
-                    <Badge>{t('skills.search.sourceDisabled')}</Badge>
-                  ) : (
-                    <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => install(result)}>
-                      {pending === keyOf(result) ? t('skills.search.fetching') : t('skills.search.install')}
-                    </Button>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        ) : null}
-        {errorOf(create.error) ? <Banner>{errorOf(create.error)}</Banner> : null}
-        {errorOf(refresh.error) ? <Banner>{errorOf(refresh.error)}</Banner> : null}
-      </CardBody>
-    </Card>
-  )
+    }}>
+    <Field label={t('skills.sources.url')} hint={t('skills.sources.url.hint')} value={url}
+      onChange={(event) => setUrl(event.target.value)} disabled={busy || !!created}
+      autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
+    <Field label={t('skills.sources.ref')} hint={t('skills.sources.ref.hint')} value={ref}
+      onChange={(event) => setRef(event.target.value)} disabled={busy || !!created} autoCapitalize="none" />
+    <Field label={t('skills.sources.subpath')} hint={t('skills.sources.subpath.hint')} value={subpath}
+      onChange={(event) => setSubpath(event.target.value)} disabled={busy || !!created} autoCapitalize="none" />
+    {create.error ? <Banner>{create.error.message}</Banner> : null}
+    {refresh.error ? <Banner>{refresh.error.message}</Banner> : null}
+  </SkillDialog>
 }
-
-const keyOf = (result: SkillSearchResultDto) => `${result.repository}/${result.name}`

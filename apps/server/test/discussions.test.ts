@@ -196,7 +196,7 @@ test('migration preserves conversations, journals and related rows while making 
   await cp(migrations, before, { recursive: true })
   const journalPath = join(before, 'meta/_journal.json')
   const journal = JSON.parse(await readFile(journalPath, 'utf8'))
-  journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx < 55)
+  journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx < 56)
   await writeFile(journalPath, JSON.stringify(journal))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
   t.after(() => sqlite.close())

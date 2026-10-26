@@ -1,50 +1,55 @@
-import { BookOpen } from 'lucide-react'
+import { BookOpen, Search } from 'lucide-react'
+import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { AddSkillMenu } from '../components/skills/AddSkillMenu'
+import { SkillDiscovery } from '../components/skills/SkillDiscovery'
 import { SkillUpdates } from '../components/skills/SkillUpdates'
 import { SkillList } from '../components/skills/SkillList'
 import { SkillSourcesSection } from '../components/skills/SkillSourcesSection'
-import { Banner, EmptyState } from '../components/ui'
+import { SkillTabs } from '../components/skills/SkillTabs'
+import { Banner, EmptyState, Field } from '../components/ui'
 import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useSkillLibrary } from '../lib/skill-library'
 import { SectionHeader } from './SettingsPage'
 
-/**
- * Global skill library delivered to every conversation in the instance.
- *
- * Visible to all so everyone knows what agents receive; editable only by administrators, like
- * the MCP registry. Project skills are managed on project pages.
- */
+const TABS = ['installed', 'discover', 'sources', 'updates'] as const
+type Tab = typeof TABS[number]
+
+/** One task and one list per tab; URLs retain the section when returning from an editor. */
 export function SkillLibrarySettingsPage() {
   const t = useTranslate()
   const { data: me } = useCurrentUser()
   const isAdmin = me?.isAdmin === true
-  const { data } = useSkillLibrary(null)
+  const { data, isLoading, error } = useSkillLibrary(null)
   const skills = data?.skills ?? []
+  const [params, setParams] = useSearchParams()
+  const requested = params.get('tab')
+  const tab: Tab = TABS.find((value) => value === requested) ?? 'installed'
+  const setTab = (value: Tab) => setParams((previous) => { const next = new URLSearchParams(previous); next.set('tab', value); return next })
+  const [filter, setFilter] = useState('')
+  const needle = filter.trim().toLocaleLowerCase()
+  const filtered = skills.filter((skill) => `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(needle))
 
-  return (
-    <div className="flex flex-col gap-4">
-      <SectionHeader title={t('skills.section.title')} description={t('skills.section.description')} />
-
-      <Banner tone="info">{t('skills.banner')}</Banner>
-      {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
-      {isAdmin ? null : <Banner>{t('skills.readonly')}</Banner>}
-
-      <SkillUpdates skills={skills} />
-
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-ink-soft">{t('skills.global.title')}</h2>
-          {isAdmin ? <AddSkillMenu scope="global" projectId={null} /> : null}
-        </div>
-        {skills.length === 0 ? (
-          <EmptyState icon={<BookOpen size={22} />} title={t('skills.empty.title')} description={t('skills.empty.description')} />
-        ) : (
-          <SkillList skills={skills} />
-        )}
-      </section>
-
-      <SkillSourcesSection isAdmin={isAdmin} />
+  return <div className="flex flex-col gap-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <SectionHeader title={t('skills.section.title')} description={t('skills.navigation.description')} />
+      {isAdmin ? <AddSkillMenu scope="global" projectId={null} onDiscover={() => setTab('discover')} /> : null}
     </div>
-  )
+    {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
+    {isAdmin ? null : <Banner>{t('skills.readonly')}</Banner>}
+    <SkillTabs label={t('skills.section.title')} tabs={TABS.map((value) => ({ value, label: t(`skills.tabs.${value}`) }))}
+      value={tab} onChange={setTab}>
+      {tab === 'installed' ? <div className="flex flex-col gap-4">
+        <Field label={t('skills.installed.filter')} icon={<Search size={15} />} value={filter} onChange={(event) => setFilter(event.target.value)} />
+        {isLoading ? <p role="status" className="text-sm text-ink-faint">{t('skills.files.loading')}</p> : error ? <Banner>{error.message}</Banner>
+          : skills.length === 0 ? <EmptyState icon={<BookOpen size={22} />} title={t('skills.empty.title')} description={t('skills.empty.description')} />
+          : filtered.length === 0 ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.search.empty')}</p>
+          : <SkillList skills={filtered} />}
+      </div> : null}
+      {tab === 'discover' ? <SkillDiscovery scope="global" projectId={null} /> : null}
+      {tab === 'sources' ? <SkillSourcesSection isAdmin={isAdmin} /> : null}
+      {tab === 'updates' ? <SkillUpdates skills={skills} showEmpty /> : null}
+    </SkillTabs>
+  </div>
 }

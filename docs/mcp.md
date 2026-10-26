@@ -132,11 +132,28 @@ are unavailable. Deleted or inaccessible references expose no session details.
 ## Over HTTP, with an API token
 
 For clients off the machine without SSH, the same server is available over HTTP:
-`POST /api/v1/mcp`, MCP's “streamable HTTP” transport, behind an API token with the
-**`mcp`** scope (Sillage settings → API). The bridge
-(`apps/server/src/http/v1/mcp.ts`) reimplements no tools: each HTTP session is a
-server process in global mode, acting as the token's account and restricted to
-the token's project list if present, with every JSON-RPC message forwarded to it.
+`POST /api/v1/mcp`, MCP's “streamable HTTP” transport, behind an API token
+(Settings → API and MCP). Any valid token can connect. Its scopes determine the
+actions listed and accepted, exactly as with `GET /api/v1/tools` and
+`POST /api/v1/tools/:name` in REST. See [the shared catalog and execution policy](api.md).
+
+The **`mcp`** scope grants the project tools (history, board, memory, instructions,
+worktrees, scheduling and session tools) through either transport. Structured task
+tools (`create_task`, `read_task`, replies, events, etc.) use `tasks:*` scopes;
+`list_agents` and `list_task_projects` use `projects:read`. `inspect_access` explains
+the token's rights and defaults without an extra scope.
+
+The bridge (`apps/server/src/http/v1/mcp.ts`) executes project tools in a global-mode
+process under the token owner, restricted to the token's projects. Task tools reuse
+the native REST handlers. The same dispatcher serves the REST tool endpoint.
+Allowed CLIs, models, reasoning efforts and Claude spending caps apply to both
+paths, including `start_session`, schedules, automations and session resumption.
+Omitted launch choices use the key defaults for its default CLI, then project and
+account defaults for other CLIs; defaults never grant additional permissions.
+
+Editing a key's execution permissions affects the next call of connected clients.
+Local stdio clients inside Sillage retain their existing session/project defaults;
+API token restrictions apply only to authenticated external clients.
 
 - `initialize` opens the session and returns a `Mcp-Session-Id` header to send on
   subsequent requests; without it, or after thirty minutes without requests, `404`:
@@ -203,7 +220,7 @@ inter-session messages.
 - `GLOBAL`, `selectProject`, and `globalTools` in `sillage-mcp.mjs`: the project is
   process state set at the beginning of each call, and calls run sequentially to
   prevent overlap.
-- `http/v1/mcp.ts`: the HTTP bridge, one process per session, token `mcp` scope.
+- `http/v1/mcp.ts`: the HTTP bridge, one process per session, shared REST/MCP catalog and token checks.
 - `agent_requests.user_id` (migration 0041): a request without a conversation carries
   the account to act for; `AgentRequests.principal` makes it a requester without a
   session, and each handler skips what only makes sense for a session.

@@ -22,9 +22,9 @@ export const apiScopeSchema = z.enum([
   'tasks:write',
   'tasks:autonomous',
   /**
-   * Sillage's HTTP MCP server (`POST /api/v1/mcp`), with session tools acting on behalf of an
-   * account: history, board, sessions, memory, launches. A separate scope because it exposes
-   * more than tasks: instructions and memory are writable.
+   * Project tools, via REST or MCP, acting on behalf of an account: history, board,
+   * sessions, memory, launches. Kept separate from tasks because instructions and memory
+   * are writable. This is an action scope, not a transport gate.
    */
   'mcp',
 ])
@@ -32,6 +32,24 @@ export type ApiScope = z.infer<typeof apiScopeSchema>
 
 /** Cleartext prefix to recognize a token found in a configuration file. */
 export const API_TOKEN_PREFIX = 'sillage_pat_'
+
+/** Null lists allow every value; empty lists never silently mean unrestricted. */
+export const apiAgentPermissionSchema = z.object({
+  agent: agentKindSchema,
+  models: z.array(z.string().trim().min(1)).min(1).nullable().default(null),
+  efforts: z.array(z.string().trim().min(1)).min(1).nullable().default(null),
+  /** Claude's per-session spending cap; other CLIs do not enforce a dollar budget. */
+  maxBudgetUsd: z.number().positive().nullable().default(null),
+}).strict().refine((rule) => rule.agent === 'claude' || rule.maxBudgetUsd === null, {
+  message: 'Dollar budgets are supported only by Claude.',
+})
+export const apiExecutionPolicySchema = z.object({
+  agents: z.array(apiAgentPermissionSchema).min(1),
+}).strict().refine((policy) => new Set(policy.agents.map((rule) => rule.agent)).size === policy.agents.length, {
+  message: 'Each CLI must appear only once.',
+})
+export type ApiAgentPermission = z.infer<typeof apiAgentPermissionSchema>
+export type ApiExecutionPolicy = z.infer<typeof apiExecutionPolicySchema>
 
 export interface ApiTokenDto {
   id: string
@@ -43,6 +61,8 @@ export interface ApiTokenDto {
   projectIds: string[]
   agent: AgentKind
   config: unknown
+  /** Null preserves unrestricted CLI/model/effort access for existing tokens. */
+  executionPolicy: ApiExecutionPolicy | null
   /** URL called on task events; null if the token requests none. */
   webhookUrl: string | null
   createdAt: number
@@ -63,8 +83,8 @@ export interface CreatedApiTokenDto {
 }
 
 /**
- * CLI and configuration are required: someone who understands the choice decides here, once,
- * what agents will use. Tasks then launch with just a prompt.
+ * Defaults and permissions are separate: callers may override model and effort within the
+ * execution policy. Omitting a policy retains the legacy unrestricted behavior.
  */
 export const createApiTokenBodySchema = z.object({
   label: z.string().min(1).max(120),
@@ -72,18 +92,18 @@ export const createApiTokenBodySchema = z.object({
   projectIds: z.array(z.string()).default([]),
   agent: agentKindSchema,
   config: agentConfigSchema,
+  executionPolicy: apiExecutionPolicySchema.nullable().default(null),
   expiresAt: z.number().int().positive().nullable().default(null),
   /** Task webhook destination. Optional: polling remains complete without it. */
   webhookUrl: z.string().url().nullable().default(null),
 })
 
-/**
- * Tokens are revoked, not edited.
- *
- * Expanding scopes or changing CLI without changing the secret would grant distributed access
- * rights it did not have when issued. Recreating requires exchanging a new secret, exactly the
- * intended action.
- */
-export const updateApiTokenBodySchema = z.object({
-  revoked: z.literal(true),
-})
+/** Cookie-authenticated owners may revise execution limits without redistributing a secret. */
+export const updateApiTokenBodySchema = z.union([
+  z.object({ revoked: z.literal(true) }).strict(),
+  z.object({
+    executionPolicy: apiExecutionPolicySchema,
+    agent: agentKindSchema,
+    config: agentConfigSchema,
+  }).strict(),
+])
