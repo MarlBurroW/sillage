@@ -12,6 +12,8 @@ import type { SessionManager } from '../../sessions/session-manager.js'
 import { readUserSettings } from '../../settings/user-settings.js'
 import { readGitStatus } from '../../git.js'
 import type { AppContext } from '../context.js'
+import { readExecutionPolicy } from '../../auth/api-tokens.js'
+import { allowedModels } from './execution-policy.js'
 import { requireScope } from '../require-user.js'
 
 /**
@@ -83,8 +85,9 @@ export function registerDiscoveryRoutes(
   app.get('/api/v1/agents', async (request) => {
     const { token, user } = requireScope(request, 'projects:read')
 
+    const policy = readExecutionPolicy(token)
     const agents = await Promise.all(
-      registry.all().map(async (adapter): Promise<TaskAgentDto> => {
+      registry.all().filter((adapter) => !policy || policy.agents.some((rule) => rule.agent === adapter.kind)).map(async (adapter): Promise<TaskAgentDto> => {
         const base: TaskAgentDto = {
           agent: adapter.kind,
           label: adapter.label,
@@ -100,7 +103,7 @@ export function registerDiscoveryRoutes(
           return {
             ...base,
             available: true,
-            models: catalog.models.map((model) => ({
+            models: allowedModels(policy, adapter.kind, catalog.models).map((model) => ({
               value: model.value,
               displayName: model.displayName,
               isDefault: model.isDefault,
@@ -114,6 +117,6 @@ export function registerDiscoveryRoutes(
       }),
     )
 
-    return { agents }
+    return { agents, executionPolicy: policy, defaults: { agent: token.agent, config: JSON.parse(token.config) as AgentConfig } }
   })
 }

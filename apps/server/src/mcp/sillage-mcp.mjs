@@ -21,6 +21,7 @@ const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
 const MEMORY_ROOT = GLOBAL && DB_PATH ? process.env.SILLAGE_MCP_MEMORY || join(dirname(DB_PATH), 'memory') : ''
 /** Global write identity: configured username or the database's sole account. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
+const API_TOKEN_ID = process.env.SILLAGE_MCP_TOKEN_ID ?? ''
 /** Global allowed project IDs, comma-separated; empty means everything visible to the account. API-token allowlist supplied by the HTTP bridge. */
 const ALLOWED_PROJECTS = (process.env.SILLAGE_MCP_PROJECTS ?? '').split(',').map((id) => id.trim()).filter(Boolean)
 
@@ -2157,7 +2158,7 @@ async function requestDaemon(kind, payload) {
       `INSERT INTO agent_requests (id, project_id, conversation_id, user_id, kind, payload, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, PROJECT_ID, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify(payload), Date.now())
+    .run(id, PROJECT_ID, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify({ ...payload, __apiTokenId: API_TOKEN_ID || undefined }), Date.now())
 
   const read = db.prepare('SELECT settled_at, result, is_error FROM agent_requests WHERE id = ?')
   const deadline = Date.now() + REQUEST_WAIT_MS[kind]

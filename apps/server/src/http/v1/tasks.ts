@@ -36,6 +36,7 @@ import {
   loadTaskForToken,
   publicBaseUrl,
 } from './access.js'
+import { assertTokenExecution } from './execution-policy.js'
 import { resolveTaskConfig } from './config.js'
 import { taskToDto, taskToSummaryDto } from './task-view.js'
 
@@ -289,7 +290,8 @@ export function registerTaskRoutes(
     const { token, user } = requireScope(request, 'tasks:write')
     const { id } = request.params as { id: string }
     const body = taskMessageBodySchema.parse(request.body)
-    loadTaskForToken(ctx, token, user.id, id)
+    const target = loadTaskForToken(ctx, token, user.id, id)
+    assertTokenExecution(token, JSON.parse(target.config))
 
     const clientMessageId = randomUUID()
     await sessions.sendMessage(id, clientMessageId, body.prompt, [], [])
@@ -310,7 +312,8 @@ export function registerTaskRoutes(
     const { token, user } = requireScope(request, 'tasks:write')
     const { id } = request.params as { id: string }
     const body = taskSteerBodySchema.parse(request.body)
-    loadTaskForToken(ctx, token, user.id, id)
+    const target = loadTaskForToken(ctx, token, user.id, id)
+    assertTokenExecution(token, JSON.parse(target.config))
 
     const clientMessageId = randomUUID()
     const steered = await sessions.steer(id, clientMessageId, body.prompt, [], [])
@@ -358,7 +361,8 @@ export function registerTaskRoutes(
     const { token, user } = requireScope(request, 'tasks:write')
     const { id, requestId } = request.params as { id: string; requestId: string }
     const body = taskReplyBodySchema.parse(request.body)
-    loadTaskForToken(ctx, token, user.id, id)
+    const target = loadTaskForToken(ctx, token, user.id, id)
+    assertTokenExecution(token, JSON.parse(target.config))
 
     const pending = log.openPrompts(id).find((prompt) => prompt.requestId === requestId)
     if (!pending) {

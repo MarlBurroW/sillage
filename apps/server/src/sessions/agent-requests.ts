@@ -4,6 +4,8 @@ import { and, asc, count, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
+  apiTokens,
+  type ApiTokenRow,
   cardNotes,
   conversationPaths,
   cards,
@@ -18,6 +20,7 @@ import {
 } from '@sillage/db'
 import {
   DEFAULT_CHECK_TIMEOUT_SECONDS,
+  EFFORT_FIELD,
   DEFAULT_SCHEDULE_DURATION_MINUTES,
   MAX_CHECK_SCRIPT_CHARS,
   MAX_CHECK_TIMEOUT_SECONDS,
@@ -65,6 +68,10 @@ import { createWebhook, readSettings, revealSecret, webhookUrl } from '../automa
 import { createConversation } from '../conversations/create.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import type { AppContext } from '../http/context.js'
+import { readExecutionPolicy } from '../auth/api-tokens.js'
+import { allowedProjectIds } from '../http/v1/access.js'
+import { allowedModels, assertAgentAllowed, assertTokenExecution } from '../http/v1/execution-policy.js'
+import { resolveTaskConfig } from '../http/v1/config.js'
 import { HttpError } from '../http/errors.js'
 import { advanceCardOnLaunch, createCard, updateCard } from '../http/routes/cards.js'
 import { linkCards, unlinkCards } from '../board/card-relations.js'
@@ -128,7 +135,7 @@ const WORKTREE_STATE_WORDS = {
 } as const
 
 /** Requester is a session or an account without sessions. Global MCP local clients (`docs/mcp.md`) supply `user_id` instead of conversations, with empty `id`, no worktree/task ancestry and no session-specific launch chains, provenance notes or decisions. Use `Pick` rather than whole rows so types expose only fields actually read. */
-type Requester = Pick<ConversationRow, 'id' | 'projectId' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'>
+type Requester = Pick<ConversationRow, 'id' | 'projectId' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'> & { apiToken?: ApiTokenRow }
 
 interface StartSessionPayload {
   prompt?: unknown
@@ -214,7 +221,7 @@ export class AgentRequests {
             .get()
         : null
       if (request.conversationId && !conversation) throw new Refusal('The requesting session no longer exists in this project.')
-      const requester: Requester = conversation ?? this.principal(request)
+      const requester: Requester = conversation ?? this.principal(request, payload)
       const project = this.ctx.db
         .select()
         .from(projects)
@@ -280,15 +287,28 @@ export class AgentRequests {
   }
 
   /** Sessionless requester account named in the request. Default CLI is Claude like new interface projects; global clients specify `agent` for another, as descriptions explain. */
-  private principal(request: AgentRequestRow): Requester {
+  private principal(request: AgentRequestRow, payload: Record<string, unknown>): Requester {
     if (!request.userId) throw new Refusal('The request has no session or account: Sillage does not know whom to act for.')
     const user = this.ctx.db.select().from(users).where(eq(users.id, request.userId)).get()
     if (!user) throw new Refusal('The account to act for no longer exists.')
+    const tokenId = payload.__apiTokenId
+    const token = typeof tokenId === 'string' ? this.ctx.db.select().from(apiTokens).where(eq(apiTokens.id, tokenId)).get() : undefined
+    if (tokenId !== undefined) {
+      if (!token || token.userId !== user.id || token.revokedAt !== null || (token.expiresAt !== null && token.expiresAt <= Date.now())) {
+        throw new Refusal('The API token is no longer valid.')
+      }
+      const allowed = allowedProjectIds(token)
+      const project = this.ctx.db.select().from(projects).where(eq(projects.id, request.projectId)).get()
+      if (!project || project.archivedAt !== null || (project.ownerId !== user.id && project.visibility !== 'shared') ||
+        (allowed.length > 0 && !allowed.includes(project.id))) throw new Refusal('The API token cannot access this project.')
+    }
+
     return {
       id: '',
       projectId: request.projectId,
       userId: user.id,
-      agent: 'claude',
+      agent: token?.agent ?? 'claude',
+      apiToken: token,
       worktreeId: null,
       scheduleId: null,
       title: user.displayName,
@@ -322,7 +342,7 @@ export class AgentRequests {
     this.assertLaunchAllowed(requester, request.id)
 
     const agent = this.parseAgent(payload.agent, requester.agent)
-    const config = await this.launchConfig(agent, project, requester.userId, payload)
+    const config = await this.launchConfig(agent, project, requester.userId, payload, requester.apiToken)
     const worktreeId = await this.launchTree(requester, project, payload.worktree)
     const card = this.launchCard(project.id, payload.card)
     const title =
@@ -337,7 +357,7 @@ export class AgentRequests {
       cardId: card?.id ?? null,
       title,
       titleSource: prompt,
-      origin: null,
+      origin: requester.apiToken ? { tokenId: requester.apiToken.id, label: requester.apiToken.label } : null,
       firstMessage: {
         clientMessageId: randomUUID(),
         // Account-launched missions arrive bare like user input,
@@ -395,7 +415,16 @@ export class AgentRequests {
     project: ProjectRow,
     userId: string,
     payload: StartSessionPayload,
+    token?: ApiTokenRow,
   ): Promise<AgentConfig> {
+    if (token) {
+      const override: Record<string, unknown> = {}
+      if (payload.model !== undefined) override.model = payload.model
+      if (payload.effort !== undefined) override[EFFORT_FIELD[agent]] = payload.effort
+      return (await resolveTaskConfig(this.registry, token, project, {
+        prompt: '', agent, config: override, worktreeId: null,
+      }, readUserSettings(this.ctx.db, userId).agentDefaults, (config) => this.sessions.modelsFor(userId, config))).config
+    }
     const base =
       readProjectDefaults(project.defaultConfig)[agent] ??
       readUserSettings(this.ctx.db, userId).agentDefaults[agent] ??
@@ -657,7 +686,7 @@ export class AgentRequests {
     }
 
     const agent = this.parseAgent(payload.agent, requester.agent)
-    const config = await this.launchConfig(agent, project, requester.userId, payload)
+    const config = await this.launchConfig(agent, project, requester.userId, payload, requester.apiToken)
     const task = createScheduledTask(
       this.ctx.db,
       { projectId: project.id, userId: requester.userId, conversationId: requester.id || undefined },
@@ -746,7 +775,7 @@ export class AgentRequests {
     }
 
     const agent = this.parseAgent(payload.agent, requester.agent)
-    const config = await this.launchConfig(agent, project, requester.userId, payload)
+    const config = await this.launchConfig(agent, project, requester.userId, payload, requester.apiToken)
     const key = this.encryptionKey
     const { task, hook } = this.ctx.db.transaction(() => {
       const task = createScheduledTask(
@@ -947,6 +976,8 @@ export class AgentRequests {
       return `Turn of “${target.title}” interrupted. A message resumes it with its context.`
     }
 
+    if (requester.apiToken) assertTokenExecution(requester.apiToken, agentConfigSchema.parse(JSON.parse(target.config)))
+
     if (kind === 'reply_session') return this.replyToSession(target, requester, payload)
 
     const body = typeof payload.body === 'string' ? payload.body.trim() : ''
@@ -1017,11 +1048,13 @@ export class AgentRequests {
         ? [...agentKindSchema.options]
         : [this.parseAgent(payload.agent, requester.agent)]
 
+    const policy = requester.apiToken ? readExecutionPolicy(requester.apiToken) : null
+    if (payload.agent) for (const agent of agents) assertAgentAllowed(policy, agent)
     const sections: string[] = []
-    for (const agent of agents) {
-      const defaults = await this.launchConfig(agent, project, requester.userId, {}).catch(() => null)
+    for (const agent of agents.filter((kind) => !policy || policy.agents.some((rule) => rule.agent === kind))) {
+      const defaults = await this.launchConfig(agent, project, requester.userId, {}, requester.apiToken).catch(() => null)
       const models = await (defaults?.agent === 'antigravity' ? this.sessions.modelsFor(requester.userId, defaults) : this.registry.adapter(agent).models())
-        .then((listing) => listing.models)
+        .then((listing) => allowedModels(policy, agent, listing.models))
         .catch(() => null)
       const head = defaults
         ? `## ${agent} — defaults: model ${describeModel(defaults)}, effort ${describeEffort(defaults)}`

@@ -1511,6 +1511,8 @@ export const apiTokens = sqliteTable(
     agent: text('agent').$type<AgentKind>().notNull(),
     /** JSON AgentConfig: default settings for tasks launched with this token. */
     config: text('config').notNull(),
+    /** JSON ApiExecutionPolicy; NULL preserves the permissions of existing tokens. */
+    executionPolicy: text('execution_policy'),
     /** URL called on task events; NULL if the token requests none. */
     webhookUrl: text('webhook_url'),
     /**

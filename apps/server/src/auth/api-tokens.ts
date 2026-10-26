@@ -4,6 +4,8 @@ import { apiIdempotency, apiTokens, users, type ApiTokenRow, type Db, type UserR
 import {
   API_TOKEN_PREFIX,
   type AgentKind,
+  type ApiExecutionPolicy,
+  apiExecutionPolicySchema,
   type ApiScope,
   type ApiTokenDto,
 } from '@sillage/protocol'
@@ -35,6 +37,7 @@ export function apiTokenToDto(row: ApiTokenRow): ApiTokenDto {
     projectIds: JSON.parse(row.projectIds) as string[],
     agent: row.agent,
     config: JSON.parse(row.config) as unknown,
+    executionPolicy: readExecutionPolicy(row),
     webhookUrl: row.webhookUrl,
     createdAt: row.createdAt,
     lastUsedAt: row.lastUsedAt,
@@ -50,6 +53,7 @@ export interface NewApiToken {
   projectIds: string[]
   agent: AgentKind
   config: unknown
+  executionPolicy?: ApiExecutionPolicy | null
   expiresAt: number | null
   webhookUrl: string | null
 }
@@ -70,6 +74,7 @@ export function createApiToken(db: Db, input: NewApiToken): { row: ApiTokenRow; 
     projectIds: JSON.stringify(input.projectIds),
     agent: input.agent,
     config: JSON.stringify(input.config),
+    executionPolicy: input.executionPolicy ? JSON.stringify(input.executionPolicy) : null,
     webhookUrl: input.webhookUrl,
     webhookSecret,
     createdAt: Date.now(),
@@ -133,4 +138,9 @@ export function findApiToken(db: Db, id: string, userId: string): ApiTokenRow | 
     .from(apiTokens)
     .where(and(eq(apiTokens.id, id), eq(apiTokens.userId, userId)))
     .get()
+}
+
+/** Validate stored policies too: corrupted restrictions must fail closed. */
+export function readExecutionPolicy(token: Pick<ApiTokenRow, 'executionPolicy'>): ApiExecutionPolicy | null {
+  return token.executionPolicy ? apiExecutionPolicySchema.parse(JSON.parse(token.executionPolicy)) : null
 }

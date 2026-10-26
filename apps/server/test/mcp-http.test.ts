@@ -101,7 +101,9 @@ test('MCP HTTP : la liste blanche du jeton restreint les projets', async (t) => 
 test('MCP HTTP : portée, session et corps sont exigés', async (t) => {
   const h = await harness(t, ['projects:read'])
   const refused = await h.post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
-  assert.equal(refused.statusCode, 403)
+  assert.equal(refused.statusCode, 200)
+  const denied = await h.call(refused.headers['mcp-session-id'] as string, 'list_cards', { project: 'mine' })
+  assert.equal(denied.isError, true)
 
   const scoped = await harness(t)
   assert.equal((await scoped.post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).statusCode, 404)
