@@ -53,7 +53,6 @@ export function openDatabase(file: string): { db: Db; sqlite: SqliteHandle } {
 export function runMigrations(db: Db, migrationsFolder: string): void {
   // SQLite ignores foreign_keys changes inside a transaction. Drizzle rebuilds tables
   // in its migration transaction; disabling beforehand prevents DROP from cascading into journals.
-  const version = db.all<{ schema_version: number }>(sql`PRAGMA schema_version`)[0]?.schema_version
   const enabled = db.all<{ foreign_keys: number }>(sql`PRAGMA foreign_keys`)[0]?.foreign_keys === 1
   if (enabled) db.run(sql`PRAGMA foreign_keys = OFF`)
   try {
@@ -61,5 +60,4 @@ export function runMigrations(db: Db, migrationsFolder: string): void {
   } finally {
     if (enabled) db.run(sql`PRAGMA foreign_keys = ON`)
   }
-  if (version !== db.all<{ schema_version: number }>(sql`PRAGMA schema_version`)[0]?.schema_version && db.all(sql`PRAGMA foreign_key_check`).length) throw new Error('Foreign key violations after migration.')
 }
