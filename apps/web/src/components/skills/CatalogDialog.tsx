@@ -46,10 +46,11 @@ export function CatalogDialog({
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [completed, setCompleted] = useState(0)
-  const { data } = useSkillSources()
+  const { data, isLoading: sourcesLoading, error: sourcesError } = useSkillSources()
   const fetched = (data?.sources ?? []).filter((source) => source.enabled && source.lastCommit !== null)
   const [chosen, setChosen] = useState<string | null>(sourceId ?? null)
-  const current = fetched.find((source) => source.id === chosen) ?? fetched[0] ?? null
+  // An explicit source must never silently resolve to an unrelated first catalog.
+  const current = chosen ? fetched.find((source) => source.id === chosen) ?? null : fetched[0] ?? null
   const { data: catalog, isPending, error: catalogError } = useSourceCatalog(open && current ? current.id : null)
   // Start filtering by requested skill so touch previews sit just below it. Clearing shows the
   // remaining repository.
@@ -112,7 +113,10 @@ export function CatalogDialog({
             </IconButton>
           </header>
 
-          {fetched.length === 0 ? (
+          {sourcesLoading ? <p role="status" className="p-5 text-sm text-ink-faint">{t('skills.files.loading')}</p>
+          : sourcesError ? <div className="p-5"><Banner>{sourcesError.message}</Banner></div>
+          : chosen && !current ? <div className="p-5"><Banner>{t('skills.install.sourceMissing')}</Banner></div>
+          : fetched.length === 0 ? (
             <EmptyState icon={<Library size={22} />} title={t('skills.catalog.noSource')} description={t('skills.catalog.noSource.hint')} />
           ) : (
             // On phones preview replaces the list while retaining selection.
@@ -200,7 +204,7 @@ export function CatalogDialog({
               </div>
             </div>
           )}
-          {fetched.length > 0 ? <footer className="shrink-0 border-t border-line p-4">
+          {current && !sourcesError ? <footer className="shrink-0 border-t border-line p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <Select label={t('skills.field.destination')} value={destination?.value ?? ''} disabled={busy}
                 onChange={(value) => { setTarget(value); setChecked(new Set()); setErrors({}); setCompleted(0) }}

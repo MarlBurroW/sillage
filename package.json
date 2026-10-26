@@ -25,6 +25,7 @@
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",
     "test:skill-updates-ui": "node scripts/skill-updates-ui-check.mjs",
+    "test:skills-navigation-ui": "node scripts/skills-navigation-ui-check.mjs",
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
     "test:git-ui": "node scripts/git-ui-check.mjs",

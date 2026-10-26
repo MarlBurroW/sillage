@@ -16,7 +16,7 @@ const RENAMEABLE = new Set(['skill_name_taken', 'skill_name_invalid', 'skill_dir
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
 /** Four ways to add skills: write, import archive, import directory, or adopt existing machine skills. */
-export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; projectId: string | null }) {
+export function AddSkillMenu({ scope, projectId, onDiscover }: { scope: LibrarySkillScope; projectId: string | null; onDiscover?: () => void }) {
   const t = useTranslate()
   const navigate = useNavigate()
   const importSkill = useImportLibrarySkill()
@@ -59,6 +59,9 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
           </Button>
         }
       >
+        {onDiscover ? <MenuItem icon={<Library size={15} />} onSelect={onDiscover}>
+          {t('skills.tabs.discover')}
+        </MenuItem> : null}
         <MenuItem icon={<FilePlus2 size={15} />} onSelect={() => setCreating(true)}>
           {t('skills.add.new')}
         </MenuItem>
@@ -68,9 +71,9 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
         <MenuItem icon={<FolderInput size={15} />} onSelect={() => folderInput.current?.click()}>
           {t('skills.add.folder')}
         </MenuItem>
-        <MenuItem icon={<Library size={15} />} onSelect={() => setCataloging(true)}>
+        {!onDiscover ? <MenuItem icon={<Library size={15} />} onSelect={() => setCataloging(true)}>
           {t('skills.add.catalog')}
-        </MenuItem>
+        </MenuItem> : null}
         <MenuItem icon={<HardDrive size={15} />} onSelect={() => setBrowsing(true)}>
           {t('skills.add.local')}
         </MenuItem>
@@ -84,7 +87,7 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
 
       <NewSkillDialog open={creating} onClose={() => setCreating(false)} scope={scope} projectId={projectId} />
       <LocalSkillsDialog open={browsing} onClose={() => setBrowsing(false)} scope={scope} projectId={projectId} />
-      <CatalogDialog open={cataloging} onClose={() => setCataloging(false)} scope={scope} projectId={projectId} />
+      {cataloging ? <CatalogDialog open onClose={() => setCataloging(false)} scope={scope} projectId={projectId} /> : null}
 
       <SkillDialog
         open={renaming !== null}
