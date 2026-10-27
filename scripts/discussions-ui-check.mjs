@@ -76,9 +76,11 @@ async function exercise(profile, base, handshake) {
   await page.getByRole('button', { name: 'Continuer avec ce contexte', exact: true }).waitFor()
   await shot(page, `${profile}-continuation`)
   await page.setViewportSize({ width: 390, height: 844 })
-  const closeNavigation = page.getByRole('button', { name: 'Fermer la navigation', exact: true })
-  const closeBounds = await closeNavigation.boundingBox()
-  if (closeBounds && closeBounds.x >= 0 && closeBounds.x + closeBounds.width <= 390) await closeNavigation.click()
+  // Wait for the responsive sidebar transition before measuring or capturing phone content.
+  await page.waitForFunction(() => {
+    const navigation = document.querySelector('aside[aria-hidden="true"]')
+    return navigation && navigation.getBoundingClientRect().right <= 0
+  })
   await page.getByRole('button', { name: 'Continuer avec ce contexte', exact: true }).scrollIntoViewIfNeeded()
   await page.getByRole('button', { name: 'Continuer avec ce contexte', exact: true }).click({ trial: true })
   assert.ok(await page.getByRole('button', { name: 'Continuer avec ce contexte', exact: true }).evaluate(node => {
