@@ -20,13 +20,10 @@ export const claudeAccountSchema = z.object({
   id: z.string(),
   /** User-chosen label (“Personal”, “Work”): the token does not identify its owner. */
   label: z.string(),
-  kind: claudeAccountKindSchema,
   /**
-   * Subscription usage gauge: a setup-token token only has `user:inference` scope and cannot
-   * read plan limits. A real login (`claude auth login`), stored separately and reserved for
-   * usage reads, can. Null until configured, and for API keys, which have no plan.
+   * `oauth` accounts have a usage gauge, read with their own token; API keys have no plan.
    */
-  gauge: z.object({ email: z.string().nullable() }).nullable(),
+  kind: claudeAccountKindSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
 })
@@ -74,20 +71,14 @@ export interface ClaudeAccountListDto {
 /**
  * Guided subscription login: Sillage runs `claude setup-token` in a pseudoterminal, shows the
  * authorization URL, accepts the code displayed by the page and captures the printed token. The
- * account is created only at completion, with that token.
+ * account is created only at completion, with that token, which also reads its usage gauge.
  */
 export const startClaudeLoginBodySchema = z.object({ label: claudeAccountLabelSchema })
 
-/**
- * Guided-login purpose: `token` creates an account using `setup-token`; `gauge` adds a usage
- * gauge to an existing account through `auth login`.
- */
-export type ClaudeLoginPurpose = 'token' | 'gauge'
 export const submitClaudeLoginCodeBodySchema = z.object({ code: z.string().trim().min(1).max(400) })
 
 export interface ClaudeLoginStatusDto {
   loginId: string
-  purpose: ClaudeLoginPurpose
   /**
    * `starting` until the CLI prints its URL; `waiting_code` while awaiting a code; `checking`
    * during verification; `done` with the created account; `failed` with a reason. Codes can be

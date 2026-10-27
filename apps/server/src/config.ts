@@ -86,7 +86,7 @@ export interface Paths {
   antigravityAccounts: string
   /** One `GROK_HOME` per additional Grok account; see `grok-accounts/homes.ts`. */
   grokAccounts: string
-  /** One login per Claude subscription solely for usage gauges; see `claude-accounts/gauges.ts`. */
+  /** Former per-account gauge logins, deleted at startup; account tokens read usage now. */
   claudeAccounts: string
   webRoot: string
 }

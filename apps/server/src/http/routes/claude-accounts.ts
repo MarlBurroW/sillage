@@ -49,7 +49,7 @@ export function registerClaudeAccountRoutes(
   /**
    * Guided subscription login: runs `claude setup-token` and returns the URL to
    * open. The displayed code comes back through the next route; the account is
-   * created when the CLI prints its token.
+   * created when the CLI prints its token, which also reads its usage gauge.
    */
   app.post('/api/claude-accounts/login', async (request, reply): Promise<ClaudeLoginStatusDto> => {
     const user = requireUser(request)
@@ -80,30 +80,6 @@ export function registerClaudeAccountRoutes(
     const user = requireUser(request)
     const { loginId } = request.params as { loginId: string }
     if (!(await login.cancel(user.id, loginId))) throw unknownLogin()
-    reply.status(204)
-  })
-
-  /**
-   * Usage gauge for an existing subscription: `claude auth login`, tracked by
-   * `/login/:loginId` like guided login. API keys have no subscription allowance.
-   */
-  app.post('/api/claude-accounts/:id/gauge', async (request, reply): Promise<ClaudeLoginStatusDto> => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    const account = accounts.find(user.id, id)
-    if (!account) throw notFound('claude_account_not_found', 'Unknown Claude account.')
-    if (account.kind !== 'oauth') {
-      throw new HttpError(400, 'claude_account_no_plan', 'An API key has no plan limits to read.')
-    }
-    reply.status(201)
-    return login.startGauge(user.id, id, account.label)
-  })
-
-  app.delete('/api/claude-accounts/:id/gauge', async (request, reply) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    if (!accounts.find(user.id, id)) throw notFound('claude_account_not_found', 'Unknown Claude account.')
-    accounts.gauges?.forget(id)
     reply.status(204)
   })
 

@@ -108,25 +108,3 @@ export function useCancelClaudeLogin() {
     mutationFn: (loginId: string) => api.delete<void>(`/api/claude-accounts/login/${encodeURIComponent(loginId)}`),
   })
 }
-
-/**
- * Existing subscription usage: run `claude auth login` like guided login through the same tracking
- * routes. Used only to read usage.
- */
-export function useStartClaudeGauge() {
-  return useMutation({
-    mutationFn: (accountId: string) =>
-      api.post<ClaudeLoginStatusDto>(`/api/claude-accounts/${encodeURIComponent(accountId)}/gauge`),
-  })
-}
-
-export function useForgetClaudeGauge() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (accountId: string) => api.delete<void>(`/api/claude-accounts/${encodeURIComponent(accountId)}/gauge`),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
-      void queryClient.invalidateQueries({ queryKey: ['usage'] })
-    },
-  })
-}

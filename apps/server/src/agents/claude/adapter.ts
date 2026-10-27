@@ -156,10 +156,10 @@ export class ClaudeAdapter implements AgentAdapter {
     return this.usageReader.read(force)
   }
 
-  /** `credential` is the gauge-login directory; empty means accounts have none. */
+  /** `credential` is the account's `setup-token` token; empty for API keys, which have no plan. */
   usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
     if (!credential) return Promise.resolve(claudeAccountUsage())
-    return this.usageReader.readForConfigDir(accountId, credential, force)
+    return this.usageReader.readForToken(accountId, credential, force)
   }
 
   commands(cwd: string, force: boolean): Promise<ProjectCommandsDto> {

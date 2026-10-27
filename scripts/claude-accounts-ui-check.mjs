@@ -92,14 +92,9 @@ try {
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Secret mis à jour le').waitFor()
   await page.getByText('Abonnement', { exact: true }).waitFor()
-  // A subscription without a gauge says so and offers to enable it; starting the flow
-  // shows an authorization link requesting profile scope, then cancels.
-  await page.getByText("Pas de jauge d'usage").waitFor()
-  await page.getByRole('button', { name: 'Activer la jauge' }).click()
-  await page.getByText("Jauge d'usage", { exact: true }).or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
-  await page.screenshot({ path: '/tmp/sillage-claude-gauge.png', fullPage: true })
-  await page.getByRole('button', { name: 'Annuler' }).click()
-  await page.getByRole('button', { name: 'Activer la jauge' }).waitFor()
+  // A subscription reads its gauge with its own token: no second sign-in to offer.
+  await page.getByText(/Lecture de l’usage…|Usage illisible pour l’instant|5 heures/).first().waitFor({ timeout: 60000 })
+  assert.equal(await page.getByRole('button', { name: /jauge/i }).count(), 0)
   assert.ok(!(await page.content()).includes(TOKEN), 'Le jeton ne revient jamais au navigateur')
   // A Console API key is recognized by prefix and displayed accordingly.
   await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()

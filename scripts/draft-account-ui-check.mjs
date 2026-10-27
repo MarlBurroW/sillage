@@ -93,7 +93,8 @@ try {
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
   const group = page.getByRole('radiogroup', { name: 'Compte' })
   await group.waitFor()
-  await page.getByRole('radio', { name: /Boulot/ }).getByText(/pas de jauge/).waitFor()
+  // Subscription tokens read their own usage; this fake one cannot, and says so.
+  await page.getByRole('radio', { name: /Boulot/ }).getByText(/pas pu être lu/).waitFor({ timeout: 60000 })
   assert.equal(await page.getByRole('radio', { name: /Connexion du CLI/ }).getAttribute('aria-checked'), 'true')
   // Usage for the CLI's sign-in appears below its option, read from the real CLI.
   await page.getByRole('radio', { name: /Connexion du CLI/ }).getByText(/%|Pas de limite|pas pu être lu/).waitFor({ timeout: 40000 })

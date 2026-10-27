@@ -33,7 +33,8 @@ interface ControlSessionOptions {
 
 export async function withControlSession<T>(
   { executable, cwd, tag, timeoutMs = DEFAULT_TIMEOUT_MS, options }: ControlSessionOptions,
-  fn: (session: Query) => Promise<T>,
+  // `input` is for the rare probe that needs one real turn; control requests leave it empty.
+  fn: (session: Query, input: AsyncQueue<SDKUserMessage>) => Promise<T>,
 ): Promise<T> {
   const release = await acquire()
   const input = new AsyncQueue<SDKUserMessage>()
@@ -58,7 +59,7 @@ export async function withControlSession<T>(
       abort.abort()
     }, timeoutMs)
     try {
-      return await fn(session)
+      return await fn(session, input)
     } catch (err) {
       // SDK only says “Query closed before response received” on abort: 502 readers must know
       // timeout caused it.

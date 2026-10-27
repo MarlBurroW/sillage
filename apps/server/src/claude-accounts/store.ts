@@ -3,15 +3,12 @@ import { and, asc, eq } from 'drizzle-orm'
 import { claudeAccounts, type Db } from '@sillage/db'
 import { claudeSecretKind, type ClaudeAccount, type ClaudeAccountKind } from '@sillage/protocol'
 import { decryptValue, encryptValue } from '../secrets/cipher.js'
-import type { ClaudeAccountGauges } from './gauges.js'
 
 /** Additional Claude account secrets, per account and user. Session managers load selected secrets at conversation launch into CLI environments; routes return only labels and secret kinds, like git credentials. */
 export class ClaudeAccountStore {
   constructor(
     private readonly db: Db,
     private readonly key: Buffer,
-    /** Without gauges no accounts have usage data; useful for tests not exercising it. */
-    readonly gauges: ClaudeAccountGauges | null = null,
   ) {}
 
   list(ownerId: string): ClaudeAccount[] {
@@ -27,17 +24,11 @@ export class ClaudeAccountStore {
       .where(eq(claudeAccounts.ownerId, ownerId))
       .orderBy(asc(claudeAccounts.label))
       .all()
-      .map((row) => ({ ...row, gauge: this.gaugeOf(row.id, row.kind) }))
   }
 
   /** Account only if owned by this user, without secrets. */
   find(ownerId: string, id: string): ClaudeAccount | undefined {
     return this.list(ownerId).find((account) => account.id === id)
-  }
-
-  /** API keys have no subscription: even leftover directories cannot give them gauges. */
-  private gaugeOf(id: string, kind: ClaudeAccountKind): ClaudeAccount['gauge'] {
-    return kind === 'oauth' ? (this.gauges?.describe(id) ?? null) : null
   }
 
   /** False when another account owned by this user already has the label. */
@@ -58,7 +49,7 @@ export class ClaudeAccountStore {
       .insert(claudeAccounts)
       .values({ id, ownerId, label, kind, ...encryptValue(this.key, secret), createdAt: now, updatedAt: now })
       .run()
-    return { id, label, kind, gauge: null, createdAt: now, updatedAt: now }
+    return { id, label, kind, createdAt: now, updatedAt: now }
   }
 
   /** Renames or replaces secrets: expired tokens are rewritten, not corrected. */
@@ -81,8 +72,6 @@ export class ClaudeAccountStore {
   delete(ownerId: string, id: string): boolean {
     if (!this.row(ownerId, id)) return false
     this.db.delete(claudeAccounts).where(eq(claudeAccounts.id, id)).run()
-    // Remove gauge logins too: removed subscriptions must no longer be queried.
-    this.gauges?.forget(id)
     return true
   }
 

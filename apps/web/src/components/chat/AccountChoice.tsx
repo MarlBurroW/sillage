@@ -1,11 +1,11 @@
 import { useAntigravityAccounts } from '../../lib/antigravity-accounts'
 import { IdCard } from 'lucide-react'
-import type { AgentConfig, AgentUsage, UsageWindow } from '@sillage/protocol'
+import type { AgentConfig, AgentUsage } from '@sillage/protocol'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
 import { useTranslate } from '../../lib/i18n'
-import { useAccountsUsage } from '../../lib/usage'
+import { busiestWindows, useAccountsUsage } from '../../lib/usage'
 import { ChoiceList, type Choice } from '../ui'
 
 /**
@@ -18,17 +18,14 @@ import { ChoiceList, type Choice } from '../ui'
 /** CLI-login display value: null cannot be an option value. */
 const CLI_ACCOUNT = 'cli'
 
-/** gauged means readable subscription usage: ChatGPT or Claude with its meter. */
-type Account = { id: string; label: string; kind: 'oauth' | 'apiKey' | 'chatgpt' | 'grok' | 'gauged' }
+/** gauged means readable subscription usage: a Claude subscription token, Antigravity with OAuth. */
+type Account = { id: string; label: string; kind: 'apiKey' | 'chatgpt' | 'grok' | 'gauged' }
 
 /** Most loaded window first, then the next: the data determining selection. */
 function summarize(usage: AgentUsage | undefined, t: ReturnType<typeof useTranslate>): string | undefined {
   if (!usage) return undefined
   if (!usage.limitsAvailable || usage.windows.length === 0) return t('draft.account.noGauge')
-  const ranked = [...usage.windows]
-    .filter((window): window is UsageWindow & { utilization: number } => window.utilization !== null)
-    .sort((a, b) => b.utilization - a.utilization)
-    .slice(0, 2)
+  const ranked = busiestWindows(usage)
   if (ranked.length === 0) return undefined
   return ranked.map((window) => `${window.label} ${Math.round(window.utilization * 100)} %`).join(' · ')
 }
@@ -56,7 +53,7 @@ export function AccountChoice({
     ? (claudeList?.accounts ?? []).map((account) => ({
         id: account.id,
         label: account.label,
-        kind: account.kind === 'oauth' && account.gauge ? ('gauged' as const) : account.kind,
+        kind: account.kind === 'oauth' ? ('gauged' as const) : account.kind,
       }))
     : isCodex
       ? (codexList?.accounts ?? [])
@@ -80,11 +77,10 @@ export function AccountChoice({
         : isAntigravity ? (antigravityList?.accounts ?? []).filter((account) => account.status === 'ready').map((account) => ({ id: account.id, label: account.label, kind: account.authMode?.startsWith('oauth-') ? ('gauged' as const) : ('apiKey' as const) })) : []
 
   const chosen = config.agent === 'opencode' ? null : config.account
-  // CLI login then accounts. Ungauged setup tokens cannot read their plan and API keys have none:
-  // probing returns nothing, so use prose previews.
+  // CLI login then accounts. API keys have no plan: probing returns nothing, so use prose previews.
   const probed: (string | null)[] = [
     null,
-    ...accounts.filter((account) => account.kind !== 'oauth' && account.kind !== 'apiKey').map((account) => account.id),
+    ...accounts.filter((account) => account.kind !== 'apiKey').map((account) => account.id),
   ]
   const usages = useAccountsUsage(config.agent, probed, enabled && accounts.length > 0)
   const usageOf = (account: string | null) => usages[probed.indexOf(account)]
@@ -92,7 +88,6 @@ export function AccountChoice({
   if (config.agent === 'opencode' || accounts.length === 0) return null
 
   const hintFor = (account: Account | null): string | undefined => {
-    if (account?.kind === 'oauth') return t('draft.account.tokenNoGauge')
     if (account?.kind === 'apiKey') return t('draft.account.apiKey')
     const query = usageOf(account?.id ?? null)
     if (query?.error) return t('draft.account.unreadable')

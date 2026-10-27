@@ -9,10 +9,11 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Guided Claude sign-ins through success: subscription token, then gauge. Fake CLI
-// replays `setup-token`/`auth login` dialogue (probed on 2.1.296), accepting codes
-// starting GOOD. Count state rereads: an invalidation loop ran at forty requests
-// per second here (October 13, 2026).
+// Guided Claude sign-in through success, one page and one code: the same token runs
+// sessions and reads the gauge. Fake CLI replays the `setup-token` dialogue (probed on
+// 2.1.296), accepting codes starting GOOD. Count state rereads: an invalidation loop
+// ran at forty requests per second here (October 13, 2026). A second sign-in completes
+// through the browser callback alone, with no code, as when the CLI's own tab is used.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -49,11 +50,19 @@ async function ready(url, child) {
 }
 
 const FAKE_CLI = `#!/bin/bash
-# Fake claude: setup-token/auth login; everything else acts like a signed-out CLI.
+# Fake claude: setup-token; everything else acts like a signed-out CLI.
 if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi
 url="https://claude.com/cai/oauth/authorize?code=true&client_id=x&response_type=code&scope=user%3Ainference&state=S$RANDOM$RANDOM"
 if [ "$1" = "setup-token" ]; then
+  # Sillage must keep the CLI from opening a browser of its own.
+  [ "$BROWSER" = "true" ] || { echo "BROWSER not neutralized: $BROWSER"; exit 3; }
   printf 'Browser didn'"'"'t open? Use the url below to sign in\\r\\n\\033]8;id=1;%s\\007%s\\033]8;;\\007\\r\\nPaste code here if prompted > ' "$url" "\${url:0:60}"
+  # Callback flow: the browser tab answered the CLI directly.
+  if [ -e "$(dirname "$0")/auto" ]; then
+    sleep 1
+    printf '\\r\\nYour OAuth token (valid for 365 days):\\r\\n\\033[33msk-ant-oat01-%s\\033[39m\\r\\n' "$(printf 'B%.0s' $(seq 1 90))"
+    sleep 30; exit 0
+  fi
   # Like the real CLI: rejection waits for Enter, then reopens the prompt.
   while read -r code; do
     if [ "\${code:0:4}" = "GOOD" ]; then
@@ -64,17 +73,6 @@ if [ "$1" = "setup-token" ]; then
     printf '\\r\\nOAuth error: Invalid code. Press Enter to retry.\\r\\n'
   done
   exit 0
-fi
-if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
-  echo "If the browser didn't open, visit: \${url/user%3Ainference/user%3Aprofile+user%3Ainference}"
-  printf 'Paste code here if prompted > '
-  read -r code
-  if [ "\${code:0:4}" = "GOOD" ]; then
-    echo '{"claudeAiOauth":{}}' > "$CLAUDE_CONFIG_DIR/.credentials.json"
-    echo '{"oauthAccount":{"emailAddress":"perso@example.com"}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
-    echo "Login successful."; exit 0
-  fi
-  echo "Login failed: Request failed with status code 400"; exit 1
 fi
 exit 1
 `
@@ -134,26 +132,24 @@ try {
   })
   await delay(2500)
   assert.ok(recentPolls() <= 2, `Relectures après la fin : ${recentPolls()} en une seconde`)
-  await page.getByText('Pas de jauge d\'usage').waitFor()
+  // No second step: the account shows its gauge line at once. The fake CLI cannot run the
+  // usage turn, so the line reports it unreadable; the real probe is checked separately.
+  assert.equal(await page.getByRole('button', { name: /jauge/i }).count(), 0, 'Plus de bouton de jauge')
+  await page.getByText('Usage illisible pour l’instant').waitFor({ timeout: 60000 })
 
-  // Chained gauge: rejection restarts CLI; correct code enables it.
-  await page.getByRole('button', { name: 'Activer la jauge' }).first().click()
-  await page.getByText("Jauge d'usage", { exact: true }).waitFor()
-  await page.getByLabel('Code', { exact: true }).fill('BAD-' + 'y'.repeat(80))
-  await page.getByRole('button', { name: 'Valider le code' }).click()
-  await page.getByText(/Code refusé/).waitFor({ timeout: 15000 })
-  await page.getByLabel('Code', { exact: true }).fill('GOOD-' + 'y'.repeat(80))
-  await page.getByRole('button', { name: 'Valider le code' }).click()
-  await page.getByText(/connectée en tant que perso@example.com/).waitFor({ timeout: 15000 })
-  await delay(2500)
-  assert.ok(recentPolls() <= 2, `Relectures après la jauge : ${recentPolls()} en une seconde`)
-  await page.getByText("Jauge d'usage active · perso@example.com").waitFor()
+  // Callback completion: the token arrives without any code and the screen follows.
+  await writeFile(join(data, 'auto'), '')
+  await page.getByRole('button', { name: 'Fermer' }).click()
+  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByLabel('Nom').fill('Boulot')
+  await page.getByRole('button', { name: 'Lancer la connexion' }).click()
+  await page.getByText(/Boulot est enregistré/).waitFor({ timeout: 15000 })
   await page.screenshot({ path: '/tmp/sillage-claude-login-success.png', fullPage: true })
 
   const accounts = await (await context.request.get(`${base}/api/claude-accounts`)).json()
-  assert.deepEqual(accounts.accounts.map((entry) => [entry.label, entry.kind, entry.gauge?.email ?? null]), [['Perso', 'oauth', 'perso@example.com']])
+  assert.deepEqual(accounts.accounts.map((entry) => [entry.label, entry.kind]), [['Boulot', 'oauth'], ['Perso', 'oauth']])
   assert.deepEqual(errors, [])
-  console.log(`OK : jeton puis jauge menés au succès, refus repris, ${polls.length} relectures en tout, sans boucle.`)
+  console.log(`OK : un code suffit, refus repris, retour navigateur accepté, ${polls.length} relectures en tout, sans boucle.`)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

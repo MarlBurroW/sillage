@@ -90,9 +90,10 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   const usage = await app.inject(`/api/agents/claude/usage?account=${account.id}`)
   assert.equal(usage.statusCode, 200, usage.body)
   assert.equal(usage.json<AgentUsage>().plan, account.id)
-  // Without gauges, accounts are known but nothing can be read: adapters receive
-  // empty strings, never tokens, which cannot read subscription limits.
-  assert.deepEqual(seen, [{ accountId: account.id, token: '' }])
+  // Subscription tokens read their own usage; API keys have no plan and reach the
+  // adapter as empty strings, never as secrets.
+  assert.equal((await app.inject(`/api/agents/claude/usage?account=${keyed.id}`)).statusCode, 200)
+  assert.deepEqual(seen, [{ accountId: account.id, token: TOKEN }, { accountId: keyed.id, token: '' }])
   assert.equal((await app.inject({ url: `/api/agents/claude/usage?account=${account.id}`, headers: { 'x-user': 'other' } })).statusCode, 404)
   assert.equal((await app.inject('/api/agents/claude/usage')).json<AgentUsage>().plan, 'cli', 'Sans compte, la connexion du CLI')
 
@@ -110,41 +111,24 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal(store.list('other').length, 1)
 })
 
-test('jauge d’un abonnement : reprise d’un dossier jetable, courriel lu, retirée avec le compte', async (t) => {
-  const { ClaudeAccountGauges } = await import('../src/claude-accounts/gauges.js')
-  const { mkdirSync, writeFileSync, existsSync, statSync } = await import('node:fs')
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-gauges-'))
-  t.after(() => rm(dir, { recursive: true, force: true }))
-  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
-  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
-  t.after(() => sqlite.close())
-  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
-  const gauges = new ClaudeAccountGauges(join(dir, 'claude-accounts'))
-  const store = new ClaudeAccountStore(db, randomBytes(32), gauges)
-
-  const account = store.create('owner', 'Perso', TOKEN)
-  const keyed = store.create('owner', 'Boîte', 'sk-ant-api03-' + 'k'.repeat(40))
-  assert.equal(store.find('owner', account.id)?.gauge, null)
-
-  // Failed logins leave nothing: neither credentials nor resumable state.
-  const staging = join(dir, 'staging')
-  mkdirSync(staging)
-  assert.throws(() => gauges.adopt(account.id, staging))
-  assert.equal(gauges.has(account.id), false)
-
-  writeFileSync(join(staging, '.credentials.json'), '{"claudeAiOauth":{}}')
-  writeFileSync(join(staging, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'perso@example.com' } }))
-  writeFileSync(join(staging, 'history.jsonl'), 'pas gardé')
-  gauges.adopt(account.id, staging)
-  assert.deepEqual(store.find('owner', account.id)?.gauge, { email: 'perso@example.com' })
-  assert.equal(existsSync(join(gauges.path(account.id), 'history.jsonl')), false, 'Seule la connexion est gardée')
-  assert.equal(statSync(join(gauges.path(account.id), '.credentials.json')).mode & 0o777, 0o600)
-
-  // API keys have no subscription; even stray directories cannot give them gauges.
-  mkdirSync(gauges.path(keyed.id), { recursive: true })
-  writeFileSync(join(gauges.path(keyed.id), '.credentials.json'), '{}')
-  assert.equal(store.find('owner', keyed.id)?.gauge, null)
-
-  assert.ok(store.delete('owner', account.id))
-  assert.equal(existsSync(gauges.path(account.id)), false, 'La jauge part avec le compte')
+test('jauge d’un abonnement : fenêtres lues dans les événements de limite du CLI', async () => {
+  const { usageFromRateLimits } = await import('../src/agents/claude/usage.js')
+  // Shape observed on 2.1.301 with a setup-token token after one Haiku turn.
+  const usage = usageFromRateLimits([
+    {
+      status: 'allowed',
+      resetsAt: 1793119800,
+      rateLimitType: 'five_hour',
+      unifiedWindows: { five_hour: { utilization: 0.03, resetsAt: 1793119800 }, seven_day: { utilization: 0.28, resetsAt: 1793404800 } },
+    } as never,
+  ])
+  assert.equal(usage.limitsAvailable, true)
+  assert.deepEqual(usage.windows, [
+    { id: 'five_hour', label: '5 heures', utilization: 0.03, resetsAt: 1793119800_000 },
+    { id: 'seven_day', label: '7 jours', utilization: 0.28, resetsAt: 1793404800_000 },
+  ])
+  // Without `unifiedWindows`, each event still gives its own window.
+  const fallback = usageFromRateLimits([{ status: 'allowed', rateLimitType: 'seven_day', utilization: 0.5, resetsAt: 10 }])
+  assert.deepEqual(fallback.windows, [{ id: 'seven_day', label: '7 jours', utilization: 0.5, resetsAt: 10_000 }])
+  assert.equal(usageFromRateLimits([]).limitsAvailable, false)
 })

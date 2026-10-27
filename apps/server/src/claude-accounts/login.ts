@@ -4,13 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import { launchOf } from '../agents/launch.js'
-import { existsSync } from 'node:fs'
-import { claudeSecretKind, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@sillage/protocol'
+import { claudeSecretKind, type ClaudeLoginStatusDto } from '@sillage/protocol'
 import { agentProcessEnv } from '../agents/process-env.js'
-import type { ClaudeAccountGauges } from './gauges.js'
 import type { ClaudeAccountStore } from './store.js'
 
-/** Guided Claude subscription login through `claude setup-token` in a pseudo-terminal. No nonterminal subscription flow exists: setup-token opens browsers or prints authorization URLs, waits for pasted codes, then prints tokens. Probed on 2.1.296 under `script`: URLs use OSC 8 links followed by 'Paste code here if prompted'; wrong codes yield 'OAuth error: Invalid code … Press Enter to retry'; configuration directories remain untouched. Sillage mirrors this dialogue. Use disposable configuration directories to avoid reading or writing host authentication; tokens exist only in memory until encrypted into accounts created at that point. Existing account gauges use `claude auth login`: same URL/prompt (2.1.296), but scopes include `user:profile` and credentials are written rather than printed. Detect `.credentials.json`, then let `ClaudeAccountGauges.adopt` retain the directory before cleanup. */
+/** Guided Claude subscription login through `claude setup-token` in a pseudo-terminal. No nonterminal subscription flow exists: setup-token opens browsers or prints authorization URLs, waits for pasted codes, then prints tokens. Probed on 2.1.296 under `script`: URLs use OSC 8 links followed by 'Paste code here if prompted'; wrong codes yield 'OAuth error: Invalid code … Press Enter to retry'; configuration directories remain untouched. Sillage mirrors this dialogue. Use disposable configuration directories to avoid reading or writing host authentication; tokens exist only in memory until encrypted into accounts created at that point. One login is enough: the same token feeds sessions and the usage gauge (see `ClaudeUsageReader.readForToken`). A second `claude auth login` once supplied the gauge, at the cost of a second page and code. */
 
 /** Close waiting CLIs after this timeout when nobody pasted codes. */
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
@@ -27,17 +25,13 @@ const TOKEN_CHARS = /[A-Za-z0-9_-]/
 const TOKEN_MIN_LENGTH = 60
 /** Patterns stop where CLIs resume control: 'Press Enter to retry', 'Retrying…'. */
 const ERROR_PATTERN = /OAuth\s*error:\s*(.*?)(?=[\s\x00]*(?:Press\s*Enter|Retrying|$))/i
-/** `auth login` rejection text before exit, probed on 2.1.296. */
-const LOGIN_FAILED_PATTERN = /Login\s*failed:\s*([^\n\x00]*)/i
-/** `auth login` retries after rejected codes before giving up. */
-const MAX_RELAUNCHES = 5
+/** Opener the CLI runs instead of a browser. setup-token opens one itself with a localhost-callback URL besides printing the manual one: on Desktop that tab appeared on the user's machine, asked for nothing, and consumed the flow, so the code from Sillage's own link was then refused (October 2026). `true` does nothing and exits 0; Windows has no such command, and an automatic completion there is still caught (see `consume`). */
+const NO_BROWSER: Record<string, string> = process.platform === 'win32' ? {} : { BROWSER: 'true' }
 
 interface Login {
   ownerId: string
-  purpose: ClaudeLoginPurpose
-  /** Account label to create (`token`) or account receiving its gauge (`gauge`). */
+  /** Account label to create. */
   label: string
-  accountId: string | null
   pty: IPty
   configDir: string
   /** Accumulated terminal-cleaned output for reading prompts and tokens. */
@@ -48,10 +42,7 @@ interface Login {
   timer: NodeJS.Timeout
   /** Current code-verification timeout, when present. */
   checking: { since: number; timer: NodeJS.Timeout } | null
-  /** CLI restart arguments and restart count. */
-  args: string[]
-  relaunches: number
-  /** Set by `finish`: subsequent CLI death must not restart it. */
+  /** Set by `finish`: subsequent CLI exits are expected. */
   closing: boolean
 }
 
@@ -112,13 +103,7 @@ export class ClaudeLoginService {
   constructor(
     private readonly store: ClaudeAccountStore,
     private readonly binary: () => Promise<string>,
-    private readonly gauges: ClaudeAccountGauges | null = null,
   ) {}
-
-  /** Login supplying existing-account gauges through `claude auth login`. */
-  startGauge(ownerId: string, accountId: string, label: string): Promise<ClaudeLoginStatusDto> {
-    return this.launch(ownerId, 'gauge', label, accountId)
-  }
 
   status(ownerId: string, loginId: string): ClaudeLoginStatusDto | undefined {
     const login = this.logins.get(loginId)
@@ -126,33 +111,19 @@ export class ClaudeLoginService {
   }
 
   /** Starts CLIs and waits for URLs or earlier failures. */
-  start(ownerId: string, label: string): Promise<ClaudeLoginStatusDto> {
-    return this.launch(ownerId, 'token', label, null)
-  }
-
-  private async launch(
-    ownerId: string,
-    purpose: ClaudeLoginPurpose,
-    label: string,
-    accountId: string | null,
-  ): Promise<ClaudeLoginStatusDto> {
+  async start(ownerId: string, label: string): Promise<ClaudeLoginStatusDto> {
     const loginId = randomUUID()
-    const args = purpose === 'token' ? ['setup-token'] : ['auth', 'login', '--claudeai']
-    const { pty, configDir } = await this.spawnCli(args)
+    const { pty, configDir } = await this.spawnCli()
     const login: Login = {
       ownerId,
-      purpose,
       label,
-      accountId,
       pty,
       configDir,
       output: '',
       raw: '',
-      status: { loginId, purpose, state: 'starting', authUrl: null, error: null, account: null },
+      status: { loginId, state: 'starting', authUrl: null, error: null, account: null },
       timer: setTimeout(() => this.finish(loginId, 'Personne n’a collé le code à temps : connexion abandonnée.'), LOGIN_TIMEOUT_MS),
       checking: null,
-      args,
-      relaunches: 0,
       closing: false,
     }
     this.logins.set(loginId, login)
@@ -177,7 +148,7 @@ export class ClaudeLoginService {
     // After rejection, CLIs await Enter to reopen prompts (probed): send it before
     // the next code. Strip pasted whitespace and newlines,
     // which the CLI would reject unchanged.
-    if (login.status.state === 'failed' && login.purpose === 'token') login.pty.write('\r')
+    if (login.status.state === 'failed') login.pty.write('\r')
     login.status = { ...login.status, state: 'checking', error: null }
     const since = login.output.length
     // Write code and Enter separately with a delay: together, CLIs treat long codes
@@ -202,29 +173,20 @@ export class ClaudeLoginService {
     login.checking = { since, timer }
     // Streams may already have completed between writing and waiting.
     this.settle(loginId)
-    // `auth login` can write credentials without more output: poll its
-    // directory during verification.
-    if (login.purpose === 'gauge') {
-      const watch = setInterval(() => {
-        if (!login.checking) return clearInterval(watch)
-        this.settle(loginId)
-      }, 1000)
-    }
     return login.status
   }
 
   /** Fresh CLI inside its own disposable directory. */
-  private async spawnCli(args: string[]): Promise<{ pty: IPty; configDir: string }> {
+  private async spawnCli(): Promise<{ pty: IPty; configDir: string }> {
     const configDir = await mkdtemp(join(tmpdir(), 'sillage-claude-login-'))
     const launch = launchOf(await this.binary())
-    const pty = spawn(launch.command, [...launch.args, ...args], {
+    const pty = spawn(launch.command, [...launch.args, 'setup-token'], {
       name: 'xterm-256color',
-      // Wide terminals: `auth login` prints plain URLs rather than links, and its longer
-      // seven-scope URL must not depend on terminal width.
+      // Wide terminals keep URLs and tokens on fewer lines; both are reassembled anyway.
       cols: 400,
       rows: 40,
       cwd: configDir,
-      env: agentProcessEnv({ CLAUDE_CONFIG_DIR: configDir, TERM: 'xterm-256color' }) as Record<string, string>,
+      env: agentProcessEnv({ CLAUDE_CONFIG_DIR: configDir, TERM: 'xterm-256color', ...NO_BROWSER }) as Record<string, string>,
     })
     return { pty, configDir }
   }
@@ -237,49 +199,19 @@ export class ClaudeLoginService {
     pty.onExit(({ exitCode }) => {
       const current = this.logins.get(loginId)
       if (!current || current.pty !== pty || current.closing || current.status.state === 'done') return
-      void this.exited(loginId, exitCode)
+      this.exited(loginId, exitCode)
     })
   }
 
-  /** CLI exited without finishing. setup-token awaits new codes after rejection, while auth login exits ('Login failed: …', probed 2.1.296). Preserve the same interaction by restarting under the same login and showing its new URL. */
-  private async exited(loginId: string, exitCode: number): Promise<void> {
+  /** CLI exited without finishing: setup-token stays alive after rejected codes, so an exit is the end. A token printed just before exiting still counts. */
+  private exited(loginId: string, exitCode: number): void {
     const login = this.logins.get(loginId)
     if (!login) return
-    // Successful `auth login` also exits after writing credentials: adopt success
-    // before anything removes the directory.
-    if (login.purpose === 'gauge' && existsSync(join(login.configDir, '.credentials.json'))) {
-      if (!login.checking) login.checking = { since: login.output.length, timer: setTimeout(() => undefined, 0) }
-      this.adoptGauge(loginId, 0)
-      return
-    }
-    const refused = LOGIN_FAILED_PATTERN.exec(login.output)?.[1]?.trim()
-    if (login.purpose === 'gauge' && refused && login.relaunches < MAX_RELAUNCHES) {
-      if (login.checking) {
-        clearTimeout(login.checking.timer)
-        login.checking = null
-      }
-      const previous = login.configDir
-      const { pty, configDir } = await this.spawnCli(login.args)
-      login.relaunches += 1
-      login.pty = pty
-      login.configDir = configDir
-      login.raw = ''
-      login.output = ''
-      login.status = {
-        ...login.status,
-        state: 'starting',
-        error: `Code refusé (${refused}). Une nouvelle page d'autorisation est prête : rouvre le lien ci-dessus et colle son code.`,
-      }
-      this.attach(loginId, pty)
-      await rm(previous, { recursive: true, force: true })
-      return
-    }
+    if (this.adoptToken(loginId)) return
     void this.finish(
       loginId,
       login.status.error ??
-        (refused
-          ? `Code refusé : ${refused}.`
-          : `claude ${login.args.join(' ')} s'est arrêté (code ${exitCode}) sans conclure. Sa sortie : ${diagnostic(login.output)}`),
+        `claude setup-token s'est arrêté (code ${exitCode}) sans conclure. Sa sortie : ${diagnostic(login.output)}`,
     )
   }
 
@@ -310,6 +242,9 @@ export class ClaudeLoginService {
       login.status = { ...login.status, state: login.status.error ? 'failed' : 'waiting_code', authUrl: url }
     }
     if (login.checking) this.settle(loginId)
+    // Also outside verification: a flow completed through the browser callback prints
+    // its token without any pasted code.
+    else this.adoptToken(loginId)
     // Also outside verification: reopened flows change URLs that screens must follow.
     if (url && url !== login.status.authUrl) login.status = { ...login.status, authUrl: url }
   }
@@ -318,30 +253,19 @@ export class ClaudeLoginService {
   private settle(loginId: string): void {
     const login = this.logins.get(loginId)
     if (!login?.checking) return
+    if (this.adoptToken(loginId)) return
     const since = login.output.slice(login.checking.since)
-    // `auth login` prints no credentials: read authentication from its directory.
-    if (login.purpose === 'gauge' && existsSync(join(login.configDir, '.credentials.json'))) {
-      this.adoptGauge(loginId)
-      return
-    }
-    const token = login.purpose === 'token' ? tokenFrom(since) : null
     const refused = ERROR_PATTERN.exec(since)?.[1]?.replace(new RegExp(MARK, 'g'), '')
     // Codes from other pages silently reopen flows with new URLs (observed 2026-10-13
     // with codes from previous attempts). Explain and display the new URL:
     // users only need reopen it.
     const reopened = authUrlFrom(login.raw)
     const restarted = reopened !== null && stateOf(reopened) !== stateOf(login.status.authUrl)
-    if (!token && !refused && !restarted) return
+    if (!refused && !restarted) return
 
     clearTimeout(login.checking.timer)
     login.checking = null
-    if (token && claudeSecretKind(token) === 'oauth') {
-      // Labels may become occupied meanwhile; suffixes are better than lost tokens.
-      const label = this.store.labelFree(login.ownerId, login.label) ? login.label : `${login.label} ${new Date().toLocaleDateString('fr-FR')}`
-      const account = this.store.create(login.ownerId, label, token)
-      login.status = { ...login.status, state: 'done', error: null, account }
-      void this.finish(loginId, null)
-    } else if (restarted && !refused) {
+    if (restarted && !refused) {
       login.status = {
         ...login.status,
         state: 'failed',
@@ -354,24 +278,22 @@ export class ClaudeLoginService {
     }
   }
 
-  /** Adopts gauge authentication. CLIs write `.credentials.json` then complete `.claude.json` with account/email; wait briefly for the latter, though gauges tolerate missing email. */
-  private adoptGauge(loginId: string, delayMs = 1500): void {
+  /** Creates the account once the CLI has printed its token, whichever way the flow completed. The whole output is searched: the URL and prompts never contain the token prefix. */
+  private adoptToken(loginId: string): boolean {
     const login = this.logins.get(loginId)
-    if (!login?.checking || !login.accountId || !this.gauges) return
-    clearTimeout(login.checking.timer)
-    login.checking = null
-    // Nothing else may finish now: neither CLI exit nor timeouts.
-    login.closing = true
-    const accountId = login.accountId
-    setTimeout(() => {
-      try {
-        this.gauges!.adopt(accountId, login.configDir)
-        login.status = { ...login.status, state: 'done', error: null, account: this.store.find(login.ownerId, accountId) ?? null }
-      } catch (err) {
-        login.status = { ...login.status, state: 'failed', error: err instanceof Error ? err.message : String(err) }
-      }
-      void this.finish(loginId, null)
-    }, delayMs)
+    if (!login || login.status.state === 'done') return false
+    const token = tokenFrom(login.output)
+    if (!token || claudeSecretKind(token) !== 'oauth') return false
+    if (login.checking) {
+      clearTimeout(login.checking.timer)
+      login.checking = null
+    }
+    // Labels may become occupied meanwhile; suffixes are better than lost tokens.
+    const label = this.store.labelFree(login.ownerId, login.label) ? login.label : `${login.label} ${new Date().toLocaleDateString('fr-FR')}`
+    const account = this.store.create(login.ownerId, label, token)
+    login.status = { ...login.status, state: 'done', error: null, account }
+    void this.finish(loginId, null)
+    return true
   }
 
   private async finish(loginId: string, error: string | null): Promise<void> {

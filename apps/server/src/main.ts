@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { openDatabase, projects } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
@@ -28,7 +28,6 @@ import { installCredentialLauncher } from './git-credential/helper.js'
 import { upgradeCredentialHelpers } from './git-credential/migrate.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
 import { ClaudeLoginService } from './claude-accounts/login.js'
-import { ClaudeAccountGauges } from './claude-accounts/gauges.js'
 import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
@@ -69,10 +68,12 @@ async function main(): Promise<void> {
   const encryptionKey = loadOrCreateKey(config.paths.data)
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
-  const claudeGauges = new ClaudeAccountGauges(config.paths.claudeAccounts)
-  const claudeAccounts = new ClaudeAccountStore(db, encryptionKey, claudeGauges)
+  // Second Claude logins once kept here for usage gauges are unused now that the account
+  // token reads usage itself: remove their credentials rather than leave refresh tokens behind.
+  rmSync(config.paths.claudeAccounts, { recursive: true, force: true })
+  const claudeAccounts = new ClaudeAccountStore(db, encryptionKey)
   // Guided login drives the CLI resolved identically to conversations.
-  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges)
+  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable())
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
   // Codex account login starts the CLI app-server using conversation resolution:
   // Sillage-managed binaries take precedence over PATH binaries.

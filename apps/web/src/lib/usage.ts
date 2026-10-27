@@ -1,5 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentKind, AgentUsage } from '@sillage/protocol'
+import type { AgentKind, AgentUsage, UsageWindow } from '@sillage/protocol'
 import { api } from './api'
 
 /** `account` identifies an additional Claude account, null for the CLI login. */
@@ -39,6 +39,14 @@ export function useRefreshUsage(agent: AgentKind, account: string | null = null)
     const fresh = await api.get<AgentUsage>(usagePath(agent, account, true))
     queryClient.setQueryData(usageKey(agent, account), fresh)
   }
+}
+
+/** Most loaded windows first: the figures that decide which account to pick. */
+export function busiestWindows(usage: AgentUsage, count = 2): (UsageWindow & { utilization: number })[] {
+  return usage.windows
+    .filter((window): window is UsageWindow & { utilization: number } => window.utilization !== null)
+    .sort((a, b) => b.utilization - a.utilization)
+    .slice(0, count)
 }
 
 /** Additional account selected by configuration, null for the CLI login. */

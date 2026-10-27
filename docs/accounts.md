@@ -66,20 +66,21 @@ CLAUDE_CONFIG_DIR=~/.claude-work claude setup-token
 
 ### Usage gauge
 
-A subscription token cannot read plan limits: `setup-token` only asks for the
-`user:inference` scope (read in its authorization URL, 2.1.296), and without
-`user:profile` the CLI does not read them. Each subscription can therefore get a
-**gauge**: a second, full sign-in (`claude auth login`), run by Sillage the same guided
-way, and kept in `<data>/claude-accounts/<id>` (`.credentials.json` and `.claude.json`
-only, mode `0600`). Sessions never use it; usage reads run the CLI with
-`CLAUDE_CONFIG_DIR` pointing there, and the CLI renews that sign-in by itself.
+The same token reads the subscription's usage: there is nothing more to sign in to.
+A `setup-token` token only carries the `user:inference` scope, so `/api/oauth/usage`
+answers 403 and the CLI's usage request reports nothing (probed on 2.1.301). Every
+model response, however, carries the plan's limit headers, which the CLI forwards as a
+`rate_limit_event` with the 5-hour and 7-day windows. Sillage reads the gauge by
+running one tiny Haiku turn under the token (about 2.5k cached input tokens), with no
+settings, tools, MCP servers or saved transcript, and keeps the answer five minutes
+like every other usage read. The plan name and per-model weekly windows are not in
+those headers, so they do not show for extra subscriptions. An API key has no plan,
+so no gauge.
 
-Sillage offers the gauge right after a subscription is added, and on every
-subscription card (**Enable the gauge**, **Sign in again**, **Remove the gauge**). The
-card shows the e-mail the gauge is signed in as: it should be the same account as the
-token. A refused code makes `auth login` exit (« Login failed: … »), unlike
-`setup-token` which waits for another; Sillage then starts a fresh one under the same
-sign-in and shows its new link. An API key has no plan, so no gauge.
+Sillage keeps the CLI from opening a browser of its own during the sign-in
+(`BROWSER=true`): that tab would complete the flow through the localhost callback and
+make the code from Sillage's link useless. Where that cannot be prevented (Windows),
+a token obtained through the callback still creates the account.
 
 ### Limits
 

@@ -49,11 +49,11 @@ export function registerAgentRoutes(
   /** Resolves additional account references with their owner: browser-provided IDs belonging to someone else must reveal neither tokens nor usage. Null for unknown accounts or CLIs without accounts. */
   const accountCredential = (agent: string, userId: string, accountId: string): string | null => {
     if (agent === 'claude') {
-      // Usage directory when available; an empty string means a known account without
-      // a gauge, and the adapter answers without probing.
-      const account = claudeAccounts.find(userId, accountId)
-      if (!account) return null
-      return account.gauge && claudeAccounts.gauges ? claudeAccounts.gauges.path(accountId) : ''
+      // Subscription token, read by the usage probe; an empty string means an API key,
+      // which has no plan, and the adapter answers without probing.
+      const resolved = claudeAccounts.resolveToken(userId, accountId)
+      if (!resolved) return null
+      return resolved.kind === 'oauth' ? resolved.token : ''
     }
     if (agent === 'codex') {
       const account = codexAccounts.store.find(userId, accountId)
