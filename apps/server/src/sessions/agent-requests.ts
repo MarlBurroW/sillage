@@ -143,7 +143,7 @@ const WORKTREE_STATE_WORDS = {
 } as const
 
 /** Requester is a session or an account without sessions. Global MCP local clients (`docs/mcp.md`) supply `user_id` instead of conversations, with empty `id`, no worktree/task ancestry and no session-specific launch chains, provenance notes or decisions. Use `Pick` rather than whole rows so types expose only fields actually read. */
-type Requester = Pick<ConversationRow, 'id' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'> & { projectId: string; apiToken?: ApiTokenRow }
+type Requester = Pick<ConversationRow, 'id' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'> & { projectId: string; personal?: boolean; apiToken?: ApiTokenRow }
 
 interface StartSessionPayload {
   prompt?: unknown
@@ -246,7 +246,7 @@ export class AgentRequests {
         if (!conversation || conversation.projectId !== null) throw new Refusal('This action requires a personal discussion.')
         if (request.kind === 'continue_in_project') {
           const result = await continueInProject(this.ctx, this.sessions, conversation, userId, payload)
-          this.settle(request.id, `Project “${result.project.name}” created at ${result.project.workspacePath}. Continue in session:${result.conversation.id} (${conversationPath(result.conversation)}). This discussion stays personal.`, false, result.conversation.id)
+          this.settle(request.id, `Project “${result.project.name}” created at ${result.project.workspacePath}. Continue in session:${result.conversation.id} (${conversationPath(result.conversation)}). The brief is saved and visible there. ${payload.prompt ? 'The requested first turn has been sent.' : 'The session is ready: use message_session with this ID to begin the next action; do not create a second continuation.'} This discussion stays personal and its original files are preserved.`, false, result.conversation.id)
         } else {
           const project = await createProject(this.ctx, userId, payload)
           this.settle(request.id, `Project “${project.name}” created: ${project.id}, ${project.workspacePath}.`, false)
@@ -266,11 +266,15 @@ export class AgentRequests {
         this.settle(request.id, JSON.stringify({ results, truncated: accessible.length > 30, hint: 'These are accessible Sillage project folders. Use native CLI file tools to search elsewhere as requested and permitted.' }), false)
         return
       }
+      if (request.kind === 'list_models' && conversation?.projectId === null && !request.projectId) {
+        this.settle(request.id, await this.listModels(conversation, null, payload), false)
+        return
+      }
       if (!request.projectId) throw new Refusal('Select a target project for this action.')
       const project = this.ctx.db.select().from(projects).where(eq(projects.id, request.projectId)).get()
       if (!project || (project.ownerId !== userId && project.visibility !== 'shared')) throw new Refusal('The target project is unavailable to this account.')
       const requester: Requester = conversation
-        ? { ...conversation, projectId: project.id, worktreeId: conversation.projectId === project.id ? conversation.worktreeId : null }
+        ? { ...conversation, projectId: project.id, personal: conversation.projectId === null, worktreeId: conversation.projectId === project.id ? conversation.worktreeId : null }
         : this.principal(request, project.id, payload)
       if (request.kind === 'delete_project') {
         if (!conversation || conversation.projectId !== null || !this.attachments || !this.terminals) throw new Refusal('Project deletion is unavailable here.')
@@ -433,7 +437,9 @@ export class AgentRequests {
       tree ? `Working in worktree “${tree}”.` : 'Working at the project root.',
       card ? `Attached to card #${card.number} “${card.title}”.` : null,
       describePermissions(config),
-      'The user sees it in Sillage. To be notified when it finishes, call notify_when_done with this ID, then end your turn if you have no independent work.',
+      requester.personal || !requester.id
+        ? 'The user sees it in Sillage. Use read_session or wait_for_session for progress, and interrupt_session to stop its turn. Reuse this ID to continue the mission.'
+        : 'The user sees it in Sillage. To be notified when it finishes, call notify_when_done with this ID, then end your turn if you have no independent work.',
     ]
     return { text: lines.filter(Boolean).join('\n'), launchedId: row.id }
   }
@@ -456,12 +462,13 @@ export class AgentRequests {
   /** Launched-session configuration matches interface proposals: project presets then account defaults for the selected CLI, overridden by requested model and effort. Agents cannot change other settings, especially permissions; delegated sessions gain no more latitude than human one-click launches. */
   private async launchConfig(
     agent: AgentKind,
-    project: ProjectRow,
+    project: ProjectRow | null,
     userId: string,
     payload: StartSessionPayload,
     token?: ApiTokenRow,
   ): Promise<AgentConfig> {
     if (token) {
+      if (!project) throw new Refusal('Select a target project for this API token.')
       const override: Record<string, unknown> = {}
       if (payload.model !== undefined) override.model = payload.model
       if (payload.effort !== undefined) override[EFFORT_FIELD[agent]] = payload.effort
@@ -470,7 +477,7 @@ export class AgentRequests {
       }, readUserSettings(this.ctx.db, userId).agentDefaults, (config) => this.sessions.modelsFor(userId, config))).config
     }
     const base =
-      readProjectDefaults(project.defaultConfig)[agent] ??
+      readProjectDefaults(project?.defaultConfig ?? null)[agent] ??
       readUserSettings(this.ctx.db, userId).agentDefaults[agent] ??
       defaultConfigFor(agent)
 
@@ -994,13 +1001,14 @@ export class AgentRequests {
 
   // --- Existing-session operations -----------------------------------------------
 
-  /** Sessionless clients act like interface users: send, steer, stop and answer requests. Sessions instead use signed send_session_message delivery. Targets must belong to the request project and account, matching API `loadTaskForToken` boundaries. */
+  /** Personal assistants and sessionless clients manage the account's project sessions.
+   * Project sessions keep signed inter-session delivery. Target ownership still applies. */
   private async actOnSession(
     kind: 'message_session' | 'steer_session' | 'interrupt_session' | 'reply_session',
     requester: Requester,
     payload: Record<string, unknown>,
   ): Promise<string> {
-    if (requester.id) {
+    if (requester.id && !requester.personal) {
       throw new Refusal('This tool is only for clients outside sessions: from a session, use send_session_message.')
     }
     const id = typeof payload.session === 'string' ? payload.session.trim() : ''
@@ -1015,7 +1023,7 @@ export class AgentRequests {
     }
 
     if (kind === 'interrupt_session') {
-      if (target.status !== 'running') return `Session “${target.title}” is not working (${target.status}): nothing to interrupt.`
+      if (target.status !== 'running' && target.status !== 'awaiting_input') return `Session “${target.title}” is not working (${target.status}): nothing to interrupt.`
       await this.sessions.interrupt(target.id)
       return `Turn of “${target.title}” interrupted. A message resumes it with its context.`
     }
@@ -1083,8 +1091,8 @@ export class AgentRequests {
   // --- list_models ---------------------------------------------------------------
 
   private async listModels(
-    requester: Requester,
-    project: ProjectRow,
+    requester: Pick<Requester, 'userId' | 'agent' | 'apiToken'>,
+    project: ProjectRow | null,
     payload: Record<string, unknown>,
   ): Promise<string> {
     const agents: AgentKind[] =

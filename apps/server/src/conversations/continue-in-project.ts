@@ -1,5 +1,6 @@
 import { constants } from 'node:fs'
-import { copyFile, lstat, mkdir, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { copyFile, lstat, mkdir, rm, statfs } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { projects, type ConversationRow } from '@sillage/db'
@@ -24,17 +25,20 @@ export async function continueInProject(ctx: AppContext, sessions: SessionManage
     const info = await lstat(absolute)
     if (!info.isFile()) throw badRequest('handoff_file_required', 'Select individual regular files to copy.')
     bytes += info.size
-    if (bytes > 256 * 1024 * 1024) throw badRequest('handoff_files_too_large', 'Select at most 256 MB of files.')
     selected.push({ path, absolute })
   }
   const project = await createProject(ctx, userId, body.project)
   const copied: string[] = []
   try {
+    const space = await statfs(project.workspacePath).catch(() => null)
+    if (space && bytes > space.bavail * space.bsize) throw badRequest('handoff_disk_full', 'Not enough free space in the project folder to copy the selected files.')
     for (const file of selected) {
       const destination = resolveInside(project.workspacePath, file.path)
       await mkdir(dirname(destination), { recursive: true })
       await resolveRealInside(project.workspacePath, dirname(destination))
-      await copyFile(file.absolute, destination, constants.COPYFILE_EXCL)
+      // Reflinks avoid duplicating large media where supported; copyFile falls back
+      // to a regular disk copy elsewhere. The personal source always stays intact.
+      await copyFile(file.absolute, destination, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE)
       copied.push(destination)
     }
     const row = await createConversation(ctx.db, sessions, {
@@ -44,11 +48,15 @@ export async function continueInProject(ctx: AppContext, sessions: SessionManage
         fromConversationId: source.id, throughSeq: source.lastSeq, budgetTokens: 12000,
         text: `# Project brief\n\n${body.brief}\n\n${selected.length ? `Files copied into the project:\n${selected.map(file => `- ${file.path}`).join('\n')}` : 'No files were copied.'}\n\nThe source discussion remains personal. Only the brief above was shared.`,
       },
+      firstMessage: body.prompt ? {
+        clientMessageId: randomUUID(), text: body.prompt, attachments: [], mentions: [], skills: [],
+      } : undefined,
     })
     return { project, conversation: row }
   } catch (error) {
     for (const file of copied) await rm(file, { force: true })
     ctx.db.delete(projects).where(eq(projects.id, project.id)).run()
+    if ((error as NodeJS.ErrnoException).code === 'ENOSPC') throw badRequest('handoff_disk_full', 'Not enough free space in the project folder to copy the selected files.')
     throw error
   }
 }

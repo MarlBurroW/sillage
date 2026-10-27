@@ -28,6 +28,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
+import { ContinuationIntro } from '../components/chat/ContinuationIntro'
 import { HandoffDialog } from '../components/chat/HandoffDialog'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
@@ -807,8 +808,9 @@ export function ConversationPage() {
     [conversationId, navigate, queryClient, t],
   )
 
-  // Read only while the details dialog is open: most threads have none.
-  const handoff = useHandoff(conversationId, metaOpen && Boolean(conversation?.handoffFromId))
+  // Prepared continuations must show their context before the first message.
+  const emptyThread = !stream.loading && stream.state.items.length === 0
+  const handoff = useHandoff(conversationId, (metaOpen || emptyThread) && Boolean(conversation?.handoffFromId))
 
   // `config` is null exactly when the conversation is, but the type system does not
   // know it: include it in the guard instead of forcing it later.
@@ -1300,7 +1302,12 @@ export function ConversationPage() {
               {stream.error ? <Banner>{stream.error}</Banner> : null}
               {actionError ? <Banner>{actionError}</Banner> : null}
     
-              {!stream.loading && stream.state.items.length === 0 ? (
+              {emptyThread && conversation.handoffFromId ? (
+                handoff.data ? <ContinuationIntro key={conversation.id} text={handoff.data.text} canStart={isOwner}
+                  onStart={() => send(t('conversation.continuation.prompt'), [], [], [])} />
+                  : handoff.error ? <Banner>{handoff.error.message}</Banner>
+                    : <p className="text-sm text-ink-soft">{t('conversation.loading')}</p>
+              ) : emptyThread ? (
                 <EmptyState
                   title={t('conversation.empty.title')}
                   description={t('conversation.empty.description')}

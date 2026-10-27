@@ -31,6 +31,8 @@ export interface PersonalMemoryDto {
 export const continueInProjectBodySchema = z.object({
   project: createProjectBodySchema,
   brief: z.string().trim().min(1).max(40_000),
+  /** Start the linked session only when a next action is explicitly supplied. */
+  prompt: z.string().trim().min(1).max(40_000).optional(),
   /** Explicit selection; personal memory and the full transcript never transfer implicitly. */
   files: z.array(z.string().min(1).max(1024)).max(100).default([]),
 })

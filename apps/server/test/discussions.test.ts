@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, open, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -38,8 +38,20 @@ async function harness(t: TestContext) {
   for (const id of ['owner', 'other']) db.insert(users).values({ id, username: id, displayName: id, passwordHash: '', isAdmin: id === 'other', createdAt: 1 }).run()
   const ctx = { db, config: { paths: { data: dir, memory: join(dir, 'memory'), skillLibrary: join(dir, 'skills'), worktrees: join(dir, 'worktrees') } } } as AppContext
   const sent: string[] = []
-  const sessions = { statusBus: new EventEmitter(), async sendMessage(id: string) { sent.push(id) }, async terminate() {}, async dropCheckpoints() {}, async reloadConfig() {} } as unknown as SessionManager
-  const registry = { adapter: () => ({ resolveDefaults: async (config: AgentConfig) => config }) } as unknown as AgentRegistry
+  const deliveries: { id: string; text: string; context: string | undefined }[] = []
+  const interrupted: string[] = []
+  const steered: string[] = []
+  const sessions = {
+    statusBus: new EventEmitter(),
+    async sendMessage(id: string, _messageId: string, text: string) {
+      sent.push(id)
+      deliveries.push({ id, text, context: db.select().from(conversationHandoffs).where(eq(conversationHandoffs.conversationId, id)).get()?.text })
+    },
+    async interrupt(id: string) { interrupted.push(id) },
+    async steer(id: string) { steered.push(id); return true },
+    async terminate() {}, async dropCheckpoints() {}, async reloadConfig() {},
+  } as unknown as SessionManager
+  const registry = { adapter: () => ({ resolveDefaults: async (config: AgentConfig) => config, models: async () => ({ models: [] }) }) } as unknown as AgentRegistry
   const attachments = { claim() {}, async removeForConversations() {}, async removeForCards() {} } as unknown as AttachmentStore
   const terminals = { async closeForProject() {} } as unknown as TerminalManager
   const log = new EventLog(db)
@@ -72,7 +84,7 @@ async function harness(t: TestContext) {
       return JSON.parse(output).result as { isError?: boolean; content: { text: string }[]; tools?: { name: string }[] }
     } finally { child.kill() }
   }
-  return { app, ctx, db, sqlite, dir, log, create, mcp, sent }
+  return { app, ctx, db, sqlite, dir, log, create, mcp, sent, deliveries, interrupted, steered }
 }
 
 test('personal discussions isolate lists, transcripts, search, folders and memory, including from other admins', async t => {
@@ -139,6 +151,72 @@ test('project continuation copies only reviewed context and selected files, with
   assert.equal(canReadConversation(ctx, destination.id, 'other'), true)
   assert.equal(canReadConversation(ctx, source.id, 'other'), false)
   assert.equal((await app.inject({ url: `/api/conversations/${destination.id}/handoff`, headers: { 'x-user': 'other' } })).json().text, brief)
+})
+
+test('project continuation copies large media without moving it and starts the same session with its saved brief', async t => {
+  const { app, create, db, dir, mcp, sent, deliveries } = await harness(t)
+  const source = await create()
+  const root = conversationWorkspace(db, source.id, 'owner')
+  const size = 257 * 1024 * 1024
+  const video = await open(join(root, 'visit.mov'), 'w')
+  await video.truncate(size)
+  await video.write(Buffer.from('video-marker'), 0, 12, size - 12)
+  await video.close()
+  const result = await mcp(source.id, 'continue_in_project', {
+    project: { name: 'Apartment', parentDir: dir, directory: 'apartment' },
+    brief: 'Build a 3D apartment. The agreed floor area is 131.5 square metres.',
+    files: ['visit.mov'], prompt: 'Analyse visit.mov using the agreed layout.',
+  })
+  assert.equal(result.isError, undefined, JSON.stringify(result))
+  const target = db.select().from(conversations).where(eq(conversations.handoffFromId, source.id)).get()!
+  assert.deepEqual(sent, [target.id])
+  assert.match(deliveries[0]!.context!, /131.5 square metres/)
+  assert.equal(deliveries[0]!.text, 'Analyse visit.mov using the agreed layout.')
+  assert.equal((await stat(join(root, 'visit.mov'))).size, size)
+  assert.equal((await stat(join(dir, 'apartment/visit.mov'))).size, size)
+  const copied = await open(join(dir, 'apartment/visit.mov'), 'r')
+  const marker = Buffer.alloc(12)
+  await copied.read(marker, 0, 12, size - 12)
+  await copied.close()
+  assert.equal(marker.toString(), 'video-marker')
+  const context = await app.inject(`/api/conversations/${target.id}/handoff`)
+  assert.match(context.json().text, /131.5 square metres/)
+  assert.equal((await mcp(source.id, 'message_session', { project: target.projectId, session: target.id, body: 'Continue with the windows.' })).isError, undefined)
+  assert.deepEqual(sent, [target.id, target.id])
+  assert.equal(db.select().from(conversations).all().length, 2)
+})
+
+test('personal assistants discover models without a project and control only their own project sessions', async t => {
+  const { app, create, mcp, db, dir, sent, interrupted, steered } = await harness(t)
+  const source = await create()
+  const catalog = await mcp(source.id, 'list_models', { agent: 'codex' })
+  assert.equal(catalog.isError, undefined, JSON.stringify(catalog))
+  assert.match(catalog.content[0]!.text, /codex/)
+  const transfer = await app.inject({ method: 'POST', url: `/api/conversations/${source.id}/project`, payload: {
+    project: { name: 'Apartment', parentDir: dir, directory: 'apartment', visibility: 'shared' }, brief: 'Prepared context',
+  } })
+  assert.equal(transfer.statusCode, 201, transfer.body)
+  const target = transfer.json<ConversationDto>()
+  assert.deepEqual(sent, [])
+  for (const status of ['running', 'awaiting_input'] as const) {
+    db.update(conversations).set({ status }).where(eq(conversations.id, target.id)).run()
+    const stopped = await mcp(source.id, 'interrupt_session', { project: target.projectId, session: target.id })
+    assert.equal(stopped.isError, undefined, JSON.stringify(stopped))
+  }
+  assert.deepEqual(interrupted, [target.id, target.id])
+  assert.equal((await mcp(source.id, 'steer_session', { project: target.projectId, session: target.id, body: 'Pause the analysis.' })).isError, undefined)
+  assert.deepEqual(steered, [target.id])
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, target.id)).run()
+  assert.equal((await mcp(source.id, 'message_session', { project: target.projectId, session: target.id, body: 'Resume with the plan.' })).isError, undefined)
+  assert.deepEqual(sent, [target.id])
+  const other = await create('other')
+  for (const name of ['interrupt_session', 'steer_session', 'message_session']) {
+    const refused = await mcp(other.id, name, { project: target.projectId, session: target.id, body: 'Do not deliver.' })
+    assert.equal(refused.isError, true, name)
+  }
+  assert.deepEqual(sent, [target.id])
+  assert.deepEqual(interrupted, [target.id, target.id])
+  assert.deepEqual(steered, [target.id])
 })
 
 test('memory changes are ordered and audited for concurrent writes and filesystem edits', async t => {

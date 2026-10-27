@@ -2,6 +2,15 @@ import type { Catalog } from './catalog-en'
 
 /** French catalog. Typed from English so missing keys fail the build. */
 export const fr: Catalog = {
+  "error.handoff_disk_full": "Le dossier du projet manque d’espace libre pour copier les fichiers sélectionnés.",
+  "discussions.project.start": "Démarrer l’agent après la création du projet",
+  "discussions.project.prompt": "Première demande dans le projet",
+  "conversation.continuation.ready": "Prêt à continuer",
+  "conversation.continuation.description": "Le contexte ci-dessous est conservé et sera transmis à l’agent. Reprends à partir de ce contexte ou écris ta prochaine demande en bas.",
+  "conversation.continuation.context": "Contexte transmis",
+  "conversation.continuation.start": "Continuer avec ce contexte",
+  "conversation.continuation.starting": "Démarrage…",
+  "conversation.continuation.prompt": "Reprends à partir du contexte transmis. Poursuis les prochaines étapes convenues et demande les informations indispensables qui manquent.",
   "discussions.files.back": "Retour aux dossiers",
   "error.workspace_not_found": "Dossier introuvable.",
   "error.personal_discussion_required": "Choisis une de tes discussions personnelles.",

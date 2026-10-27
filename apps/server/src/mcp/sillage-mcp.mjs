@@ -966,20 +966,21 @@ const PROJECT_CREATE_PROPERTIES = {
 }
 const PERSONAL_TOOLS = [
   { name: 'create_project', description: 'Create a Sillage project for this account, in a new folder or an existing directory. For continuing the current idea with selected context, use continue_in_project.', inputSchema: { type: 'object', properties: PROJECT_CREATE_PROPERTIES, required: ['name'] } },
-  { name: 'continue_in_project', description: 'Create a project and a linked session using an explicit brief and selected relative file paths from this discussion. The original discussion and personal memory stay private. Only selected files are copied, without overwriting existing files. The new session waits for the user or message_session.', inputSchema: { type: 'object', properties: { project: { type: 'object', properties: PROJECT_CREATE_PROPERTIES, required: ['name'] }, brief: { type: 'string', maxLength: 40000 }, files: { type: 'array', items: { type: 'string' }, maxItems: 100 } }, required: ['project', 'brief'] } },
+  { name: 'continue_in_project', description: 'Create a project and a linked session using an explicit brief and selected relative file paths from this discussion. The original discussion and personal memory stay private. Only selected files are copied, including large media, without overwriting existing files or moving the originals. When the user asks to continue ongoing work, pass prompt with the next action to start this linked session immediately. Otherwise its brief is visible and it waits for the user or message_session. Reuse the returned session ID; do not create a duplicate continuation.', inputSchema: { type: 'object', properties: { project: { type: 'object', properties: PROJECT_CREATE_PROPERTIES, required: ['name'] }, brief: { type: 'string', maxLength: 40000 }, prompt: { type: 'string', description: 'First action requested by the user, sent to the linked session after the brief and files are ready. Omit to prepare it without starting a turn.', maxLength: 40000 }, files: { type: 'array', items: { type: 'string' }, maxItems: 100 } }, required: ['project', 'brief'] } },
   { name: 'delete_project', description: 'Delete a project owned by this account from Sillage, including its conversations and board. Its disk workspace is preserved. Use an exact project name or ID; resolve ambiguous requests before deleting.', annotations: { destructiveHint: true, readOnlyHint: false }, inputSchema: { type: 'object', properties: { project: { type: 'string' } }, required: ['project'] } },
   { name: 'find_files', description: 'Find filenames in accessible Sillage project folders; optionally target one project. Returns absolute directory and relative file paths. To search elsewhere, use native CLI tools subject to their permissions and the user request.', annotations: { readOnlyHint: true }, inputSchema: { type: 'object', properties: { query: { type: 'string', minLength: 2 }, project: { type: 'string' } }, required: ['query'] } },
 ]
-const PERSONAL_DEFAULT_TOOLS = new Set(['rename_session', 'search_history', 'read_conversation', 'list_sessions', 'read_memory', 'write_memory', 'delete_memory', 'create_project', 'continue_in_project', 'find_files'])
+const PERSONAL_DEFAULT_TOOLS = new Set(['rename_session', 'search_history', 'read_conversation', 'list_sessions', 'read_memory', 'write_memory', 'delete_memory', 'create_project', 'continue_in_project', 'find_files', 'list_models'])
 
 function personalTools() {
   return [
     ...globalTools().map(tool => {
+      if (tool.name === 'start_session') return { ...tool, description: `${tool.description} For a new idea from this personal discussion, create its dedicated project with continue_in_project first. Use an existing project only when the user explicitly targets it; never choose a catch-all project just because this tool requires a project. Control the returned session with read_session, message_session, steer_session and interrupt_session.` }
       if (!PERSONAL_DEFAULT_TOOLS.has(tool.name)) return tool
       const required = (tool.inputSchema.required ?? []).filter(key => key !== 'project')
       const memory = MEMORY_TOOLS.has(tool.name)
       return { ...tool,
-        description: memory ? `${tool.description} Without project, this is the account's shared personal memory. Changes are visible and editable in Sillage.` : `${tool.description} Omit project to include your personal discussions and accessible projects.`,
+        description: tool.name === 'list_models' ? `${tool.description} Omit project to use this account's defaults; no project is needed to discover models.` : memory ? `${tool.description} Without project, this is the account's shared personal memory. Changes are visible and editable in Sillage.` : `${tool.description} Omit project to include your personal discussions and accessible projects.`,
         inputSchema: { ...tool.inputSchema, required },
       }
     }),
@@ -1019,14 +1020,14 @@ function globalTools() {
       const properties = Object.fromEntries(
         Object.entries(tool.inputSchema.properties ?? {}).map(([key, value]) =>
           // Outside sessions, 'yours' identifies no CLI: the daemon selects Claude.
-          key === 'agent' && typeof value.description === 'string'
+          key === 'agent' && !PERSONAL && typeof value.description === 'string'
             ? [key, { ...value, description: value.description.replace('Omit to use yours.', 'Omit to use Claude.').replace('Defaults to yours.', 'Defaults to Claude.') }]
             : [key, value],
         ),
       )
       return {
         ...tool,
-        description: byCard ? `${tool.description} Outside a session, select the card with the required card parameter.` : tool.description,
+        description: byCard ? `${tool.description} Outside a session, select the card with the required card parameter.` : tool.description.replace('Returns its ID; use notify_when_done if you need to resume when it finishes.', 'Returns its ID; use read_session or wait_for_session to follow its progress.'),
         inputSchema: {
           ...tool.inputSchema,
           properties: {

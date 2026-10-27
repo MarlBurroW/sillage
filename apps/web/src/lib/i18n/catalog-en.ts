@@ -7,6 +7,16 @@
  * use `{name}` and are substituted by `t()`.
  */
 export const en = {
+  "error.handoff_disk_full": "Not enough free space in the project folder to copy the selected files.",
+  "discussions.project.start": "Start the agent after creating the project",
+  "discussions.project.prompt": "First request in the project",
+  "conversation.continuation.ready": "Ready to continue",
+  "conversation.continuation.description": "The context below is saved and will be given to the agent. Start from it or write your next request below.",
+  "conversation.continuation.context": "Transferred context",
+  "conversation.continuation.start": "Continue with this context",
+  "conversation.continuation.starting": "Starting…",
+  "conversation.continuation.prompt": "Continue from the transferred context. Follow the agreed next steps and ask for any essential missing information.",
+
   "discussions.files.back": "Back to folders",
   "error.workspace_not_found": "Folder not found.",
   "error.personal_discussion_required": "Choose one of your personal discussions.",

@@ -80,6 +80,14 @@ File discovery covers accessible project folders; native CLI tools can search
 elsewhere within the user's request and CLI permissions. Global instruction
 edits still require an administrator.
 
+Use the discussion's own directory for new work. If an idea needs a project or
+delegated project sessions, create a dedicated project with `continue_in_project`;
+do not borrow an unrelated catch-all project merely to satisfy a tool argument.
+`list_models` works without a project and then uses the account's defaults.
+Personal assistants can inspect, interrupt, steer and resume this account's
+project sessions with `read_session`, `interrupt_session`, `steer_session` and
+`message_session`. Sessions owned by other accounts remain inaccessible.
+
 Without a `project` argument, `search_history`, `read_conversation` and
 `list_sessions` cover the account's personal discussions and accessible projects.
 Memory tools default to the account's personal memory, shared across its personal
@@ -95,9 +103,14 @@ separate, explicit operation. Server stores these files on its host, Desktop on
 the local machine.
 
 `continue_in_project` creates a project and a linked session from an explicit
-brief and selected files. It copies only those files, without overwriting; the
+brief and selected files, including large media. It copies only those files,
+without overwriting and subject to available disk space; the
 original discussion, its files and personal memory remain in place. The new
-session waits for its first message. The UI offers the same operation under
+session shows its transferred context immediately. Supply `prompt` to start the
+requested next action after the files and brief are ready; omit it to prepare
+the session without starting a turn. Resume that same session with
+`message_session` instead of creating another continuation.
+The UI offers the same operation under
 **Create a project** in the conversation menu. The source discussion remains
 private even when the new project is shared.
 

@@ -18,7 +18,7 @@ export function useDeletePersonalWorkspace() {
 export function useContinueInProject(conversationId: string) {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (input: { project: CreateProjectInput; brief: string; files: string[] }) =>
+    mutationFn: (input: { project: CreateProjectInput; brief: string; files: string[]; prompt?: string }) =>
       api.post<ConversationDto>(`/api/conversations/${conversationId}/project`, input),
     onSuccess: async () => {
       await Promise.all(['projects', 'conversations', 'user-settings'].map(key => client.invalidateQueries({ queryKey: [key] })))
