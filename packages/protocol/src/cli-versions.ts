@@ -23,7 +23,7 @@ export interface PreferredCliRelease {
 }
 
 export const PREFERRED_CLI_RELEASES: Record<AgentKind, PreferredCliRelease> = {
-  claude: { package: '@anthropic-ai/claude-code', version: '2.1.301' },
+  claude: { package: '@anthropic-ai/claude-code', version: '2.1.312' },
   codex: { package: '@openai/codex', version: '0.163.0' },
   opencode: { package: 'opencode-ai', version: '1.19.3' },
   antigravity: { package: 'antigravity-acp', version: '1.4.3' },

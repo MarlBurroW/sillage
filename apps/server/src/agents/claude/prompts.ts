@@ -75,6 +75,18 @@ export function toUpdatedInput(
   return { ...input, answers: flattened }
 }
 
+/** Init capability under which an answer may carry `annotations[question].unanswered`. */
+export const UNANSWERED_CAPABILITY = 'ask_user_question_unanswered_v1'
+
+/** “Don't answer” is a deliberate skip. The model still reads “The user did not answer the questions”: the annotation goes only to the tool result (probed on 2.1.312), so a replay can tell a skip from a lost question. */
+export function toSkippedInput(input: Record<string, unknown>): Record<string, unknown> {
+  const annotations: Record<string, { unanswered: 'skipped' }> = {}
+  for (const question of askUserQuestionInputSchema.parse(input).questions) {
+    annotations[question.question] = { unanswered: 'skipped' }
+  }
+  return { ...input, answers: {}, annotations }
+}
+
 export function toPlan(input: unknown): string {
   return exitPlanModeInputSchema.parse(input).plan
 }

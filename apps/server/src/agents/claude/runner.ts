@@ -4,12 +4,12 @@ import {
   getSessionInfo,
   query,
   type CanUseTool,
-  type ElicitationRequest,
   type ElicitationResult,
   type FastModeDisabledReason,
   type FastModeState,
   type HookCallback,
   type McpServerConfig,
+  type OnElicitation,
   type PermissionResult,
   type Query,
   type SDKMessage,
@@ -57,7 +57,9 @@ import {
   EXIT_PLAN_MODE,
   toPlan,
   toQuestions,
+  toSkippedInput,
   toUpdatedInput,
+  UNANSWERED_CAPABILITY,
 } from './prompts.js'
 import { describeFastMode, describePluginErrors, translateSignal } from './signals.js'
 
@@ -164,6 +166,11 @@ export class ClaudeRunner implements AgentRunner {
   private initSignature: string | null = null
   /** Last init `plugin_errors`, reported only on change. */
   private pluginErrorsSignature = '[]'
+  /**
+   * Protocol capabilities from the latest init. The CLI asks hosts to feature-detect rather than
+   * sniff versions, and a strict host refuses a whole answer carrying a field it does not know.
+   */
+  private capabilities: readonly string[] = []
   /** Latest CLI Fast state, journaling changes only. */
   private fastMode: { state: FastModeState; reason: FastModeDisabledReason | null } | null = null
   private stopped = false
@@ -519,6 +526,7 @@ export class ClaudeRunner implements AgentRunner {
               `[claude ${this.conversationId}] permission mode mismatch: requested=${toPermissionMode(this.config.permissionMode)} actual=${message.permissionMode} version=${message.claude_code_version}\n`,
             )
           }
+          this.capabilities = message.capabilities ?? []
           const first = this.sessionId === null
           this.sessionId = message.session_id
           this.ctx.setAgentSessionId(message.session_id)
@@ -785,7 +793,9 @@ export class ClaudeRunner implements AgentRunner {
   private async emitContextUsage(): Promise<void> {
     if (!this.session) return
     try {
-      const usage = await this.session.getContextUsage()
+      // Totals only: the per-category count costs extra work, and the CLI made messages and
+      // interrupts wait behind it until 2.1.304. Probed on 2.1.312: same totals as `full`.
+      const usage = await this.session.getContextUsage({ detail: 'summary' })
       this.ctx.emit({
         type: 'usage.updated',
         costUsd: 0,
@@ -810,9 +820,19 @@ export class ClaudeRunner implements AgentRunner {
    * Field instead of method: SDK calls reference without binding instance.
    */
   private readonly handleToolRequest: CanUseTool = (toolName, input, options) => {
-    if (toolName === ASK_USER_QUESTION) return this.requestQuestion(input)
-    if (toolName === EXIT_PLAN_MODE) return this.requestPlanReview(input)
+    if (toolName === ASK_USER_QUESTION) return this.requestQuestion(input, options.signal)
+    if (toolName === EXIT_PLAN_MODE) return this.requestPlanReview(input, options.signal)
     return this.requestPermission(toolName, input, options)
+  }
+
+  /**
+   * The CLI withdraws a request it stopped waiting for (interrupt, or since 2.1.310 an MCP tool
+   * timing out on an unanswered elicitation, after which the model is told not to retry). Without
+   * this the card stayed open, and an answer given later reached nobody.
+   */
+  private expireOnAbort(signal: AbortSignal, requestId: string): void {
+    if (signal.aborted) this.interactions.expire(requestId)
+    else signal.addEventListener('abort', () => this.interactions.expire(requestId), { once: true })
   }
 
   private requestPermission(
@@ -833,7 +853,7 @@ export class ClaudeRunner implements AgentRunner {
     const suggestions = options.suggestions ?? []
 
     return new Promise<PermissionResult>((resolve) => {
-      this.interactions.requestPermission(
+      const requestId = this.interactions.requestPermission(
         {
           toolName,
           input,
@@ -858,16 +878,19 @@ export class ClaudeRunner implements AgentRunner {
           }
         },
       )
+      this.expireOnAbort(options.signal, requestId)
     })
   }
 
-  private requestQuestion(input: Record<string, unknown>): Promise<PermissionResult> {
+  private requestQuestion(input: Record<string, unknown>, signal: AbortSignal): Promise<PermissionResult> {
     return new Promise<PermissionResult>((resolve) => {
-      this.interactions.requestQuestion(toQuestions(input), (answer) => {
+      const requestId = this.interactions.requestQuestion(toQuestions(input), (answer) => {
         if (answer === null || answer.status === 'cancelled') {
           // Allow without answers: CLI emits “The user did not answer the questions” and model
-          // continues. Denial would turn legitimate cancellation into tool error.
-          resolve({ behavior: 'allow' })
+          // continues. Denial would turn legitimate cancellation into tool error. A deliberate
+          // skip is also recorded in the tool result, for CLIs that accept it.
+          const skipped = answer !== null && this.capabilities.includes(UNANSWERED_CAPABILITY)
+          resolve(skipped ? { behavior: 'allow', updatedInput: toSkippedInput(input) } : { behavior: 'allow' })
         } else {
           resolve({
             behavior: 'allow',
@@ -876,12 +899,13 @@ export class ClaudeRunner implements AgentRunner {
           })
         }
       })
+      this.expireOnAbort(signal, requestId)
     })
   }
 
-  private requestPlanReview(input: Record<string, unknown>): Promise<PermissionResult> {
+  private requestPlanReview(input: Record<string, unknown>, signal: AbortSignal): Promise<PermissionResult> {
     return new Promise<PermissionResult>((resolve) => {
-      this.interactions.requestPlanReview(
+      const requestId = this.interactions.requestPlanReview(
         { plan: toPlan(input), followUpOptions: PLAN_FOLLOW_UP_OPTIONS },
         (review) => {
           if (review === null) {
@@ -918,6 +942,7 @@ export class ClaudeRunner implements AgentRunner {
           }
         },
       )
+      this.expireOnAbort(signal, requestId)
     })
   }
 
@@ -1008,9 +1033,9 @@ export class ClaudeRunner implements AgentRunner {
    *
    * Field rather than method: SDK calls reference directly.
    */
-  private readonly handleElicitation = (request: ElicitationRequest): Promise<ElicitationResult> => {
+  private readonly handleElicitation: OnElicitation = (request, { signal }) => {
     return new Promise<ElicitationResult>((resolve) => {
-      this.interactions.requestElicitation(
+      const requestId = this.interactions.requestElicitation(
         {
           serverName: request.serverName,
           // SDK `mode` optional; form is historical default.
@@ -1035,6 +1060,7 @@ export class ClaudeRunner implements AgentRunner {
           )
         },
       )
+      this.expireOnAbort(signal, requestId)
     })
   }
 

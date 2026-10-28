@@ -486,3 +486,65 @@ System CLI remains **2.1.296**; no deployment or production restart.
 No interface change: no Playwright path added for this bump. During a future
 authorized deployment, also install `claude install 2.1.301` through the supervised
 procedure; do not install the system CLI during preparation.
+
+## October 28, 2026 addendum: target 2.1.312
+
+Cards #49, #51, #52, #55, #56 and #57 (2.1.302 → 2.1.312) in one bump. CLI target
+**2.1.312**, SDK dependency **^0.3.312**, lockfile resolution **0.3.312**. 2.1.304
+alone must never be targeted (tool search regression behind gateways, fixed in
+2.1.305).
+
+### Compatibility
+
+SDK 0.3.301 → 0.3.312 declarations are additive: no field used by Sillage is
+removed or renamed. Typecheck passes unchanged. Behavior changes reviewed:
+
+- Fork subagents are on by default in SDK sessions (2.1.302). Probed: the Agent
+  call carries `subagent_type: "fork"` and a `description`, and launches in the
+  background. The existing subagent view and background tracking apply as is.
+- `[1m]` dropped where it has no effect (2.1.311). Probed `supportedModels()`: no
+  value carries the suffix. `catalogModel` already falls back to the bare name for
+  conversations saved with it.
+- Prompt and agent hooks capped at 24 concurrent (2.1.312): Sillage registers one
+  callback `Stop` hook, unaffected.
+- Sillage always passes `permissionMode`, so the third-party provider default
+  change (2.1.302) does not apply.
+
+### Adapter changes
+
+- **Withdrawn requests close.** `canUseTool` and `onElicitation` receive an abort
+  signal that the runner ignored. Since 2.1.310, an MCP tool waiting on an
+  unanswered elicitation times out, the model is told not to retry, and the CLI
+  aborts the elicitation. Each permission, question, plan review and elicitation
+  now expires on abort, as the Codex, OpenCode and Grok runners already do.
+- **Skipped questions are annotated.** When init advertises
+  `ask_user_question_unanswered_v1`, “Don't answer” sends
+  `annotations[question].unanswered: 'skipped'`. The model still reads “The user
+  did not answer the questions”; the annotation reaches only the tool result. An
+  expired question sends nothing extra. `replied_in_chat` is not used: a message
+  sent while a question waits does not close it.
+- **Context gauge reads `detail: 'summary'`.** Probed: same `totalTokens`,
+  `maxTokens` and `percentage` as `full`. 2.1.304 also stopped making messages
+  and interrupts wait behind this check.
+
+Not adopted in this bump: `idleCompaction` setting, per-category context detail
+(stable `id` since 0.3.304), `getUsage()` recommendations, auto-mode classifier
+settings (card #58), `AgentOutput.toolsUsed`.
+
+### Verification
+
+Separately downloaded binary `@anthropic-ai/claude-code-linux-x64@2.1.312` under
+`/var/tmp`. System CLI remains **2.1.301**; no deployment or production restart.
+
+- Direct SDK probe (Haiku 5.5, low effort): init reports `2.1.312` and capabilities
+  including `ask_user_question_unanswered_v1`. A stdio MCP server whose tool awaits
+  an elicitation, with `MCP_TOOL_TIMEOUT=8000`: the elicitation signal aborts at
+  8 s and the tool result carries the new “no answer came” message. AskUserQuestion
+  answered with the annotation: accepted, echoed in `tool_use_result`.
+- Disposable desktop-profile server, fresh database, same MCP server through the
+  registry and API v1: `elicitation.requested` at 4.7 s, `elicitation.resolved`
+  with `status: expired` at 12.7 s, then turn completed.
+- `NODE_ENV=development pnpm typecheck`, `pnpm test`, `pnpm lint`: OK.
+
+During an authorized deployment, run `claude install 2.1.312` through the
+supervised procedure.
