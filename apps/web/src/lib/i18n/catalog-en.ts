@@ -2980,6 +2980,8 @@ export const en = {
   'error.fork_point_unknown': "This cut point is beyond the end of the thread.",
   'error.git_internals': "The .git folder cannot be manipulated here.",
   'error.install_in_progress': "An installation of {label} is already in progress.",
+  'error.codex_config_invalid': 'Codex cannot load its configuration. Check Codex config.toml.',
+  'error.codex_mcp_config_invalid': 'Codex cannot load MCP server “{server}”. Check its transport settings in Codex config.toml and Sillage: URL for HTTP, command for stdio, never both.',
   'error.internal_error': "Internal server error.",
   'error.invalid_credentials': "Incorrect username or password.",
   'error.invalid_name': "{name} is not a valid folder name.",

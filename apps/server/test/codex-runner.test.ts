@@ -261,3 +261,18 @@ test('une réponse coupée sans item/completed est close avant la fin du tour', 
   await f.emit([itemEvent(answer('whole', ''), 'item/started'), delta('whole', 'ok'), itemEvent(answer('whole', 'ok')), done('turn-2')])
   assert.equal(f.events.filter((event) => event.type === 'message.completed' && event.messageId === 'whole').length, 1)
 })
+
+for (const resumeSessionId of [null, 'existing-thread']) {
+  test(`configuration errors are actionable on ${resumeSessionId ? 'resume' : 'start'}`, async t => {
+    const transport = await fixture(t)
+    const state = context({ ...transport, resumeSessionId, processEnv: {
+      FIXTURE_CONFIG_ERROR: 'failed to load configuration: url is not supported for stdio\nin `mcp_servers.sillage`\nsecret-value',
+    } })
+    const runner = new CodexRunner(state.ctx)
+    transport.onClose(() => runner.stop())
+    await assert.rejects(runner.start(), {
+      statusCode: 400, code: 'codex_mcp_config_invalid', params: { server: 'sillage' },
+    })
+    assert.equal(state.events.some(event => event.type === 'session.started'), false)
+  })
+}

@@ -30,13 +30,16 @@ export const mcpServerNameSchema = z
  */
 export const BUILTIN_MCP_SERVER_NAME = 'sillage'
 
+/** Codex merges thread overrides into user tables, so its built-in transport needs its own name. */
+export const CODEX_BUILTIN_MCP_SERVER_NAME = 'sillage_builtin'
+
 /**
  * Checked on registry writes, not in `mcpServerNameSchema`: the schema also reads existing
  * rows. Entries predating the reservation must remain readable for renaming rather than making
  * the table unusable.
  */
 export function isReservedMcpServerName(name: string): boolean {
-  return name.toLowerCase() === BUILTIN_MCP_SERVER_NAME
+  return [BUILTIN_MCP_SERVER_NAME, CODEX_BUILTIN_MCP_SERVER_NAME].includes(name.toLowerCase())
 }
 
 const stdioTransportSchema = z.object({

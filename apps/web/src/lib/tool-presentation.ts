@@ -1,4 +1,4 @@
-import type { ToolPresentation } from '@sillage/protocol'
+import { CODEX_BUILTIN_MCP_SERVER_NAME, type ToolPresentation } from '@sillage/protocol'
 import { fields, text, outputText, scalar } from './tool-payload'
 import { toolWebInput } from './tool-web-input'
 import { toolEdits, type EditPresentation } from './tool-edits'
@@ -16,7 +16,7 @@ export function toolOrigin(name: string, presentation?: ToolPresentation): ToolO
   const slash = /^([^/]+)\/(.+)$/.exec(name)
   const legacy = name.startsWith('sillage_') ? ['','sillage',name.slice(8)] : null
   const match = claude ?? slash ?? legacy
-  return match ? { kind: match[1] === 'sillage' ? 'sillage' : 'mcp', server: match[1]!, name: match[2]! }
+  return match ? { kind: (match[1] === 'sillage' || match[1] === CODEX_BUILTIN_MCP_SERVER_NAME) ? 'sillage' : 'mcp', server: match[1]!, name: match[2]! }
     : { kind: 'native', server: '', name }
 }
 const SILLAGE_LABELS: Record<string, MessageKey> = {

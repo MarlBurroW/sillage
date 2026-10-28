@@ -87,6 +87,7 @@ test('MCP origins and text blocks survive all adapter encodings without misclass
   for (const item of [
     tool('mcp__sillage__read_memory', { file: 'project.md' }),
     tool('sillage/read_memory', { file: 'project.md' }),
+    tool('sillage_builtin/read_memory', { file: 'project.md' }),
     tool(...Object.values(opencodeTool('sillage_read_memory', { file: 'project.md' }, ['sillage'])) as [string, unknown]),
     tool(...Object.values(grokTool('use_tool', { tool_name: 'sillage__read_memory', tool_input: { file: 'project.md' } })) as [string, unknown]),
   ]) {

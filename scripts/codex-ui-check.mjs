@@ -54,6 +54,12 @@ try {
       await import('/src/styles/index.css')
       const React = (await import('/node_modules/.vite/deps/react.js')).default
       const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
+      const { isSillageTool } = await import('/src/lib/sillage-tools.ts')
+      const { toolOrigin } = await import('/src/lib/tool-presentation.ts')
+      const { translate } = await import('/src/lib/i18n/index.ts')
+      if (!isSillageTool('sillage_builtin/schedule_task', 'schedule_task')) throw new Error('Built-in Codex tool not recognized')
+      if (toolOrigin('sillage_builtin/read_memory').kind !== 'sillage') throw new Error('Built-in Codex origin lost')
+      if (!translate('error.codex_mcp_config_invalid', { server: 'sillage' }).includes('sillage')) throw new Error('MCP error is not actionable')
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
       const { TurnActivity } = await import('/src/components/chat/TurnActivity.tsx')
       const { applyEvent, emptyChatState } = await import('/src/lib/chat-fold.ts')

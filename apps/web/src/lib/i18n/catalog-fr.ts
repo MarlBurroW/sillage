@@ -2973,6 +2973,8 @@ export const fr: Catalog = {
   'error.fork_point_unknown': "Ce point de coupe est au-delà de la fin du fil.",
   'error.git_internals': "Le dossier .git ne se manipule pas ici.",
   'error.install_in_progress': "Une installation de {label} est déjà en cours.",
+  'error.codex_config_invalid': 'Codex ne peut pas charger sa configuration. Vérifie le fichier config.toml de Codex.',
+  'error.codex_mcp_config_invalid': 'Codex ne peut pas charger le serveur MCP « {server} ». Vérifie son transport dans le fichier config.toml de Codex et dans Sillage : URL pour HTTP, commande pour stdio, jamais les deux.',
   'error.internal_error': "Erreur interne du serveur.",
   'error.invalid_credentials': "Identifiant ou mot de passe incorrect.",
   'error.invalid_name': "{name} n'est pas un nom de dossier valide.",

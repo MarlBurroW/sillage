@@ -77,6 +77,7 @@ import { describeOutgoingMessage } from '../outgoing.js'
 import { journalDeath } from '../session-close.js'
 import { ToolDurations } from '../tool-durations.js'
 import { failedStatuses } from '../mcp-registry.js'
+import { badRequest } from '../../http/errors.js'
 import { CodexAppServerClient, CodexRpcError } from './app-server-client.js'
 import { CodexAsyncQuestions } from './async-questions.js'
 import { startedItem, completedItem } from './item-events.js'
@@ -263,6 +264,23 @@ export class CodexRunner implements AgentRunner {
   }
 
   async start(): Promise<void> {
+    try {
+      await this.startThread()
+    } catch (error) {
+      if (error instanceof CodexRpcError && /failed to load configuration/i.test(error.message)) {
+        // Configuration errors can contain secrets. Expose only the table name, never raw TOML.
+        const server = /in `mcp_servers\.([a-zA-Z0-9_-]+)`/.exec(error.message)?.[1]
+        if (server) {
+          throw badRequest('codex_mcp_config_invalid',
+            `Codex cannot load MCP server "${server}". Check its transport settings in Codex config.toml and Sillage.`, { server })
+        }
+        throw badRequest('codex_config_invalid', 'Codex cannot load its configuration. Check Codex config.toml.')
+      }
+      throw error
+    }
+  }
+
+  private async startThread(): Promise<void> {
     this.client = new CodexAppServerClient({
       binary: this.ctx.binary,
       cwd: this.ctx.cwd,

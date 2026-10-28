@@ -31,6 +31,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   switch (method) {
     case 'thread/start':
     case 'thread/resume':
+      if (process.env.FIXTURE_CONFIG_ERROR) {
+        send({ id, error: { code: -32600, message: process.env.FIXTURE_CONFIG_ERROR } })
+        break
+      }
       send({ id, result: { thread: { id: 'root' }, model: 'fixture', cwd: process.cwd() } })
       break
     case 'skills/list': send({ id, result: { data: [] } }); break

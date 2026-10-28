@@ -2,7 +2,7 @@ import type {
   McpServerStatus as CodexMcpServerStatus,
   ThreadStartParams,
 } from '@sillage/codex-bindings/v2'
-import type { McpServer, McpServerState, McpServerStatus } from '@sillage/protocol'
+import { CODEX_BUILTIN_MCP_SERVER_NAME, type McpServer, type McpServerState, type McpServerStatus } from '@sillage/protocol'
 import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 
 /**
@@ -17,6 +17,10 @@ const BUILTIN_SERVERS = new Set(['codex_apps'])
 type ThreadConfig = NonNullable<ThreadStartParams['config']>
 type ConfigValue = NonNullable<ThreadConfig[string]>
 
+function codexServerName(server: McpServer): string {
+  return server.id === BUILTIN_MCP_SERVER_ID ? CODEX_BUILTIN_MCP_SERVER_NAME : server.name
+}
+
 /**
  * Overrides for config in thread/start and thread/resume. Always supply even when empty: missing
  * keys and empty tables are equivalent, while unconditional objects avoid call-site branching.
@@ -30,13 +34,13 @@ export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
       : {}
     if (transport.type === 'stdio') {
       return [
-        server.name,
+        codexServerName(server),
         { command: transport.command, args: transport.args, env: transport.env, ...naming },
       ]
     }
     // Codex does not distinguish HTTP and SSE configuration; it infers transport
     // from URL presence.
-    return [server.name, { url: transport.url, http_headers: transport.headers }]
+    return [codexServerName(server), { url: transport.url, http_headers: transport.headers }]
   })
 
   return { mcp_servers: Object.fromEntries(entries) }
@@ -65,7 +69,7 @@ export function fromCodexMcpStatus(
   declared: McpServer[],
   startup: Map<string, CodexMcpStartup>,
 ): McpServerStatus[] {
-  const ours = new Set(declared.map((server) => server.name))
+  const ours = new Set(declared.map(codexServerName))
 
   return statuses.map((status) => {
     const latest = startup.get(status.name)
