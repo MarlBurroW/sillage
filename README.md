@@ -210,6 +210,10 @@ site/              Public website and screenshots
 
 Get the latest apps, server archives and release notes on
 [GitHub Releases](https://github.com/MarlBurroW/sillage/releases/latest).
+Settings > CLI versions shows installed and recommended agent versions. You can
+install or update managed CLIs there; Sillage waits for active sessions before
+replacing a binary and refreshes the available models afterward.
+
 Sillage checks for updates in Settings. Installer-based Server setups can update
 from the interface; Docker users pull a newer image, and Desktop downloads updates in the background and lets you install them from About.
 
