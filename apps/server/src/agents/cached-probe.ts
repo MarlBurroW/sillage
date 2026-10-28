@@ -7,6 +7,7 @@
 export class CachedProbe<T extends object> {
   private cache: (T & { fetchedAt: number }) | null = null
   private inflight: Promise<T> | null = null
+  private revision = 0
 
   constructor(
     private readonly ttlMs: number,
@@ -18,17 +19,23 @@ export class CachedProbe<T extends object> {
       return this.cache
     }
 
-    this.inflight ??= this.probe().finally(() => {
-      this.inflight = null
-    })
-
-    this.cache = { ...(await this.inflight), fetchedAt: Date.now() }
-    return this.cache
+    const revision = this.revision
+    if (!this.inflight) {
+      const pending = this.probe().finally(() => {
+        if (this.inflight === pending) this.inflight = null
+      })
+      this.inflight = pending
+    }
+    const result = { ...(await this.inflight), fetchedAt: Date.now() }
+    if (revision === this.revision) this.cache = result
+    return result
   }
 
   /** Forget value: next read probes regardless of TTL. */
   invalidate(): void {
     this.cache = null
+    this.inflight = null
+    this.revision++
   }
 
   /** Expired without in-flight read: nothing to keep. */
@@ -62,6 +69,10 @@ export class CachedProbeMap<T extends object> {
       this.probes.set(normalized, probe)
     }
     return probe.read(force)
+  }
+
+  invalidate(): void {
+    this.probes.clear()
   }
 
   private prune(): void {

@@ -62,6 +62,8 @@ export class GrokAdapter implements AgentAdapter {
     this.usageReader = new GrokUsageReader(() => this.cli.executable())
   }
 
+  invalidateCatalogs(): void { this.catalog.invalidate() }
+
   createRunner(ctx: RunnerContext): AgentRunner {
     return new GrokRunner(ctx)
   }

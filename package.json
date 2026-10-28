@@ -22,6 +22,7 @@
     "test:antigravity-ui": "node scripts/antigravity-ui-check.mjs",
     "test:card-relations-ui": "node scripts/card-relations-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
+    "test:cli-updates-ui": "node scripts/cli-updates-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",
     "test:skill-updates-ui": "node scripts/skill-updates-ui-check.mjs",

@@ -38,8 +38,13 @@ export class OpencodeCatalog {
 
   constructor(private readonly executable: () => Promise<string>) {}
 
-  list(): Promise<Listing & { fetchedAt: number }> {
-    return this.models.read()
+  invalidate(): void {
+    this.models.invalidate()
+    this.commandProbes.invalidate()
+  }
+
+  list(force = false): Promise<Listing & { fetchedAt: number }> {
+    return this.models.read(force)
   }
 
   commands(cwd: string, force = false): Promise<{ commands: SlashCommandDto[]; fetchedAt: number }> {

@@ -1,3 +1,4 @@
+import { compareCliVersions, PREFERRED_CLI_RELEASES } from '@sillage/protocol'
 import { registerDiscussionRoutes } from './routes/discussions.js'
 import { registerNewsRoutes } from './routes/news.js'
 import { existsSync } from 'node:fs'
@@ -226,11 +227,39 @@ export async function buildApp(
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerAntigravitySessionRoutes(app, ctx, sessions, registry)
   registerFsRoutes(app)
+  const cliInstaller = new CliInstaller(ctx.config.paths.agents, {
+    acquire: async (kind) => {
+      const release = await sessions.prepareCliUpdate(kind)
+      if (!release) return null
+      try {
+        // A queued update may wait for hours; a manual upgrade meanwhile must not be undone.
+        const installed = await registry.adapter(kind).cli.describe(true)
+        if (installed.version && (compareCliVersions(installed.version, PREFERRED_CLI_RELEASES[kind].version) ?? 0) > 0) {
+          throw new HttpError(409, 'cli_newer_version', 'A newer version is already installed. Sillage will not downgrade it.')
+        }
+        return release
+      } catch (err) {
+        release()
+        throw err
+      }
+    },
+    onInstalled: async (kind) => {
+      const adapter = registry.adapter(kind)
+      adapter.cli.invalidate()
+      adapter.invalidateCatalogs?.()
+      const installed = await adapter.cli.describe(true)
+      if (!installed.managed || installed.version !== PREFERRED_CLI_RELEASES[kind].version) {
+        throw new HttpError(502, 'cli_install_verification', 'Could not verify {label} {version} after installation (found: {found}).',
+          { label: adapter.label, version: PREFERRED_CLI_RELEASES[kind].version, found: installed.version ?? '?' })
+      }
+    },
+  })
+  app.addHook('onClose', async () => { cliInstaller.close() })
   registerAgentRoutes(
     app,
     ctx,
     registry,
-    new CliInstaller(ctx.config.paths.agents, (kind) => registry.find(kind)?.cli.invalidate()),
+    cliInstaller,
     claudeAccounts,
     codexAccounts,
     grokAccounts,

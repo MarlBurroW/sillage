@@ -1,3 +1,4 @@
+import { useCliUpdateNotice } from '../lib/agents'
 import { createContext, useContext } from 'react'
 import { Menu } from 'lucide-react'
 import { useTranslate } from '../lib/i18n'
@@ -12,7 +13,9 @@ export function MobileNavigationButton() {
   const open = useContext(MobileNavigationContext)
   const t = useTranslate()
   // The collapsed phone sidebar's badge must also appear on its visible toggle.
-  const updateNotice = useUpdateNotice()
+  const appUpdateNotice = useUpdateNotice()
+  const cliUpdateNotice = useCliUpdateNotice()
+  const updateNotice = appUpdateNotice || cliUpdateNotice
   return (
     <IconButton
       label={updateNotice ? `${t('shell.nav.open')} · ${t('about.badge.updateAvailable')}` : t('shell.nav.open')}

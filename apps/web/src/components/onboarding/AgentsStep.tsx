@@ -111,6 +111,7 @@ function AgentCard({ entry }: { entry: AgentAvailabilityDto }) {
       {install.progress ? (
         <AgentInstallProgress label={label} version={entry.preferredVersion} progress={install.progress} className="px-4 pt-3" />
       ) : null}
+      {install.queued ? <p role="status" className="px-4 pt-3 text-sm text-ink-soft">{install.status}</p> : null}
       {install.failed ? (
         <div className="px-4 pt-3">
           <Banner>{install.status}</Banner>

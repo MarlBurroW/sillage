@@ -1,3 +1,4 @@
+import { useCliUpdateNotice } from '../lib/agents'
 import { conversationPath } from '@sillage/protocol'
 import { sessionReference } from '@sillage/protocol'
 import { useCopy } from '../lib/clipboard'
@@ -434,7 +435,9 @@ function Sidebar({
   const logout = useLogout()
   // Without a password, logout would leave an unusable login page.
   const passwordAuth = useCapability('passwordAuth')
-  const updateNotice = useUpdateNotice()
+  const appUpdateNotice = useUpdateNotice()
+  const cliUpdateNotice = useCliUpdateNotice()
+  const updateNotice = appUpdateNotice || cliUpdateNotice
   const navigate = useNavigate()
   const routeProjectId = useMatch('/p/:projectId/*')?.params.projectId
   const visits = useProjectVisits(user?.id ?? '')

@@ -1,6 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   PREFERRED_CLI_RELEASES,
+  compareCliVersions,
+  type CliInstallStateDto,
   isCompatibleVersion,
   type AgentAvailabilityDto,
   type AgentConfig,
@@ -11,37 +13,81 @@ import {
   type AgentModelsDto,
 } from '@sillage/protocol'
 import { useMemo } from 'react'
-import { translate, useTranslate, type MessageKey } from './i18n'
+import { translate, translateError, useTranslate, type MessageKey } from './i18n'
 import { api } from './api'
+import { useCurrentUser } from './session'
 import { useUpdateHiddenAgents, useUserSettings } from './user-settings'
 
 /**
  * CLI presence and versions on the server machine. Sillage no longer bundles binaries: omit agents
  * whose CLI is missing so users do not discover the absence through a failed first message.
  */
-export function useAgentAvailability() {
+const AVAILABILITY_KEY = ['agents', 'availability']
+
+async function readAvailability(client: QueryClient, force = false, signal?: AbortSignal) {
+  const previous = client.getQueryData<AgentAvailabilityListDto>(AVAILABILITY_KEY)
+  const next = await api.get<AgentAvailabilityListDto>(`/api/agents${force ? '?refresh=1' : ''}`, signal)
+  for (const entry of next.agents) {
+    const before = previous?.agents.find((item) => item.agent === entry.agent)
+    if (before && (before.version !== entry.version || before.path !== entry.path ||
+      (entry.install.status === 'idle' && (before.install.status === 'running' || before.install.status === 'queued')))) {
+      // Invalidate every account, including inactive queries kept for other conversations.
+      void client.invalidateQueries({ queryKey: ['agents', entry.agent] })
+      void client.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'project-commands' && query.queryKey[2] === entry.agent })
+    }
+  }
+  return next
+}
+
+export function useAgentAvailability(enabled = true) {
+  const client = useQueryClient()
   return useQuery({
-    queryKey: ['agents', 'availability'],
-    queryFn: () => api.get<AgentAvailabilityListDto>('/api/agents'),
-    // The probe launches a process for each present CLI. CLIs do not install while a form is being
-    // filled, and the server has its own cache.
+    queryKey: AVAILABILITY_KEY,
+    queryFn: ({ signal }) => readAvailability(client, false, signal),
     staleTime: 60 * 1000,
-    // Except during installation: it finishes server-side without pushing an update, the only time
-    // this state changes on its own.
-    refetchInterval: (query) =>
-      query.state.data?.agents.some((a) => a.install.status === 'running') ? 2000 : false,
+    enabled,
+    refetchInterval: (query) => query.state.data?.agents.some((a) =>
+      a.install.status === 'running' || a.install.status === 'queued') ? 2000 : false,
   })
 }
 
-/**
- * Install a CLI's tested version. The server responds before completion; the probe reports
- * completion, hence immediate invalidation instead of waiting.
- */
-export function useInstallAgent() {
-  const queryClient = useQueryClient()
+export function useRefreshAgentAvailability() {
+  const client = useQueryClient()
   return useMutation({
-    mutationFn: (agent: AgentKind) => api.post(`/api/agents/${agent}/install`, {}),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['agents', 'availability'] }),
+    mutationFn: () => readAvailability(client, true),
+    onSuccess: (data) => client.setQueryData(AVAILABILITY_KEY, data),
+  })
+}
+
+/** Only older releases need updates. Newer or unknown versions are never labelled out of date. */
+export function cliNeedsUpdate(entry: AgentAvailabilityDto): boolean {
+  return entry.enabled && entry.installed && entry.version !== null &&
+    (compareCliVersions(entry.version, entry.preferredVersion) ?? 0) < 0
+}
+
+/** Mounted with navigation so version checks also run when users never open settings. */
+export function useCliUpdateNotice(): boolean {
+  const { data: user } = useCurrentUser()
+  const { data } = useAgentAvailability(user?.isAdmin === true)
+  return user?.isAdmin === true && (data?.agents.some(cliNeedsUpdate) ?? false)
+}
+
+/** The accepted state enables polling even when installation finishes before the first GET. */
+export function useInstallAgent() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (agent: AgentKind) => api.post<CliInstallStateDto>(`/api/agents/${agent}/install`, {}),
+    onSuccess: (install, agent) => client.setQueryData<AgentAvailabilityListDto>(AVAILABILITY_KEY, (data) =>
+      data && ({ agents: data.agents.map((entry) => entry.agent === agent ? { ...entry, install } : entry) })),
+    onSettled: () => client.invalidateQueries({ queryKey: AVAILABILITY_KEY }),
+  })
+}
+
+export function useCancelAgentInstall() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (agent: AgentKind) => api.delete(`/api/agents/${agent}/install`),
+    onSettled: () => client.invalidateQueries({ queryKey: AVAILABILITY_KEY }),
   })
 }
 
@@ -53,23 +99,32 @@ export function useInstallAgent() {
 export function useAgentInstall(entry: AgentAvailabilityDto | undefined, label: string) {
   const t = useTranslate()
   const install = useInstallAgent()
+  const { data: user } = useCurrentUser()
   const state = entry?.install
   const running = state?.status === 'running'
-  const failed = state?.status === 'failed'
+  const queued = state?.status === 'queued'
+  // Another administrator may complete the update after this browser's request failed.
+  const requestFailed = install.isError && !running && !queued && entry?.version !== entry?.preferredVersion
+  const failed = state?.status === 'failed' || requestFailed
   return {
     /** True when installation can be offered: the CLI is missing and has not been disabled. */
-    offered: entry !== undefined && !entry.installed && entry.reason !== 'disabled',
+    offered: user?.isAdmin === true && entry !== undefined && !entry.installed && entry.reason !== 'disabled' && entry.installable !== false,
     running,
+    queued,
     failed,
     /** Current situation: installation progress, failure reason, or absence. */
     status: running
       ? t('agent.install.running', { label, version: state.version })
-      : failed
-        ? state.error
-        : t('agent.install.missing', { label }),
+      : queued
+        ? t(state.reason === 'sessions' ? 'cliUpdates.waitingSessions' : 'cliUpdates.waitingInstall')
+        : requestFailed
+          ? install.error.message
+          : state?.status === 'failed'
+            ? translateError(state.code ?? 'cli_install_failed', state.error, state.params)
+            : t('agent.install.missing', { label }),
     /** Button label: install the target version or retry. */
     action: failed ? t('agent.install.retry') : t('agent.install.action', { version: entry?.preferredVersion ?? '' }),
-    busy: running || install.isPending,
+    busy: running || queued || install.isPending,
     /**
      * Installation progress for `AgentInstallProgress`, null otherwise. Set an empty starting state
      * immediately on click, before the server reply, so the button responds during the round trip.

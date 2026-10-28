@@ -55,6 +55,8 @@ export class CodexAdapter implements AgentAdapter {
     this.usageReader = new CodexUsageReader(() => this.cli.executable())
   }
 
+  invalidateCatalogs(): void { this.catalog.invalidate() }
+
   createRunner(ctx: RunnerContext): AgentRunner {
     return new CodexRunner(ctx)
   }

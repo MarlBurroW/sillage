@@ -35,6 +35,8 @@ export class GrokCatalog {
 
   constructor(private readonly executable: () => Promise<string>) {}
 
+  invalidate(): void { this.probes.invalidate() }
+
   list(home?: string, force = false): Promise<GrokListing & { fetchedAt: number }> {
     return this.probes.read(home ?? '', force)
   }

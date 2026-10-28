@@ -46,6 +46,8 @@ export class ClaudeModelCatalog {
    */
   constructor(private readonly executable: () => Promise<string>) {}
 
+  invalidate(): void { this.cached.invalidate() }
+
   list(credential?: string, force = false): Promise<Listing & { fetchedAt: number }> {
     return this.cached.read(credential ?? '', force)
   }

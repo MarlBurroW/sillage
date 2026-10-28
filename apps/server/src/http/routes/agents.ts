@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@sillage/protocol'
+import { agentKindSchema, compareCliVersions, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@sillage/protocol'
+import type { CliDescription } from '../../agents/cli-binary.js'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import { claudeCredential } from '../../agents/claude/credential.js'
@@ -14,7 +15,7 @@ import type { AntigravityAccountStore } from '../../antigravity-accounts/store.j
 import { projectCwd } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
-import { requireUser } from '../require-user.js'
+import { requireAdmin, requireUser } from '../require-user.js'
 
 const commandsQuerySchema = z.object({
   agent: agentKindSchema,
@@ -73,6 +74,15 @@ export function registerAgentRoutes(
     if (!adapter) throw new HttpError(404, 'unknown_agent', 'Unknown CLI: {agent}.', { agent })
     return adapter
   }
+  const descriptions = new Map<string, CliDescription>()
+  const describe = async (adapter: AgentAdapter, force = false): Promise<CliDescription> => {
+    // Polling progress must not execute the binary while npm is replacing it, especially on Windows.
+    const previous = descriptions.get(adapter.kind)
+    if (previous && installer.state(adapter.kind).status === 'running') return previous
+    const current = await adapter.cli.describe(force)
+    descriptions.set(adapter.kind, current)
+    return current
+  }
   const paramsAgent = (params: unknown) => (params as { agent: string }).agent
 
   /** CLI presence and versions across agents. Sillage no longer bundles binaries: system-installed CLIs require the screen to explain which is missing and why rather than offer agents the server cannot launch. `?refresh=1` forces a probe after an external installation. */
@@ -85,7 +95,7 @@ export function registerAgentRoutes(
     // the screen unnecessarily.
     const agents = await Promise.all(
       registry.all().map(async (adapter) => ({
-        ...(await adapter.cli.describe(force)),
+        ...(await describe(adapter, force)),
         preferredVersion: PREFERRED_CLI_RELEASES[adapter.kind].version,
         install: installer.state(adapter.kind),
       })),
@@ -93,10 +103,17 @@ export function registerAgentRoutes(
     return { agents }
   })
 
-  /** Installs the tested CLI version in Sillage's managed prefix. Returns before completion: packages weigh hundreds of megabytes, and waiting inside the request would depend on proxy patience. Progress is available through `GET /api/agents`. */
+  /** Installs the recommended CLI version in Sillage's managed prefix. Returns before completion: packages weigh hundreds of megabytes, and waiting inside the request would depend on proxy patience. Progress is available through `GET /api/agents`. */
   app.post('/api/agents/:agent/install', async (request, reply) => {
-    requireUser(request)
+    requireAdmin(request)
     const adapter = resolveAdapter(paramsAgent(request.params))
+    if (!adapter.cli.installable) {
+      throw new HttpError(409, 'cli_install_unmanaged', 'This CLI is disabled or uses a custom executable. Update it outside Sillage.')
+    }
+    const installed = await describe(adapter)
+    if (installed.version && (compareCliVersions(installed.version, PREFERRED_CLI_RELEASES[adapter.kind].version) ?? 0) > 0) {
+      throw new HttpError(409, 'cli_newer_version', 'A newer version is already installed. Sillage will not downgrade it.')
+    }
 
     if (!installer.start(adapter.kind)) {
       throw new HttpError(
@@ -107,6 +124,15 @@ export function registerAgentRoutes(
       )
     }
     return reply.status(202).send(installer.state(adapter.kind))
+  })
+
+  app.delete('/api/agents/:agent/install', async (request, reply) => {
+    requireAdmin(request)
+    const adapter = resolveAdapter(paramsAgent(request.params))
+    if (!installer.cancel(adapter.kind)) {
+      throw new HttpError(409, 'cli_install_not_queued', 'Only a waiting installation can be cancelled.')
+    }
+    return reply.status(204).send()
   })
 
   /** Account usage, read on demand rather than pushed: each read starts a CLI process, and values matter only when viewed. `?refresh=1` bypasses the cache; `?account=` reads an additional user account using its token. */

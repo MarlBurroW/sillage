@@ -833,6 +833,8 @@ export interface AgentAvailabilityDto {
   installed: boolean
   /** True when installed by Sillage; false when found through the system PATH. */
   managed: boolean
+  /** False for disabled CLIs or a custom executable that managed installation would not replace. */
+  installable: boolean
   /** Absolute path actually launched; null when not found. */
   path: string | null
   version: string | null
@@ -852,6 +854,7 @@ export interface AgentAvailabilityDto {
  */
 export type CliInstallStateDto =
   | { status: 'idle' }
+  | { status: 'queued'; version: string; reason: 'sessions' | 'installation' }
   | {
       status: 'running'
       version: string
@@ -864,7 +867,7 @@ export type CliInstallStateDto =
       fetched: number
       current: string | null
     }
-  | { status: 'failed'; version: string; error: string }
+  | { status: 'failed'; version: string; error: string; code?: string; params?: Record<string, string | number> }
 
 /** Response from `/api/agents`. */
 export interface AgentAvailabilityListDto {

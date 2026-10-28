@@ -26,6 +26,7 @@ import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { foldForMatch, type InstanceCapabilities } from '@sillage/protocol'
 import { useInstance } from '../lib/instance'
 import { useCurrentUser } from '../lib/session'
+import { useCliUpdateNotice } from '../lib/agents'
 import { useVersionInfo } from '../lib/system'
 import { UpdateDot } from '../components/UpdateDot'
 import { useMediaQuery } from '../lib/viewport'
@@ -66,6 +67,10 @@ export function visibleSections(isAdmin: boolean, capabilities: InstanceCapabili
 
 /** Read through `visibleSections`, which enforces permissions and capabilities. */
 const SECTIONS: Section[] = [
+  {
+    to: 'cli-versions', group: 'agents', labelKey: 'cliUpdates.title',
+    descriptionKey: 'cliUpdates.navDescription', icon: <Terminal size={16} />,
+  },
   {
     to: 'veille',
     group: 'personal',
@@ -222,6 +227,7 @@ export function SettingsLayout() {
   const t = useTranslate()
   const { data: user } = useCurrentUser()
   const { data: versionInfo } = useVersionInfo()
+  const cliUpdateNotice = useCliUpdateNotice()
   const { pathname } = useLocation()
   const { data: instance } = useInstance()
   const sections = visibleSections(Boolean(user?.isAdmin), instance?.capabilities)
@@ -294,7 +300,7 @@ export function SettingsLayout() {
                     >
                       <span className="relative shrink-0 text-ink-faint">
                         {section.icon}
-                        {section.to === 'a-propos' && versionInfo?.updateAvailable ? <UpdateDot /> : null}
+                        {(section.to === 'a-propos' && versionInfo?.updateAvailable) || (section.to === 'cli-versions' && cliUpdateNotice) ? <UpdateDot /> : null}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{t(section.labelKey)}</span>

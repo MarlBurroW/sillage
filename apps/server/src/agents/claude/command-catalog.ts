@@ -30,6 +30,8 @@ export class ClaudeCommandCatalog {
 
   constructor(private readonly executable: () => Promise<string>) {}
 
+  invalidate(): void { this.probes.invalidate() }
+
   list(cwd: string, force = false): Promise<ProjectCommandsDto> {
     return this.probes.read(cwd, force)
   }

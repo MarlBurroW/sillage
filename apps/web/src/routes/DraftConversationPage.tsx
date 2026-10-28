@@ -1,7 +1,7 @@
 import { conversationPath } from '@sillage/protocol'
 import { EyeOff, History, PanelRight, SquareKanban, X } from 'lucide-react'
 import { Suspense, lazy, useMemo, useState } from 'react'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
   agentKindSchema,
@@ -134,6 +134,7 @@ function InstallRow({ entry, onDismiss }: { entry: AgentAvailabilityDto; onDismi
       </div>
     )
   }
+  if (!install.offered) return null
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-2">
       <span className="min-w-0 text-xs leading-snug text-ink-faint">{install.status}</span>
@@ -410,7 +411,9 @@ export function DraftConversationPage() {
                 )
               })}
             </div>
-            {selectedVersionNotice ? <p className="text-xs text-caution">{selectedVersionNotice}</p> : null}
+            {selectedVersionNotice ? <p className="text-xs text-caution">{selectedVersionNotice}{' '}
+              <Link className="underline hover:text-ink" to="/settings/cli-versions">{t('cliUpdates.manage')}</Link>
+            </p> : null}
             {/*
              * No installed CLI, or `?agent=` naming a missing one: options alone would not
              * explain why the composer refuses input.

@@ -6,6 +6,7 @@ import {
   type AgentKind,
   type CliInstallStateDto,
 } from '@sillage/protocol'
+import { HttpError } from '../http/errors.js'
 import { resolveBinary } from './cli-binary.js'
 import { launchOf } from './launch.js'
 
@@ -34,72 +35,87 @@ const FETCH_LINE = /^npm (?:http|verb http) fetch \w+ \d+ (\S+)/
 /** Error lines in npm 10 (npm error) and npm 9 (npm ERR!) formats. */
 const ERROR_LINE = /^npm (?:error|ERR!)\b/
 
-type State =
-  | { status: 'idle' }
-  | { status: 'running'; version: string; startedAt: number; fetched: number; current: string | null }
-  | { status: 'failed'; version: string; error: string; at: number }
+interface InstallHooks {
+  /** Hold off new turns and release idle processes before touching executable files (Windows locks them). */
+  acquire?: (kind: AgentKind) => Promise<(() => void) | null>
+  /** Verify the new binary and invalidate all account catalogs before reporting completion. */
+  onInstalled?: (kind: AgentKind) => Promise<void>
+}
 
 export class CliInstaller {
-  /** Per-agent state. Absence means never attempted, exposed as idle by state(). */
-  private readonly states = new Map<AgentKind, State>()
+  private readonly states = new Map<AgentKind, CliInstallStateDto>()
+  private draining = false
+  private timer: NodeJS.Timeout | null = null
+  private closed = false
 
-  constructor(
-    private readonly prefix: string,
-    /**
-     * Notify after CLI install. Presence probe is cached: without invalidation screen would revert
-     * to Install until expiry, appearing ineffective.
-     */
-    private readonly onInstalled: (kind: AgentKind) => void = () => {},
-  ) {}
+  constructor(private readonly prefix: string, private readonly hooks: InstallHooks = {}) {}
 
   state(kind: AgentKind): CliInstallStateDto {
-    const state = this.states.get(kind) ?? { status: 'idle' }
-    return state.status === 'failed'
-      ? { status: 'failed', version: state.version, error: state.error }
-      : state.status === 'running'
-        ? {
-            status: 'running',
-            version: state.version,
-            startedAt: state.startedAt,
-            fetched: state.fetched,
-            current: state.current,
-          }
-        : { status: 'idle' }
+    return this.states.get(kind) ?? { status: 'idle' }
   }
 
-  /**
-   * Start installation and return immediately.
-   *
-   * False if this CLI already installing: concurrent npm installs in same prefix interfere, with no
-   * guarantee which version survives.
-   */
+  /** All agents share an npm prefix: serialize installs, including requests from different users. */
   start(kind: AgentKind): boolean {
-    if (this.states.get(kind)?.status === 'running') return false
-
-    const { package: pkg, version } = PREFERRED_CLI_RELEASES[kind]
-    this.states.set(kind, { status: 'running', version, startedAt: Date.now(), fetched: 0, current: null })
-    void this.run(kind, pkg, version)
+    const status = this.state(kind).status
+    if (this.closed || status === 'running' || status === 'queued') return false
+    this.states.set(kind, { status: 'queued', version: PREFERRED_CLI_RELEASES[kind].version, reason: 'installation' })
+    void this.drain()
     return true
   }
 
-  private async run(kind: AgentKind, pkg: string, version: string): Promise<void> {
+  cancel(kind: AgentKind): boolean {
+    if (this.state(kind).status !== 'queued') return false
+    this.states.set(kind, { status: 'idle' })
+    return true
+  }
+
+  close(): void {
+    this.closed = true
+    if (this.timer) clearTimeout(this.timer)
+  }
+
+  private async drain(): Promise<void> {
+    if (this.draining || this.closed) return
+    if (this.timer) { clearTimeout(this.timer); this.timer = null }
+    this.draining = true
     try {
-      // npm refuses nonexistent prefixes. Create here, not startup: directory needed only when
-      // installing.
-      await mkdir(this.prefix, { recursive: true })
-      if (kind === 'antigravity') await installAntigravity(this.prefix, version, (message) => this.progress(kind, message))
-      else await this.npm(kind, pkg, version)
-      this.onInstalled(kind)
-      this.states.set(kind, { status: 'idle' })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      this.states.set(kind, {
-        status: 'failed',
-        version,
-        error: message.slice(0, MAX_ERROR_CHARS),
-        at: Date.now(),
-      })
+      for (const [kind, state] of this.states) {
+        if (this.closed || state.status !== 'queued') continue
+        let release: (() => void) | null = null
+        try {
+          release = this.hooks.acquire ? await this.hooks.acquire(kind) : () => {}
+          // Cancellation can arrive while idle processes are being released.
+          if (this.state(kind) !== state || this.closed) continue
+          if (!release) {
+            this.states.set(kind, { ...state, reason: 'sessions' })
+            continue
+          }
+          this.states.set(kind, { status: 'running', version: state.version, startedAt: Date.now(), fetched: 0, current: null })
+          await this.install(kind, state.version)
+          await this.hooks.onInstalled?.(kind)
+          this.states.set(kind, { status: 'idle' })
+        } catch (err) {
+          this.states.set(kind, { status: 'failed', version: state.version,
+            error: (err instanceof Error ? err.message : String(err)).slice(0, MAX_ERROR_CHARS),
+            ...(err instanceof HttpError ? { code: err.code, params: err.params } : {}),
+          })
+        } finally {
+          release?.()
+        }
+      }
+    } finally {
+      this.draining = false
+      if (!this.closed && [...this.states.values()].some((state) => state.status === 'queued')) {
+        this.timer = setTimeout(() => { this.timer = null; void this.drain() }, 1000)
+        this.timer.unref()
+      }
     }
+  }
+
+  protected async install(kind: AgentKind, version: string): Promise<void> {
+    await mkdir(this.prefix, { recursive: true })
+    if (kind === 'antigravity') await installAntigravity(this.prefix, version, (message) => this.progress(kind, message))
+    else await this.npm(kind, PREFERRED_CLI_RELEASES[kind].package, version)
   }
 
   /** Record another registry request so interface shows progress. */

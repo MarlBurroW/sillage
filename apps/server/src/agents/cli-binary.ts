@@ -137,9 +137,18 @@ export class CliBinary {
     this.cache.invalidate()
   }
 
+  /** Only default executable names resolve to the package Sillage installs. */
+  get installable(): boolean {
+    const names: Record<AgentKind, string> = {
+      claude: 'claude', codex: 'codex', opencode: 'opencode', grok: 'grok',
+      antigravity: process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par',
+    }
+    return this.enabled && names[this.kind] === this.configured
+  }
+
   /** Screen-visible state. Do not probe configuration-disabled agents: launching explicitly excluded CLIs wastes work, and 'missing' misstates why they are unavailable. */
   async describe(force = false): Promise<CliDescription> {
-    const base = { agent: this.kind, binary: this.configured, enabled: this.enabled }
+    const base = { agent: this.kind, binary: this.configured, enabled: this.enabled, installable: this.installable }
     if (!this.enabled) {
       return {
         ...base,

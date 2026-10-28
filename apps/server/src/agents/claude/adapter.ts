@@ -61,6 +61,8 @@ export class ClaudeAdapter implements AgentAdapter {
     this.usageReader = new ClaudeUsageReader(() => this.cli.executable())
   }
 
+  invalidateCatalogs(): void { this.catalog.invalidate(); this.commandCatalog.invalidate() }
+
   createRunner(ctx: RunnerContext): AgentRunner {
     return new ClaudeRunner(ctx)
   }

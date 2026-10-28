@@ -15,6 +15,7 @@ import {
 import {
   parseAgentConfig,
   type AgentConfig,
+  type AgentKind,
   type ConversationMetrics,
   type ConversationStatus,
   type CliRequestKind,
@@ -158,6 +159,8 @@ export class SessionManager {
   private readonly runners = new Map<string, ManagedRunner>()
   /** In-progress starts so concurrent sends wait instead of duplicate processes. */
   private readonly startingRunners = new Map<string, Promise<AgentRunner>>()
+  private readonly updatingClis = new Set<AgentKind>()
+  private readonly cliOperations = new Map<AgentKind, number>()
   private readonly recentClientMessages = new Map<string, number>()
   /** Pending messages per conversation, memory-only: messages never reaching CLIs need not survive restarts, and journals already allow clean closure on recovery (see `expireQueuedMessages`). */
   private readonly queues = new Map<string, QueuedMessage[]>()
@@ -444,21 +447,26 @@ export class SessionManager {
   /** Forks conversations at history points. `throughSeq` is the last retained event: native CLI state must resume at the same point, preventing display/memory disagreement (invariant I2). Returns native fork session IDs for new conversation rows. Callers create rows and copy journals. */
   async forkSession(conversationId: string, throughSeq: number): Promise<string> {
     const conversation = this.loadConversation(conversationId)
-    if (!conversation.agentSessionId) {
-      throw new HttpError(
-        400,
-        'no_agent_session',
-        'This conversation never started a session: there is nothing to fork.',
-      )
-    }
+    const release = this.useCli(conversation.agent)
+    try {
+      if (!conversation.agentSessionId) {
+        throw new HttpError(
+          400,
+          'no_agent_session',
+          'This conversation never started a session: there is nothing to fork.',
+        )
+      }
 
-    // Cut points are CLI-specific (transcript entries, rollback turns…):
-    // adapters calculate them from journals and consume them themselves.
-    const adapter = this.registry.adapter(conversation.agent)
-    return adapter.fork(
-      { agentSessionId: conversation.agentSessionId, cwd: this.resolveCwd(conversation) },
-      adapter.forkCut(this.log, conversationId, throughSeq),
-    )
+      // Cut points are CLI-specific (transcript entries, rollback turns…):
+      // adapters calculate them from journals and consume them themselves.
+      const adapter = this.registry.adapter(conversation.agent)
+      return await adapter.fork(
+        { agentSessionId: conversation.agentSessionId, cwd: this.resolveCwd(conversation) },
+        adapter.forkCut(this.log, conversationId, throughSeq),
+      )
+    } finally {
+      release()
+    }
   }
 
   setNotifier(notifier: ConversationNotifier): void {
@@ -522,6 +530,35 @@ export class SessionManager {
           err instanceof Error ? err.message : String(err)
         }\n`,
       )
+    }
+  }
+
+  /** Reserve the CLI synchronously before awaiting checkpoints/startup, when runner status can still be idle. */
+  private useCli(kind: AgentKind): () => void {
+    if (this.updatingClis.has(kind)) {
+      throw new HttpError(503, 'cli_updating', '{label} is being updated. Try again when installation finishes.',
+        { label: this.registry.adapter(kind).label })
+    }
+    this.cliOperations.set(kind, (this.cliOperations.get(kind) ?? 0) + 1)
+    return () => {
+      const count = (this.cliOperations.get(kind) ?? 1) - 1
+      if (count) this.cliOperations.set(kind, count)
+      else this.cliOperations.delete(kind)
+    }
+  }
+
+  /** Wait for turns, questions, background tasks and queued work; idle sessions resume on the new binary. */
+  async prepareCliUpdate(kind: AgentKind): Promise<(() => void) | null> {
+    if (this.updatingClis.has(kind) || this.cliOperations.has(kind)) return null
+    const runners = [...this.runners].filter(([, managed]) => managed.runner.appliedConfig.agent === kind)
+    if (runners.some(([id, managed]) => this.isBusy(id) || managed.background > 0 || managed.loops > 0 || this.queues.has(id))) return null
+    this.updatingClis.add(kind)
+    try {
+      await Promise.all(runners.map(([id]) => this.stopRunner(id, { keepQueue: true })))
+      return () => { this.updatingClis.delete(kind) }
+    } catch (err) {
+      this.updatingClis.delete(kind)
+      throw err
     }
   }
 
@@ -746,10 +783,15 @@ export class SessionManager {
 
   /** Imports through the same event translator as live sessions, preserving tool metadata. */
   async importNativeHistory(conversation: ConversationRow): Promise<void> {
-    const context = this.buildContext(conversation)
-    const runner = this.registry.adapter(conversation.agent).createRunner(context)
-    if (!runner.importHistory) throw new Error('This CLI does not support history import.')
-    try { await runner.importHistory() } finally { await runner.stop() }
+    const release = this.useCli(conversation.agent)
+    try {
+      const context = this.buildContext(conversation)
+      const runner = this.registry.adapter(conversation.agent).createRunner(context)
+      if (!runner.importHistory) throw new Error('This CLI does not support history import.')
+      try { await runner.importHistory() } finally { await runner.stop() }
+    } finally {
+      release()
+    }
   }
 
   private buildContext(conversation: ConversationRow): RunnerContext {
@@ -1208,21 +1250,26 @@ export class SessionManager {
     skills: string[],
   ): Promise<void> {
     const conversation = this.loadConversation(conversationId)
-    // Resolve before starting runners: invalid mentions must reject sends
-    // rather than leave launched sessions with lost messages.
-    const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
-
-    const runner = await this.ensureRunner(conversation)
-    // After potentially slow runner startup, immediately before sending:
-    // capture as close as possible to the agent's first action.
-    await this.openCheckpoint(conversation)
+    const release = this.useCli(conversation.agent)
     try {
-      await runner.send(text, attachments, resolved, skills)
-    } catch (err) {
-      this.checkpoints.delete(conversationId)
-      throw err
+      // Resolve before starting runners: invalid mentions must reject sends
+      // rather than leave launched sessions with lost messages.
+      const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
+
+      const runner = await this.ensureRunner(conversation)
+      // After potentially slow runner startup, immediately before sending:
+      // capture as close as possible to the agent's first action.
+      await this.openCheckpoint(conversation)
+      try {
+        await runner.send(text, attachments, resolved, skills)
+      } catch (err) {
+        this.checkpoints.delete(conversationId)
+        throw err
+      }
+      this.touch(conversationId)
+    } finally {
+      release()
     }
-    this.touch(conversationId)
   }
 
   /** Captures pre-turn workspace state when enabled. Failure never blocks delivery: snapshots are convenience; turns are the work. Outside git, do nothing silently. */
@@ -1340,10 +1387,15 @@ export class SessionManager {
     }
 
     const conversation = this.loadConversation(conversationId)
-    const runner = await this.ensureRunner(conversation)
-    const compacted = await runner.compact()
-    if (compacted) this.touch(conversationId)
-    return compacted
+    const release = this.useCli(conversation.agent)
+    try {
+      const runner = await this.ensureRunner(conversation)
+      const compacted = await runner.compact()
+      if (compacted) this.touch(conversationId)
+      return compacted
+    } finally {
+      release()
+    }
   }
 
   /** Stops background conversation work. Unlike compaction, do not restart cold runners: background work dies with CLI processes, leaving nothing to stop. */

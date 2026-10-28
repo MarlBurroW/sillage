@@ -67,6 +67,8 @@ export class OpencodeAdapter implements AgentAdapter {
     this.catalog = new OpencodeCatalog(() => this.cli.executable())
   }
 
+  invalidateCatalogs(): void { this.catalog.invalidate() }
+
   createRunner(ctx: RunnerContext): AgentRunner {
     return new OpencodeRunner(ctx)
   }
@@ -112,8 +114,8 @@ export class OpencodeAdapter implements AgentAdapter {
     }
   }
 
-  async models(): Promise<AgentModelsDto> {
-    const listing = await this.catalog.list()
+  async models(_credential?: string, force = false): Promise<AgentModelsDto> {
+    const listing = await this.catalog.list(force)
     const fallback = defaultModel(listing)
 
     const models: AgentModelDto[] = listing.providers.flatMap((provider) =>

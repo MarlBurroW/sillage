@@ -47,6 +47,13 @@ function compare(a: Parsed, b: Parsed): number {
   return a.major - b.major || a.minor - b.minor || a.patch - b.patch
 }
 
+/** Numeric release ordering; unknown versions must not trigger an automatic downgrade. */
+export function compareCliVersions(installed: string, preferred: string): number | null {
+  const a = parse(installed)
+  const b = parse(preferred)
+  return a && b ? compare(a, b) : null
+}
+
 /**
  * Is the installed version compatible with Sillage's target?
  *

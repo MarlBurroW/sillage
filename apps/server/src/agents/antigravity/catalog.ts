@@ -46,6 +46,11 @@ export class AntigravityCatalog {
   private readonly quotas = new Map<string, CachedProbe<Omit<AgentUsage, 'fetchedAt'>>>()
   constructor(private readonly executable: () => Promise<string>) {}
 
+  invalidate(): void {
+    this.catalogs.clear()
+    this.quotas.clear()
+  }
+
   list(home = userAntigravityHome(), cwd = homedir(), force = false): Promise<Listing & { fetchedAt: number }> {
     for (const [key, probe] of this.catalogs) if (probe.expired(60 * 60_000)) this.catalogs.delete(key)
     const key = JSON.stringify([home, cwd, credentialRevision(home)])

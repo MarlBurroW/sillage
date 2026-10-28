@@ -27,6 +27,8 @@ export class AntigravityAdapter implements AgentAdapter {
     })
     this.catalog = new AntigravityCatalog(() => this.cli.executable())
   }
+  invalidateCatalogs(): void { this.catalog.invalidate() }
+
   createRunner(ctx: RunnerContext): AgentRunner { return new AntigravityRunner(ctx) }
   forkCut(): never { throw new ForkError('Antigravity uses a portable history fork.') }
   async fork(): Promise<string> { throw new ForkError('Antigravity has no native fork RPC. Use the portable history fork.') }

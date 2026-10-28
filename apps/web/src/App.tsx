@@ -26,6 +26,7 @@ import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
 import { AppearanceSection } from './routes/AppearanceSection'
+import { CliVersionsSettingsPage } from './routes/CliVersionsSettingsPage'
 import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from './routes/DictationSettingsPage'
 import { McpSettingsPage } from './routes/McpSettingsPage'
@@ -133,6 +134,7 @@ export function App() {
             <Route path="veille" element={<NewsSettingsPage />} />
             <Route path="notifications" element={<NotificationsSection />} />
             <Route path="cli" element={<CliDefaultsSettingsPage />} />
+            <Route path="cli-versions" element={<CliVersionsSettingsPage />} />
             <Route path="projets" element={<Navigate to="/projects/new" replace />} />
             <Route path="mcp" element={<McpSettingsPage />} />
             <Route path="consignes" element={<InstructionsSettingsPage />} />

@@ -45,6 +45,8 @@ export class CodexModelCatalog {
   constructor(private readonly executable: () => Promise<string>) {}
 
   /** `home` is an account's `CODEX_HOME`; omitted for the CLI's own login. */
+  invalidate(): void { this.cached.invalidate() }
+
   list(home?: string, force = false): Promise<Listing & { fetchedAt: number }> {
     return this.cached.read(JSON.stringify({ home, auth: authRevision(home) }), force)
   }
