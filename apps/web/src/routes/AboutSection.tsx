@@ -187,7 +187,11 @@ export function AboutSection() {
               )
             ) : info?.channel === 'desktop' || desktop ? (
               desktop ? (
-                <DesktopUpdateAction desktop={desktop} onInstall={() => setConfirmingDesktop(true)} />
+                <DesktopUpdateAction
+                  desktop={desktop}
+                  serverLatest={info?.updateAvailable ? info.latest : null}
+                  onInstall={() => setConfirmingDesktop(true)}
+                />
               ) : (
                 <p className="text-sm text-ink-faint">{t('about.desktop.instructions')}</p>
               )
@@ -278,10 +282,30 @@ export function AboutSection() {
 
 /**
  * Desktop downloads automatically; offer installation when ready or retry on failure.
+ * `serverLatest` is the newer version the server saw on GitHub, if any. The app checks
+ * on its own schedule and reads GitHub's release feed, which can lag the API by minutes:
+ * when it has nothing to show for a version the server already lists, say so and
+ * offer a new check instead of promising a download that is not happening.
  */
-function DesktopUpdateAction({ desktop, onInstall }: { desktop: DesktopUpdates; onInstall: () => void }) {
+function DesktopUpdateAction({
+  desktop,
+  serverLatest,
+  onInstall,
+}: {
+  desktop: DesktopUpdates
+  serverLatest: string | null
+  onInstall: () => void
+}) {
   const t = useTranslate()
   const state = desktop.state
+  const status = state?.status
+  // One automatic check per visit, so the screen is not stuck on a stale launch check.
+  const checkedRef = useRef(false)
+  useEffect(() => {
+    if (checkedRef.current || !serverLatest || status !== 'idle') return
+    checkedRef.current = true
+    void desktop.check()
+  }, [desktop, serverLatest, status])
   if (!state) return null
   const download = (
     <a href="https://github.com/MarlBurroW/sillage/releases/latest" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
@@ -291,9 +315,21 @@ function DesktopUpdateAction({ desktop, onInstall }: { desktop: DesktopUpdates; 
   switch (state.status) {
     case 'unsupported':
       return <div className="flex flex-col items-start gap-2"><p className="text-sm text-ink-faint">{t(UNSUPPORTED_KEYS[state.reason])}</p>{download}</div>
-    case 'idle':
     case 'checking':
-      return <p className="text-sm text-ink-faint">{t('about.desktop.pending')}</p>
+      return <p className="text-sm text-ink-faint">{t('about.desktop.checking')}</p>
+    case 'idle':
+      if (!serverLatest || !checkedRef.current || state.checkedAt === null) {
+        return <p className="text-sm text-ink-faint">{t('about.desktop.pending')}</p>
+      }
+      return (
+        <div className="flex flex-col items-start gap-2 text-sm">
+          <p className="text-ink-soft">{t('about.desktop.notFound', { version: serverLatest })}</p>
+          {download}
+          <Button variant="secondary" onClick={() => void desktop.check()}>
+            {t('about.retry')}
+          </Button>
+        </div>
+      )
     case 'downloading':
       return (
         <div className="flex flex-col gap-2">
@@ -316,7 +352,14 @@ function DesktopUpdateAction({ desktop, onInstall }: { desktop: DesktopUpdates; 
         </div>
       )
     case 'installing':
-      return <p className="text-sm text-ink-soft">{t('about.desktop.installing', { version: state.version })}</p>
+      return (
+        <p className="text-sm text-ink-soft">
+          {t(
+            window.sillageDesktop?.window?.platform === 'win32' ? 'about.desktop.installingWindows' : 'about.desktop.installing',
+            { version: state.version },
+          )}
+        </p>
+      )
     case 'error':
       return (
         <div className="flex flex-col items-start gap-2 text-sm">

@@ -123,8 +123,19 @@ try {
       const install = page.getByRole('button', { name: 'Redémarrer et mettre à jour', exact: true })
       if (profile === 'desktop') {
         assert.equal(await install.count(), 0)
+        // The server lists 0.25.0 while the app is idle: About checks once by itself,
+        // then admits the package was not found instead of promising a download.
+        await page.waitForFunction(() => window.updateProbe.checks === 1)
+        await page.getByText('Sillage télécharge cette version de lui-même', { exact: false }).waitFor()
+        await page.evaluate(() => window.updateProbe.publish({ status: 'checking' }))
+        await page.getByText('Recherche de la mise à jour…').waitFor()
+        await page.evaluate(() => window.updateProbe.publish({ status: 'idle', checkedAt: new Date().toISOString() }))
+        await page.getByText(/pas encore trouvé le paquet de la version 0\.25\.0/).waitFor()
+        await page.screenshot({ path: join(scratch, `${profile}-${width}-not-found.png`), fullPage: true })
+        await page.getByRole('button', { name: 'Réessayer', exact: true }).click()
+        assert.equal(await page.evaluate(() => window.updateProbe.checks), 2)
         await refresh.click()
-        assert.equal(await page.evaluate(() => window.updateProbe.checks), 1)
+        assert.equal(await page.evaluate(() => window.updateProbe.checks), 3)
         await page.evaluate(() => window.updateProbe.publish({ status: 'downloading', version: '0.25.0', percent: 37 }))
         await page.getByText('37 %', { exact: true }).waitFor()
         await page.evaluate(() => window.updateProbe.publish({ status: 'ready', version: '0.25.0', installOnQuit: true }))
@@ -133,6 +144,9 @@ try {
         await page.getByRole('dialog').getByRole('button', { name: 'Redémarrer et mettre à jour', exact: true }).click()
         assert.equal(await page.evaluate(() => window.updateProbe.installs), 1)
         await page.screenshot({ path: join(scratch, `${profile}-${width}.png`), fullPage: true })
+        // Windows announces the visible installer window; other platforms do not have one.
+        await page.evaluate(() => window.updateProbe.publish({ status: 'installing', version: '0.25.0' }))
+        await page.getByText(width === 1440 ? /fenêtre d'installation/ : /se rouvrir de lui-même/).waitFor()
         // An updater failure must remain visible when the separate GitHub query fails.
         info = { ...info, latest: null, updateAvailable: false, checkError: 'network' }
         await refresh.click()
@@ -140,7 +154,7 @@ try {
         await page.evaluate(() => window.updateProbe.publish({ status: 'error', message: 'Download failed for test', version: null, macPermission: false }))
         await page.getByText(/Download failed for test/).waitFor()
         await page.getByRole('button', { name: 'Réessayer', exact: true }).click()
-        assert.equal(await page.evaluate(() => window.updateProbe.checks), 3)
+        assert.equal(await page.evaluate(() => window.updateProbe.checks), 5)
         await page.evaluate(() => window.updateProbe.publish({ status: 'unsupported', reason: 'location' }))
         await page.getByText(/Applications/).waitFor()
       } else {

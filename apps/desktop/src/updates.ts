@@ -57,8 +57,12 @@ export function setupUpdates(options: UpdateOptions): void {
     const appImage = updater instanceof AppImageUpdater ? process.env.APPIMAGE : undefined
     // NSIS kills processes in the install directory shortly after starting; stop the server first.
     if (process.platform === 'win32') await options.stopServer()
+    // Windows installs visibly: the silent installer leaves the user with a closed app, a
+    // Start menu shortcut to a removed executable and no sign that anything is happening
+    // until the app relaunches on its own. When updating, NSIS never prompts, only shows progress.
+    const silent = process.platform !== 'win32'
     // Electron waits for this instance to exit before relaunching, avoiding the single-instance lock.
-    const installed = updater.install(true, appImage === undefined)
+    const installed = updater.install(silent, appImage === undefined)
     if (!installed) {
       if (process.platform === 'win32') await options.restartServer()
       return
