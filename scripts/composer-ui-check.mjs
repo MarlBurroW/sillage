@@ -112,6 +112,7 @@ try {
     const messages = []
     let hold = null
     let failNext = false
+    let catalogRefreshes = 0
     let active = 0
     let maxActive = 0
     await page.route('**/__composer_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main class="app-layer" style="display:flex;flex-direction:column;justify-content:flex-end"><div id="check"></div></main></body></html>' }))
@@ -119,7 +120,13 @@ try {
       const request = route.request()
       const path = new URL(request.url()).pathname
       const id = path.split('/')[3]
-      if (path.endsWith('/models')) return route.fulfill({ json: { models, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
+      if (path.endsWith('/models')) {
+        // Refreshing bypasses the server cache and may reveal a model the plan unlocked.
+        const refreshed = new URL(request.url()).searchParams.get('refresh') === '1'
+        if (refreshed) catalogRefreshes += 1
+        const listed = refreshed ? [...models, { ...models[0], value: 'gamma', displayName: 'Modèle Gamma', description: 'Nouveau modèle', hint: null, isDefault: false }] : models
+        return route.fulfill({ json: { models: listed, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
+      }
       if (path === '/api/me/settings') {
         if (request.method() === 'PATCH') { account.composerLayout = request.postDataJSON().composerLayout; layouts.push(account.composerLayout) }
         return route.fulfill({ json: account })
@@ -322,7 +329,8 @@ try {
     // Real catalogs have about twelve models: effort must stay visible without
     // scrolling below independently scrolling model list.
     await page.evaluate(async () => {
-      const key = ['agents', 'codex', 'models']
+      // The query key carries the account, null for the CLI login.
+      const key = ['agents', 'codex', 'models', null]
       window.configBackup = window.settings.config
       window.settings.change({ ...window.settings.config, model: 'alpha', reasoningEffort: 'high' })
       await window.settings.flush()
@@ -344,17 +352,30 @@ try {
     } else await close()
     await dialog.waitFor({ state: 'hidden' })
     await page.evaluate(async () => {
-      window.client.setQueryData(['agents', 'codex', 'models'], window.longCatalogBackup)
+      window.client.setQueryData(['agents', 'codex', 'models', null], window.longCatalogBackup)
       window.settings.change(window.configBackup)
       await window.settings.flush()
     })
+
+    // The model panel rereads the catalog from the CLI: a login or plan change must not wait an hour of cache.
+    await (narrow ? openAll() : chip().click())
+    await dialog.waitFor()
+    // Phones list the models inline with their own refresh button; a long catalog hides them behind a row.
+    if (narrow && await dialog.getByRole('button', { name: /^Modèle :/ }).count() > 0) await dialog.getByRole('button', { name: /^Modèle :/ }).first().click()
+    assert.equal(await dialog.getByRole('radio', { name: 'Modèle Gamma Nouveau modèle', exact: true }).count(), 0)
+    await dialog.getByRole('button', { name: 'Recharger Modèle depuis le CLI', exact: true }).click()
+    await dialog.getByRole('radio', { name: 'Modèle Gamma Nouveau modèle', exact: true }).waitFor()
+    assert.equal(catalogRefreshes, 1, 'The button requests the list past the server cache')
+    await page.evaluate(() => window.client.setQueryData(['agents', 'codex', 'models', null], window.longCatalogBackup))
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
     await delay(100)
 
     if (viewport.width === 1440) {
       // Long catalog, saved out-of-catalog value, granular policy.
       await page.evaluate(async () => {
-        const catalog = window.client.getQueryData(['agents', 'codex', 'models'])
-        window.client.setQueryData(['agents', 'codex', 'models'], {
+        const catalog = window.client.getQueryData(['agents', 'codex', 'models', null])
+        window.client.setQueryData(['agents', 'codex', 'models', null], {
           ...catalog,
           models: [...catalog.models, ...Array.from({ length: 10 }, (_, i) => ({ ...catalog.models[0], value: `archive-${i}`, displayName: `Archive ${i}`, isDefault: false }))],
         })

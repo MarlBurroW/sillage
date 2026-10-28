@@ -93,7 +93,8 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   // Subscription tokens read their own usage; API keys have no plan and reach the
   // adapter as empty strings, never as secrets.
   assert.equal((await app.inject(`/api/agents/claude/usage?account=${keyed.id}`)).statusCode, 200)
-  assert.deepEqual(seen, [{ accountId: account.id, token: TOKEN }, { accountId: keyed.id, token: '' }])
+  // Kind travels with the secret so the catalog can probe API keys too; the usage probe reads only tokens.
+  assert.deepEqual(seen, [{ accountId: account.id, token: `oauth:${TOKEN}` }, { accountId: keyed.id, token: 'apiKey:sk-ant-api03-' + 'k'.repeat(40) }])
   assert.equal((await app.inject({ url: `/api/agents/claude/usage?account=${account.id}`, headers: { 'x-user': 'other' } })).statusCode, 404)
   assert.equal((await app.inject('/api/agents/claude/usage')).json<AgentUsage>().plan, 'cli', 'Sans compte, la connexion du CLI')
 

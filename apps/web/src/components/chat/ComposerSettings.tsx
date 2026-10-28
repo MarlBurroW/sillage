@@ -7,7 +7,7 @@ import { useTranslate } from '../../lib/i18n'
 import { useMediaQuery } from '../../lib/viewport'
 import { cx } from '../ui'
 import { toolButtonClass } from './composer-buttons'
-import { SettingOptions, SettingsHeading, SettingsPanel } from './SettingsPanel'
+import { RefreshButton, SettingOptions, SettingsHeading, SettingsPanel } from './SettingsPanel'
 
 /**
  * Mark values removing a safeguard. Absent otherwise: an explicit neutral tone would merely name
@@ -45,6 +45,8 @@ export interface SettingGroup {
    * menu so state is visible and one click toggles.
    */
   active?: string
+  /** Rereads the options from the CLI, for lists that depend on a login the user just changed. */
+  refresh?: { run: () => void; busy: boolean }
 }
 
 /**
@@ -61,6 +63,7 @@ export function setting<V extends string>(group: {
   onChange: (value: V) => void
   notice?: string
   active?: V
+  refresh?: { run: () => void; busy: boolean }
 }): SettingGroup {
   return {
     ...group,
@@ -175,7 +178,8 @@ export function ComposerQuickSettings(props: ComposerSettingsProps) {
         <SettingsSurface label={t('composer.settings.modelEffort')} inputRef={inputRef} disabled={disabled} quick trigger={chip}>
           {(close) => (
             <>
-              <SettingsHeading title={effort ? t('composer.settings.modelEffort') : model.label} onClose={() => close()} />
+              <SettingsHeading title={effort ? t('composer.settings.modelEffort') : model.label} onClose={() => close()}
+                action={model.refresh ? <RefreshButton group={model} refresh={model.refresh} /> : null} />
               {/* Scroll models alone with effort fixed below; long catalogs otherwise push effort out of view. */}
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
                 {model.notice ? <p className="mb-2 text-xs text-caution">{model.notice}</p> : null}

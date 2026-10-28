@@ -33,6 +33,7 @@ import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
+import { claudeCredential } from '../agents/claude/credential.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
 import type { GrokAccountHomes } from '../grok-accounts/homes.js'
@@ -704,8 +705,32 @@ export class SessionManager {
     return this.antigravityAccounts.homes.ensure(account.id)
   }
 
+  codexHome(userId: string, accountId: string | null): string | undefined {
+    if (!accountId) return undefined
+    const account = this.codexAccounts.store.find(userId, accountId)
+    if (!account || account.status !== 'ready') throw notFound('agent_account_not_found', 'Unknown connected Codex account.')
+    return this.codexAccounts.homes.ensure(account.id)
+  }
+
+  grokHome(userId: string, accountId: string | null): string | undefined {
+    if (!accountId) return undefined
+    const account = this.grokAccounts.store.find(userId, accountId)
+    if (!account || account.status !== 'ready') throw notFound('agent_account_not_found', 'Unknown connected Grok account.')
+    return this.grokAccounts.homes.ensure(account.id)
+  }
+
+  /** Catalog for the account the configuration names: plans differ in which models they list. */
   modelsFor(userId: string, config: AgentConfig) {
-    return this.registry.adapter(config.agent).models(config.agent === 'antigravity' ? this.antigravityHome(userId, config.account) : undefined)
+    let credential: string | undefined
+    if (config.agent === 'antigravity') credential = this.antigravityHome(userId, config.account)
+    else if (config.agent === 'codex') credential = this.codexHome(userId, config.account)
+    else if (config.agent === 'grok') credential = this.grokHome(userId, config.account)
+    else if (config.agent === 'claude' && config.account) {
+      const resolved = this.claudeAccounts.resolveToken(userId, config.account)
+      if (!resolved) throw notFound('agent_account_not_found', 'Unknown Claude account.')
+      credential = claudeCredential(resolved.kind, resolved.token)
+    }
+    return this.registry.adapter(config.agent).models(credential)
   }
 
   /** A disconnected account must not continue requests from another warm session. */

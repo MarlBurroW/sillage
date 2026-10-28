@@ -257,7 +257,7 @@ export function Composer({
   const filePicker = useRef<HTMLInputElement>(null)
 
   const running = status === 'running' || status === 'awaiting_input'
-  const { groups, summary, mcp, mcpPanel, catalogError } = useAgentSettings({
+  const { groups, summary, mcp, mcpPanel, catalogError, refreshCatalog } = useAgentSettings({
     config,
     onConfigChange,
     appliedConfig,
@@ -779,7 +779,10 @@ export function Composer({
         ) : null}
 
         {catalogError ? (
-          <p className="mb-1.5 px-1 text-xs text-caution">{t('composer.catalog.unavailable')}</p>
+          <p className="mb-1.5 flex flex-wrap items-center gap-x-3 px-1 text-xs text-caution">
+            <span>{t('composer.catalog.unavailable')}</span>
+            <button type="button" onClick={refreshCatalog} className="min-h-11 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-accent">{t('composer.settings.retry')}</button>
+          </p>
         ) : null}
 
         {configFeedback}

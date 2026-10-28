@@ -10,7 +10,12 @@ export function userCodexHome(): string {
   return process.env.CODEX_HOME || join(homedir(), '.codex')
 }
 
-const PRIVATE = new Set(['auth.json'])
+/**
+ * Entries that must stay account-local. `models_cache.json` is keyed by auth identity: shared
+ * through a link, two accounts would keep overwriting each other's catalog in the user home and
+ * the account would start from the other plan's model list.
+ */
+const PRIVATE = new Set(['auth.json', 'models_cache.json'])
 
 export class CodexAccountHomes {
   constructor(private readonly root: string) {}
@@ -27,7 +32,6 @@ export class CodexAccountHomes {
     if (!existsSync(source)) return home
 
     for (const name of readdirSync(source)) {
-      if (PRIVATE.has(name)) continue
       const target = join(source, name)
       const link = join(home, name)
       let current: ReturnType<typeof lstatSync> | null = null
@@ -35,6 +39,12 @@ export class CodexAccountHomes {
         current = lstatSync(link)
       } catch {
         current = null
+      }
+      if (PRIVATE.has(name)) {
+        // Homes created before an entry became private still link it: drop the link so Codex
+        // recreates the entry locally.
+        if (current?.isSymbolicLink()) unlinkSync(link)
+        continue
       }
       if (current) {
         // Correct links need no work. Retarget links pointing elsewhere after user-home

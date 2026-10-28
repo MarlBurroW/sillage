@@ -759,6 +759,7 @@ export const en = {
   'composer.attachments.limited': 'Only the first {count} files were kept.',
   'composer.attachments.uploadFailed': 'Could not upload "{name}".',
   'composer.catalog.unavailable': 'Model list unavailable, the saved setting is kept.',
+  'composer.setting.refresh': 'Reload {setting} from the CLI',
   'composer.placeholder.readonly': 'Read-only conversation',
   'sessionRef.picker': 'Sessions in this project',
   'sessionRef.loading': 'Loading sessions…',

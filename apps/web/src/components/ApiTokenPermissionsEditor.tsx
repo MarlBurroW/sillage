@@ -3,7 +3,7 @@ import { DEFAULT_CONFIGS, EFFORT_FIELD, agentConfigSchema, type AgentConfig, typ
 import { ApiExecutionPolicyEditor, unrestrictedAgent } from './ApiExecutionPolicyEditor'
 import { AGENT_LABELS } from './AgentIcon'
 import { Banner, Button, Select } from './ui'
-import { useAgentModels, effortLabel, effortsFor } from '../lib/agents'
+import { useAgentModels, effortLabel, effortsFor, modelsAccount } from '../lib/agents'
 import { useUpdateApiTokenPermissions } from '../lib/api-tokens'
 import { useTranslate } from '../lib/i18n'
 
@@ -13,7 +13,7 @@ export function ApiTokenPermissionsEditor({ token, onDone }: { token: ApiTokenDt
   const update = useUpdateApiTokenPermissions()
   const [policy, setPolicy] = useState<ApiExecutionPolicy>(token.executionPolicy ?? { agents: (Object.keys(AGENT_LABELS) as AgentKind[]).map(unrestrictedAgent) })
   const [config, setConfig] = useState(() => agentConfigSchema.parse(token.config))
-  const { data: catalog } = useAgentModels(config.agent, true, 'account' in config ? config.account : null)
+  const { data: catalog } = useAgentModels(config.agent, true, modelsAccount(config))
   const rule = policy.agents.find((entry) => entry.agent === config.agent)
   const models = catalog?.models ?? []
   const modelValues = rule?.models ?? models.map((entry) => entry.value)

@@ -1,5 +1,9 @@
+import { statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { CollaborationModeMask, Model, ModelListResponse } from '@sillage/codex-bindings/v2'
-import { CachedProbe } from '../cached-probe.js'
+import { CachedProbeMap } from '../cached-probe.js'
+import { agentProcessEnv } from '../process-env.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 
@@ -8,6 +12,10 @@ import { CLIENT_INFO } from './client-info.js'
  * hardcoded and cache results because probing starts a CLI. Read both lists in one probe to avoid
  * extra startup. Resolve binaries on each probe rather than construction to honor Sillage
  * managed-install prefixes and newly installed CLI versions without daemon restart.
+ *
+ * The list depends on the signed-in plan: app-server hides models the account cannot use, so
+ * additional accounts (see CodexAccountHomes) probe with their own `CODEX_HOME`, one cache entry
+ * per home. Keying on `auth.json` as well means a re-login in the same home is seen before the TTL.
  */
 
 interface Listing {
@@ -17,17 +25,36 @@ interface Listing {
 
 const CACHE_TTL_MS = 60 * 60 * 1000
 
+/** Empty when the CLI's own login is used: `CODEX_HOME` then stays whatever the daemon inherited. */
+function authRevision(home: string | undefined): string {
+  if (!home) return ''
+  try {
+    const file = statSync(join(home, 'auth.json'))
+    return `${file.mtimeMs}:${file.size}`
+  } catch {
+    return 'none'
+  }
+}
+
 export class CodexModelCatalog {
-  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
+  private readonly cached = new CachedProbeMap<Listing>(CACHE_TTL_MS, (key) => {
+    const { home } = JSON.parse(key) as { home?: string }
+    return this.probe(home)
+  })
 
   constructor(private readonly executable: () => Promise<string>) {}
 
-  list(): Promise<Listing & { fetchedAt: number }> {
-    return this.cached.read()
+  /** `home` is an account's `CODEX_HOME`; omitted for the CLI's own login. */
+  list(home?: string, force = false): Promise<Listing & { fetchedAt: number }> {
+    return this.cached.read(JSON.stringify({ home, auth: authRevision(home) }), force)
   }
 
-  private async probe(): Promise<Listing> {
-    const client = new CodexAppServerClient({ binary: await this.executable() })
+  private async probe(home?: string): Promise<Listing> {
+    const client = new CodexAppServerClient({
+      binary: await this.executable(),
+      cwd: home ?? homedir(),
+      ...(home ? { env: agentProcessEnv({ CODEX_HOME: home }) } : {}),
+    })
     try {
       await client.initialize(CLIENT_INFO)
 

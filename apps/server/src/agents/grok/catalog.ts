@@ -3,7 +3,7 @@ import { toSlashCommands } from '../acp/commands.js'
 import { homedir } from 'node:os'
 import { type SlashCommandDto } from '@sillage/protocol'
 import { AcpClient } from '../acp/client.js'
-import { CachedProbe } from '../cached-probe.js'
+import { CachedProbeMap } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { agentProcessEnv } from '../process-env.js'
 import { GROK_ISOLATION_ENV } from './launch.js'
@@ -29,22 +29,23 @@ export interface GrokListing {
 const TTL_MS = 60 * 60 * 1000
 const PROBE_TIMEOUT_MS = 30_000
 
+/** Models follow the subscription: additional accounts probe inside their own `GROK_HOME`, one cache entry per home (empty for the CLI's own login). */
 export class GrokCatalog {
-  private readonly probe = new CachedProbe<GrokListing>(TTL_MS, () => this.read())
+  private readonly probes = new CachedProbeMap<GrokListing>(TTL_MS, (home) => this.read(home || undefined))
 
   constructor(private readonly executable: () => Promise<string>) {}
 
-  list(force = false): Promise<GrokListing & { fetchedAt: number }> {
-    return this.probe.read(force)
+  list(home?: string, force = false): Promise<GrokListing & { fetchedAt: number }> {
+    return this.probes.read(home ?? '', force)
   }
 
-  private async read(): Promise<GrokListing> {
+  private async read(home?: string): Promise<GrokListing> {
     const client = new AcpClient({
       label: 'grok',
       binary: await this.executable(),
       args: ['agent', '--no-leader', 'stdio'],
-      cwd: homedir(),
-      env: agentProcessEnv(GROK_ISOLATION_ENV),
+      cwd: home ?? homedir(),
+      env: agentProcessEnv({ ...GROK_ISOLATION_ENV, ...(home ? { GROK_HOME: home } : {}) }),
     })
     const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
     try {

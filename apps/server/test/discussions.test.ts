@@ -50,6 +50,7 @@ async function harness(t: TestContext) {
     async interrupt(id: string) { interrupted.push(id) },
     async steer(id: string) { steered.push(id); return true },
     async terminate() {}, async dropCheckpoints() {}, async reloadConfig() {},
+    modelsFor: () => registry.adapter().models(),
   } as unknown as SessionManager
   const registry = { adapter: () => ({ resolveDefaults: async (config: AgentConfig) => config, models: async () => ({ models: [] }) }) } as unknown as AgentRegistry
   const attachments = { claim() {}, async removeForConversations() {}, async removeForCards() {} } as unknown as AttachmentStore

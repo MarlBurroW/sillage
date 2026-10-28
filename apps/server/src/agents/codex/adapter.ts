@@ -113,8 +113,9 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
-  async models(): Promise<AgentModelsDto> {
-    const listing = await this.catalog.list()
+  /** `home` is the account's `CODEX_HOME`; see CodexAccountHomes. */
+  async models(home?: string, force = false): Promise<AgentModelsDto> {
+    const listing = await this.catalog.list(home, force)
 
     const models: AgentModelDto[] = listing.models.map((model) => ({
       value: model.model,

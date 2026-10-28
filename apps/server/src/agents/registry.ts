@@ -52,8 +52,8 @@ export interface AgentAdapter {
   forkCut(log: EventLog, conversationId: string, throughSeq: number): unknown
   /** Forks persisted native sessions at cut points and returns resumable branch IDs. No runner required because the CLI already persisted data. */
   fork(target: ForkTarget, cut: unknown): Promise<string>
-  /** `/api/agents/:agent/models` payload read from installed CLIs. */
-  models(credential?: string): Promise<AgentModelsDto>
+  /** `/api/agents/:agent/models` payload read from installed CLIs. `credential` selects an additional account's catalog where the plan decides the list (see `usageForAccount`); `force` bypasses caches for refresh buttons. */
+  models(credential?: string, force?: boolean): Promise<AgentModelsDto>
   usage(force: boolean): Promise<AgentUsage>
   /** Same catalog read for additional accounts. `credential` identifies accounts to CLIs: Claude tokens (`ClaudeAccountStore`), Codex `CODEX_HOME` (`CodexAccountHomes`). Optional for CLIs without additional accounts. */
   usageForAccount?(accountId: string, credential: string, force: boolean): Promise<AgentUsage>

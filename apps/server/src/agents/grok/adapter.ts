@@ -103,8 +103,9 @@ export class GrokAdapter implements AgentAdapter {
     }
   }
 
-  async models(): Promise<AgentModelsDto> {
-    const listing = await this.catalog.list()
+  /** `home` is the account's `GROK_HOME`; see GrokAccountHomes. */
+  async models(home?: string, force = false): Promise<AgentModelsDto> {
+    const listing = await this.catalog.list(home, force)
     return {
       models: listing.models.map((model) => ({
         value: model.id,
@@ -125,8 +126,8 @@ export class GrokAdapter implements AgentAdapter {
     }
   }
 
-  async commands(_cwd: string, force: boolean): Promise<ProjectCommandsDto> {
-    const listing = await this.catalog.list(force)
+  async commands(_cwd: string, force: boolean, home?: string): Promise<ProjectCommandsDto> {
+    const listing = await this.catalog.list(home, force)
     return { commands: listing.commands, fetchedAt: listing.fetchedAt }
   }
 

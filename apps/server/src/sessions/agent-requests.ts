@@ -487,7 +487,7 @@ export class AgentRequests {
       return this.registry.adapter(agent).resolveDefaults(base)
     }
 
-    const catalog = await (agent === 'antigravity' ? this.sessions.modelsFor(userId, base) : this.registry.adapter(agent).models())
+    const catalog = await this.sessions.modelsFor(userId, base)
       .then((listing) => listing.models)
       .catch((): AgentModelDto[] => [])
 
@@ -1105,7 +1105,7 @@ export class AgentRequests {
     const sections: string[] = []
     for (const agent of agents.filter((kind) => !policy || policy.agents.some((rule) => rule.agent === kind))) {
       const defaults = await this.launchConfig(agent, project, requester.userId, {}, requester.apiToken).catch(() => null)
-      const models = await (defaults?.agent === 'antigravity' ? this.sessions.modelsFor(requester.userId, defaults) : this.registry.adapter(agent).models())
+      const models = await (defaults ? this.sessions.modelsFor(requester.userId, defaults) : this.registry.adapter(agent).models())
         .then((listing) => allowedModels(policy, agent, listing.models))
         .catch(() => null)
       const head = defaults

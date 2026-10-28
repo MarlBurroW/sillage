@@ -1,6 +1,6 @@
 import { useAntigravityAccounts } from '../../lib/antigravity-accounts'
 import { BookOpen, Box, Brain, Compass, FilePen, Globe, IdCard, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Wallet, Zap } from 'lucide-react'
-import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, useCallback, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
   claudeEffortSchema,
@@ -18,7 +18,7 @@ import {
   type OpencodePermission,
   type OpencodePermissions,
 } from '@sillage/protocol'
-import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
+import { catalogModel, effortLabel, effortsFor, modelsAccount, supportsFastMode, useAgentModels, useRefreshAgentModels } from '../../lib/agents'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
@@ -301,6 +301,8 @@ export interface AgentSettings {
   mcpPanel: ReactNode
   /** When the CLI does not respond, model choices reduce to the saved setting. */
   catalogError: Error | null
+  /** Rereads the catalog past the server cache, offered next to the unavailable notice. */
+  refreshCatalog: () => void
 }
 
 interface AgentSettingsParams {
@@ -331,8 +333,17 @@ export function useAgentSettings({
   disabled = false,
 }: AgentSettingsParams): AgentSettings {
   const t = useTranslate()
-  // Probe only the selected agent: each probe starts its corresponding server-side CLI.
-  const { data: catalog, error: catalogError } = useAgentModels(config.agent, true, config.agent === 'antigravity' ? config.account : null)
+  // Probe only the selected agent: each probe starts its corresponding server-side CLI. Codex and
+  // Antigravity list the models of the signed-in plan, so the chosen account selects the catalog.
+  const { data: catalog, error: catalogError, isFetching: catalogFetching } = useAgentModels(config.agent, true, modelsAccount(config))
+  // A list that lags a login or plan change should not wait an hour of cache: the model panel can reread it.
+  const refetchCatalog = useRefreshAgentModels(config.agent, modelsAccount(config))
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false)
+  const refreshCatalog = useCallback(() => {
+    setCatalogRefreshing(true)
+    void refetchCatalog().catch(() => undefined).finally(() => setCatalogRefreshing(false))
+  }, [refetchCatalog])
+  const catalogRefresh = useMemo(() => ({ run: refreshCatalog, busy: catalogRefreshing || catalogFetching }), [refreshCatalog, catalogRefreshing, catalogFetching])
 
   // Constant configuration copies: TypeScript does not preserve parameter narrowing inside
   // rendering functions built below.
@@ -1266,5 +1277,6 @@ export function useAgentSettings({
     )
   }
 
-  return { groups, summary, mcp, mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null, catalogError }
+  groups = groups.map((group) => (group.key === 'model' ? { ...group, refresh: catalogRefresh } : group))
+  return { groups, summary, mcp, mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null, catalogError, refreshCatalog }
 }

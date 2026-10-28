@@ -93,6 +93,7 @@ async function harness(t: TestContext) {
       gestures.push(`answer ${to} ${requestId} ${JSON.stringify(answer.answers)}`)
       return true
     },
+    modelsFor: (_userId: string, config: AgentConfig) => registry.adapter(config.agent).models(),
   } as unknown as SessionManager
   const registry = {
     adapter: (agent: string) => ({

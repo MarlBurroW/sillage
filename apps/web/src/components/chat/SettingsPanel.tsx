@@ -11,7 +11,7 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Check, ChevronLeft, ChevronRight, GripVertical, Pin, PinOff, Plug, Search, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, GripVertical, Pin, PinOff, Plug, RefreshCw, Search, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
@@ -98,7 +98,8 @@ export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, e
     return (
       <>
         <SettingsHeading title={detail.label} onClose={onClose} onBack={back}
-          action={togglePin && !MODEL_EFFORT_KEYS.includes(detail.key) ? <PinButton group={detail} pinned={pinnedKeys.has(detail.key)} onToggle={togglePin} /> : null} />
+          action={detail.refresh ? <RefreshButton group={detail} refresh={detail.refresh} />
+            : togglePin && !MODEL_EFFORT_KEYS.includes(detail.key) ? <PinButton group={detail} pinned={pinnedKeys.has(detail.key)} onToggle={togglePin} /> : null} />
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
           {detail.notice ? <p className="mb-2 text-xs text-caution">{detail.notice}</p> : null}
           {/* Selection returns to the overview, confirming the applied value and allowing the next setting. */}
@@ -187,7 +188,10 @@ function InlineModelEffort({ groups, disabled, onOpen }: { groups: SettingGroup[
         <SettingRow key={group.key} group={group} disabled={disabled} onOpen={onOpen} pinned={false} />
       ) : (
         <section key={group.key} aria-label={group.label} className="px-2 pb-3">
-          <h3 className="pt-1 pb-1.5 text-xs font-medium text-ink-faint">{group.label}</h3>
+          <div className="flex items-center">
+            <h3 className="flex-1 pt-1 pb-1.5 text-xs font-medium text-ink-faint">{group.label}</h3>
+            {group.refresh ? <RefreshButton group={group} refresh={group.refresh} /> : null}
+          </div>
           {group.notice ? <p className="mb-2 text-xs text-caution">{group.notice}</p> : null}
           <SettingOptions group={group} disabled={disabled} compact={group.key === 'effort'} onPick={group.onChange} />
         </section>
@@ -331,6 +335,17 @@ function PinButton({ group, pinned, onToggle }: { group: SettingGroup; pinned: b
         pinned ? 'text-accent' : 'text-ink-faint')}
     >
       {pinned ? <PinOff size={15} /> : <Pin size={15} />}
+    </TooltipButton>
+  )
+}
+
+/** Heading action rereading a group's options from the CLI. */
+export function RefreshButton({ group, refresh }: { group: SettingGroup; refresh: NonNullable<SettingGroup['refresh']> }) {
+  const t = useTranslate()
+  return (
+    <TooltipButton type="button" onClick={refresh.run} disabled={refresh.busy} aria-label={t('composer.setting.refresh', { setting: group.label })}
+      className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-soft hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-60">
+      <RefreshCw size={16} className={cx(refresh.busy && 'animate-spin')} />
     </TooltipButton>
   )
 }

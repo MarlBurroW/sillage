@@ -4,6 +4,7 @@ import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { withControlSession } from './control-session.js'
+import { withoutAuthOverrides } from './credential.js'
 
 /** Claude account usage from the control request feeding `/usage`. SDK `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET` explicitly permits shape changes without notice. Parse defensively, ignore unknown fields and tolerate omissions. Probe failures must affect usage display only. */
 
@@ -190,15 +191,6 @@ export class ClaudeUsageReader {
         normalize(await session.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()),
     )
   }
-}
-
-/** Authentication that would take precedence over the token a probe sets (see documented precedence). */
-function withoutAuthOverrides(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next = { ...env }
-  for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_PROFILE', 'NODE_ENV']) {
-    delete next[name]
-  }
-  return next
 }
 
 /** Usage from `rate_limit_event` payloads. `unifiedWindows` is absent from SDK types (0.3.301) but present on the wire: read it defensively and fall back to each event's own window, which names only the representative one. */

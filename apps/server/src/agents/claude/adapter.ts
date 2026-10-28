@@ -20,6 +20,7 @@ import { ClaudeCommandCatalog } from './command-catalog.js'
 import { describeEdit } from './file-edits.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
+import { parseClaudeCredential } from './credential.js'
 import { ClaudeUsageReader, claudeAccountUsage } from './usage.js'
 
 /** Fork cut points are transcript-entry `uuid`, not API IDs. Only `user`, `attachment` and `assistant` entries have them; nonexistent transcript `result` messages cause 'Message <uuid> not found in session'. */
@@ -97,8 +98,9 @@ export class ClaudeAdapter implements AgentAdapter {
     }
   }
 
-  async models(): Promise<AgentModelsDto> {
-    const listing = await this.catalog.list()
+  /** `credential` is an account's encoded authentication; see `claudeCredential`. */
+  async models(credential?: string, force = false): Promise<AgentModelsDto> {
+    const listing = await this.catalog.list(credential, force)
 
     const models: AgentModelDto[] = listing.models.map((model) => {
       const efforts = model.supportedEffortLevels ?? []
@@ -156,10 +158,11 @@ export class ClaudeAdapter implements AgentAdapter {
     return this.usageReader.read(force)
   }
 
-  /** `credential` is the account's `setup-token` token; empty for API keys, which have no plan. */
+  /** `credential` is the account's encoded authentication (see `claudeCredential`); API keys have no plan to read. */
   usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
-    if (!credential) return Promise.resolve(claudeAccountUsage())
-    return this.usageReader.readForToken(accountId, credential, force)
+    const parsed = parseClaudeCredential(credential)
+    if (!parsed || parsed.kind !== 'oauth') return Promise.resolve(claudeAccountUsage())
+    return this.usageReader.readForToken(accountId, parsed.token, force)
   }
 
   commands(cwd: string, force: boolean): Promise<ProjectCommandsDto> {

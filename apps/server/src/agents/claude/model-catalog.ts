@@ -6,8 +6,9 @@ import type {
   FastModeState,
   ModelInfo,
 } from '@anthropic-ai/claude-agent-sdk'
-import { CachedProbe } from '../cached-probe.js'
+import { CachedProbeMap } from '../cached-probe.js'
 import { withControlSession } from './control-session.js'
+import { claudeAuthEnv } from './credential.js'
 
 /**
  * Claude catalog: models, account, output styles, subagents, Fast availability read from installed
@@ -16,6 +17,9 @@ import { withControlSession } from './control-session.js'
  * `supportedModels()`/`accountInfo()` are control requests (`withControlSession`): no model
  * messages, tokens, quota. Other data comes from already-received initialization. Process costs
  * ~400 MB during probe, hence caching and one combined read.
+ *
+ * Models and subscription type follow the authentication: additional accounts probe under their
+ * own token, one cache entry per credential (empty for the CLI's own login).
  */
 
 const CACHE_TTL_MS = 60 * 60 * 1000
@@ -34,7 +38,7 @@ interface Listing {
 }
 
 export class ClaudeModelCatalog {
-  private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
+  private readonly cached = new CachedProbeMap<Listing>(CACHE_TTL_MS, (credential) => this.probe(credential || undefined))
 
   /**
    * Resolve binary per probe, never at construction: honors Sillage-installed CLI prefix and
@@ -42,13 +46,14 @@ export class ClaudeModelCatalog {
    */
   constructor(private readonly executable: () => Promise<string>) {}
 
-  list(): Promise<Listing & { fetchedAt: number }> {
-    return this.cached.read()
+  list(credential?: string, force = false): Promise<Listing & { fetchedAt: number }> {
+    return this.cached.read(credential ?? '', force)
   }
 
-  private probe(): Promise<Listing> {
+  private probe(credential?: string): Promise<Listing> {
+    const env = claudeAuthEnv(credential)
     return withControlSession(
-      { executable: this.executable, cwd: homedir(), tag: 'catalog' },
+      { executable: this.executable, cwd: homedir(), tag: 'catalog', ...(env ? { options: { env } } : {}) },
       async (session) => {
         const models = await session.supportedModels()
         // Account is secondary: absence must not remove model list.

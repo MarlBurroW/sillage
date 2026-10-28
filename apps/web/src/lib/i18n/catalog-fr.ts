@@ -750,6 +750,7 @@ export const fr: Catalog = {
   'composer.attachments.limited': 'Seuls les {count} premiers fichiers ont été retenus.',
   'composer.attachments.uploadFailed': 'Envoi de « {name} » impossible.',
   'composer.catalog.unavailable': 'Liste des modèles indisponible, le réglage enregistré est conservé.',
+  'composer.setting.refresh': 'Recharger {setting} depuis le CLI',
   'composer.placeholder.readonly': 'Conversation en lecture seule',
   'sessionRef.picker': 'Sessions de ce projet',
   'sessionRef.loading': 'Chargement des sessions…',

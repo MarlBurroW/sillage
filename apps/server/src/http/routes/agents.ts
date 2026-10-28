@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@sillage/protocol'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
+import { claudeCredential } from '../../agents/claude/credential.js'
 import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../../codex-accounts/store.js'
@@ -49,11 +50,9 @@ export function registerAgentRoutes(
   /** Resolves additional account references with their owner: browser-provided IDs belonging to someone else must reveal neither tokens nor usage. Null for unknown accounts or CLIs without accounts. */
   const accountCredential = (agent: string, userId: string, accountId: string): string | null => {
     if (agent === 'claude') {
-      // Subscription token, read by the usage probe; an empty string means an API key,
-      // which has no plan, and the adapter answers without probing.
+      // Kind and token together: the catalog probes under either, the usage probe only under tokens.
       const resolved = claudeAccounts.resolveToken(userId, accountId)
-      if (!resolved) return null
-      return resolved.kind === 'oauth' ? resolved.token : ''
+      return resolved ? claudeCredential(resolved.kind, resolved.token) : null
     }
     if (agent === 'codex') {
       const account = codexAccounts.store.find(userId, accountId)
@@ -135,15 +134,16 @@ export function registerAgentRoutes(
     }
   })
 
+  /** Model catalog of the CLI's own login, or of an additional account with `?account=` because plans decide the list. `?refresh=1` bypasses the cache like `/usage`, for a list that changed after a login. */
   app.get('/api/agents/:agent/models', async (request) => {
     const user = requireUser(request)
     const adapter = resolveAdapter(paramsAgent(request.params))
-    const { account } = request.query as { account?: string }
+    const { account, refresh } = request.query as { account?: string; refresh?: string }
     const credential = account ? accountCredential(adapter.kind, user.id, account) : undefined
     if (account && credential == null) throw new HttpError(404, 'agent_account_not_found', 'Unknown account for this CLI.')
 
     try {
-      return await adapter.models(credential ?? undefined)
+      return await adapter.models(credential ?? undefined, refresh === '1')
     } catch (err) {
       throw cliUnavailable(
         adapter,

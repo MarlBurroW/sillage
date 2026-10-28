@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, readlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, symlinkSync, lstatSync, mkdirSync, readlinkSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -130,4 +130,11 @@ test('home Codex d’un compte : tout est lié au home de l’utilisateur, sauf 
   assert.ok(!lstatSync(join(home, 'history.jsonl')).isSymbolicLink())
   writeFileSync(join(home, 'auth.json'), '{}')
   assert.equal(homes.connected('acct'), true)
+
+  // The models cache is keyed by auth identity: never shared, and a link left by an older
+  // Sillage is removed so the account gets its own.
+  writeFileSync(join(userHome, 'models_cache.json'), '{}')
+  symlinkSync(join(userHome, 'models_cache.json'), join(home, 'models_cache.json'))
+  homes.ensure('acct')
+  assert.ok(!existsSync(join(home, 'models_cache.json')), 'Le cache des modèles reste propre au compte')
 })

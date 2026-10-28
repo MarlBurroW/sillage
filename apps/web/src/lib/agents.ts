@@ -3,6 +3,7 @@ import {
   PREFERRED_CLI_RELEASES,
   isCompatibleVersion,
   type AgentAvailabilityDto,
+  type AgentConfig,
   type AgentAvailabilityListDto,
   type AgentEffortDto,
   type AgentKind,
@@ -130,19 +131,43 @@ export function versionMismatch(entry: AgentAvailabilityDto | undefined): string
   return translate('agent.version.mismatch', { installed: entry.version, preferred })
 }
 
+/** Account whose catalog a configuration needs: every CLI with additional accounts lists the models of the signed-in plan. */
+export function modelsAccount(config: AgentConfig): string | null {
+  return 'account' in config ? config.account : null
+}
+
+const modelsKey = (agent: AgentKind, account: string | null) => ['agents', agent, 'models', account]
+
+const modelsPath = (agent: AgentKind, account: string | null, refresh: boolean) => {
+  const params = new URLSearchParams()
+  if (account) params.set('account', account)
+  if (refresh) params.set('refresh', '1')
+  const query = params.toString()
+  return `/api/agents/${agent}/models${query ? `?${query}` : ''}`
+}
+
 /**
  * Models declared by the installed CLI in the protocol's shared format. Nothing is hardcoded:
  * updating the CLI exposes new models without changing Sillage.
  */
 export function useAgentModels(agent: AgentKind, enabled = true, account: string | null = null) {
   return useQuery({
-    queryKey: ['agents', agent, 'models', account],
-    queryFn: () => api.get<AgentModelsDto>(`/api/agents/${agent}/models${account ? `?account=${encodeURIComponent(account)}` : ''}`),
+    queryKey: modelsKey(agent, account),
+    queryFn: () => api.get<AgentModelsDto>(modelsPath(agent, account, false)),
     // The probe starts a CLI: do not rerun it on every composer mount or for conversations using another agent.
     staleTime: 60 * 60 * 1000,
     retry: false,
     enabled,
   })
+}
+
+/** Explicit refetch bypassing the server cache too: a login or plan change does not wait an hour. */
+export function useRefreshAgentModels(agent: AgentKind, account: string | null = null) {
+  const queryClient = useQueryClient()
+  return async () => {
+    const fresh = await api.get<AgentModelsDto>(modelsPath(agent, account, true))
+    queryClient.setQueryData(modelsKey(agent, account), fresh)
+  }
 }
 
 /**
