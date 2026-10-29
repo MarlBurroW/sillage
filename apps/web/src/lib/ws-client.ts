@@ -84,6 +84,7 @@ class WsClient {
   /** Server-pushed toasts for this browser tab while visible. */
   private readonly notifyListeners = new Set<(notification: InAppNotification) => void>()
   private readonly decisionListeners = new Set<() => void>()
+  private readonly connectionListeners = new Set<(connected: boolean) => void>()
   /** This device's push subscription, sent to the server with visibility state. */
   private pushEndpoint: string | null = null
   /**
@@ -158,6 +159,21 @@ class WsClient {
 
   private get isOpen(): boolean {
     return this.socket?.readyState === WebSocket.OPEN
+  }
+
+  /** Socket state for the whole tab, readable without subscribing to a thread. */
+  get connected(): boolean {
+    return this.isOpen
+  }
+
+  /**
+   * Follow the socket itself rather than a thread subscription: a thread subscribes only after its
+   * REST load, and reporting that wait as a lost connection flashed the offline signal on every
+   * conversation switch.
+   */
+  onConnection(listener: (connected: boolean) => void): () => void {
+    this.connectionListeners.add(listener)
+    return () => this.connectionListeners.delete(listener)
   }
 
   /** No subscribers remain: there is no need to keep or reconnect the socket. */
@@ -411,6 +427,7 @@ class WsClient {
   }
 
   private broadcastConnection(connected: boolean): void {
+    for (const listener of this.connectionListeners) listener(connected)
     for (const listeners of this.listeners.values()) {
       for (const listener of listeners) listener.onConnectionChange(connected)
     }

@@ -56,7 +56,7 @@ export function useChatStream(
 ): ChatStream {
   const [state, setState] = useState<ChatState>(emptyChatState)
   const [status, setStatus] = useState<ConversationStatus>(initialStatus)
-  const [connected, setConnected] = useState(false)
+  const [connected, setConnected] = useState(() => wsClient.connected)
   const [warm, setWarm] = useState<boolean | null>(null)
   const [appliedConfig, setAppliedConfig] = useState<AgentConfig | null>(null)
   const [loading, setLoading] = useState(true)
@@ -70,6 +70,11 @@ export function useChatStream(
   useEffect(() => {
     setStatus(initialStatus)
   }, [initialStatus])
+
+  useEffect(() => {
+    setConnected(wsClient.connected)
+    return wsClient.onConnection(setConnected)
+  }, [])
 
   useEffect(() => {
     if (!conversationId) return
@@ -100,7 +105,6 @@ export function useChatStream(
     setState(currentState)
     setLoading(true)
     setError(null)
-    setConnected(false)
     setWarm(null)
     setAppliedConfig(null)
 
@@ -209,12 +213,7 @@ export function useChatStream(
           // A jump can be compacted history or a late frame from the previous
           // subscription. REST resolves either case before newer state hides the gap.
           if (seq > received + 1) {
-            older.current = () => {
-      if (!more || signal.aborted) return Promise.resolve()
-      setLoadingOlder(true)
-      return loadFromRest(true)
-    }
-    void loadFromRest()
+            void loadFromRest()
             return
           }
           // Fold unknown message IDs directly, even with older pages unloaded. Refetching first made
@@ -247,7 +246,6 @@ export function useChatStream(
         },
         onConnectionChange: (isConnected) => {
           if (!live.active || signal.aborted) return
-          setConnected(isConnected)
           // The first subscription already follows REST; reconnects need a new catch-up.
           if (isConnected && hasConnected) void loadFromRest()
           if (isConnected) hasConnected = true
