@@ -276,15 +276,17 @@ export function SettingsLayout() {
           const entries = filtered.filter((section) => section.group === group)
           if (entries.length === 0) return null
           return (
-            <div key={group} className="mb-3">
+            <div key={group} className="mb-5">
               {group !== 'about' ? (
                 <h2 id={`settings-group-${group}`}
-                  className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-faint">
+                  className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-soft">
                   {GROUP_ICONS[group]}
                   <span>{t(`settings.group.${group}`)}</span>
                 </h2>
               ) : null}
-              <ul aria-labelledby={group !== 'about' ? `settings-group-${group}` : undefined} className="flex flex-col gap-0.5">
+              {/* Entries sit one icon width under their heading: the indent is what reads as hierarchy. */}
+              <ul aria-labelledby={group !== 'about' ? `settings-group-${group}` : undefined}
+                className={cx('flex flex-col gap-0.5', group !== 'about' && 'pl-5')}>
                 {entries.map((section) => (
                   <li key={section.to}>
                     <NavLink
