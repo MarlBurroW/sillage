@@ -13,7 +13,9 @@ import {
   filesExistBodySchema,
   type FileContentDto,
 } from '@sillage/protocol'
-import { resolveInside } from '../../workspace.js'
+import { resolveInside, resolveRealInside } from '../../workspace.js'
+import { readableConversation } from '../../conversations/access.js'
+import { linkedWorktreePaths } from '../../worktrees/linked.js'
 import { attachmentHeader } from '../attachment-header.js'
 import type { AppContext } from '../context.js'
 import { HttpError, notFound } from '../errors.js'
@@ -57,6 +59,32 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
   for (const { base, cwdOf } of workspaceScopes) {
     /** Any project viewer can read and write, including shared projects. */
     const workspaceOf = (id: string, userId: string): string => cwdOf(ctx.db, id, userId)
+
+    // A worktree created during a turn is linked without changing the CLI's resume cwd.
+    // Only image reads use this fallback; editor writes retain their workspace boundary.
+    const imagePath = async (id: string, userId: string, path: string): Promise<string> => {
+      const root = workspaceOf(id, userId)
+      const existing = async (directory: string): Promise<string | null> => {
+        try {
+          const absolute = await resolveRealInside(directory, path)
+          return (await stat(absolute)).isFile() ? absolute : null
+        } catch {
+          return null
+        }
+      }
+      const primary = await existing(root)
+      if (primary) return primary
+      if (base === '/api/conversations/:id') {
+        const conversation = readableConversation(ctx.db, id, userId)
+        if (conversation.projectId) {
+          const roots = linkedWorktreePaths(ctx.db, id, conversation.projectId)
+          const matches = [...new Set((await Promise.all(roots.map(existing))).filter((entry) => entry !== null))]
+          // Relative paths shared by multiple linked trees are ambiguous: require an absolute path.
+          if (matches.length === 1) return matches[0]!
+        }
+      }
+      throw notFound('file_not_found', 'File not found.')
+    }
 
     app.get(`${base}/file`, async (request): Promise<FileContentDto> => {
       const user = requireUser(request)
@@ -105,7 +133,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
           // not reveal whether external files exist.
           let absolute
           try {
-            absolute = resolveInside(workspace, path)
+            absolute = VIEWABLE_IMAGE_TYPES[extensionOf(path)]
+              ? await imagePath(id, user.id, path)
+              : resolveInside(workspace, path)
           } catch {
             return null
           }
@@ -131,7 +161,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         ?? VIEWABLE_MODEL_TYPES[extension]
       if (!type) throw new HttpError(415, 'not_viewable', 'This file type cannot be displayed.')
 
-      const absolute = resolveInside(workspaceOf(id, user.id), path)
+      const absolute = imageType
+        ? await imagePath(id, user.id, path)
+        : resolveInside(workspaceOf(id, user.id), path)
       const info = await stat(absolute).catch(() => null)
       if (!info?.isFile()) throw notFound('file_not_found', 'File not found.')
 
