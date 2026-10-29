@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { after, test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { eq as sqlEq, sql } from 'drizzle-orm'
-import { cards, conversationPaths, conversations, openDatabase, projects, runMigrations, users, worktrees } from '@sillage/db'
+import { cards, conversationPaths, conversations, openDatabase, projects, runMigrations, users, worktreeKeptFiles, worktrees } from '@sillage/db'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { EventLog } from '../src/events/event-log.js'
 import { touchedPaths } from '../src/events/touched-paths.js'
@@ -434,4 +434,74 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   const prunable = (await cleanup.run(projectRow, { path: gone, deleteBranch: true, archiveSessions: false, stopServices: false }))!
   assert.deepEqual([prunable.removed, prunable.branchDeleted], [true, true])
   assert.deepEqual((await listWorktrees(repo)).map((e) => e.path), [repo])
+})
+
+test('fusionné avec des restes : distinct du non commité, gardé tant que les fichiers ne changent pas', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-db-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const project = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+
+  // Delivered: committed, merged by fast-forward (no commit ahead), then a demo script left behind.
+  const done = addTree(repo, trees, 'feat/done')
+  db.insert(worktrees).values({ id: 'wt-done', projectId: 'project', name: 'feat/done', path: done, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
+  write(done, 'src/feature.ts', 'export const feature = 1\n')
+  commitAll(done, 'feature')
+  git(repo, 'merge', '--ff-only', 'feat/done')
+  write(done, 'demo/serve.sh', 'echo demo\n')
+  write(done, 'src/app.ts', 'export const app = 2\n')
+
+  // Fresh: created after every commit, edits never committed. Same Git picture, still work in progress.
+  const fresh = addTree(repo, trees, 'feat/fresh')
+  db.insert(worktrees).values({ id: 'wt-fresh', projectId: 'project', name: 'feat/fresh', path: fresh, baseRef: 'main', createdBy: 'owner', createdAt: Date.now() + 60_000 }).run()
+  write(fresh, 'src/app.ts', 'export const app = 3\n')
+
+  const raw = await assess(repo, done)
+  assert.equal(raw.state, 'dirty')
+  assert.equal(raw.commitsInBase, true)
+  assert.ok(raw.fingerprint)
+  assert.deepEqual(
+    raw.files.map((file) => `${file.kind} ${file.path}`).sort(),
+    ['modified src/app.ts', 'untracked demo/serve.sh'],
+  )
+
+  const service = new WorktreeStatusService(db, new EventLog(db))
+  const find = async (path: string) => {
+    service.forget('project')
+    return (await service.current(project)).worktrees.find((tree) => tree.path === path)!
+  }
+
+  const left = await find(done)
+  assert.equal(left.state, 'leftovers')
+  assert.equal(left.fingerprint, raw.fingerprint)
+  assert.equal((await find(fresh)).state, 'dirty')
+  assert.equal((await find(fresh)).fingerprint, null)
+
+  // Kept: merged while the same files stay untouched.
+  db.insert(worktreeKeptFiles).values({ projectId: 'project', path: done, fingerprint: left.fingerprint!, files: 2, keptBy: 'owner', keptAt: Date.now() }).run()
+  const kept = await find(done)
+  assert.equal(kept.state, 'merged')
+  assert.equal(kept.kept, 2)
+  assert.equal(kept.fingerprint, null)
+
+  // A later write, even of the same size, brings the tree back.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  write(done, 'demo/serve.sh', 'echo demo\n')
+  assert.equal((await find(done)).state, 'leftovers')
+  write(done, 'notes.md', 'todo\n')
+  const grown = await find(done)
+  assert.equal(grown.state, 'leftovers')
+  assert.notEqual(grown.fingerprint, left.fingerprint)
+
+  // Committing the rest makes it a plain merge again.
+  git(done, 'clean', '-fdq')
+  git(done, 'checkout', '--', '.')
+  const clean = await find(done)
+  assert.equal(clean.state, 'merged')
+  assert.equal(clean.kept, 0)
 })

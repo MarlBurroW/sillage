@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
-import { stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { lstat, stat } from 'node:fs/promises'
 import { join, posix, win32 } from 'node:path'
-import type { WorktreeState } from '@sillage/protocol'
+import type { WorktreeFileDto, WorktreeState } from '@sillage/protocol'
 
 /** Worktree progress against the repository default branch. Ask whether anything remains absent from the base, rather than whether the branch is an ancestor of main: squash, cherry-pick and manual copying can merge content without ancestry, while never-committed worktrees can look merged despite holding all the work. Compare content through `git merge-tree`, which calculates merges without touching worktrees or refs. All operations are reads except temporary objects left by `merge-tree` and `stash create`, later collected by `gc`. */
 
@@ -13,6 +14,12 @@ const MAX_UNTRACKED_COMPARED = 500
 
 /** Number of file timestamps read to estimate the latest modification. */
 const MAX_FILES_STATTED = 200
+
+/** Files listed per tree: enough to recognise leftovers, small enough for every sidebar poll. */
+const MAX_FILES_LISTED = 30
+
+/** Beyond this many leftover files, offering to keep them all at once would be a blind gesture. */
+const MAX_FILES_FINGERPRINTED = 2_000
 
 interface GitResult {
   code: number
@@ -129,6 +136,7 @@ function supportsMergeBase(cwd: string): Promise<boolean> {
 }
 
 export interface WorktreeAssessment {
+  /** `assessWorktree` never answers `leftovers`: telling a merge from a fresh tree needs the database (see `status-service.ts`). */
   state: WorktreeState
   ahead: number
   behind: number
@@ -137,6 +145,13 @@ export interface WorktreeAssessment {
   conflicts: boolean
   lastCommitAt: number | null
   lastEditAt: number | null
+  files: WorktreeFileDto[]
+  /** Set for `dirty` trees whose commits are all in the base: the candidates for `leftovers`. */
+  fingerprint: string | null
+  /** Every commit of the branch is already in the base, whatever remains uncommitted. */
+  commitsInBase: boolean
+  /** Read only for `leftovers` candidates (see `ownCommits`); null otherwise or when unknown. */
+  ownCommits: boolean | null
 }
 
 const MISSING: WorktreeAssessment = {
@@ -148,6 +163,10 @@ const MISSING: WorktreeAssessment = {
   conflicts: false,
   lastCommitAt: null,
   lastEditAt: null,
+  files: [],
+  fingerprint: null,
+  commitsInBase: false,
+  ownCommits: null,
 }
 
 /** Tree the base would have after receiving `ref`, and whether merging succeeds. With `mergeBase`, merge a specific delta from `mergeBase` to `ref` rather than full history, allowing stash assessment when its commit has only HEAD as parent. */
@@ -172,6 +191,13 @@ async function mergedTree(
 interface StatusEntry {
   path: string
   untracked: boolean
+  /** Two-letter porcelain code: index then worktree. */
+  code: string
+}
+
+function fileKind(entry: StatusEntry): WorktreeFileDto['kind'] {
+  if (entry.untracked) return 'untracked'
+  return entry.code.includes('D') ? 'deleted' : 'modified'
 }
 
 function parseStatus(raw: string): StatusEntry[] {
@@ -184,7 +210,7 @@ function parseStatus(raw: string): StatusEntry[] {
     // Renames occupy two fields: new name followed by old.
     if (code[0] === 'R' || code[0] === 'C') i += 1
     if (code === '!!') continue
-    entries.push({ path: field.slice(3), untracked: code === '??' })
+    entries.push({ path: field.slice(3), untracked: code === '??', code })
   }
   return entries
 }
@@ -218,11 +244,45 @@ async function lastEdit(path: string, files: string[]): Promise<number | null> {
   return latest === null ? null : Math.round(latest)
 }
 
+/**
+ * Identity of the files left in a tree, from metadata only: leftovers include videos and builds
+ * that hashing contents on every poll would read in full. Size and modification time change with
+ * any write, which is all keeping needs: a touched file shows up again, never the reverse.
+ */
+async function residueFingerprint(path: string, entries: StatusEntry[]): Promise<string | null> {
+  if (entries.length === 0 || entries.length > MAX_FILES_FINGERPRINTED) return null
+  const lines = await Promise.all(
+    entries.map(async (entry) => {
+      const info = await lstat(join(path, entry.path)).catch(() => null)
+      return [entry.code, entry.path, info ? `${info.size}:${Math.round(info.mtimeMs)}` : '-'].join('\0')
+    }),
+  )
+  return createHash('sha256').update(lines.sort().join('\n')).digest('hex')
+}
+
+/** Commits made on the branch itself, as opposed to moves that only brought in the base. */
+const OWN_COMMIT = /^(commit( \((?!merge\))[^)]*\))?|cherry-pick|revert): /
+
+/**
+ * Whether the branch received commits of its own, read from its reflog. A fast-forward merge leaves
+ * the branch with no commit ahead, exactly like a tree created a minute ago: only the history of
+ * the ref tells them apart. Null when the reflog cannot answer: detached HEAD, or entries expired
+ * (90 days by default) so that the branch creation is no longer in sight.
+ */
+async function ownCommits(repo: string, branch: string | null | undefined): Promise<boolean | null> {
+  if (!branch) return null
+  const result = await git(repo, ['reflog', 'show', '--format=%gs', `refs/heads/${branch}`, '--'])
+  if (result.code !== 0) return null
+  const subjects = result.stdout.split('\n').filter(Boolean)
+  if (subjects.some((subject) => OWN_COMMIT.test(subject))) return true
+  return subjects.at(-1)?.startsWith('branch: Created') ? false : null
+}
+
 /** Assesses worktree commits and modifications absent from the base. `base` is resolved by `defaultBase`. Missing `entry.path` yields `missing`, which takes precedence over all other states. */
 export async function assessWorktree(
   repo: string,
   base: string,
-  entry: Pick<WorktreeEntry, 'path' | 'head' | 'prunable'>,
+  entry: Pick<WorktreeEntry, 'path' | 'head' | 'prunable'> & { branch?: string | null },
   /** Forces the pre-git-2.40 path in tests; otherwise inferred from installed version. */
   options: { legacyGit?: boolean } = {},
 ): Promise<WorktreeAssessment> {
@@ -277,7 +337,12 @@ export async function assessWorktree(
   const state: WorktreeState =
     !trackedInBase || !untrackedKnown ? 'dirty' : !commitsInBase ? 'unmerged' : 'merged'
 
+  const candidate = state === 'dirty' && commitsInBase
   return {
+    files: entries.slice(0, MAX_FILES_LISTED).map((e) => ({ path: e.path, kind: fileKind(e) })),
+    fingerprint: candidate ? await residueFingerprint(entry.path, entries) : null,
+    commitsInBase,
+    ownCommits: candidate ? await ownCommits(repo, entry.branch) : null,
     state,
     ahead,
     behind,

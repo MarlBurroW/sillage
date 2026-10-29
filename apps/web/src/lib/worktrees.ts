@@ -49,15 +49,17 @@ export function useConversationWorktree(conversation: Pick<ConversationDto, 'id'
   }, [data, conversation.id])
 }
 
-/** Remaining work or cleanup for the project counter. */
-export function worktreeCounts(list: WorktreeStatusListDto | undefined): { pending: number; cleanable: number } {
+/** Remaining work, merged trees with files to sort, and cleanup for the project counter. */
+export function worktreeCounts(list: WorktreeStatusListDto | undefined): { pending: number; leftovers: number; cleanable: number } {
   let pending = 0
+  let leftovers = 0
   let cleanable = 0
   for (const tree of list?.worktrees ?? []) {
     if (tree.state === 'merged') cleanable += 1
+    else if (tree.state === 'leftovers') leftovers += 1
     else pending += 1
   }
-  return { pending, cleanable }
+  return { pending, leftovers, cleanable }
 }
 
 export function useWorktrees(projectId: string | null | undefined) {
@@ -90,6 +92,26 @@ export function useBranches(projectId: string | null | undefined) {
       ),
     enabled: Boolean(projectId),
     staleTime: 30_000,
+  })
+}
+
+/** Keeps the files shown for a merged tree; the server refuses with 409 if they changed since. */
+export function useKeepWorktreeFiles(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { path: string; fingerprint: string }) =>
+      api.post<void>(`/api/projects/${projectId}/worktrees/keep`, input),
+    // Refused or not, the list shown is outdated or settled: reread it either way.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: statusKey(projectId) }),
+  })
+}
+
+export function useForgetKeptFiles(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (path: string) =>
+      api.delete<void>(`/api/projects/${projectId}/worktrees/keep?path=${encodeURIComponent(path)}`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: statusKey(projectId) }),
   })
 }
 

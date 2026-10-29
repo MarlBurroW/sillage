@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray, max, or, isNull, ne } from 'drizzle-orm'
-import { cardNotes, cards, conversations, worktrees, type Db, type ProjectRow } from '@sillage/db'
-import type { WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
+import { cardNotes, cards, conversations, type Db, type ProjectRow } from '@sillage/db'
+import type { WorktreeStatusListDto } from '@sillage/protocol'
+import { hasOwnWork } from './own-work.js'
 import type { WorktreeStatusService } from './status-service.js'
 
 /** Columns from which merges move cards to 'Done'. */
@@ -79,14 +80,4 @@ export function closeMergedCards(db: Db, project: ProjectRow, list: WorktreeStat
     }
   }
   return closed
-}
-
-/** Has this worktree held its own work? Newly created trees without commits also appear merged because their tip is already in the base. Real work requires the latest commit to postdate creation: the database row for Sillage trees, or first session for shell-created trees. */
-function hasOwnWork(db: Db, tree: WorktreeStatusDto, linked: { createdAt: number }[]): boolean {
-  if (tree.lastCommitAt === null) return false
-  const row = tree.id
-    ? db.select({ createdAt: worktrees.createdAt }).from(worktrees).where(eq(worktrees.id, tree.id)).get()
-    : undefined
-  const born = row?.createdAt ?? Math.min(...linked.map((entry) => entry.createdAt))
-  return tree.lastCommitAt > born
 }

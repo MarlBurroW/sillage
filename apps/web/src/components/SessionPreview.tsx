@@ -1,9 +1,9 @@
 import { Info, Star, X } from 'lucide-react'
 import { useRef, useState, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
-import type { ConversationDto, ConversationMetrics } from '@sillage/protocol'
+import type { ConversationDto, ConversationMetrics, WorktreeStatusDto } from '@sillage/protocol'
 import { formatBytes } from '../lib/attachments'
 import { relativeDate } from '../lib/dates'
-import { locale, useTranslate } from '../lib/i18n'
+import { locale, translate, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import type { Signal } from '../lib/signals'
 import { formatTokens } from '../lib/tokens'
@@ -86,7 +86,7 @@ export function SessionDetails({ conversation, metrics, signals }: {
     </dl>
     <section className="session-preview-worktree">
       <h4>{t('shell.preview.worktree')}</h4>
-      {git ? <><div data-preview-git={git} className={cx('flex items-center gap-2 font-medium', WORKTREE_STATE_TEXT[git])}><WorktreeStateIcon state={git} /><span>{t(`worktrees.state.${git}`)}</span></div><p>{t(`shell.preview.git.${git}`)}</p>{tree && <><code>{tree.branch || tree.name}</code><span className="mt-1 block break-all text-[0.625rem] text-ink-faint">{tree.path}</span></>}</> : <p>{t('shell.preview.mainTree')}</p>}
+      {git ? <><div data-preview-git={git} className={cx('flex items-center gap-2 font-medium', WORKTREE_STATE_TEXT[git])}><WorktreeStateIcon state={git} /><span>{t(`worktrees.state.${git}`)}</span></div><p>{t(`shell.preview.git.${git}`)}</p>{tree && tree.state === 'leftovers' && <LeftoverFiles tree={tree} />}{tree && tree.kept > 0 && <p className="text-ink-faint">{translate(tree.kept > 1 ? 'worktrees.kept.many' : 'worktrees.kept.one', { count: tree.kept })}</p>}{tree && <><code>{tree.branch || tree.name}</code><span className="mt-1 block break-all text-[0.625rem] text-ink-faint">{tree.path}</span></>}</> : <p>{t('shell.preview.mainTree')}</p>}
     </section>
     <dl className="session-preview-facts">
       {metrics.model && <div><dt>{t('composer.setting.model')}</dt><dd className="break-words">{metrics.model}</dd></div>}
@@ -96,4 +96,15 @@ export function SessionDetails({ conversation, metrics, signals }: {
     {conversation.origin && <p className="text-ink-faint">{t('shell.conversation.origin', { label: conversation.origin.label })}</p>}
     {conversation.favorite && <p className="flex items-center gap-1.5 text-ink-faint"><Star size={12} />{t('shell.favorites.heading')}</p>}
   </div>
+}
+
+/** A few names are enough to tell a forgotten file from a demo leftover; the dialog lists the rest. */
+function LeftoverFiles({ tree }: { tree: WorktreeStatusDto }) {
+  const t = useTranslate()
+  const shown = tree.files.slice(0, 3)
+  const hidden = tree.modified + tree.untracked - shown.length
+  return <ul className="mb-1 flex flex-col text-[0.6875rem]">
+    {shown.map(file => <li key={file.path} className="truncate"><span className="text-ink-faint">{t(`worktrees.file.${file.kind}`)}</span> <span className="font-mono">{file.path}</span></li>)}
+    {hidden > 0 && <li className="text-ink-faint">{t('worktrees.files.more', { count: hidden })}</li>}
+  </ul>
 }

@@ -1,8 +1,9 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
-import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@sillage/db'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { conversationPaths, conversations, projects, worktreeKeptFiles, worktrees, type Db, type ProjectRow } from '@sillage/db'
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { assessWorktree, defaultBase, listWorktrees } from './assess.js'
+import { assessWorktree, defaultBase, listWorktrees, type WorktreeAssessment } from './assess.js'
+import { hasOwnWork } from './own-work.js'
 
 /** Recalculate lists older than this limit and reuse fresher ones. Keep short because sessions modify trees, but sidebar reads on every turn end would otherwise launch dozens of git processes. */
 const TTL_MS = 30_000
@@ -188,18 +189,31 @@ export class WorktreeStatusService {
         : assessWorktree(repo, 'HEAD', { ...tree, head: null }),
     )
 
-    const result: WorktreeStatusDto[] = list.map((tree, index) => ({
-      id: tree.id,
-      name: tree.name,
-      path: tree.path,
-      branch: tree.branch,
-      external: tree.id === null,
-      conversations: this.linkedConversations(project.id, tree.id, tree.path),
-      ...assessed[index]!,
-    }))
+    const kept = new Map(
+      this.db
+        .select()
+        .from(worktreeKeptFiles)
+        .where(eq(worktreeKeptFiles.projectId, project.id))
+        .all()
+        .map((row) => [row.path, row]),
+    )
+    const result: WorktreeStatusDto[] = list.map((tree, index) => {
+      const linked = this.linkedConversations(project.id, tree.id, tree.path)
+      const { commitsInBase, ownCommits, ...assessment } = assessed[index]!
+      return {
+        id: tree.id,
+        name: tree.name,
+        path: tree.path,
+        branch: tree.branch,
+        external: tree.id === null,
+        conversations: linked,
+        ...assessment,
+        ...this.settleLeftovers(tree.id, assessment, commitsInBase, ownCommits, linked, kept.get(tree.path)),
+      }
+    })
 
     // Most urgent first, then most recently active.
-    const order = { missing: 0, dirty: 1, unmerged: 2, merged: 3 }
+    const order = { missing: 0, dirty: 1, unmerged: 2, leftovers: 3, merged: 4 }
     result.sort(
       (a, b) =>
         order[a.state] - order[b.state] ||
@@ -207,6 +221,43 @@ export class WorktreeStatusService {
     )
 
     return { base, computedAt: Date.now(), fresh: true, worktrees: result }
+  }
+
+  /**
+   * Tells a merged branch with files left behind from work in progress: a tree created a minute ago
+   * with uncommitted edits also has every commit in the base. The branch reflog says whether it
+   * delivered commits of its own; without one, fall back on the card heuristic (a last commit after
+   * the tree was born), which a session committing on main just before branching can fool. Kept
+   * leftovers count as merged only while their fingerprint still matches.
+   */
+  private settleLeftovers(
+    id: string | null,
+    assessment: Omit<WorktreeAssessment, 'commitsInBase' | 'ownCommits'>,
+    commitsInBase: boolean,
+    ownCommits: boolean | null,
+    linked: { id: string }[],
+    kept: { fingerprint: string; files: number } | undefined,
+  ): Pick<WorktreeStatusDto, 'state' | 'fingerprint' | 'kept'> {
+    const plain = { state: assessment.state, fingerprint: null, kept: 0 }
+    if (assessment.state !== 'dirty' || !commitsInBase) return plain
+    const delivered =
+      ownCommits ??
+      (assessment.ahead > 0 ||
+        hasOwnWork(this.db, { id, lastCommitAt: assessment.lastCommitAt }, this.creationDates(linked)))
+    if (!delivered) return plain
+    if (kept && assessment.fingerprint && kept.fingerprint === assessment.fingerprint) {
+      return { state: 'merged', fingerprint: null, kept: kept.files }
+    }
+    return { state: 'leftovers', fingerprint: assessment.fingerprint, kept: 0 }
+  }
+
+  private creationDates(linked: { id: string }[]): { createdAt: number }[] {
+    if (linked.length === 0) return []
+    return this.db
+      .select({ createdAt: conversations.createdAt })
+      .from(conversations)
+      .where(inArray(conversations.id, linked.map((entry) => entry.id)))
+      .all()
   }
 
   /** Conversations attached through cwd (`worktree_id`) or edits (`conversation_paths`). For the same conversation, the former takes precedence. */

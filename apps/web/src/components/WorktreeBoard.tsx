@@ -1,5 +1,5 @@
 import { conversationPath } from '@sillage/protocol'
-import { BrushCleaning, FolderGit2, TriangleAlert } from 'lucide-react'
+import { BrushCleaning, FileCheck, FolderGit2, TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ConversationDto, WorktreeStatusDto } from '@sillage/protocol'
@@ -7,13 +7,14 @@ import { AgentIcon } from './AgentIcon'
 import { SignalDot } from './chat/Signals'
 import { Badge, Button, Card, CardBody, CardHeader, cx } from './ui'
 import { WorktreeCleanupDialog } from './WorktreeCleanupDialog'
+import { WorktreeLeftoversDialog } from './WorktreeLeftoversDialog'
 import { WorktreeStateMark, WORKTREE_STATE_TONE } from './WorktreeTag'
 import { useConversations } from '../lib/conversations'
 import { useLiveStatus } from '../lib/conversation-status'
 import { relativeDate } from '../lib/dates'
 import { translate, useTranslate } from '../lib/i18n'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
-import { useWorktreeStatuses } from '../lib/worktrees'
+import { useForgetKeptFiles, useWorktreeStatuses } from '../lib/worktrees'
 
 /**
  * Project worktrees known to Git or Sillage, their default-branch relationship, metrics, sessions,
@@ -63,6 +64,8 @@ function WorktreeRow({
 }) {
   const t = useTranslate()
   const [cleaning, setCleaning] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
+  const forget = useForgetKeptFiles(projectId)
   const linked = tree.conversations
     .map((entry) => ({ ...entry, conversation: byId.get(entry.id) }))
     .filter((entry): entry is typeof entry & { conversation: ConversationDto } => entry.conversation !== undefined)
@@ -76,6 +79,7 @@ function WorktreeRow({
   if (tree.untracked > 0) facts.push(plural('worktrees.untracked', tree.untracked))
   if (tree.ahead > 0) facts.push(plural('worktrees.ahead', tree.ahead))
   if (tree.behind > 0) facts.push(plural('worktrees.behind', tree.behind))
+  if (tree.kept > 0) facts.push(plural('worktrees.kept', tree.kept))
   if (tree.lastEditAt) facts.push(t('worktrees.lastEdit', { when: relativeDate(tree.lastEditAt) }))
   else if (tree.lastCommitAt) facts.push(t('worktrees.lastCommit', { when: relativeDate(tree.lastCommitAt) }))
 
@@ -111,6 +115,29 @@ function WorktreeRow({
           )}
         </ul>
       </div>
+      {tree.state === 'leftovers' ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<FileCheck size={15} />}
+          className="shrink-0 self-start"
+          onClick={() => setReviewing(true)}
+        >
+          {t('worktrees.leftovers.review')}
+        </Button>
+      ) : null}
+      {tree.kept > 0 ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 self-start"
+          title={t('worktrees.kept.hint')}
+          busy={forget.isPending}
+          onClick={() => forget.mutate(tree.path)}
+        >
+          {t('worktrees.kept.forget')}
+        </Button>
+      ) : null}
       {/* Clean trees whether known to Sillage or not: Git owns them, not the database. */}
       <Button
         variant="ghost"
@@ -123,6 +150,9 @@ function WorktreeRow({
       </Button>
       {cleaning ? (
         <WorktreeCleanupDialog projectId={projectId} tree={tree} base={base} onClose={() => setCleaning(false)} />
+      ) : null}
+      {reviewing ? (
+        <WorktreeLeftoversDialog projectId={projectId} tree={tree} base={base} onClose={() => setReviewing(false)} />
       ) : null}
     </li>
   )
@@ -164,6 +194,7 @@ type PluralPrefix =
   | 'worktrees.untracked'
   | 'worktrees.ahead'
   | 'worktrees.behind'
+  | 'worktrees.kept'
 
 function plural(prefix: PluralPrefix, count: number): string {
   return translate(`${prefix}.${count > 1 ? 'many' : 'one'}`, { count })

@@ -93,11 +93,22 @@ try {
   git(docs, 'add', '-A')
   git(docs, 'commit', '-m', 'Add notes')
   git(repoRoot, 'merge', '--no-ff', 'docs/readme', '-m', 'Merge docs/readme')
+  // Merged, then a demo script and a capture left behind, as agents do after showing their work.
+  const leftovers = join(data, 'external', 'nimbus-leftovers')
+  git(repoRoot, 'worktree', 'add', '-b', 'feat/banner', leftovers, 'main')
+  await writeFile(join(leftovers, 'BANNER.md'), 'banner\n')
+  git(leftovers, 'add', '-A')
+  git(leftovers, 'commit', '-m', 'Add the banner')
+  git(repoRoot, 'merge', '--no-ff', 'feat/banner', '-m', 'Merge feat/banner')
+  await mkdir(join(leftovers, 'demo'))
+  await writeFile(join(leftovers, 'demo', 'serve.sh'), 'npx serve .\n')
+  await writeFile(join(leftovers, 'banner-capture.png'), 'png\n')
   const gone = join(data, 'external', 'nimbus-gone')
   git(repoRoot, 'worktree', 'add', '-b', 'feat/gone', gone, 'main')
   await rm(gone, { recursive: true, force: true })
 
   const docsSessionId = '00000000-0000-4000-8000-000000000046'
+  const bannerSessionId = '00000000-0000-4000-8000-000000000047'
   const fixture = run(['--import', 'tsx', '--input-type=module', '-e', `
     import { randomUUID } from 'node:crypto'
     import { eq } from 'drizzle-orm'
@@ -109,6 +120,9 @@ try {
     const worktreeId = randomUUID()
     db.insert(worktrees).values({ id: worktreeId, projectId: project.id, name: 'docs/readme', path: ${JSON.stringify(docs)}, baseRef: 'main', createdBy: project.ownerId, createdAt: Date.now() }).run()
     db.insert(conversations).values({ ...source, id: ${JSON.stringify(docsSessionId)}, worktreeId, title: 'Document the forecast cache', status: 'idle', cardId: null, scheduleId: null, archivedAt: null }).run()
+    const bannerTree = randomUUID()
+    db.insert(worktrees).values({ id: bannerTree, projectId: project.id, name: 'feat/banner', path: ${JSON.stringify(leftovers)}, baseRef: 'main', createdBy: project.ownerId, createdAt: Date.now() }).run()
+    db.insert(conversations).values({ ...source, id: ${JSON.stringify(bannerSessionId)}, worktreeId: bannerTree, title: 'Ship the forecast banner', status: 'idle', cardId: null, scheduleId: null, archivedAt: null }).run()
     sqlite.close()
   `], serverDir, env)
   const [fixtureCode] = await once(fixture, 'exit')
@@ -136,6 +150,7 @@ try {
   const states = Object.fromEntries(desktop.status.worktrees.map((tree) => [tree.name, tree.state]))
   assert.deepEqual(states, {
     'docs/readme': 'merged',
+    'feat/banner': 'leftovers',
     'feat/gone': 'missing',
     'feat/offline-cache': 'dirty',
     'feat/radar-prefetch': 'unmerged',
@@ -179,6 +194,43 @@ try {
   assert.equal(git(repoRoot, 'branch', '--list', 'docs/readme'), '')
   console.log('OK : worktree dans le fil, nettoyage confirmé, aucune décision automatique.')
 
+  // Merged with leftovers: told apart from uncommitted work, files named, kept in one gesture.
+  await page.goto(`${base}/p/${project.id}/board`)
+  const leftNav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
+  const bannerRow = leftNav.locator('[data-sidebar-session]').filter({ has: page.getByText('Ship the forecast banner', { exact: true }) })
+  await bannerRow.getByRole('button', { name: /Détails de .*Fusionné, fichiers restants/ }).waitFor()
+  assert.match(await leftNav.getByRole('link', { name: /^Chantiers/ }).innerText(), /1 à trier/)
+  await bannerRow.locator('[data-session-details]').click()
+  const preview = page.locator('.session-preview-popover')
+  await preview.getByText('demo/serve.sh', { exact: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'leftovers-preview.png') })
+  await page.keyboard.press('Escape')
+  await page.goto(`${base}/p/${project.id}/c/${bannerSessionId}`)
+  await worktreeBar(page).getByText('Fusionné, fichiers restants', { exact: true }).waitFor()
+  assert.equal(await worktreeBar(page).getByRole('button', { name: 'Nettoyer', exact: true }).count(), 0)
+  await worktreeBar(page).getByRole('button', { name: 'Revoir les fichiers', exact: true }).click()
+  const keepDialog = page.getByRole('dialog', { name: 'Fichiers restants dans feat/banner' })
+  await keepDialog.getByText('banner-capture.png', { exact: true }).waitFor()
+  await keepDialog.getByText('demo/serve.sh', { exact: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'leftovers-dialog.png') })
+  // A write after the list was shown: keeping is refused instead of hiding it.
+  const shown = (await (await desktop.context.request.get(`${base}/api/projects/${project.id}/worktrees/status`)).json())
+    .worktrees.find((tree) => tree.name === 'feat/banner')
+  await writeFile(join(leftovers, 'demo', 'serve.sh'), 'npx serve . --port 4000\n')
+  const stale = await desktop.context.request.post(`${base}/api/projects/${project.id}/worktrees/keep`, { data: { path: shown.path, fingerprint: shown.fingerprint } })
+  assert.equal(stale.status(), 409)
+  await keepDialog.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await page.reload()
+  await worktreeBar(page).getByRole('button', { name: 'Revoir les fichiers', exact: true }).click()
+  await keepDialog.getByRole('button', { name: 'Garder ces fichiers', exact: true }).click()
+  await keepDialog.waitFor({ state: 'hidden' })
+  await worktreeBar(page).getByText('Fusionné dans main · 2 fichiers gardés', { exact: true }).waitFor()
+  await worktreeBar(page).getByRole('button', { name: 'Nettoyer', exact: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'leftovers-kept.png') })
+  assert.ok(existsSync(join(leftovers, 'demo', 'serve.sh')), 'Garder ne touche pas aux fichiers')
+  assert.deepEqual(errors, [])
+  console.log('OK : fusionné avec des restes, gardés par empreinte.')
+
   // Sidebar: worktree status stays visible; full branch details open without navigation.
   await page.goto(`${base}/p/${project.id}/board`)
   const nav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
@@ -188,11 +240,11 @@ try {
   await offline.getByRole('button', { name: /Détails de .*Non commité/ }).waitFor()
   await row(nav, 'Radar tile prefetching').getByRole('button', { name: /Détails de .*À fusionner/ }).waitFor()
   // Main-tree details have no Git state icon.
-  assert.equal(await nav.locator('[data-worktree-state]').count(), 2)
+  assert.equal(await nav.locator('[data-worktree-state]').count(), 3)
   const chantiers = nav.getByRole('link', { name: /^Chantiers/ })
   await chantiers.waitFor()
   assert.match(await chantiers.innerText(), /3 en attente/)
-  assert.match(await chantiers.innerText(), /1 à nettoyer/)
+  assert.match(await chantiers.innerText(), /2 à nettoyer/)
   await page.screenshot({ path: join(shots, 'sidebar-desktop.png') })
   console.log('OK : barre latérale sur grand écran.')
 
@@ -224,7 +276,8 @@ try {
   await board.getByRole('heading', { name: 'Chantiers' }).waitFor()
   const rows = board.locator('li', { has: page.locator('.font-mono') }).filter({ hasText: /^(feat|fix)\// })
   const names = await board.locator('li > div > div > span.font-mono').allInnerTexts()
-  assert.deepEqual(names, ['feat/gone', 'feat/offline-cache', 'feat/radar-prefetch', 'fix/squashed-typo'], `ordre : ${names}`)
+  assert.deepEqual(names.filter((name) => name !== 'feat/banner'), ['feat/gone', 'feat/offline-cache', 'feat/radar-prefetch', 'fix/squashed-typo'], `ordre : ${names}`)
+  assert.ok(names.includes('feat/banner'))
   await board.getByText('Créé hors de Sillage', { exact: true }).first().waitFor()
   await board.getByText('Introuvable', { exact: true }).first().waitFor()
   await board.getByRole('link', { name: 'Add offline caching for forecasts' }).waitFor()
@@ -248,8 +301,18 @@ try {
   await page.locator('span.font-mono', { hasText: 'fix/squashed-typo' }).waitFor({ state: 'detached' })
   assert.ok(!existsSync(squashed), 'Le dossier est retiré')
   assert.equal(git(repoRoot, 'branch', '--list', 'fix/squashed-typo'), '', 'La branche est supprimée')
-  assert.match(await chantiers.innerText(), /3 en attente$/)
+  assert.match(await chantiers.innerText(), /3 en attente · 1 à nettoyer$/)
   console.log('OK : nettoyage en un geste.')
+
+  // Kept files can be handed back: the tree is listed again with its files to sort.
+  const bannerBoardRow = board.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'feat/banner' }) }).first()
+  await bannerBoardRow.getByText(/2 fichiers gardés/).waitFor()
+  await bannerBoardRow.getByRole('button', { name: 'Ne plus garder', exact: true }).click()
+  await bannerBoardRow.getByText('Fusionné, fichiers restants', { exact: true }).waitFor()
+  await bannerBoardRow.getByRole('button', { name: 'Revoir les fichiers', exact: true }).waitFor()
+  assert.match(await chantiers.innerText(), /3 en attente · 1 à trier$/)
+  await page.screenshot({ path: join(shots, 'leftovers-board.png') })
+  console.log('OK : ne plus garder les fichiers.')
 
   // Uncommitted tree: confirmation lists what would be lost and the session to archive.
   const offlineRow = board.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'feat/offline-cache' }) }).first()
