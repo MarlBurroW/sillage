@@ -1,5 +1,6 @@
+import { stat } from 'node:fs/promises'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { conversationPaths, conversations, projects, worktreeKeptFiles, worktrees, type Db, type ProjectRow } from '@sillage/db'
+import { conversationPaths, conversations, projects, worktreeKeptFiles, worktrees, type Db, type ProjectRow, type WorktreeRow } from '@sillage/db'
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 import { assessWorktree, defaultBase, listWorktrees, type WorktreeAssessment } from './assess.js'
@@ -177,6 +178,13 @@ export class WorktreeStatusService {
       if (known) {
         known.id = row.id
         known.name = known.branch ?? row.name
+      } else if (entries.length > 0 && !(await isDirectory(row.path))) {
+        // Git listed its trees without this one and the directory is gone: someone ran
+        // `git worktree remove` (or pruned) outside Sillage, typically an agent tidying up.
+        // Record the removal rather than flag a tree nobody can act on. `missing` stays for
+        // directories that vanished while git still lists them, the one state worth attention.
+        // An empty git list means git failed, not that every tree is gone: leave rows alone.
+        this.recordRemoval(project.id, row)
       } else {
         unified.set(row.path, { id: row.id, name: row.name, path: row.path, branch: null, head: null, prunable: true })
       }
@@ -251,6 +259,15 @@ export class WorktreeStatusService {
     return { state: 'leftovers', fingerprint: assessment.fingerprint, kept: 0 }
   }
 
+  private recordRemoval(projectId: string, row: WorktreeRow): void {
+    this.db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, row.id)).run()
+    // A tree recreated at the same path must not inherit a choice made for other files.
+    this.db
+      .delete(worktreeKeptFiles)
+      .where(and(eq(worktreeKeptFiles.projectId, projectId), eq(worktreeKeptFiles.path, row.path)))
+      .run()
+  }
+
   private creationDates(linked: { id: string }[]): { createdAt: number }[] {
     if (linked.length === 0) return []
     return this.db
@@ -260,27 +277,27 @@ export class WorktreeStatusService {
       .all()
   }
 
-  /** Conversations attached through cwd (`worktree_id`) or edits (`conversation_paths`). For the same conversation, the former takes precedence. */
+  /** Conversations attached through cwd (`worktree_id`) or edits (`conversation_paths`). For the same conversation, the former takes precedence. Latest activity is the session's own for cwd links and the last write in the tree for edited ones. */
   private linkedConversations(
     projectId: string,
     worktreeId: string | null,
     path: string,
-  ): { id: string; link: WorktreeLink }[] {
-    const linked = new Map<string, WorktreeLink>()
+  ): { id: string; link: WorktreeLink; lastActiveAt: number }[] {
+    const linked = new Map<string, { link: WorktreeLink; lastActiveAt: number }>()
 
     if (worktreeId) {
       const direct = this.db
-        .select({ id: conversations.id })
+        .select({ id: conversations.id, updatedAt: conversations.updatedAt })
         .from(conversations)
         .where(eq(conversations.worktreeId, worktreeId))
         .all()
-      for (const row of direct) linked.set(row.id, 'worktree')
+      for (const row of direct) linked.set(row.id, { link: 'worktree', lastActiveAt: row.updatedAt })
     }
 
     // Use substr rather than LIKE because directory names often contain underscore wildcards.
     const prefix = `${path}/`
     const edited = this.db
-      .select({ id: conversationPaths.conversationId })
+      .select({ id: conversationPaths.conversationId, lastTs: sql<number>`max(${conversationPaths.lastTs})` })
       .from(conversationPaths)
       .innerJoin(conversations, eq(conversations.id, conversationPaths.conversationId))
       .where(
@@ -291,10 +308,14 @@ export class WorktreeStatusService {
       )
       .groupBy(conversationPaths.conversationId)
       .all()
-    for (const row of edited) if (!linked.has(row.id)) linked.set(row.id, 'edited')
+    for (const row of edited) if (!linked.has(row.id)) linked.set(row.id, { link: 'edited', lastActiveAt: row.lastTs })
 
-    return [...linked].map(([id, link]) => ({ id, link }))
+    return [...linked].map(([id, entry]) => ({ id, ...entry }))
   }
+}
+
+function isDirectory(path: string): Promise<boolean> {
+  return stat(path).then((entry) => entry.isDirectory(), () => false)
 }
 
 async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {

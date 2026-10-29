@@ -72,9 +72,10 @@ export class WorktreeCleanup {
     }
   }
 
+  /** `archiveSessions` archives every linked session when true, or only the listed ids: agents archive the sessions that lived in the tree, never those that merely edited it, nor themselves. */
   async run(
     project: ProjectRow,
-    options: { path: string; deleteBranch: boolean; archiveSessions: boolean; stopServices: boolean },
+    options: { path: string; deleteBranch: boolean; archiveSessions: boolean | string[]; stopServices: boolean },
   ): Promise<WorktreeCleanupResultDto | null> {
     const tree = await this.locate(project, options.path)
     if (!tree) return null
@@ -90,8 +91,11 @@ export class WorktreeCleanup {
     }
     for (const id of this.terminals.underCwd(tree.path)) this.terminals.close(id)
 
-    if (options.archiveSessions && tree.conversations.length > 0) {
-      const ids = tree.conversations.map((entry) => entry.id)
+    const archivable = tree.conversations.filter(
+      (entry) => options.archiveSessions === true || (Array.isArray(options.archiveSessions) && options.archiveSessions.includes(entry.id)),
+    )
+    if (archivable.length > 0) {
+      const ids = archivable.map((entry) => entry.id)
       result.archived = this.db
         .update(conversations)
         .set({ archivedAt: Date.now() })

@@ -31,19 +31,25 @@ export function useWorktreeStatuses(projectId: string | null | undefined) {
 
 /**
  * Conversation-associated tree for the sidebar row. Prefer its cwd (`worktree` link), otherwise the
- * most recently active written tree, already sorted server-side. Null for main-tree sessions, which
- * need no extra label: contrast identifies others.
+ * tree the conversation wrote in most recently. The server list is sorted by urgency, which would
+ * pin a long-lived session that prepared many trees to the worst one it once created rather than
+ * to its latest work. Null for main-tree sessions, which need no extra label: contrast identifies
+ * others.
  */
 export function useConversationWorktree(conversation: Pick<ConversationDto, 'id' | 'projectId'>): WorktreeStatusDto | null {
   const { data } = useWorktreeStatuses(conversation.projectId)
   return useMemo(() => {
     if (!data) return null
     let edited: WorktreeStatusDto | null = null
+    let editedAt = -1
     for (const tree of data.worktrees) {
       const link = tree.conversations.find((entry) => entry.id === conversation.id)
       if (!link) continue
       if (link.link === 'worktree') return tree
-      edited ??= tree
+      if (link.lastActiveAt > editedAt) {
+        edited = tree
+        editedAt = link.lastActiveAt
+      }
     }
     return edited
   }, [data, conversation.id])

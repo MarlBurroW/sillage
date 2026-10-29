@@ -42,6 +42,7 @@ const SILLAGE_LABELS: Record<string, MessageKey> = {
   start_session: 'sillageTool.start_session',
   create_worktree: 'sillageTool.create_worktree',
   list_worktrees: 'sillageTool.list_worktrees',
+  remove_worktree: 'sillageTool.remove_worktree',
   schedule_task: 'sillageTool.schedule_task',
   list_models: 'sillageTool.list_models',
   set_project_image: 'sillageTool.set_project_image',

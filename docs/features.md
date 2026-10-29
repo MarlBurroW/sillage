@@ -46,8 +46,12 @@ explains the differences.
   is merged and clean, Sillage proposes the cleanup as a decision. A merged branch
   whose tree still holds files (a capture, a demo script) is shown as *leftovers*
   rather than uncommitted, with the files named; keep them and the tree counts as
-  merged until they change. Agents create and list worktrees through
-  `create_worktree` and `list_worktrees`, so the interface sees them.
+  merged until they change. Agents create, list and remove worktrees through
+  `create_worktree`, `list_worktrees` and `remove_worktree`, so the interface sees
+  them; removal refuses unmerged work unless forced, and never the agent's own tree.
+  A Sillage tree removed with plain `git worktree remove` is forgotten silently once
+  git and the disk agree it is gone; *missing* is kept for folders that vanished
+  while git still lists them.
 - **References between conversations.** Type `@@` to find a session and insert a
   reference, or copy one from the session menu. References in messages and agent
   replies show a preview and open the original conversation. The composer's

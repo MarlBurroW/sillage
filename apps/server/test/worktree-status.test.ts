@@ -301,8 +301,14 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   db.insert(worktrees).values({ id: 'wt-known', projectId: 'project', name: 'feat/known', path: known, baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
   // External shell-created tree edited by a session whose cwd is the project root.
   const external = addTree(repo, trees, 'feat/external')
-  // Ghost: database entry without directory or git entry.
+  // Ghost: database entry without directory or git entry, as left by `git worktree remove`
+  // run outside Sillage. Its kept-files choice must go with it.
   db.insert(worktrees).values({ id: 'wt-ghost', projectId: 'project', name: 'feat/ghost', path: join(trees, 'ghost'), baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
+  db.insert(worktreeKeptFiles).values({ projectId: 'project', path: join(trees, 'ghost'), fingerprint: 'old', files: 1, keptAt: 1 } as never).run()
+  // Prunable: git still lists the tree but its directory vanished without `git worktree remove`.
+  const vanished = addTree(repo, trees, 'feat/vanished')
+  db.insert(worktrees).values({ id: 'wt-vanished', projectId: 'project', name: 'feat/vanished', path: vanished, baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
+  rmSync(vanished, { recursive: true, force: true })
 
   const conversation = (id: string, worktreeId: string | null) => ({
     id, projectId: 'project', userId: 'owner', title: id, agent: 'claude' as const, config: '{}', status: 'idle' as const,
@@ -353,10 +359,24 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   const externalTree = byPath.get(external)!
   assert.deepEqual([externalTree.id, externalTree.external, externalTree.branch], [null, true, 'feat/external'])
   assert.deepEqual(externalTree.conversations.map((c) => `${c.id}:${c.link}`).sort(), ['c-both:edited', 'c-root:edited'])
+  // Latest activity: the session's own for cwd links (journal appends refresh it), its last write
+  // in the tree for edited ones, so a session that wrote in several trees shows the one it touched last.
+  const directUpdatedAt = db.select({ updatedAt: conversations.updatedAt }).from(conversations).where(sqlEq(conversations.id, 'c-direct')).get()!.updatedAt
+  assert.equal(knownTree.conversations.find((c) => c.id === 'c-direct')?.lastActiveAt, directUpdatedAt)
+  const lastWrite = db.select({ ts: sql<number>`max(${conversationPaths.lastTs})` }).from(conversationPaths)
+    .where(sqlEq(conversationPaths.conversationId, 'c-root')).get()!.ts
+  assert.ok(lastWrite > 1)
+  assert.equal(externalTree.conversations.find((c) => c.id === 'c-root')?.lastActiveAt, lastWrite)
 
-  const ghost = byPath.get(join(trees, 'ghost'))!
-  assert.deepEqual([ghost.id, ghost.state, ghost.name, ghost.external], ['wt-ghost', 'missing', 'feat/ghost', false])
-  assert.equal(first.worktrees[0]?.id, 'wt-ghost', "l'introuvable passe en tête")
+  // Git and the disk agree the ghost is gone: Sillage records the removal instead of
+  // flagging a tree nobody can act on, while the prunable one stays missing.
+  assert.ok(!byPath.has(join(trees, 'ghost')), 'le fantôme ne figure plus dans la liste')
+  assert.ok(db.select().from(worktrees).where(sqlEq(worktrees.id, 'wt-ghost')).get()?.removedAt, 'sa suppression est enregistrée')
+  assert.equal(db.select().from(worktreeKeptFiles).all().length, 0, 'son choix de fichiers gardés disparaît avec lui')
+  const prunable = byPath.get(vanished)!
+  assert.deepEqual([prunable.id, prunable.state, prunable.name, prunable.external], ['wt-vanished', 'missing', 'feat/vanished', false])
+  assert.equal(db.select().from(worktrees).where(sqlEq(worktrees.id, 'wt-vanished')).get()?.removedAt, null)
+  assert.equal(first.worktrees[0]?.id, 'wt-vanished', "l'introuvable passe en tête")
 
   // Serve cached lists until invalidated; completed turns mark them stale,
   // then return stale lists immediately while refreshing.
@@ -369,6 +389,25 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   const next = await service.get(projectRow)
   assert.equal(next.fresh, true)
   assert.equal(next.worktrees.find((w) => w.id === 'wt-known')?.state, 'dirty')
+})
+
+test('une liste git vide ne vaut pas suppression : les entrées restent introuvables', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-norepo-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  // A workspace git cannot read (not a repository) yields an empty list, as a failing git would.
+  const workspace = join(dir, 'plain')
+  mkdirSync(workspace)
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: workspace, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+  db.insert(worktrees).values({ id: 'wt-row', projectId: 'project', name: 'feat/row', path: join(dir, 'nowhere'), baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
+
+  const list = await new WorktreeStatusService(db, new EventLog(db)).get(projectRow)
+  assert.deepEqual(list.worktrees.map((tree) => [tree.id, tree.state]), [['wt-row', 'missing']])
+  assert.equal(db.select().from(worktrees).where(sqlEq(worktrees.id, 'wt-row')).get()?.removedAt, null)
 })
 
 test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et sessions', async (t) => {

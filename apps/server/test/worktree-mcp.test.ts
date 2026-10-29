@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -13,6 +13,8 @@ import { EventLog } from '../src/events/event-log.js'
 import { projectOverview } from '../src/agents/overview.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
+import type { TerminalManager } from '../src/terminals/terminal-manager.js'
+import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { linkedWorktreePaths } from '../src/worktrees/linked.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
@@ -50,9 +52,12 @@ function harness(t: TestContext) {
 
   const config = { paths: { data: join(dir, 'data'), worktrees: join(dir, 'worktrees') } } as unknown as Config
   const status = new WorktreeStatusService(db, new EventLog(db))
+  const terminals = { underCwd: () => [] as string[], close: () => undefined } as unknown as TerminalManager
+  const dropped: string[] = []
+  const cleanup = new WorktreeCleanup(db, join(dir, 'data'), status, terminals, async (id) => { dropped.push(id) })
   const requests = new AgentRequests(
     { db, config }, {} as SessionManager, {} as AgentRegistry,
-    undefined, undefined, undefined, undefined, undefined, status,
+    undefined, undefined, undefined, undefined, undefined, status, undefined, undefined, cleanup,
   )
 
   const rpc = async (message: object) => {
@@ -73,15 +78,16 @@ function harness(t: TestContext) {
   const call = async (name: string, args: object) =>
     (await rpc({ method: 'tools/call', params: { name, arguments: args } })) as { content: { text: string }[]; isError?: boolean }
 
-  return { db, repo, config, rpc, call }
+  return { db, repo, config, rpc, call, dropped }
 }
 
-test('les deux outils sont proposés aux sessions', async (t) => {
+test('les trois outils sont proposés aux sessions', async (t) => {
   const { rpc } = harness(t)
   const { tools } = (await rpc({ method: 'tools/list' })) as { tools: { name: string; inputSchema: { required?: string[] } }[] }
   const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
   assert.deepEqual(byName.create_worktree?.inputSchema.required, ['branch'])
   assert.ok(byName.list_worktrees)
+  assert.deepEqual(byName.remove_worktree?.inputSchema.required, ['worktree'])
 })
 
 test('create_worktree : depuis la branche par défaut, rattaché sans toucher au cwd', async (t) => {
@@ -142,12 +148,79 @@ test('create_worktree refuse un nom ou une base qui serait lu comme autre chose'
   assert.match(option.content[0]!.text, /Invalid base/)
 })
 
-test('le prompt dynamique cite les deux outils quand d’autres sessions travaillent dans le projet', async (t) => {
+test('remove_worktree : fusionné sans force, tout le reste avec force, jamais son propre arbre', async (t) => {
+  const { db, repo, config, call, dropped } = harness(t)
+  const missing = await call('remove_worktree', {})
+  assert.equal(missing.isError, true)
+  assert.match(missing.content[0]!.text, /`worktree` parameter is required/)
+
+  const unknown = await call('remove_worktree', { worktree: 'feat/nowhere' })
+  assert.equal(unknown.isError, true)
+  assert.match(unknown.content[0]!.text, /No worktree “feat\/nowhere”/)
+
+  // Merged tree created through Sillage: removed with its branch, and the requester,
+  // attached only by having created it, is left alone.
+  assert.equal((await call('create_worktree', { branch: 'feat/done' })).isError, undefined)
+  const done = join(config.paths.worktrees, 'project', 'feat__done')
+  const removed = await call('remove_worktree', { worktree: 'feat/done' })
+  assert.equal(removed.isError, undefined, removed.content[0]?.text)
+  assert.match(removed.content[0]!.text, /Worktree “feat\/done” removed/)
+  assert.match(removed.content[0]!.text, /Branch “feat\/done” deleted/)
+  assert.ok(!existsSync(done))
+  assert.ok(!git(repo, 'branch', '--list', 'feat/done'))
+  assert.ok(db.select().from(worktrees).where(eq(worktrees.name, 'feat/done')).get()?.removedAt)
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'agent')).get()?.archivedAt, null)
+  assert.deepEqual(dropped, [])
+  assert.match((await call('list_worktrees', {})).content[0]!.text, /No worktrees/)
+
+  // Uncommitted work is refused and described; `force` removes it but keeps the branch.
+  assert.equal((await call('create_worktree', { branch: 'feat/wip' })).isError, undefined)
+  const wip = join(config.paths.worktrees, 'project', 'feat__wip')
+  writeFileSync(join(wip, 'draft.ts'), 'wip\n')
+  const refused = await call('remove_worktree', { worktree: 'feat/wip' })
+  assert.equal(refused.isError, true)
+  assert.match(refused.content[0]!.text, /Refused: “feat\/wip” is uncommitted \(1 untracked file\(s\)\)/)
+  assert.match(refused.content[0]!.text, /force: true/)
+  assert.ok(existsSync(wip))
+  const forced = await call('remove_worktree', { worktree: wip, force: true })
+  assert.equal(forced.isError, undefined, forced.content[0]?.text)
+  assert.match(forced.content[0]!.text, /Branch “feat\/wip” kept/)
+  assert.ok(!existsSync(wip))
+  assert.equal(git(repo, 'branch', '--list', 'feat/wip'), 'feat/wip')
+
+  // Sessions that lived in the tree: a working one blocks, a finished one is archived.
+  assert.equal((await call('create_worktree', { branch: 'feat/lived' })).isError, undefined)
+  const livedId = db.select().from(worktrees).where(eq(worktrees.name, 'feat/lived')).get()!.id
+  db.insert(conversations).values([
+    { id: 'busy', projectId: 'project', userId: 'owner', title: 'Busy', agent: 'claude', config: '{}', status: 'running', worktreeId: livedId, createdAt: 1, updatedAt: 1 },
+    { id: 'idle', projectId: 'project', userId: 'owner', title: 'Idle', agent: 'claude', config: '{}', status: 'idle', worktreeId: livedId, createdAt: 1, updatedAt: 1 },
+  ]).run()
+  const blocked = await call('remove_worktree', { worktree: 'feat/lived' })
+  assert.equal(blocked.isError, true)
+  assert.match(blocked.content[0]!.text, /“Busy” is still working in this tree/)
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'busy')).run()
+  const archived = await call('remove_worktree', { worktree: 'feat/lived' })
+  assert.equal(archived.isError, undefined, archived.content[0]?.text)
+  assert.match(archived.content[0]!.text, /2 session\(s\) that lived there archived/)
+  assert.ok(db.select().from(conversations).where(eq(conversations.id, 'idle')).get()?.archivedAt)
+  assert.deepEqual(dropped.sort(), ['busy', 'idle'])
+
+  // The requester's own tree stays: its cwd would vanish underneath it.
+  assert.equal((await call('create_worktree', { branch: 'feat/home' })).isError, undefined)
+  const homeId = db.select().from(worktrees).where(eq(worktrees.name, 'feat/home')).get()!.id
+  db.update(conversations).set({ worktreeId: homeId }).where(eq(conversations.id, 'agent')).run()
+  const own = await call('remove_worktree', { worktree: 'feat/home' })
+  assert.equal(own.isError, true)
+  assert.match(own.content[0]!.text, /your session works in this tree/)
+  assert.ok(existsSync(join(config.paths.worktrees, 'project', 'feat__home')))
+})
+
+test('le prompt dynamique cite les trois outils quand d’autres sessions travaillent dans le projet', async (t) => {
   const { db } = harness(t)
   db.insert(conversations).values({
     id: 'other', projectId: 'project', userId: 'owner', title: 'Voisine', agent: 'codex', config: '{}', status: 'running',
     createdAt: 1, updatedAt: Date.now(),
   }).run()
   const overview = projectOverview(db, { projectId: 'project', conversationId: 'agent', sillageMcp: true }) ?? ''
-  assert.match(overview, /`list_worktrees` and `create_worktree` to work separately from others instead of using `git worktree add`/)
+  assert.match(overview, /`list_worktrees`, `create_worktree` and `remove_worktree` to work separately from others and clean up after a merge instead of using `git worktree add` or `remove`/)
 })

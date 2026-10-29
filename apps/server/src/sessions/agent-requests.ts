@@ -88,6 +88,7 @@ import type { BoardSync } from '../board/board-sync.js'
 import { DecisionRefusal, type DecisionService } from '../decisions/service.js'
 import { createWorktree } from '../http/routes/worktrees.js'
 import { defaultBase } from '../worktrees/assess.js'
+import type { WorktreeCleanup } from '../worktrees/cleanup.js'
 import type { WorktreeStatusService } from '../worktrees/status-service.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
@@ -180,6 +181,8 @@ export class AgentRequests {
     private readonly worktreeStatus?: WorktreeStatusService,
     private readonly attachments?: AttachmentStore,
     private readonly terminals?: TerminalManager,
+    /** Worktree cleanup; absent means `remove_worktree` is rejected. */
+    private readonly worktreeCleanup?: WorktreeCleanup,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -320,6 +323,8 @@ export class AgentRequests {
         this.settle(request.id, await this.createWorktreeFor(requester, project, payload), false)
       } else if (request.kind === 'list_worktrees') {
         this.settle(request.id, await this.listWorktrees(requester, project), false)
+      } else if (request.kind === 'remove_worktree') {
+        this.settle(request.id, await this.removeWorktreeFor(requester, project, payload), false)
       } else if (
         request.kind === 'message_session' ||
         request.kind === 'steer_session' ||
@@ -665,6 +670,76 @@ export class AgentRequests {
     })
 
     return [`Project worktrees, compared with ${list.base ?? 'HEAD'}:`, ...lines].join('\n')
+  }
+
+  // --- remove_worktree -----------------------------------------------------------
+
+  /** Removes trees as the Worktrees cleanup does, so the database entry, services and sessions follow and the sidebar never shows a tree git has forgotten. Without `force`, only trees whose work is in the base go: an unattended session must not lose uncommitted or unmerged work by default. Only sessions that lived in the tree are archived, never those that merely wrote there, the requester included: their cwd is elsewhere and they carry on. */
+  private async removeWorktreeFor(requester: Requester, project: ProjectRow, payload: Record<string, unknown>): Promise<string> {
+    if (!this.worktreeStatus || !this.worktreeCleanup) throw new Refusal('Worktree cleanup is unavailable here.')
+    const target = typeof payload.worktree === 'string' ? payload.worktree.trim() : ''
+    if (!target) throw new Refusal('The `worktree` parameter is required: a name from list_worktrees, or the tree path.')
+    const force = payload.force === true
+    const deleteBranch = typeof payload.delete_branch === 'boolean' ? payload.delete_branch : null
+    const archive = payload.archive_sessions !== false
+
+    const list = await this.worktreeStatus.current(project)
+    const tree = list.worktrees.find((entry) => entry.name === target || entry.branch === target || entry.path === target)
+    if (!tree) throw new Refusal(`No worktree “${target}” in this project. Use list_worktrees to see them.`)
+    if (requester.worktreeId !== null && requester.worktreeId === tree.id) {
+      throw new Refusal('Refused: your session works in this tree. Remove it from a session at the project root, or leave it to the user in Worktrees.')
+    }
+
+    if (tree.state !== 'merged' && tree.state !== 'missing' && !force) {
+      const loss = [
+        tree.modified > 0 ? `${tree.modified} modified file(s)` : null,
+        tree.untracked > 0 ? `${tree.untracked} untracked file(s)` : null,
+        tree.ahead > 0 ? `${tree.ahead} commit(s) not in ${list.base ?? 'the base'}` : null,
+      ].filter(Boolean)
+      throw new Refusal(
+        [
+          `Refused: “${tree.name}” is ${WORKTREE_STATE_WORDS[tree.state]}${loss.length ? ` (${loss.join(', ')})` : ''}.`,
+          // Leftover names let the agent decide what to commit, delete or ask about.
+          tree.state === 'leftovers' && tree.files.length ? `Left: ${tree.files.map((file) => `${file.path} (${file.kind})`).join(', ')}.` : null,
+          'Merge or commit first; pass `force: true` only if the user accepts losing what is not in the base.',
+        ].filter(Boolean).join(' '),
+      )
+    }
+
+    // Sessions whose cwd is the tree: the removal pulls the directory from under them.
+    const living = tree.conversations.filter((entry) => entry.link === 'worktree' && entry.id !== requester.id).map((entry) => entry.id)
+    const rows = living.length
+      ? this.ctx.db
+          .select({ id: conversations.id, title: conversations.title, status: conversations.status, archivedAt: conversations.archivedAt })
+          .from(conversations)
+          .where(inArray(conversations.id, living))
+          .all()
+      : []
+    const working = rows.filter((row) => row.archivedAt === null && (row.status === 'running' || row.status === 'awaiting_input'))
+    if (working.length > 0) {
+      throw new Refusal(
+        `Refused: ${working.map((row) => `“${row.title}”`).join(', ')} ${working.length > 1 ? 'are' : 'is'} still working in this tree. Wait with wait_for_session or interrupt first.`,
+      )
+    }
+
+    const result = await this.worktreeCleanup.run(project, {
+      path: tree.path,
+      // Merged work survives in the base; otherwise keep the branch so forced removals lose only uncommitted files.
+      deleteBranch: deleteBranch ?? (tree.state === 'merged' || tree.state === 'leftovers'),
+      archiveSessions: archive ? rows.filter((row) => row.archivedAt === null).map((row) => row.id) : [],
+      stopServices: true,
+    })
+    if (!result) throw new Refusal(`Worktree “${tree.name}” disappeared before Sillage could remove it. Call list_worktrees again.`)
+
+    return [
+      `Worktree “${tree.name}” removed (${tree.path}).`,
+      tree.state === 'missing' ? 'Its directory was already gone; Sillage dropped the entry.' : null,
+      tree.branch ? (result.branchDeleted ? `Branch “${tree.branch}” deleted.` : `Branch “${tree.branch}” kept.`) : null,
+      result.archived > 0 ? `${result.archived} session(s) that lived there archived.` : null,
+      result.stopped > 0 ? `${result.stopped} service(s) stopped.` : null,
+    ]
+      .filter((line) => line !== null)
+      .join(' ')
   }
 
   private launchCard(projectId: string, value: unknown): { id: string; number: number; title: string } | null {

@@ -192,6 +192,7 @@ export const fr: Catalog = {
   'sillageTool.start_session': "Démarrer une session",
   'sillageTool.create_worktree': "Préparer un worktree",
   'sillageTool.list_worktrees': "Lister les worktrees",
+  'sillageTool.remove_worktree': "Supprimer un worktree",
   'sillageTool.schedule_task': "Planifier une tâche",
   'sillageTool.list_models': "Lister les modèles disponibles",
   'sillageTool.set_project_image': "Définir l’image du projet",
