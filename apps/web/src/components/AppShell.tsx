@@ -6,7 +6,7 @@ import { useCliUpdateNotice } from '../lib/agents'
 import { conversationPath } from '@sillage/protocol'
 import { sessionReference } from '@sillage/protocol'
 import { useCopy } from '../lib/clipboard'
-import { Tooltip, TooltipButton } from './ui/Tooltip'
+import { Tooltip, TooltipButton, TooltipProvider } from './ui/Tooltip'
 import {
   DndContext,
   MouseSensor,
@@ -443,6 +443,7 @@ function Sidebar({
   // hides the favorite row.
   const toggleFavorite = useToggleFavorite()
   const logout = useLogout()
+  const [accountOpen, setAccountOpen] = useState(false)
   // Without a password, logout would leave an unusable login page.
   const passwordAuth = useCapability('passwordAuth')
   const appUpdateNotice = useUpdateNotice()
@@ -608,13 +609,17 @@ function Sidebar({
           </div>
         </SidebarActivity>
       </nav>
-      <div className="sidebar-utilities pb-safe">
-        <SidebarRow to="/services" onClick={onNavigate}><Server size={15} /><span>{t('services.title')}</span></SidebarRow>
-        <SidebarRow to="/settings" end={false} onClick={onNavigate}><span className="relative"><Settings size={15} />{updateNotice && <UpdateDot />}</span><span>{t('shell.settings.label')}</span>{updateNotice && <span className="sr-only">{t('about.badge.updateAvailable')}</span>}</SidebarRow>
-        {passwordAuth && <Menu trigger={<button type="button" className="sidebar-account" aria-label={t('shell.account.menu')}>{user?.username.slice(0, 1).toLocaleUpperCase()}</button>}>
-          <MenuLabel>{user?.username}</MenuLabel><MenuItem icon={<LogOut size={14} />} onSelect={() => logout.mutate()}>{t('shell.logout')}</MenuItem>
-        </Menu>}
-      </div>
+      <TooltipProvider delayDuration={120}>
+        <div className="sidebar-utilities pb-safe">
+          <SidebarUtility to="/services" label={t('services.title')} onClick={onNavigate}><Server size={17} /></SidebarUtility>
+          <SidebarUtility to="/settings" label={t('shell.settings.label')} notice={updateNotice ? t('about.badge.updateAvailable') : undefined} onClick={onNavigate}>
+            <span className="relative"><Settings size={17} />{updateNotice && <UpdateDot />}</span>
+          </SidebarUtility>
+          {passwordAuth && <Menu onOpenChange={setAccountOpen} trigger={<TooltipButton tooltipDisabled={accountOpen} type="button" className="sidebar-account" title={user?.username} aria-label={t('shell.account.menu')}><span className="sidebar-account-avatar">{user?.username.slice(0, 1).toLocaleUpperCase()}</span></TooltipButton>}>
+            <MenuLabel>{user?.username}</MenuLabel><MenuItem icon={<LogOut size={14} />} onSelect={() => logout.mutate()}>{t('shell.logout')}</MenuItem>
+          </Menu>}
+        </div>
+      </TooltipProvider>
     </div>
   )
 }
@@ -1178,32 +1183,24 @@ function ProjectMenuItems({
   )
 }
 
-function SidebarRow({
+function SidebarUtility({
   to,
-  end = true,
+  label,
+  notice,
   onClick,
   children,
 }: {
   to: string
-  end?: boolean
+  label: string
+  notice?: string
   onClick: () => void
   children: ReactNode
 }) {
   return (
-    <NavLink
-      to={to}
-      end={end}
-      onClick={onClick}
-      className={({ isActive }) =>
-        cx(
-          'flex h-10 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
-          isActive
-            ? 'bg-accent-wash font-medium text-ink'
-            : 'text-ink-soft hover:bg-surface-high hover:text-ink',
-        )
-      }
-    >
-      {children}
-    </NavLink>
+    <Tooltip label={<><span className="block font-medium">{label}</span>{notice && <span className="mt-1 block text-ink-faint">{notice}</span>}</>} className="rounded-lg border-line-strong px-3 py-2">
+      <NavLink to={to} end={false} onClick={onClick} className="sidebar-utility" aria-label={notice ? `${label} — ${notice}` : label}>
+        {children}
+      </NavLink>
+    </Tooltip>
   )
 }

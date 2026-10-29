@@ -174,7 +174,19 @@ try {
     // Panel is a list: one row per setting, opening its options and returning
     // after selection.
     const row = (setting) => dialog.getByRole('button', { name: new RegExp(`^${setting} :`) })
+    const slider = () => dialog.getByRole('slider', { name: 'Effort de réflexion', exact: true })
+    const chooseEffort = async (label) => {
+      const index = efforts.findIndex((item) => item.label === label)
+      await slider().fill(String(index))
+      assert.equal(await slider().getAttribute('aria-valuetext'), label)
+    }
     const pick = async (setting, option) => {
+      if (setting === 'Effort de réflexion') {
+        if (!narrow) await row(setting).click()
+        await chooseEffort(option)
+        if (!narrow) await back()
+        return
+      }
       // Phone: model/effort expanded at sheet top.
       if (narrow && (setting === 'Modèle' || setting === 'Effort de réflexion')) {
         await dialog.getByRole('radio', { name: option, exact: typeof option === 'string' }).click()
@@ -214,25 +226,23 @@ try {
       // Sheet is modal: rest of page hidden while open, so fallback effort is read
       // in the sheet.
       assert.equal(await dialog.getByRole('radio', { name: /^Modèle Beta/ }).getAttribute('aria-checked'), 'true')
-      assert.equal(await dialog.getByRole('radio', { name: 'Moyen', exact: true }).getAttribute('aria-checked'), 'true', 'Effort falls back immediately')
-      await dialog.getByRole('radio', { name: 'Faible', exact: true }).click()
+      assert.equal(await slider().getAttribute('aria-valuetext'), 'Moyen', 'Effort falls back immediately')
+      await chooseEffort('Faible')
       await close()
       assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
     } else {
       // Selecting model keeps menu open; effort immediately falls back to a supported
-      // level. Selecting effort closes and restores input.
+      // level. The slider stays open until explicitly closed.
       await chip().click()
       await page.getByRole('radio', { name: /^Modèle Beta/ }).click()
       // Touch menu is a modal sheet hiding chip: read fallback effort inside sheet.
-      if (touch) assert.equal(await dialog.getByRole('radio', { name: 'Moyen', exact: true }).getAttribute('aria-checked'), 'true')
+      if (touch) assert.equal(await slider().getAttribute('aria-valuetext'), 'Moyen')
       else await page.getByRole('button', { name: 'Modèle et effort : Modèle Beta · Moyen', exact: true }).waitFor()
       assert.equal(await dialog.isVisible(), true, 'Picking a model keeps the menu open')
-      await page.getByRole('radio', { name: 'Faible', exact: true }).click()
+      await chooseEffort('Faible')
+      await page.getByRole('button', { name: 'Fermer', exact: true }).click()
       await dialog.waitFor({ state: 'hidden' })
-      if (!touch) {
-        await page.waitForFunction(() => document.activeElement.tagName === 'TEXTAREA')
-        assert.deepEqual(await field.evaluate((node) => [node.selectionStart, node.selectionEnd]), [3, 9])
-      } else assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
+      assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
     }
     await page.getByRole('button', { name: 'Modèle et effort : Modèle Beta · Faible', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
@@ -282,12 +292,13 @@ try {
     failNext = true
     if (narrow) {
       await openAll()
-      await dialog.getByRole('radio', { name: /^Moyen/ }).click()
+      await chooseEffort('Moyen')
       await dialog.getByRole('alert').waitFor()
       await close()
     } else {
       await chip().click()
-      await page.getByRole('radio', { name: /^Moyen/ }).click()
+      await chooseEffort('Moyen')
+      await page.getByRole('button', { name: 'Fermer', exact: true }).click()
     }
     await page.getByRole('alert').filter({ hasText: 'Les réglages' }).waitFor()
     assert.equal(await field.inputValue(), 'Encore un brouillon')
@@ -349,7 +360,23 @@ try {
     })
     await (narrow ? openAll() : chip().click())
     await dialog.waitFor()
-    const effortGroup = dialog.getByRole('radiogroup', { name: 'Effort de réflexion', exact: true })
+    const effortGroup = slider()
+    const track = await slider().boundingBox()
+    if (touch) await page.touchscreen.tap(track.x + 12, track.y + track.height / 2)
+    else await page.mouse.click(track.x + 12, track.y + track.height / 2)
+    assert.equal(await slider().getAttribute('aria-valuetext'), 'Faible')
+    await slider().focus()
+    await slider().press('Home')
+    assert.equal(await slider().getAttribute('aria-valuetext'), 'Faible')
+    await slider().press('End')
+    assert.equal(await slider().getAttribute('aria-valuetext'), 'Très élevé')
+    await slider().press('ArrowLeft')
+    assert.equal(await slider().getAttribute('aria-valuetext'), 'Élevé')
+    await slider().evaluate((node) => node.blur())
+    await page.screenshot({ path: `/var/tmp/effort-slider-${viewport.width}.png` })
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+    await page.screenshot({ path: `/var/tmp/effort-slider-dark-${viewport.width}.png` })
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
     const [effortBox, dialogBox] = [await effortGroup.boundingBox(), await dialog.boundingBox()]
     assert.ok(effortBox.y >= dialogBox.y && effortBox.y + effortBox.height <= dialogBox.y + dialogBox.height + 1, `${viewport.width}: effort visible without scrolling`)
     if (!narrow) {
