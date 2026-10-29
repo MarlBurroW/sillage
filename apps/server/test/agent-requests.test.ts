@@ -12,6 +12,8 @@ import {
   cardNotes,
   cardRefs,
   cardRelations,
+  cardTagLinks,
+  cardTags,
   cards,
   conversations,
   openDatabase,
@@ -441,4 +443,64 @@ test('MCP : les erreurs de ciblage indiquent la carte et le paramètre de la ses
   const local = await mcp('editor', 'update_issue', { number: 1, state: 'closed' })
   assert.equal(local.isError, true)
   assert.match(local.content[0]!.text, /Card #1 does not track a GitHub issue/)
+})
+
+test('attach_card links the session to a card, advances todo work and broadcasts the change', async (t) => {
+  const { db, conversation, mcp, statusBus } = await harness(t)
+  conversation('worker')
+  await mcp('worker', 'create_card', { title: 'Première' })
+  await mcp('worker', 'create_card', { title: 'Seconde' })
+  let lists = 0
+  statusBus.on('lists', () => { lists += 1 })
+
+  const attached = await mcp('worker', 'attach_card', { number: 1 })
+  assert.equal(attached.isError, undefined, attached.content[0]?.text)
+  assert.match(attached.content[0]!.text, /#1 “Première”, moved to in progress/)
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'worker')).get()?.cardId, db.select().from(cards).where(eq(cards.number, 1)).get()?.id)
+  assert.equal(db.select().from(cards).where(eq(cards.number, 1)).get()?.column, 'in_progress')
+  assert.match((await mcp('worker', 'list_cards', {})).content[0]!.text, /#1 .*this conversation's card/)
+
+  db.update(cards).set({ column: 'review' }).where(eq(cards.number, 2)).run()
+  const replaced = await mcp('worker', 'attach_card', { number: 2 })
+  assert.match(replaced.content[0]!.text, /replacing #1/)
+  assert.equal(db.select().from(cards).where(eq(cards.number, 2)).get()?.column, 'review')
+
+  const detached = await mcp('worker', 'detach_card', {})
+  assert.match(detached.content[0]!.text, /detached from card #2/)
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'worker')).get()?.cardId, null)
+  assert.equal(lists, 3)
+
+  assert.equal((await mcp('worker', 'attach_card', { number: 99 })).isError, true)
+  assert.equal((await mcp('worker', 'attach_card', {})).isError, true)
+  assert.equal((await mcp('', 'attach_card', { project: 'project', number: 1 })).isError, true)
+})
+
+test('agents tag cards from the shared catalog and create tags only while the project allows it', async (t) => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('author')
+  const created = await mcp('author', 'create_card', { title: 'Crash', tags: ['Bug', 'ui'] })
+  assert.equal(created.isError, undefined, created.content[0]?.text)
+  assert.match(created.content[0]!.text, /New tag\(s\) created: Bug, ui/)
+  assert.equal(db.select().from(cardTags).all().length, 2)
+  assert.equal(db.select().from(cardTags).all().find((tag) => tag.name === 'Bug')?.createdByConversationId, 'author')
+
+  // Case-insensitive reuse rather than a near-duplicate.
+  await mcp('author', 'create_card', { title: 'Autre', tags: ['bug'] })
+  assert.equal(db.select().from(cardTags).all().length, 2)
+  const listed = (await mcp('author', 'list_cards', { tag: 'BUG' })).content[0]!.text
+  assert.match(listed, /2 card\(s\) tagged “BUG”/)
+  assert.match(listed, /#1 \[[^\]]+\] Crash \{Bug, ui\}/)
+  assert.match(listed, /- Bug \(2 card\(s\)\)/)
+  assert.match((await mcp('author', 'read_card', { number: 1 })).content[0]!.text, /Tags: Bug, ui/)
+
+  db.update(projects).set({ agentCardTags: false }).run()
+  const refused = await mcp('author', 'update_card', { number: 1, tags: ['Bug', 'perf'] })
+  assert.equal(refused.isError, true)
+  assert.match(refused.content[0]!.text, /Unknown tag\(s\): perf.*Bug, ui/)
+  assert.equal(db.select().from(cardTagLinks).all().length, 3)
+
+  const cleared = await mcp('author', 'update_card', { number: 1, tags: [] })
+  assert.match(cleared.content[0]!.text, /Tags cleared/)
+  assert.equal(db.select().from(cardTagLinks).all().length, 1)
+  assert.equal((await mcp('author', 'update_card', { number: 1, tags: Array.from({ length: 9 }, (_, i) => `t${i}`) })).isError, true)
 })

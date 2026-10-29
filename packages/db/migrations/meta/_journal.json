@@ -407,6 +407,13 @@
       "when": 1793285728351,
       "tag": "0057_unique_greymalkin",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1793294774579,
+      "tag": "0058_hesitant_rattler",
+      "breakpoints": true
     }
   ]
 }

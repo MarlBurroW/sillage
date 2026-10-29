@@ -20,18 +20,20 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowDownUp, Check, ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
+import { ArrowDownUp, Check, ChevronDown, ChevronRight, PanelRight, Plus, Search, Settings2, Tag, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type BoardLinkDto, type BoardOrder, type CardColumn, type CardDto } from '@sillage/protocol'
 import { BoardLinkDialog } from '../components/board/BoardLinkDialog'
+import { CardTagsDialog } from '../components/board/CardTagsDialog'
+import { useCardTags } from '../lib/card-tags'
 import { GitHubMark } from '../components/board/GitHubMark'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { Button, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
+import { Button, EmptyState, IconButton, Menu, MenuCheckboxItem, MenuItem, MenuSeparator, cx } from '../components/ui'
 import { CardRefContext } from '../lib/card-refs'
 import { useBoardOrder } from '../lib/user-settings'
 import { useBoardLink } from '../lib/board-link'
@@ -105,6 +107,9 @@ function targetColumn(layout: Layout, overId: string): CardColumn | undefined {
 type CardSource = 'all' | 'local' | 'github'
 const isGitHubCard = (card: CardDto) => card.external !== null && !card.external.detached
 
+/** Selected tags narrow the board to cards carrying any of them. */
+const matchesTags = (card: CardDto, tags: Set<string>) => tags.size === 0 || card.tags.some((tag) => tags.has(tag.id))
+
 function matchesCard(card: CardDto, query: string): boolean {
   // `#18` finds card 18 and, on connected boards, issue 18: both numbers are cited.
   if (query.startsWith('#')) {
@@ -136,13 +141,22 @@ export function BoardPage() {
   const [creating, setCreating] = useState(false)
   const [linking, setLinking] = useState(false)
   const [source, setSource] = useState<CardSource>('all')
+  const [tagFilter, setTagFilter] = useState<Set<string>>(() => new Set())
+  const [managingTags, setManagingTags] = useState(false)
+  const { data: tagCatalog } = useCardTags(projectId)
+  // The filter belongs to one board, and a tag deleted or merged meanwhile no longer filters.
+  useEffect(() => setTagFilter(new Set()), [projectId])
+  const activeTags = useMemo(
+    () => new Set([...tagFilter].filter((id) => !tagCatalog || tagCatalog.tags.some((tag) => tag.id === id))),
+    [tagFilter, tagCatalog],
+  )
   const search = query.trim().toLocaleLowerCase()
   // Origin filtering only makes sense on connected boards; after unlinking, it must
   // not hide cards without any visible explanation.
   const from: CardSource = link ? source : 'all'
   const matches = (card: CardDto) =>
-    matchesCard(card, search) && (from === 'all' || (from === 'github') === isGitHubCard(card))
-  const filtering = Boolean(search) || from !== 'all'
+    matchesCard(card, search) && (from === 'all' || (from === 'github') === isGitHubCard(card)) && matchesTags(card, activeTags)
+  const filtering = Boolean(search) || from !== 'all' || activeTags.size > 0
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
   /**
    * Visible initially: the board shows project progress, and hiding completed work conceals
@@ -386,6 +400,31 @@ export function BoardPage() {
           <Menu
             align="start"
             trigger={
+              <Button variant={activeTags.size > 0 ? 'secondary' : 'ghost'} size="sm" icon={<Tag size={14} />} aria-label={t('board.tags.filter')}>
+                <span className="hidden sm:inline">{activeTags.size > 0 ? t('board.tags.filtered', { count: activeTags.size }) : t('board.tags.title')}</span>
+              </Button>
+            }
+          >
+            {(tagCatalog?.tags ?? []).map((tag) => (
+              <MenuCheckboxItem key={tag.id} checked={activeTags.has(tag.id)} onCheckedChange={(checked) => setTagFilter((current) => {
+                const next = new Set(current)
+                if (checked) next.add(tag.id)
+                else next.delete(tag.id)
+                return next
+              })}>
+                <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
+                <span className="min-w-0 flex-1 truncate">{tag.name}</span>
+                <span className="text-xs text-ink-faint">{tag.cardCount}</span>
+              </MenuCheckboxItem>
+            ))}
+            {(tagCatalog?.tags.length ?? 0) === 0 ? <p className="px-2.5 py-2 text-sm text-ink-faint">{t('board.tags.none')}</p> : null}
+            <MenuSeparator />
+            {activeTags.size > 0 ? <MenuItem icon={<X size={14} />} onSelect={() => setTagFilter(new Set())}>{t('board.tags.clearFilter')}</MenuItem> : null}
+            <MenuItem icon={<Settings2 size={14} />} onSelect={() => setManagingTags(true)}>{t('board.tags.manage')}</MenuItem>
+          </Menu>
+          <Menu
+            align="start"
+            trigger={
               <Button variant="ghost" size="sm" icon={<ArrowDownUp size={14} />} aria-label={t('board.order.label')}>
                 <span className="hidden sm:inline">{t(`board.order.${order}`)}</span>
               </Button>
@@ -475,6 +514,7 @@ export function BoardPage() {
         </DndContext>
       </div>
 
+      <CardTagsDialog projectId={projectId} canConfigure={project.isOwner} open={managingTags} onClose={() => setManagingTags(false)} />
       {linkState ? (
         <BoardLinkDialog projectId={projectId} project={project} state={linkState} canEdit={project.isOwner} open={linking} onClose={() => setLinking(false)} />
       ) : null}

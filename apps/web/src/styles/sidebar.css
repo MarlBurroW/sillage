@@ -38,6 +38,7 @@
 .sidebar-session-link { display: flex; align-items: center; gap: 8px; align-self: stretch; min-width: 0; flex: 1; padding: 6px 0; font-size: 12px; }
 .sidebar-session-link > svg { flex-shrink: 0; }
 .sidebar-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-session-card { flex-shrink: 0; padding: 0 4px; border: 1px solid var(--sg-line-strong); border-radius: 3px; font-size: 10px; line-height: 15px; font-variant-numeric: tabular-nums; color: var(--sg-ink-faint); }
 .sidebar-session-signals { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .sidebar-session-signals:empty { display: none; }
 .sidebar-session-actions { position: relative; display: grid; place-items: center; flex-shrink: 0; width: 30px; height: 32px; }

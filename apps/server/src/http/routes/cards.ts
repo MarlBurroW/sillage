@@ -21,7 +21,11 @@ import {
 } from '@sillage/db'
 import {
   MAX_ATTACHMENT_BYTES,
+  cardTagSettingsBodySchema,
   createCardBodySchema,
+  createCardTagBodySchema,
+  mergeCardTagBodySchema,
+  updateCardTagBodySchema,
   createCardRelationBodySchema,
   createCardNoteBodySchema,
   parseCardReferences,
@@ -38,6 +42,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { linkCards, listCardRelations, unlinkCards } from '../../board/card-relations.js'
+import { createTag, deleteTag, loadTag, mergeTags, readTagCatalog, setCardTags, tagsOfCards, updateTag } from '../../board/card-tags.js'
 
 const MENTION_LIMIT = 20
 
@@ -199,6 +204,8 @@ export function registerCardRoutes(
         ]),
     )
 
+    const tags = tagsOfCards(ctx.db, ids)
+
     const authors = new Map(
       ctx.db
         .select({ id: users.id, displayName: users.displayName })
@@ -234,6 +241,7 @@ export function registerCardRoutes(
       references: outgoing.get(row.id) ?? [],
       referencedBy: incoming.get(row.id) ?? [],
       external: issues.get(row.id) ?? null,
+      tags: tags.get(row.id) ?? [],
     }))
   }
 
@@ -297,7 +305,7 @@ export function registerCardRoutes(
   app.post('/api/projects/:id/cards', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const { github, ...body } = createCardBodySchema.parse(request.body)
+    const { github, tagIds, ...body } = createCardBodySchema.parse(request.body)
     loadProject(id, user.id)
 
     // Board settings decide unless explicitly overridden; disconnected boards are local.
@@ -306,6 +314,7 @@ export function registerCardRoutes(
       board && link && (github ?? link.newCards === 'github')
         ? await board.createIssueCard(id, user.id, body)
         : createCard(ctx.db, id, user.id, body)
+    if (tagIds.length > 0) setCardTags(ctx.db, row.id, id, tagIds)
     return reply.status(201).send(readCard(row.id, id))
   })
 
@@ -334,9 +343,11 @@ export function registerCardRoutes(
   app.patch('/api/cards/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const body = updateCardBodySchema.parse(request.body)
+    const { tagIds, ...body } = updateCardBodySchema.parse(request.body)
     const { card } = loadCard(id, user.id)
 
+    // Tags first: an unknown id rejects the whole request before anything else changes.
+    if (tagIds !== undefined) setCardTags(ctx.db, card.id, card.projectId, tagIds)
     updateCard(ctx.db, card, body)
     // A tracked card changed: synchronization compares and sends updates to GitHub.
     board?.kick(card.projectId)
@@ -482,6 +493,61 @@ export function registerCardRoutes(
 
     ctx.db.delete(cardNotes).where(eq(cardNotes.id, id)).run()
     return reply.status(204).send()
+  })
+
+  /**
+   * Tag catalog. Any reader of the board can manage it, like cards: tags organize shared work
+   * and agents of every collaborator create them too.
+   */
+  app.get('/api/projects/:id/card-tags', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    loadProject(id, user.id)
+    return readTagCatalog(ctx.db, id)
+  })
+
+  app.post('/api/projects/:id/card-tags', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = createCardTagBodySchema.parse(request.body)
+    loadProject(id, user.id)
+    createTag(ctx.db, id, body, { userId: user.id, conversationId: null })
+    return reply.status(201).send(readTagCatalog(ctx.db, id))
+  })
+
+  /** Whether agents may create tags; only the owner decides, as for other project settings. */
+  app.put('/api/projects/:id/card-tags/settings', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = cardTagSettingsBodySchema.parse(request.body)
+    const project = loadProject(id, user.id)
+    if (project.ownerId !== user.id) throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    ctx.db.update(projects).set({ agentCardTags: body.agentsCanCreate }).where(eq(projects.id, id)).run()
+    return readTagCatalog(ctx.db, id)
+  })
+
+  app.patch('/api/card-tags/:id', async (request) => {
+    const user = requireUser(request)
+    const tag = loadTag(ctx.db, (request.params as { id: string }).id)
+    loadProject(tag.projectId, user.id)
+    updateTag(ctx.db, tag, updateCardTagBodySchema.parse(request.body))
+    return readTagCatalog(ctx.db, tag.projectId)
+  })
+
+  app.post('/api/card-tags/:id/merge', async (request) => {
+    const user = requireUser(request)
+    const tag = loadTag(ctx.db, (request.params as { id: string }).id)
+    loadProject(tag.projectId, user.id)
+    mergeTags(ctx.db, tag, mergeCardTagBodySchema.parse(request.body).into)
+    return readTagCatalog(ctx.db, tag.projectId)
+  })
+
+  app.delete('/api/card-tags/:id', async (request) => {
+    const user = requireUser(request)
+    const tag = loadTag(ctx.db, (request.params as { id: string }).id)
+    loadProject(tag.projectId, user.id)
+    deleteTag(ctx.db, tag)
+    return readTagCatalog(ctx.db, tag.projectId)
   })
 
   app.post('/api/projects/:id/cards/order', async (request) => {

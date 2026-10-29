@@ -97,6 +97,11 @@ export const projects = sqliteTable(
      * creation from the account default; `sillage` for older projects.
      */
     memoryMode: text('memory_mode').$type<MemoryMode>().notNull().default('sillage'),
+    /**
+     * Whether agents may create board tags by naming a new one. On by default so the board
+     * classifies itself; turned off once the catalog suits the user, agents then only reuse it.
+     */
+    agentCardTags: integer('agent_card_tags', { mode: 'boolean' }).notNull().default(true),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },
@@ -263,6 +268,47 @@ export const cards = sqliteTable(
     uniqueIndex('idx_cards_project_number').on(t.projectId, t.number),
     index('idx_cards_project_column').on(t.projectId, t.column, t.position),
   ],
+)
+
+/**
+ * Board tags, defined per project and shared by its cards.
+ *
+ * `nameKey` is the trimmed lowercase name: uniqueness ignores case so `Bug` and `bug` cannot
+ * coexist, a sprawl agents would otherwise create. The description says when the tag applies;
+ * agents read it to classify consistently rather than guessing from the name.
+ */
+export const cardTags = sqliteTable(
+  'card_tags',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    nameKey: text('name_key').notNull(),
+    /** `#rrggbb`, from the shared palette. */
+    color: text('color').notNull(),
+    description: text('description').notNull().default(''),
+    /** Person who created it, or the account an agent acted for. */
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    /** Creating session for agent-made tags, so the user can see where a tag came from. */
+    createdByConversationId: text('created_by_conversation_id'),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_card_tags_project_key').on(t.projectId, t.nameKey)],
+)
+
+export const cardTagLinks = sqliteTable(
+  'card_tag_links',
+  {
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    tagId: text('tag_id')
+      .notNull()
+      .references(() => cardTags.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.cardId, t.tagId] }), index('idx_card_tag_links_tag').on(t.tagId)],
 )
 
 /**
@@ -562,6 +608,8 @@ export const agentRequests = sqliteTable(
         'update_card',
         'link_cards',
         'unlink_cards',
+        'attach_card',
+        'detach_card',
         'list_models',
         'schedule_task',
         'register_action',
@@ -1658,6 +1706,7 @@ export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
+export type CardTagRow = typeof cardTags.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
 export type BoardLinkRow = typeof boardLinks.$inferSelect
 export type DecisionRow = typeof decisions.$inferSelect

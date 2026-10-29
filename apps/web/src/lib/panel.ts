@@ -125,7 +125,7 @@ export function setPanelOpen(next: boolean): void {
   for (const listener of listeners) listener()
 }
 
-export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'actions' | 'agents' | 'mcp'
+export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'actions' | 'agents' | 'mcp' | 'card'
 
 /**
  * Displayed tab and selected subagent. Stored here because the thread controls them: opening a diff

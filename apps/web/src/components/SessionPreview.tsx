@@ -2,6 +2,7 @@ import { Info, Star, X } from 'lucide-react'
 import { useRef, useState, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
 import type { ConversationDto, ConversationMetrics, WorktreeStatusDto } from '@sillage/protocol'
 import { formatBytes } from '../lib/attachments'
+import { columnLabel } from './board/columns'
 import { relativeDate } from '../lib/dates'
 import { locale, translate, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
@@ -79,7 +80,7 @@ export function SessionDetails({ conversation, metrics, signals }: {
   return <div className="session-preview-content">
     <div className="session-preview-cli"><AgentIcon agent={conversation.agent} size={16} /><span>{AGENT_LABELS[conversation.agent]}</span><span className="ml-auto truncate">{project?.name}</span></div>
     <h3>{conversation.title}</h3>
-    {conversation.card && <p className="session-preview-card">{conversation.card.title}</p>}
+    {conversation.card && <p className="session-preview-card"><span className="font-medium">#{conversation.card.number}</span> {conversation.card.title} · {columnLabel(conversation.card.column)}</p>}
     <dl className="session-preview-facts">
       <div><dt>{t('shell.overview.heading')}</dt><dd>{signals.length ? <SignalRow signals={signals} /> : t('composer.status.cold.label')}</dd></div>
       <div><dt>{t('shell.preview.updated')}</dt><dd><time dateTime={new Date(conversation.updatedAt).toISOString()}>{relativeDate(conversation.updatedAt)}</time><span className="block text-ink-faint">{timestamp}</span></dd></div>

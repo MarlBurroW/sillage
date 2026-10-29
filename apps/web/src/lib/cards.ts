@@ -51,9 +51,12 @@ export function useUpdateCard(projectId: string) {
       title?: string
       description?: string
       column?: CardColumn
+      tagIds?: string[]
     }) => api.patch<CardDto>(`/api/cards/${id}`, patch),
     onSuccess: (_card, patch) => {
       if (patch.column) invalidateCardCounts(queryClient)
+      // The catalog shows how many cards carry each tag.
+      if (patch.tagIds) void queryClient.invalidateQueries({ queryKey: ['card-tags', projectId] })
       return queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
     },
   })

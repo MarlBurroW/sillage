@@ -325,6 +325,11 @@ export async function registerWebSocketHub(
     },
   )
 
+  // List-shaped changes made outside HTTP routes, such as an agent attaching its session to a card.
+  sessions.statusBus.on('lists', () => {
+    for (const connection of connections) connection.notifyListsChanged()
+  })
+
   app.get('/api/ws', { websocket: true }, (socket, request) => {
     // The authentication hook already resolved the session from cookies.
     const user = request.user

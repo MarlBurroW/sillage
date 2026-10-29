@@ -18,6 +18,7 @@ import { CardAttachments } from './CardAttachments'
 import { CardEditor } from './CardEditor'
 import { CardNotes } from './CardNotes'
 import { CardRelations } from './CardRelations'
+import { CardTagsField } from './CardTags'
 import { COLUMN_TONES, columnLabel } from './columns'
 import { GitHubMark } from './GitHubMark'
 
@@ -58,6 +59,63 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
     apply: setCardPanelWidth,
   })
 
+  const modal = !useMediaQuery('(min-width: 48rem)')
+
+  return (
+    <PanelFocus open={open} modal={modal} onClose={onClose} fallbackFocus={`[data-card-open="${card.id}"], [data-navigation-trigger]`}>
+    <aside
+      ref={aside}
+      inert={!open}
+      aria-hidden={!open}
+      role={modal ? 'dialog' : 'complementary'}
+      aria-modal={modal && open ? true : undefined}
+      aria-label={t('board.card.panelLabel', { number: card.number })}
+      className={cx(
+        // No overflow here or it would clip the protruding left handle; inner scrolling bounds content.
+        'surface z-20 flex flex-col border-l border-line shadow-pop',
+        // Absolute rather than fixed references the shell layer and follows visual viewport on
+        // keyboard opening. Clamp in CSS too so shrinking windows cannot leave an oversized drawer.
+        'absolute inset-0 md:left-auto md:w-[min(var(--card-panel-width,40rem),calc(100vw-10rem))]',
+        // Transition translate rather than transform: Tailwind v4 uses the distinct translate property.
+        'transition-[translate] duration-200 ease-out',
+        entered && open ? 'translate-x-0' : 'translate-x-full',
+      )}
+    >
+      <CardDetails card={card} projectId={projectId} link={link} onClose={onClose} onSelectCard={onSelectCard} />
+
+      {/* Left-edge resize handle only on desktop; fullscreen touch drawers have nothing to adjust. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('board.panel.resize')}
+        tabIndex={0}
+        onPointerDown={handle.onPointerDown}
+        onKeyDown={handle.onKeyDown}
+        className={cx(
+          'absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize md:block',
+          'after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2',
+          'after:transition-colors hover:after:bg-accent focus-visible:after:bg-accent',
+          'outline-none',
+        )}
+      />
+    </aside>
+    </PanelFocus>
+  )
+}
+
+/**
+ * A card's full detail: column, title, tags, description, notes and sessions. Shared by the
+ * board drawer and the conversation side panel, which supply their own frame; without `onClose`
+ * the frame owns closing.
+ */
+export function CardDetails({ card, projectId, link, onClose, onSelectCard }: {
+  card: CardDto
+  projectId: string
+  link: BoardLinkDto | null
+  onClose?: () => void
+  onSelectCard: (number: number) => void
+}) {
+  const t = useTranslate()
   const navigate = useNavigate()
   const updateCard = useUpdateCard(projectId)
   const deleteCard = useDeleteCard(projectId)
@@ -77,7 +135,6 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
   const description = draft?.description ?? card.description
   const [editing, setEditing] = useState(false)
   const [tab, setTab] = useState<'details' | 'activity' | 'sessions'>('details')
-  const modal = !useMediaQuery('(min-width: 48rem)')
   const editVisible = editing || draft !== null
 
   const dirty = title !== card.title || description !== card.description
@@ -97,30 +154,14 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
   }
 
   return (
-    <PanelFocus open={open} modal={modal} onClose={onClose} fallbackFocus={`[data-card-open="${card.id}"], [data-navigation-trigger]`}>
-    <aside
-      ref={aside}
+    <div
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
       onKeyDown={(event) => {
         if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && editVisible) {
           event.preventDefault()
           save()
         }
       }}
-      inert={!open}
-      aria-hidden={!open}
-      role={modal ? 'dialog' : 'complementary'}
-      aria-modal={modal && open ? true : undefined}
-      aria-label={t('board.card.panelLabel', { number: card.number })}
-      className={cx(
-        // No overflow here or it would clip the protruding left handle; inner scrolling bounds content.
-        'surface z-20 flex flex-col border-l border-line shadow-pop',
-        // Absolute rather than fixed references the shell layer and follows visual viewport on
-        // keyboard opening. Clamp in CSS too so shrinking windows cannot leave an oversized drawer.
-        'absolute inset-0 md:left-auto md:w-[min(var(--card-panel-width,40rem),calc(100vw-10rem))]',
-        // Transition translate rather than transform: Tailwind v4 uses the distinct translate property.
-        'transition-[translate] duration-200 ease-out',
-        entered && open ? 'translate-x-0' : 'translate-x-full',
-      )}
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3">
         <span className="text-xs font-medium text-ink-faint">#{card.number}</span>
@@ -169,9 +210,11 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
             ) : null}
           </Menu>
         ) : null}
-        <IconButton data-panel-initial-focus label={t('board.panel.close')} size="sm" onClick={onClose}>
-          <X size={15} />
-        </IconButton>
+        {onClose ? (
+          <IconButton data-panel-initial-focus label={t('board.panel.close')} size="sm" onClick={onClose}>
+            <X size={15} />
+          </IconButton>
+        ) : null}
       </header>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-sunken/50 px-5 py-3">
@@ -212,6 +255,7 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
               <h2 className="min-w-0 flex-1 break-words text-2xl font-semibold leading-snug tracking-tight text-ink">{card.title}</h2>
               <Button variant="secondary" size="sm" icon={<Pencil size={14} />} onClick={() => setEditing(true)}>{t('board.card.edit')}</Button>
             </div>
+            <CardTagsField card={card} projectId={projectId} />
             <div className="rounded-xl border border-line p-4">
               <h3 className="mb-3 text-sm font-semibold text-ink-soft">{t('board.card.description')}</h3>
               {card.description ? <div className="min-w-0 break-words text-sm leading-relaxed text-ink-soft"><Markdown text={card.description} /></div> :
@@ -279,7 +323,7 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
               ? translate('board.github.remove.confirm', { number: card.number, issue: issue.number })
               : translate('board.card.remove.confirm', { number: card.number })
             if (!confirm(question)) return
-            deleteCard.mutate(card.id, { onSuccess: onClose })
+            deleteCard.mutate(card.id, { onSuccess: () => onClose?.() })
           }}><Trash2 size={15} /></IconButton>
         </>}
         {deleteCard.isError ? <p role="alert" className="w-full text-sm text-critical">{t('board.files.error')}</p> : null}
@@ -295,24 +339,7 @@ export function CardPanel({ card, projectId, link, open, onClose, onSelectCard }
       >
         <p>{t('board.github.publish.body', { repo: link?.repo ?? '' })}</p>
       </ConfirmDialog>
-
-      {/* Left-edge resize handle only on desktop; fullscreen touch drawers have nothing to adjust. */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('board.panel.resize')}
-        tabIndex={0}
-        onPointerDown={handle.onPointerDown}
-        onKeyDown={handle.onKeyDown}
-        className={cx(
-          'absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize md:block',
-          'after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2',
-          'after:transition-colors hover:after:bg-accent focus-visible:after:bg-accent',
-          'outline-none',
-        )}
-      />
-    </aside>
-    </PanelFocus>
+    </div>
   )
 }
 

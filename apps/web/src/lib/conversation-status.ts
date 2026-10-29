@@ -183,6 +183,9 @@ export function useStatusFeed(): void {
           settledAt.set(conversationId, Date.now())
           // A completed turn may have committed or written in a worktree: reread worktrees.
           void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+          // Agents attach their sessions to cards and grow the tag catalog outside any route.
+          void queryClient.invalidateQueries({ queryKey: ['cards'] })
+          void queryClient.invalidateQueries({ queryKey: ['card-tags'] })
         }
         if (busy) settledAt.delete(conversationId)
         statuses.set(conversationId, status)
@@ -215,6 +218,9 @@ export function useStatusFeed(): void {
           void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           void queryClient.invalidateQueries({ queryKey: ['actions'] })
           void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+          // Agents attach their sessions to cards and grow the tag catalog outside any route.
+          void queryClient.invalidateQueries({ queryKey: ['cards'] })
+          void queryClient.invalidateQueries({ queryKey: ['card-tags'] })
           // The open thread's header must also reflect renames or deletion elsewhere without requiring navigation away.
           void queryClient.invalidateQueries({ queryKey: ['conversation'] })
         }, LISTS_REFRESH_DELAY_MS)

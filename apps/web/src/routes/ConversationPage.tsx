@@ -63,6 +63,7 @@ import {
   steerConversation,
   useAllConversations,
   useConversation,
+  useSetConversationCard,
 } from '../lib/conversations'
 import { useFileDrop } from '../lib/file-drop'
 import { useConversationConfig } from '../lib/conversation-config'
@@ -70,7 +71,9 @@ import { CardRefContext } from '../lib/card-refs'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
 import { InstructionsDialog } from '../components/instructions/Instructions'
-import { clearSubAgent, setPanelOpen, showCheckpoint, usePanelLayout, usePanelPresence } from '../lib/panel'
+import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence, usePanelTab } from '../lib/panel'
+import { CardLinkDialog } from '../components/chat/CardLinkDialog'
+import { columnLabel } from '../components/board/columns'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
@@ -380,6 +383,9 @@ export function ConversationPage() {
   const concentration = useConcentration()
   const panel = usePanelPresence()
   const panelLayout = usePanelLayout()
+  const panelTab = usePanelTab()
+  const [cardLinkOpen, setCardLinkOpen] = useState(false)
+  const setConversationCard = useSetConversationCard()
   const { data: projects } = useProjects()
   // The entire thread accepts files, not just the composer: users drop screenshots
   // onto the conversation, and aiming for a 40-pixel-high field is difficult
@@ -820,6 +826,11 @@ export function ConversationPage() {
   if (!conversationId || !conversation || !config) return null
 
   const isOwner = conversation.userId === user?.id
+  const cardShown = panel.open && panelTab === 'card' && Boolean(conversation.card)
+  const showCard = () => {
+    setPanelTab('card')
+    setPanelOpen(true)
+  }
   // Steering requires an open turn and a capable CLI: offering it elsewhere would
   // advertise an action the server rejects.
   const canSteer =
@@ -958,6 +969,22 @@ export function ConversationPage() {
                 projectGit={project?.git}
                 projectPath={project?.workspacePath}
               /> : null}
+              {/*
+               * The card sits with the project and branch: it names what the session is for.
+               * Opening it in the panel keeps the thread in view, unlike leaving for the board.
+               */}
+              {conversation.card ? (
+                <button
+                  type="button"
+                  onClick={showCard}
+                  title={t('conversation.card.open', { number: conversation.card.number, title: conversation.card.title, column: columnLabel(conversation.card.column) })}
+                  className="flex min-w-0 items-center gap-1 rounded-sm text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <SquareKanban size={12} className="shrink-0" />
+                  <span className="shrink-0 font-medium">#{conversation.card.number}</span>
+                  <span className="min-w-0 truncate">{conversation.card.title}</span>
+                </button>
+              ) : null}
               </> : <span>{t('discussions.personal')}</span>}
             </div>
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
@@ -1007,6 +1034,24 @@ export function ConversationPage() {
               <IconButton label={t('conversation.handoff.menu')} onClick={() => setHandoffOpen(true)}>
                 <ArrowRightLeft size={18} />
               </IconButton>
+              {/*
+               * Direct access to the card: with one, it toggles the panel's Card tab; without,
+               * it attaches the session to one. Readers who cannot attach only see it with a card.
+               */}
+              {conversation.projectId && (conversation.card || isOwner) ? (
+                <IconButton
+                  label={conversation.card
+                    ? t(cardShown ? 'conversation.card.hide' : 'conversation.card.show', { number: conversation.card.number })
+                    : t('conversation.card.link')}
+                  onClick={() => {
+                    if (!conversation.card) setCardLinkOpen(true)
+                    else if (cardShown) setPanelOpen(false)
+                    else showCard()
+                  }}
+                >
+                  <SquareKanban size={18} className={cx(cardShown && 'text-accent')} />
+                </IconButton>
+              ) : null}
 
               {/*
                * At the far right edge, where the panel opens. The panel belongs to the conversation
@@ -1030,6 +1075,14 @@ export function ConversationPage() {
         </div> : null}
         {!concentration ? <ConversationWorktreeBar key={conversation.id} conversation={conversation} canClean={project?.isOwner ?? false} /> : null}
 
+        {conversation.projectId && isOwner ? (
+          <CardLinkDialog
+            conversation={{ ...conversation, projectId: conversation.projectId }}
+            open={cardLinkOpen}
+            onClose={() => setCardLinkOpen(false)}
+            onLinked={showCard}
+          />
+        ) : null}
         <InstructionsDialog
           open={instructionsOpen}
           onOpenChange={setInstructionsOpen}
@@ -1423,6 +1476,12 @@ export function ConversationPage() {
             subAgents={subAgents}
             background={background}
             mcpServers={stream.state.mcp}
+            cardId={conversation.card?.id ?? null}
+            cardActions={isOwner ? {
+              change: () => setCardLinkOpen(true),
+              detach: () => setConversationCard.mutate({ id: conversation.id, cardId: null }),
+              detaching: setConversationCard.isPending,
+            } : undefined}
             open={panel.open}
             docked={panelLayout.docked}
             canDock={panelLayout.canDock}

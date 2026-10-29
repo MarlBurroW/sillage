@@ -34,6 +34,76 @@ export const CARD_CLOSED_COLUMNS: readonly CardColumn[] = ['done', 'abandoned']
 export const CARD_TITLE_MAX = 200
 const DESCRIPTION_MAX = 20_000
 
+/**
+ * Tag palette, as `#rrggbb` like project colors so every theme renders the same values. New tags
+ * take the next unused color, so a board's first tags stay distinguishable without a choice.
+ */
+export const CARD_TAG_COLORS: readonly string[] = [
+  '#5B9DF9', '#5BC98C', '#E5665F', '#D9B441', '#8B7BF7', '#3FBFC4', '#E8894F', '#E070A8', '#9AA3AF',
+]
+export const CARD_TAG_NAME_MAX = 40
+export const CARD_TAG_DESCRIPTION_MAX = 300
+/** Beyond a handful a tag stops classifying: the cap keeps agents from tagging everything. */
+export const CARD_TAGS_PER_CARD_MAX = 8
+
+/** Display form of a tag name: trimmed, inner whitespace collapsed. */
+export function normalizeCardTagName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ')
+}
+
+/** Uniqueness key: `Bug`, `bug ` and `BUG` are one tag. */
+export function cardTagKey(name: string): string {
+  return normalizeCardTagName(name).toLocaleLowerCase()
+}
+
+const tagNameSchema = z
+  .string()
+  .transform(normalizeCardTagName)
+  .pipe(z.string().min(1).max(CARD_TAG_NAME_MAX))
+const tagColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+const tagIdsSchema = z.array(z.string().uuid()).max(CARD_TAGS_PER_CARD_MAX)
+
+export const createCardTagBodySchema = z.object({
+  name: tagNameSchema,
+  color: tagColorSchema.optional(),
+  description: z.string().trim().max(CARD_TAG_DESCRIPTION_MAX).default(''),
+})
+
+export const updateCardTagBodySchema = z
+  .object({
+    name: tagNameSchema,
+    color: tagColorSchema,
+    description: z.string().trim().max(CARD_TAG_DESCRIPTION_MAX),
+  })
+  .partial()
+
+/** Moves every card of the source tag onto `into`, then deletes the source. */
+export const mergeCardTagBodySchema = z.object({ into: z.string().uuid() })
+
+export const cardTagSettingsBodySchema = z.object({ agentsCanCreate: z.boolean() })
+
+/** A tag as shown on a card: enough to render its chip. */
+export interface CardTagRefDto {
+  id: string
+  name: string
+  color: string
+}
+
+/** A tag in the project catalog. */
+export interface CardTagDto extends CardTagRefDto {
+  description: string
+  cardCount: number
+  /** Session that created it, for agent-made tags; null when a person did or it was deleted. */
+  createdBy: { conversationId: string; title: string } | null
+  createdAt: number
+}
+
+export interface CardTagCatalogDto {
+  tags: CardTagDto[]
+  /** Whether agents may create new tags by naming them (project setting). */
+  agentsCanCreate: boolean
+}
+
 export const createCardBodySchema = z.object({
   /**
    * Create the card as an issue in the linked repository; if absent, board settings decide.
@@ -43,6 +113,7 @@ export const createCardBodySchema = z.object({
   title: z.string().min(1).max(CARD_TITLE_MAX),
   description: z.string().max(DESCRIPTION_MAX).default(''),
   column: cardColumnSchema.default('todo'),
+  tagIds: tagIdsSchema.default([]),
 })
 
 export const updateCardBodySchema = z
@@ -50,6 +121,8 @@ export const updateCardBodySchema = z
     title: z.string().min(1).max(CARD_TITLE_MAX),
     description: z.string().max(DESCRIPTION_MAX),
     column: cardColumnSchema,
+    /** Replaces the card's full tag set. */
+    tagIds: tagIdsSchema,
   })
   .partial()
 
@@ -199,6 +272,8 @@ export interface CardDto {
   referencedBy: CardLinkDto[]
   /** Linked GitHub issue for a connected board card; null for local cards. */
   external: CardExternalDto | null
+  /** Sorted by name. */
+  tags: CardTagRefDto[]
 }
 
 /**

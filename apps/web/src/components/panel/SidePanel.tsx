@@ -12,6 +12,7 @@ import {
   PanelLeft,
   PlugZap,
   RefreshCw,
+  SquareKanban,
   SquareTerminal,
   X,
   Zap,
@@ -49,6 +50,7 @@ import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
 import { HistoryPane } from './HistoryPane'
+import { CardPane } from './CardPane'
 import { McpPane } from './McpPane'
 import { TerminalsPane } from './TerminalsPane'
 import { QuickOpen } from './QuickOpen'
@@ -76,6 +78,8 @@ export function SidePanel({
   docked = false,
   canDock = false,
   workspaceName,
+  cardId = null,
+  cardActions,
 }: {
   projectId: string | null
   /** Absent in project views, leaving directory-oriented tabs only. */
@@ -97,6 +101,10 @@ export function SidePanel({
   docked?: boolean
   canDock?: boolean
   workspaceName?: string
+  /** Card the conversation handles, shown in its own tab. */
+  cardId?: string | null
+  /** Owner actions on the conversation's card link. */
+  cardActions?: { change: () => void; detach: () => void; detaching: boolean }
 }) {
   // Tab state lives outside the panel because thread actions choose it when opening diff files or
   // banner subagents.
@@ -113,7 +121,9 @@ export function SidePanel({
   // Tab selection survives view changes; project views fall back from session-only tabs to Files
   // rather than displaying nothing.
   const tab: PanelTab =
-    !projectId && ['actions', 'terminals'].includes(chosenTab) ? 'files' : conversationId || !['history', 'agents', 'mcp'].includes(chosenTab) ? chosenTab : 'files'
+    (!projectId && ['actions', 'terminals'].includes(chosenTab)) || (chosenTab === 'card' && !(conversationId && cardId))
+      ? 'files'
+      : conversationId || !['history', 'agents', 'mcp'].includes(chosenTab) ? chosenTab : 'files'
   const treeOpen = usePanelTree()
   const selectedSubAgent = useSelectedSubAgent()
   /**
@@ -241,6 +251,14 @@ export function SidePanel({
             onSelect={() => setPanelTab('actions')}
           />
           </> : null}
+          {conversationId && cardId ? (
+            <Tab
+              icon={<SquareKanban size={20} />}
+              label={t('panel.tab.card')}
+              active={tab === 'card'}
+              onSelect={() => setPanelTab('card')}
+            />
+          ) : null}
           {conversationId ? (
             <>
               <Tab
@@ -383,6 +401,8 @@ export function SidePanel({
 
       {/* Like subagents, log-derived content loses nothing by mounting only when viewed. */}
       {tab === 'mcp' ? <McpPane servers={mcpServers} /> : null}
+
+      {tab === 'card' && projectId && cardId ? <CardPane projectId={projectId} cardId={cardId} onChange={cardActions?.change} onDetach={cardActions?.detach} detaching={cardActions?.detaching} /> : null}
 
         </div>
       </div>

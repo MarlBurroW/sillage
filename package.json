@@ -22,6 +22,7 @@
     "test:grok-accounts-ui": "node scripts/grok-accounts-ui-check.mjs",
     "test:antigravity-ui": "node scripts/antigravity-ui-check.mjs",
     "test:card-relations-ui": "node scripts/card-relations-ui-check.mjs",
+    "test:card-tags-ui": "node scripts/card-tags-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:cli-updates-ui": "node scripts/cli-updates-ui-check.mjs",
     "test:concentration-ui": "node scripts/concentration-ui-check.mjs",

@@ -1042,6 +1042,8 @@ function ConversationRow({
             className="sidebar-session-link">
             <AgentIcon agent={conversation.agent} size={16} />
             <span className="sidebar-session-title">{conversation.title}</span>
+            {/* The card number stays visible: it tells which board work a session carries. The preview names it. */}
+            {conversation.card && <span className="sidebar-session-card" aria-label={t('shell.conversation.card', { number: conversation.card.number, title: conversation.card.title })}>#{conversation.card.number}</span>}
             {conversation.favorite && <Star size={10} aria-label={t('shell.favorites.heading')} className="shrink-0 text-ink-faint" />}
             <span className="sidebar-session-signals">{present && <SignalDot signal={present} />}{loop && <SignalDot signal={loop} />}</span>
           </NavLink>}>

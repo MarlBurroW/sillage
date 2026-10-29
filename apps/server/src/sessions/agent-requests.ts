@@ -1,4 +1,5 @@
 import { continueInProject } from '../conversations/continue-in-project.js'
+import { resolveAgentTags, setCardTags, TagRefusal, type TagAuthor } from '../board/card-tags.js'
 import { personalMemoryDir, writePersonalMemory } from '../memory/personal.js'
 import { createProject } from '../projects/create.js'
 import { deleteProject } from '../projects/delete.js'
@@ -301,6 +302,8 @@ export class AgentRequests {
         const change = request.kind === 'link_cards' ? linkCards : unlinkCards
         change(this.ctx.db, requester.projectId, payload.number as number, target, kind)
         this.settle(request.id, request.kind === 'link_cards' ? 'Relation added.' : 'Relation removed.', false)
+      } else if (request.kind === 'attach_card' || request.kind === 'detach_card') {
+        this.settle(request.id, this.attachCard(request.kind, requester, payload), false)
       } else if (request.kind === 'update_card') {
         this.settle(request.id, this.updateCard(requester, payload), false)
       } else if (request.kind === 'create_card') {
@@ -888,12 +891,64 @@ export class AgentRequests {
       title: typeof payload.title === 'string' ? payload.title.trim() : payload.title,
       description: payload.description,
     })
-    if (body.title === undefined && body.description === undefined) {
-      throw new Refusal('Provide at least a title or description to change.')
+    if (body.title === undefined && body.description === undefined && payload.tags === undefined) {
+      throw new Refusal('Provide at least a title, description or tags to change.')
     }
+    // Resolve tags before writing anything: a refused name must leave the card untouched.
+    const tags = payload.tags === undefined ? null : this.resolveTags(requester, payload.tags)
+    if (tags) setCardTags(this.ctx.db, card.id, requester.projectId, tags.ids)
     updateCard(this.ctx.db, card, body)
     this.board?.kick(requester.projectId)
-    return `Card #${card.number} updated.`
+    return `Card #${card.number} updated.${tags ? describeTags(tags) : ''}`
+  }
+
+  private resolveTags(requester: Requester, names: unknown): { ids: string[]; created: string[]; names: string[] } {
+    const author: TagAuthor = { userId: requester.userId, conversationId: requester.id || null }
+    try {
+      const resolved = resolveAgentTags(this.ctx.db, requester.projectId, names, author)
+      return { ...resolved, names: (names as string[]).map((name) => name.trim()).filter(Boolean) }
+    } catch (err) {
+      if (err instanceof TagRefusal) throw new Refusal(err.message)
+      throw err
+    }
+  }
+
+  // --- attach_card / detach_card -------------------------------------------------
+
+  /**
+   * Attaches the requesting session to a card, the link the board counts as work on it. Unlike
+   * attaching from the interface, which records past work, an agent attaches as it starts: a
+   * card still in todo therefore moves to in progress, as when a session is launched from it.
+   */
+  private attachCard(kind: 'attach_card' | 'detach_card', requester: Requester, payload: Record<string, unknown>): string {
+    if (!requester.id || requester.personal) throw new Refusal('Only a project session can be attached to one of its cards.')
+    const current = this.ctx.db.select({ cardId: conversations.cardId }).from(conversations).where(eq(conversations.id, requester.id)).get()
+    if (kind === 'detach_card') {
+      if (!current?.cardId) return 'This session is not attached to a card.'
+      const card = this.ctx.db.select({ number: cards.number }).from(cards).where(eq(cards.id, current.cardId)).get()
+      this.ctx.db.update(conversations).set({ cardId: null }).where(eq(conversations.id, requester.id)).run()
+      this.sessions.statusBus.emit('lists')
+      return card ? `Session detached from card #${card.number}; the card keeps its column and notes.` : 'Session detached.'
+    }
+
+    const card = this.launchCard(requester.projectId, payload.number)
+    if (!card) throw new Refusal('The `number` parameter is required: the card number, e.g. 12.')
+    if (current?.cardId === card.id) return `This session is already attached to card #${card.number} “${card.title}”.`
+    const previous = current?.cardId
+      ? this.ctx.db.select({ number: cards.number }).from(cards).where(eq(cards.id, current.cardId)).get()
+      : undefined
+    this.ctx.db.update(conversations).set({ cardId: card.id }).where(eq(conversations.id, requester.id)).run()
+    const advanced = this.ctx.db
+      .update(cards)
+      .set({ column: 'in_progress', updatedAt: Date.now() })
+      .where(and(eq(cards.id, card.id), eq(cards.column, 'todo')))
+      .run().changes > 0
+    this.board?.kick(requester.projectId)
+    this.sessions.statusBus.emit('lists')
+    return [
+      `Session attached to card #${card.number} “${card.title}”${previous ? ` (replacing #${previous.number})` : ''}${advanced ? ', moved to in progress' : ''}.`,
+      'The user now sees the card in the session list and header. Call read_card for its description and previous notes if you have not; leave a note with add_card_note before finishing.',
+    ].join(' ')
   }
 
   // --- create_card ---------------------------------------------------------------
@@ -905,6 +960,7 @@ export class AgentRequests {
     if (!title) throw new Refusal('The `title` parameter is required.')
     if (title.length > 200) throw new Refusal('Title too long (maximum 200 characters).')
     if (description.length > 20000) throw new Refusal('Description too long (maximum 20,000 characters).')
+    const tags = payload.tags === undefined ? null : this.resolveTags(requester, payload.tags)
 
     // Board settings decide unless agents explicitly request otherwise based on
     // user instructions, as tool descriptions require.
@@ -923,6 +979,7 @@ export class AgentRequests {
             requester.id ? { agent: requester.agent, conversationId: requester.id } : undefined,
           )
         : createCard(this.ctx.db, requester.projectId, requester.userId, fields)
+    if (tags && tags.ids.length > 0) setCardTags(this.ctx.db, card.id, requester.projectId, tags.ids)
     // Provenance lives in card threads with session links, preserving agent-written
     // descriptions while showing origins to subsequent users.
     // Account-created cards already identify their authors.
@@ -946,7 +1003,7 @@ export class AgentRequests {
       : link
         ? ', local (not published to GitHub)'
         : ''
-    return `Card #${card.number} “${card.title}” created in todo${where}. To handle it immediately, use start_session with card=${card.number}.`
+    return `Card #${card.number} “${card.title}” created in todo${where}.${tags ? describeTags(tags) : ''} To handle it immediately, use start_session with card=${card.number}.`
   }
 
   // --- actions -------------------------------------------------------------------
@@ -1320,4 +1377,11 @@ export function launchRefusal(
     }
   }
   return null
+}
+
+/** Tag outcome for the agent, naming new tags so it can tell the user it grew the catalog. */
+function describeTags(tags: { created: string[]; names: string[] }): string {
+  if (tags.names.length === 0) return ' Tags cleared.'
+  const created = tags.created.length > 0 ? ` New tag(s) created: ${tags.created.join(', ')}.` : ''
+  return ` Tags: ${tags.names.join(', ')}.${created}`
 }

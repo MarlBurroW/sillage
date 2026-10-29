@@ -249,6 +249,27 @@ replaces the entire text; read the card before editing it. `add_card_note` and
 attached card. In global mode, their `card` parameter is retained.
 Changes to GitHub-linked cards synchronize to their issues.
 
+### Tagging cards
+
+Tags are defined per project and shared by its cards; each has a name, a color and
+a description saying when it applies. `list_cards` prints every card's tags and the
+catalog with those descriptions, and accepts `tag` to keep only cards carrying one.
+`create_card` and `update_card` take `tags`, a list of names that replaces the
+card's set (an empty list clears it). Names match regardless of case; a new name
+creates a tag unless the project owner turned off “Agents can create tags” in the
+board's tag window, in which case the call is refused with the existing tags.
+A card has at most 8 tags. Tags stay local to Sillage, even on GitHub-linked boards.
+
+### Attaching a session to a card
+
+A session started from a card is attached to it. Another session attaches itself
+with `attach_card(number)` when it starts work on a card, for example when the user
+asks to handle `#12` in an ordinary conversation: the board then counts it as work
+on the card, a todo card moves to in progress, and the interface shows the card in
+the session list, the conversation header and the side panel. `detach_card` undoes
+it without moving the card. A session handles one card at a time; both tools exist
+only in a session, not in global mode.
+
 ### Linking tickets
 
 `link_cards` adds an explicit relationship; `unlink_cards` removes it. Both take

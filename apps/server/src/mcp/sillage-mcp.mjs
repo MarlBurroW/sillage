@@ -74,6 +74,8 @@ const REQUEST_WAIT_MS = {
   update_card: 15000,
   link_cards: 15000,
   unlink_cards: 15000,
+  attach_card: 15000,
+  detach_card: 15000,
   list_models: 30000,
   schedule_task: 30000,
   register_action: 15000,
@@ -197,6 +199,14 @@ function writeDb() {
   return writable
 }
 
+/** Shared by create_card and update_card. Limits must match CARD_TAG_NAME_MAX and CARD_TAGS_PER_CARD_MAX in @sillage/protocol. */
+const TAGS_PARAM = {
+  type: 'array',
+  items: { type: 'string' },
+  description:
+    "Tag names classifying the card (at most 8, each at most 40 characters); replaces the card's full set, an empty list clears it. Reuse the catalog listed by list_cards, matching each tag's description; names match regardless of case. A new name creates a tag when the project allows it: do so only when no existing tag fits, with a short lowercase name.",
+}
+
 const TOOLS = [
   {
     name: 'rename_session',
@@ -284,7 +294,7 @@ const TOOLS = [
   {
     name: 'list_cards',
     description:
-      "List this project's board: cards representing work to do, in progress, awaiting review or done. A card survives the conversations working on it and can have several. Call before starting a new topic to check for an existing card, and when the user cites a card number (`#12`). Returns a summary per card; use read_card for full descriptions.",
+      "List this project's board: cards representing work to do, in progress, awaiting review or done. A card survives the conversations working on it and can have several. Call before starting a new topic to check for an existing card, and when the user cites a card number (`#12`). Returns a summary per card with its tags, and the project's tag catalog with what each tag means; use read_card for full descriptions.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -293,6 +303,10 @@ const TOOLS = [
           enum: ['todo', 'in_progress', 'review', 'done', 'abandoned'],
           description:
             "Return only this column. Omit for the whole board, including done and abandoned cards.",
+        },
+        tag: {
+          type: 'string',
+          description: 'Return only cards carrying this tag (name, case-insensitive).',
         },
       },
     },
@@ -373,15 +387,34 @@ const TOOLS = [
     },
   })),
   {
+    name: 'attach_card',
+    description:
+      "Attach this session to a project card when you start working on it and the session is not attached yet, for instance when the user asks you to handle `#12` here. The board counts attached sessions as work on the card, and the user sees the card on this session in the session list and header; merely citing `#12` does not attach. A todo card moves to in progress. A session handles one card at a time: attaching replaces the previous card. Not needed for sessions started from a card.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        number: { type: 'integer', description: 'Card number, as written after `#`.' },
+      },
+      required: ['number'],
+    },
+  },
+  {
+    name: 'detach_card',
+    description:
+      "Detach this session from its card, when it was attached by mistake or the work moved elsewhere. The card keeps its column and notes; use move_card separately if its state should change.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'update_card',
     description:
-      "Edit the title or description of any card in this project; attachment is not required. Read the card first to preserve useful information. The supplied description replaces the full text; an empty string clears it. Changes to GitHub-linked cards are also synchronized to the issue. Use add_card_note for notes and move_card to change columns.",
+      "Edit the title, description or tags of any card in this project; attachment is not required. Read the card first to preserve useful information. The supplied description replaces the full text; an empty string clears it. Changes to GitHub-linked cards are also synchronized to the issue; tags stay local to Sillage. Use add_card_note for notes and move_card to change columns.",
     inputSchema: {
       type: 'object',
       properties: {
         number: { type: 'integer', description: 'Card number in this project.' },
         title: { type: 'string', description: 'New nonempty title (at most 200 characters).' },
         description: { type: 'string', description: 'New full description in Markdown (at most 20,000 characters).' },
+        tags: TAGS_PARAM,
       },
       required: ['number'],
     },
@@ -402,6 +435,7 @@ const TOOLS = [
           description:
             "Markdown description understandable without this thread: symptoms, relevant files and lines, reproduction steps and a possible fix. Use `#12` to cite another card.",
         },
+        tags: TAGS_PARAM,
         github: {
           type: 'boolean',
           description:
@@ -991,6 +1025,8 @@ function personalTools() {
 
 const SESSION_ONLY_TOOLS = new Set([
   'rename_session',
+  'attach_card',
+  'detach_card',
   'send_session_message',
   'broadcast_session_message',
   'notify_when_done',
@@ -1559,10 +1595,11 @@ function renderBySession(rows) {
 }
 
 /** Project board, one row per card. Count sessions with subqueries rather than joins: joining `conversations` duplicates cards per session, and compensating `GROUP BY` would hide cards without sessions. */
-function listCards(column) {
-  return db
+function listCards(column, tag) {
+  const rows = db
     .prepare(
-      `SELECT c.number   AS number,
+      `SELECT c.id       AS id,
+              c.number   AS number,
               c.title    AS title,
               c.column   AS column,
               c.description AS description,
@@ -1583,7 +1620,58 @@ function listCards(column) {
                 c.position
        LIMIT ?`,
     )
-    .all(PROJECT_ID, column, column, CARD_LIMIT + 1)
+    .all(PROJECT_ID, column, column, tag ? -1 : CARD_LIMIT + 1)
+  const tags = cardTagsOf(rows.map((row) => row.id))
+  for (const row of rows) row.tags = tags.get(row.id) ?? []
+  if (!tag) return rows
+  const key = tag.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+  return rows.filter((row) => row.tags.some((name) => name.toLocaleLowerCase() === key)).slice(0, CARD_LIMIT + 1)
+}
+
+/** Tag names per card. Tables must match `card_tags` and `card_tag_links` in `packages/db/src/schema.ts`. */
+function cardTagsOf(cardIds) {
+  const grouped = new Map()
+  if (cardIds.length === 0) return grouped
+  try {
+    const rows = db
+      .prepare(
+        `SELECT l.card_id AS cardId, t.name AS name
+         FROM card_tag_links AS l JOIN card_tags AS t ON t.id = l.tag_id
+         WHERE l.card_id IN (${cardIds.map(() => '?').join(',')})
+         ORDER BY t.name_key`,
+      )
+      .all(...cardIds)
+    for (const row of rows) grouped.set(row.cardId, [...(grouped.get(row.cardId) ?? []), row.name])
+  } catch {
+    // Databases predating tags have none.
+  }
+  return grouped
+}
+
+/** Project tag catalog with usage, and whether agents may add to it. */
+function tagCatalog() {
+  try {
+    const tags = db
+      .prepare(
+        `SELECT t.name AS name, t.description AS description,
+                (SELECT COUNT(*) FROM card_tag_links AS l WHERE l.tag_id = t.id) AS cards
+         FROM card_tags AS t WHERE t.project_id = ? ORDER BY t.name_key`,
+      )
+      .all(PROJECT_ID)
+    const project = db.prepare('SELECT agent_card_tags AS open FROM projects WHERE id = ?').get(PROJECT_ID)
+    return { tags, open: Boolean(project?.open ?? 1) }
+  } catch {
+    return { tags: [], open: true }
+  }
+}
+
+function describeTagCatalog() {
+  const { tags, open } = tagCatalog()
+  const rule = open
+    ? 'Tag cards through create_card and update_card; a new name creates a tag, so reuse these when one fits.'
+    : 'The user closed this catalog: agents may only use these tags.'
+  if (tags.length === 0) return `No tags defined yet. ${open ? 'A new name passed to create_card or update_card creates one.' : rule}`
+  return `Tags (${rule}):\n${tags.map((tag) => `- ${tag.name}${tag.description ? ` — ${tag.description}` : ''} (${tag.cards} card(s))`).join('\n')}`
 }
 
 function listActions() {
@@ -1668,6 +1756,7 @@ function readCard(number) {
     'SELECT filename, mime_type AS mimeType, size_bytes AS sizeBytes, storage_path AS path FROM attachments WHERE card_id = ? ORDER BY created_at'
   ).all(card.id)
   card.issue = cardIssue(card.id)
+  card.tags = cardTagsOf([card.id]).get(card.id) ?? []
   return card
 }
 
@@ -1991,14 +2080,15 @@ function readSessionMessages(withId) {
   return rows
 }
 
-function renderCards(rows, column) {
+function renderCards(rows, column, tag) {
   const truncated = rows.length > CARD_LIMIT
   const shown = truncated ? rows.slice(0, CARD_LIMIT) : rows
 
   if (shown.length === 0) {
+    if (tag) return `No cards tagged “${tag}”${column ? ` in “${COLUMN_LABELS[column]}”` : ''}.\n\n${describeTagCatalog()}`
     return column
       ? `No cards in this project's “${COLUMN_LABELS[column]}” column.`
-      : 'This project has no cards. An empty board does not mean there is no work: not everything is necessarily recorded.'
+      : `This project has no cards. An empty board does not mean there is no work: not everything is necessarily recorded.\n\n${describeTagCatalog()}`
   }
 
   const mine = currentCard()?.number ?? null
@@ -2015,15 +2105,16 @@ function renderCards(rows, column) {
         : row.detached
           ? ` (from GitHub issue #${row.issue}, detached)`
           : ` (GitHub #${row.issue}${row.issueAuthor ? ` by @${row.issueAuthor}` : ''})`
-    return `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}${issue}${sessions}${self}${summary}`
+    const tags = row.tags.length > 0 ? ` {${row.tags.join(', ')}}` : ''
+    return `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}${tags}${issue}${sessions}${self}${summary}`
   })
 
   const link = boardLink()
-  const head = `${link ? `${describeBoardLink(link)}\n\n` : ''}${shown.length} card(s)${column ? ` in “${COLUMN_LABELS[column]}”` : ''}:`
+  const head = `${link ? `${describeBoardLink(link)}\n\n` : ''}${shown.length} card(s)${column ? ` in “${COLUMN_LABELS[column]}”` : ''}${tag ? ` tagged “${tag}”` : ''}:`
   const tail = truncated
-    ? `\n\n${rows.length - CARD_LIMIT} additional card(s) omitted. Filter by column to see more.`
+    ? `\n\n${rows.length - CARD_LIMIT} additional card(s) omitted. Filter by column or tag to see more.`
     : ''
-  return `${head}\n${lines.join('\n')}${tail}`
+  return `${head}\n${lines.join('\n')}${tail}\n\n${describeTagCatalog()}`
 }
 
 function renderCard(card) {
@@ -2041,6 +2132,7 @@ function renderCard(card) {
     parts.push(`From GitHub issue #${card.issue.number} (${card.issue.url}), detached: the card is local and the issue is no longer tracked.`)
   }
 
+  if (card.tags.length > 0) parts.push(`Tags: ${card.tags.join(', ')}`)
   parts.push(card.description.trim() || '(no description)')
   if (card.attachments.length) {
     parts.push('Attachments — local files to inspect with your reading tools:\n' +
@@ -2451,7 +2543,8 @@ async function callTool(name, args) {
 
   if (name === 'list_cards') {
     const column = typeof args?.column === 'string' && COLUMN_LABELS[args.column] ? args.column : null
-    return text(renderCards(listCards(column), column))
+    const tag = typeof args?.tag === 'string' && args.tag.trim() ? args.tag.trim() : null
+    return text(renderCards(listCards(column, tag), column, tag))
   }
 
   if (name === 'read_card') {
@@ -2714,6 +2807,8 @@ async function callTool(name, args) {
     name === 'rename_session' ||
     name === 'link_cards' ||
     name === 'unlink_cards' ||
+    name === 'attach_card' ||
+    name === 'detach_card' ||
     name === 'update_card' ||
     name === 'create_card' ||
     name === 'start_session' ||
@@ -2743,6 +2838,9 @@ async function callTool(name, args) {
     }
     if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
       return { ...text('The `question` parameter is required.'), isError: true }
+    }
+    if (name === 'attach_card' && !Number.isInteger(args?.number)) {
+      return { ...text('The `number` parameter is required and must be an integer.'), isError: true }
     }
     if (name === 'create_card' && !(typeof args?.title === 'string' && args.title.trim())) {
       return { ...text('The `title` parameter is required.'), isError: true }

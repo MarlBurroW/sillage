@@ -8,6 +8,7 @@ import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { cx } from '../ui'
 import { GitHubMark } from './GitHubMark'
+import { TagChip } from './CardTags'
 
 /** Content fitting beneath titles without turning tiles into detail sheets. */
 const EXCERPT_MAX = 120
@@ -61,6 +62,12 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
           <span className="shrink-0 font-medium">{issue.number}</span>
           {issue.author ? <span className="min-w-0 truncate">· @{issue.author}</span> : null}
         </p>
+      ) : null}
+
+      {card.tags.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {card.tags.map((tag) => <TagChip key={tag.id} tag={tag} />)}
+        </div>
       ) : null}
 
       {excerpt ? (
