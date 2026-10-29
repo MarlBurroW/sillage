@@ -1,0 +1,72 @@
+.effort-control[data-disabled] { opacity: 0.45; }
+
+.effort-slider {
+  position: relative;
+  height: 44px;
+}
+
+.effort-slider-track {
+  position: absolute;
+  inset: 11px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sg-line-strong);
+}
+
+.effort-slider-fill {
+  width: calc(12px + (100% - 24px) * var(--effort-position));
+  height: 100%;
+  background: var(--sg-accent);
+}
+
+.effort-slider-ticks {
+  position: absolute;
+  inset: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.effort-slider-ticks span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--sg-ink-faint);
+}
+
+/* The native range keeps keyboard and touch semantics; its transparent track reveals the ticks. */
+.effort-slider input {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.effort-slider input:focus { outline: none; }
+/* Keep keyboard focus on the thumb rather than outlining the entire touch target. */
+.effort-slider input:focus-visible::-webkit-slider-thumb { border: 3px solid var(--sg-accent); }
+.effort-slider input:focus-visible::-moz-range-thumb { border: 3px solid var(--sg-accent); box-sizing: border-box; width: 24px; height: 24px; }
+.effort-slider input:disabled { cursor: default; }
+.effort-slider input::-webkit-slider-runnable-track { height: 24px; background: transparent; }
+.effort-slider input::-moz-range-track { height: 24px; background: transparent; }
+.effort-slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #00000014;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #0003;
+}
+.effort-slider input::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #00000014;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #0003;
+}
