@@ -14,6 +14,8 @@ import {
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { AgentInstallProgress } from '../components/AgentInstallProgress'
+import { useConcentration } from '../lib/concentration'
+import { ConcentrationButton } from '../components/chat/ConcentrationButton'
 import { Composer } from '../components/chat/Composer'
 import { AccountChoice } from '../components/chat/AccountChoice'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -157,6 +159,7 @@ export function DraftConversationPage() {
   const { data: conversations } = useAllConversations()
   const createConversation = useCreateConversation(projectId ?? null)
   const sidebarHidden = useSidebarHidden()
+  const concentration = useConcentration()
   const panel = usePanelPresence()
 
   // Initial value only: the CLI remains editable until sending.
@@ -310,7 +313,7 @@ export function DraftConversationPage() {
 
   return (
     // `relative`: this container anchors the absolutely positioned side panel.
-    <div className="relative flex h-full flex-col overflow-clip pb-safe" {...drop.handlers}>
+    <div className={cx("relative flex h-full flex-col overflow-clip pb-safe", concentration && "sg-concentration")} {...drop.handlers}>
       {/*
        * Same drop overlay as conversations: the composer already handles drops; it only needed
        * an area forwarding them.
@@ -330,11 +333,12 @@ export function DraftConversationPage() {
           'flex shrink-0 items-center gap-2 border-b border-line px-2 py-2',
           // Space reserved for the show-navigation button in this corner when the
           // sidebar is collapsed.
-          sidebarHidden && 'md:pl-14',
+          sidebarHidden && !concentration && 'md:pl-14',
+          concentration && 'sg-concentration-header',
         )}
       >
-        <MobileNavigationButton />
-        <div className="min-w-0 flex-1">
+        {!concentration ? <MobileNavigationButton /> : null}
+        <div className="sg-conversation-heading min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{t(projectId ? 'draft.title' : 'discussions.new')}</p>
           <div className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
             <AgentIcon agent={agent} size={11} />
@@ -370,6 +374,7 @@ export function DraftConversationPage() {
             <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
           </IconButton>
         ) : null}
+        <ConcentrationButton />
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

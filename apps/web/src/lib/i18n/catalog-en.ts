@@ -7,6 +7,10 @@
  * use `{name}` and are substituted by `t()`.
  */
 export const en = {
+  "concentration.enter": "Enter focus mode",
+  "concentration.exit": "Exit focus mode",
+  "concentration.add": "Add to message",
+  "concentration.actions": "Message actions",
   "error.handoff_disk_full": "Not enough free space in the project folder to copy the selected files.",
   "discussions.project.start": "Start the agent after creating the project",
   "discussions.project.prompt": "First request in the project",

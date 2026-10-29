@@ -46,6 +46,7 @@ async function mount(page) {
     localStorage.setItem('sillage.locale', 'fr')
     document.documentElement.dataset.theme = 'light'
     await import('/src/styles/index.css')
+    await import('/src/styles/concentration.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
     const hookSource = await (await fetch('/src/lib/conversation-config.ts')).text()
@@ -55,6 +56,8 @@ async function mount(page) {
     const routerModule = composerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1]
     const { MemoryRouter } = await import(routerModule)
     const { Composer } = await import('/src/components/chat/Composer.tsx')
+    const { toggleConcentration } = await import('/src/lib/concentration.ts')
+    window.toggleConcentration = toggleConcentration
     const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
     const { useConversationConfig } = await import('/src/lib/conversation-config.ts')
     const { useConversation } = await import('/src/lib/conversations.ts')
@@ -66,6 +69,8 @@ async function mount(page) {
       const [id, setId] = React.useState('codex')
       const [disabled, setDisabled] = React.useState(false)
       const [catalog, setCatalog] = React.useState(false)
+      const [running, setRunning] = React.useState(false)
+      window.setRunning = setRunning
       useVisualViewport()
       const { data } = useConversation(id)
       const settings = useConversationConfig(data)
@@ -75,16 +80,17 @@ async function mount(page) {
       window.settings = settings
       if (!settings.config) return null
       return React.createElement(Composer, {
-        key: id, config: settings.config, draftKey: `composer-test-${id}`, status: 'idle', disabled,
+        key: id, config: settings.config, draftKey: `composer-test-${id}`, status: running ? 'running' : 'idle', disabled,
         commands: catalog ? [{ name: 'review', aliases: [], description: 'Review the draft', argumentHint: '' }] : [],
         skills: catalog ? [{ name: 'writing', description: 'Edit prose', path: '/skills/writing' }] : [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
         appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual' } : null,
         onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
         onSend: async (text) => { await settings.flush(); await api.post(`/api/conversations/${id}/messages`, { text }) },
-        onInterrupt: () => {},
+        onInterrupt: () => { window.interrupted = true },
+        onSteer: async () => { window.steered = true },
       })
     }
-    createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, React.createElement(Harness)))))
+    createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, { initialEntries: ['/p/demo/c/demo'] }, React.createElement(TooltipProvider, null, React.createElement(Harness)))))
   })
   await page.getByRole('button', { name: 'Modèle et effort : Modèle Alpha · Élevé', exact: true }).waitFor()
 }
@@ -556,6 +562,25 @@ try {
     assert.equal(await insert.isDisabled(), true)
     assert.equal(await chip().isDisabled(), true)
     if (!narrow) assert.equal(await full.isDisabled(), true)
+    await page.evaluate(() => { window.setReadOnly(false); window.toggleConcentration(); window.setRunning(true) })
+    const stop = page.getByRole('button', { name: "Interrompre l'agent", exact: true })
+    await stop.waitFor()
+    await field.fill('')
+    assert.equal(await page.getByRole('button', { name: 'Mettre le message en file', exact: true }).count(), 0)
+    await stop.click()
+    assert.equal(await page.evaluate(() => window.interrupted), true)
+    await field.fill('Une précision immédiate')
+    await page.getByRole('button', { name: 'Infléchir le tour en cours', exact: true }).click()
+    assert.equal(await page.evaluate(() => window.steered), true)
+    await field.fill('Message suivant')
+    await page.getByRole('button', { name: 'Mettre le message en file', exact: true }).click()
+    assert.equal(messages.at(-1).text, 'Message suivant')
+    await page.evaluate(async () => { window.settings.change({ ...window.settings.config, permissionMode: 'plan' }); await window.settings.flush() })
+    const quietSettings = page.getByRole('button', { name: /^Réglages de la conversation,/ })
+    await quietSettings.getByText('Plan', { exact: true }).waitFor()
+    assert.ok((await quietSettings.boundingBox()).width >= 60, 'Plan fits beside its settings icon')
+    await page.evaluate(() => { window.setRunning(false); window.toggleConcentration() })
+    await chip().waitFor()
     assert.deepEqual(errors, [])
     console.log(`OK ${viewport.width}×${viewport.height}: quick choices, ordered saves, send waits, retry, draft, Claude/Codex, MCP, pinned chips, reorder, bounds`)
     await context.close()

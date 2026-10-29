@@ -1,6 +1,8 @@
 import { CreateProjectDialog } from '../components/chat/CreateProjectDialog'
 import { conversationPath } from '@sillage/protocol'
 import { recordPerformance } from '../lib/performance-diagnostics'
+import { useConcentration } from '../lib/concentration'
+import { ConcentrationButton } from '../components/chat/ConcentrationButton'
 import { useThreadLayout } from '../lib/use-thread-layout'
 import { NewsTicker } from '../components/chat/NewsTicker'
 import { TooltipButton } from '../components/ui/Tooltip'
@@ -375,6 +377,7 @@ export function ConversationPage() {
   const anchored = useRef<number | null>(null)
   const activity = describeActivity(stream.state)
   const sidebarHidden = useSidebarHidden()
+  const concentration = useConcentration()
   const panel = usePanelPresence()
   const panelLayout = usePanelLayout()
   const { data: projects } = useProjects()
@@ -891,7 +894,7 @@ export function ConversationPage() {
     {/* Thread `#12` references identify this project's board cards. */}
     <CardRefContext.Provider value={conversation.projectId}>
     {/* `overflow-clip`, not `hidden`: hidden containers remain programmatically scrollable. An editor revealing a line while the panel slid out shifted the container, leaving the panel clipped on the left. */}
-    <div ref={panelLayout.containerRef} className="relative flex h-full overflow-clip">
+    <div ref={panelLayout.containerRef} className={cx("relative flex h-full overflow-clip", concentration && "sg-concentration")}>
       <div
         className={cx(
           // `@container`: the ruler and composer settings collapse according to actual
@@ -924,10 +927,11 @@ export function ConversationPage() {
             'border-b border-line px-2 py-2 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
             // The show-navigation button occupies this corner: without reserved space,
             // it covers the CLI icon.
-            sidebarHidden && 'md:pl-14',
+            sidebarHidden && !concentration && 'md:pl-14',
+            concentration && 'sg-concentration-header',
           )}
         >
-          <MobileNavigationButton />
+          {!concentration ? <MobileNavigationButton /> : null}
           <span
             role="img"
             aria-label={AGENT_LABELS[conversation.agent]}
@@ -937,7 +941,7 @@ export function ConversationPage() {
             <AgentIcon agent={conversation.agent} size={20} />
           </span>
 
-          <div className="min-w-0 flex-1">
+          <div className="sg-conversation-heading min-w-0 flex-1">
             {/* Preserve project width; truncate the branch first. */}
             <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
               {conversation.projectId ? <>
@@ -1086,12 +1090,13 @@ export function ConversationPage() {
           >
             <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
           </IconButton>
+          <ConcentrationButton />
         </header>
-        {!conversation.projectId && allConversations?.some(entry => entry.handoffFromId === conversation.id && entry.projectId) ? <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs text-ink-soft">
+        {!concentration && !conversation.projectId && allConversations?.some(entry => entry.handoffFromId === conversation.id && entry.projectId) ? <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs text-ink-soft">
           <span>{t('discussions.project.linked')}</span>
           {allConversations.filter(entry => entry.handoffFromId === conversation.id && entry.projectId).map(entry => <Link key={entry.id} to={conversationPath(entry)} className="text-accent hover:underline">{entry.title}</Link>)}
         </div> : null}
-        <ConversationWorktreeBar key={conversation.id} conversation={conversation} canClean={project?.isOwner ?? false} />
+        {!concentration ? <ConversationWorktreeBar key={conversation.id} conversation={conversation} canClean={project?.isOwner ?? false} /> : null}
 
         <InstructionsDialog
           open={instructionsOpen}
@@ -1300,7 +1305,7 @@ export function ConversationPage() {
              */}
             <div
               className={cx(
-                'mx-auto flex sg-conversation-width flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
+                'sg-conversation-content mx-auto flex sg-conversation-width flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
                 placed ? 'opacity-100 transition-opacity duration-200' : 'opacity-0',
               )}
             >
@@ -1340,7 +1345,7 @@ export function ConversationPage() {
     
               <ChatThread
                 rows={view.rows}
-                mayCollapseTools={!placed || stuckToBottom}
+                mayCollapseTools={concentration ? !findOpen : !placed || stuckToBottom}
                 conversationId={conversationId}
                 canDecide={isOwner}
                 onFork={isOwner && !forking ? setForkTarget : undefined}
@@ -1351,8 +1356,8 @@ export function ConversationPage() {
                 onRestoreCheckpoint={isOwner && !stream.state.turnRunning ? setRestoreTarget : undefined}
               />
     
-              {activity ? <TurnActivity label={activity} /> : null}
-              {stream.state.turnRunning ? <NewsTicker key={conversationId} /> : null}
+              {activity && !concentration ? <TurnActivity label={activity} /> : null}
+              {stream.state.turnRunning && !concentration ? <NewsTicker key={conversationId} /> : null}
     
               {/* Below the indicator: what the agent has not read yet. */}
               <QueuedMessages
@@ -1383,7 +1388,7 @@ export function ConversationPage() {
            * it beneath the growing composer. Show it with the thread too: a ruler filling
            * beside an empty thread reveals the construction hidden by masking.
            */}
-          {placed ? (
+          {placed && !concentration ? (
             <ConversationMinimap
               turns={turns}
               visibleIds={visibleTurns}
@@ -1417,7 +1422,7 @@ export function ConversationPage() {
                 <ArrowDown size={16} />
               </TooltipButton>
 
-              <div className="absolute right-3 bottom-full z-10 mb-2">
+              <div className={cx("absolute right-3 bottom-full z-10 mb-2", concentration && "hidden")}>
                 <TurnNav count={turns.length} onStep={step} />
               </div>
             </>

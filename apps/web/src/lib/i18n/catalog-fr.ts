@@ -2,6 +2,10 @@ import type { Catalog } from './catalog-en'
 
 /** French catalog. Typed from English so missing keys fail the build. */
 export const fr: Catalog = {
+  "concentration.enter": "Activer le mode concentration",
+  "concentration.exit": "Quitter le mode concentration",
+  "concentration.add": "Ajouter au message",
+  "concentration.actions": "Actions du message",
   "error.handoff_disk_full": "Le dossier du projet manque d’espace libre pour copier les fichiers sélectionnés.",
   "discussions.project.start": "Démarrer l’agent après la création du projet",
   "discussions.project.prompt": "Première demande dans le projet",

@@ -1,0 +1,59 @@
+/* Focus is a view of existing content; theme, reading size and stored layout stay intact. */
+.sg-concentration .sg-conversation-width {
+  max-width: 48rem;
+}
+.sg-concentration-header {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.sg-concentration-header > :not(.sg-conversation-heading):not([data-concentration-toggle]) {
+  display: none;
+}
+.sg-concentration-header .sg-conversation-heading > div {
+  display: none;
+}
+.sg-concentration-header .sg-conversation-heading > p {
+  font-weight: 400;
+  color: var(--sg-ink-soft);
+}
+.sg-concentration .sg-conversation-content {
+  gap: 1.25rem;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+.sg-concentration .sg-user-bubble {
+  box-shadow: none;
+  border-color: transparent;
+  background: var(--sg-surface-high);
+}
+.sg-concentration .sg-thinking {
+  border-color: transparent;
+  background: transparent;
+}
+.sg-concentration .sg-tool-group-heading {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.sg-concentration-composer .sg-composer-frame {
+  background: var(--sg-surface);
+  box-shadow: none;
+}
+.sg-concentration-composer button[type='submit'] {
+  background: var(--sg-accent);
+}
+.sg-quiet-footer > :not(.sg-message-reveal) {
+  opacity: 0;
+}
+.group:hover > .sg-quiet-footer > :not(.sg-message-reveal),
+.sg-quiet-footer:focus-within > :not(.sg-message-reveal) {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .sg-quiet-footer:not(.sg-footer-expanded) > :not(.sg-message-reveal) {
+    display: none;
+  }
+  .sg-quiet-footer.sg-footer-expanded > * {
+    opacity: 1;
+  }
+}

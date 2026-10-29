@@ -1,3 +1,4 @@
+import { useConcentration } from '../../lib/concentration'
 import { TooltipButton } from '../ui/Tooltip'
 import { ArrowUp, FastForward, Loader2, Mic, Paperclip, Square } from 'lucide-react'
 import {
@@ -259,6 +260,7 @@ export function Composer({
   const dismissedSessionToken = useRef<{ value: string; caret: number } | null>(null)
   const filePicker = useRef<HTMLInputElement>(null)
 
+  const concentration = useConcentration()
   const running = status === 'running' || status === 'awaiting_input'
   const { groups, summary, mcp, mcpPanel, catalogError, refreshCatalog } = useAgentSettings({
     config,
@@ -744,16 +746,17 @@ export function Composer({
     inputRef: textarea,
   }
 
+  const startDictation = () => {
+    if (sttEnabled) void dictation.toggle()
+    else setSttNotice(true)
+  }
   const dictate = (
     <TooltipButton
       type="button"
       aria-label={dictation.state === 'recording' ? t('composer.dictate.stop') : t('composer.dictate.start')}
       title={dictation.state === 'recording' ? t('composer.dictate.stop') : t('composer.dictate.start')}
       disabled={disabled || dictation.state === 'transcribing'}
-      onClick={() => {
-        if (sttEnabled) void dictation.toggle()
-        else setSttNotice(true)
-      }}
+      onClick={startDictation}
       className={cx(
         toolButtonClass(narrow),
         dictation.state === 'recording' &&
@@ -766,7 +769,7 @@ export function Composer({
 
   return (
     // The page owns the safe-area inset (pb-safe): adding another here would reserve it twice.
-    <div className={cx('shrink-0', variant === 'thread' && 'px-3 pt-1 pb-6')}>
+    <div className={cx('shrink-0', concentration && 'sg-concentration-composer', variant === 'thread' && 'px-3 pt-1 pb-6')}>
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -792,7 +795,7 @@ export function Composer({
         {configFeedback}
 
         {/* One frame surrounds field and toolbar as a single object illuminated by input focus. */}
-        <div className="surface flex flex-col gap-1 rounded-xl border border-line p-1.5 shadow-float">
+        <div className="sg-composer-frame surface flex flex-col gap-1 rounded-xl border border-line p-1.5 shadow-float">
           <AttachmentTray
             attachments={attachments}
             uploading={uploading}
@@ -893,10 +896,19 @@ export function Composer({
             />
             {/* Pinned settings that no longer fit beside tools get a separate line above rather than squeezing values. */}
             <div ref={prefs}
-              className={cx('flex min-w-0 items-center gap-1', split ? 'order-first basis-full flex-wrap border-b border-line pb-1' : 'order-2')}>
-              <ComposerQuickSettings {...settingsProps} />
+              className={cx(concentration && 'hidden', 'flex min-w-0 items-center gap-1', split && !concentration ? 'order-first basis-full flex-wrap border-b border-line pb-1' : 'order-2')}>
+              {!concentration ? <ComposerQuickSettings {...settingsProps} /> : null}
             </div>
             <div ref={lead} className="order-1 flex shrink-0 items-center gap-1">
+              {concentration ? <>
+                <ComposerInsert inputRef={textarea} disabled={disabled} project={Boolean(projectId)} compact
+                  commands={offered.length > 0} skills={skills.length > 0}
+                  combinedCommands={config.agent === 'claude' || config.agent === 'grok'} onInsert={insertPrefix}
+                  onAttach={attachments.length < MAX_ATTACHMENTS_PER_MESSAGE ? () => filePicker.current?.click() : undefined}
+                  onDictate={dictation.state === 'idle' ? startDictation : undefined} />
+                <ComposerSettingsButton {...settingsProps} concentration onPinnedChange={undefined} feedback={<>{configFeedback}{context ? <ContextMeter context={context} /> : null}</>} />
+              </> : <>
+
               <TooltipButton type="button" aria-label={t('composer.attach.label')} title={t('composer.attach.label')}
                 className={toolButtonClass(narrow)}
                 disabled={disabled || attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
@@ -907,12 +919,13 @@ export function Composer({
               {narrow ? null : dictate}
               {/* Keep measured tool width stable when pins wrap, or the split threshold oscillates. */}
               {narrow ? null : <span aria-hidden className={cx('mx-0.5 h-4 w-px bg-line', split && 'invisible')} />}
+              </>}
             </div>
             <div ref={trail} className="order-3 ml-auto flex shrink-0 items-center gap-1">
-              {mcp ? cloneElement(mcp, { narrow }) : null}
-              <SkillsControl projectId={projectId ?? undefined} config={config} skills={skills} commands={commands} inputRef={textarea} narrow={narrow} />
-              {context ? <span className="flex items-center px-1"><ContextMeter context={context} compact={narrow} /></span> : null}
-              {narrow ? null : <ComposerSettingsButton {...settingsProps} />}
+              {!concentration && mcp ? cloneElement(mcp, { narrow }) : null}
+              {!concentration ? <SkillsControl projectId={projectId ?? undefined} config={config} skills={skills} commands={commands} inputRef={textarea} narrow={narrow} /> : null}
+              {!concentration && context ? <span className="flex items-center px-1"><ContextMeter context={context} compact={narrow} /></span> : null}
+              {narrow || concentration ? null : <ComposerSettingsButton {...settingsProps} />}
               {/* Both buttons coexist during turns: stop agents without losing typed messages, or send without stopping. */}
               {/*
                * Offer steering only during turns and for supporting CLIs: handle immediately rather
@@ -951,7 +964,7 @@ export function Composer({
               ) : null}
 
               {/* Phone microphone and send share space: dictate empty fields, send filled ones. */}
-              {narrow && !canSend ? dictate : null}
+              {(concentration ? dictation.state !== 'idle' : narrow && !canSend) ? dictate : null}
               <TooltipButton
                 type="submit"
                 disabled={!canSend}
@@ -984,7 +997,7 @@ export function Composer({
         </div>
       </form>
 
-      <div className="mx-auto flex sg-conversation-width items-start gap-2">
+      <div className={cx("mx-auto flex sg-conversation-width items-start gap-2", concentration && "hidden")}>
         <ComposerInsert inputRef={textarea} disabled={disabled} project={Boolean(projectId)}
           commands={offered.length > 0} skills={skills.length > 0}
           combinedCommands={config.agent === 'claude' || config.agent === 'grok'} onInsert={insertPrefix} />

@@ -1,3 +1,7 @@
+import { useLayoutEffect } from 'react'
+import { useConcentration } from '../lib/concentration'
+import { setPanelConcentration } from '../lib/panel'
+import '../styles/concentration.css'
 import { useCliUpdateNotice } from '../lib/agents'
 import { conversationPath } from '@sillage/protocol'
 import { sessionReference } from '@sillage/protocol'
@@ -212,7 +216,13 @@ export function AppShell() {
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const pwa = useCapability('pwa')
-  const hidden = useSidebarHidden()
+  const concentration = useConcentration()
+  const sidebarHidden = useSidebarHidden()
+  const hidden = sidebarHidden || concentration
+  useLayoutEffect(() => {
+    setPanelConcentration(concentration)
+    return () => setPanelConcentration(false)
+  }, [concentration])
   const aside = useRef<HTMLElement>(null)
   const wide = useMediaQuery('(min-width: 48rem)')
   const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
@@ -222,7 +232,7 @@ export function AppShell() {
   const schedulesRoute = useMatch('/p/:projectId/schedules')
   const automationRoute = useMatch('/p/:projectId/schedules/:taskId')
   const contextualHeader = Boolean(conversationRoute || discussionRoute || boardRoute || servicesRoute || schedulesRoute || automationRoute)
-  const navInactive = wide ? hidden : !navOpen
+  const navInactive = concentration || (wide ? hidden : !navOpen)
   useVisualViewport()
   useFileDropGuard()
   useRememberContext()
@@ -324,7 +334,7 @@ export function AppShell() {
           // md:left-auto prevents sticky left:0 pinning the element to the viewport and visually
           // canceling negative collapse margins even though space was released.
           'md:relative md:h-full md:translate-x-0',
-          navOpen ? 'translate-x-0' : '-translate-x-full',
+          navOpen && !concentration ? 'translate-x-0' : '-translate-x-full',
           hidden ? 'md:-ml-[var(--sidebar-desktop-width)]' : 'md:ml-0',
         )}
       >
@@ -362,7 +372,7 @@ export function AppShell() {
         )}
       </aside>
 
-      {hidden ? (
+      {hidden && !concentration ? (
         <div className="absolute top-2 left-2 z-30 hidden md:block">
           <IconButton data-sidebar-restore label={t('shell.nav.show')} onClick={() => setSidebarHidden(false)}>
             <PanelLeft size={18} />
@@ -379,7 +389,7 @@ export function AppShell() {
        * useSidebarHidden. Offsetting the entire column left an empty full-height strip.
        */}
       <div
-        inert={!wide && navOpen}
+        inert={!wide && navOpen && !concentration}
         className={cx('flex min-w-0 flex-1 flex-col', contextualHeader && 'pt-safe md:pt-0')}
       >
         {!contextualHeader ? (

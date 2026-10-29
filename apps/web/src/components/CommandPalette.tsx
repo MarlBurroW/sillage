@@ -1,5 +1,6 @@
+import { toggleConcentration, useConcentration } from '../lib/concentration'
 import * as Dialog from '@radix-ui/react-dialog'
-import { ChevronDown, Loader, Search, X } from 'lucide-react'
+import { ChevronDown, Loader, Maximize2, Search, X } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useMatch, useNavigate } from 'react-router-dom'
 import { SEARCH_MIN_QUERY, type ProjectDto } from '@sillage/protocol'
@@ -12,6 +13,8 @@ import { useTranslate } from '../lib/i18n'
 import { useMcpServers } from '../lib/mcp'
 import {
   PALETTE_FILES_MIN_QUERY,
+  field,
+  WEIGHT,
   rankPalette,
   recentPalette,
   usePaletteCatalog,
@@ -116,11 +119,15 @@ export function CommandPalette({
   const wide = useMediaQuery('(min-width: 48rem)')
 
   const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
+  const discussionRoute = useMatch('/discussions/:conversationId')
+  const concentration = useConcentration()
+  const canConcentrate = Boolean(conversationRoute || discussionRoute)
   const boardRoute = useMatch('/p/:projectId/board')
   const projectRoute = useMatch('/p/:projectId/*')
   const currentProjectId = projectRoute?.params.projectId ?? null
-  const draft = conversationRoute?.params.conversationId === 'new'
-  const currentConversationId = draft ? null : (conversationRoute?.params.conversationId ?? null)
+  const routeId = conversationRoute?.params.conversationId ?? discussionRoute?.params.conversationId
+  const draft = routeId === 'new'
+  const currentConversationId = draft ? null : (routeId ?? null)
 
   const { data: user } = useCurrentUser()
   const { data: instance } = useInstance()
@@ -187,7 +194,13 @@ export function CommandPalette({
   // no use for updates.
   const items = useMemo(
     () =>
-      !open ? [] : buildPaletteItems({
+      !open ? [] : [...(canConcentrate ? [{
+        key: 'command:concentration', kind: 'command' as const, projectId: null,
+        title: t(concentration ? 'concentration.exit' : 'concentration.enter'),
+        icon: <Maximize2 size={15} />,
+        fields: [field(t(concentration ? 'concentration.exit' : 'concentration.enter'), 'title', WEIGHT.title)],
+        target: { type: 'run' as const, run: toggleConcentration },
+      }] : []), ...buildPaletteItems({
         t,
         projects: visibleProjects,
         currentProjectId,
@@ -200,8 +213,8 @@ export function CommandPalette({
         settings,
         theme,
         applyTheme,
-      }),
-    [open, t, visibleProjects, currentProjectId, conversations, catalog, schedules, actions, runAction, mcp, settings, theme, applyTheme],
+      })],
+    [open, canConcentrate, concentration, t, visibleProjects, currentProjectId, conversations, catalog, schedules, actions, runAction, mcp, settings, theme, applyTheme],
   )
   const fileItems = useMemo(
     () => buildFileItems(t, files.data, visibleProjects),
@@ -216,11 +229,19 @@ export function CommandPalette({
     if (!open) return []
     if (!deferred) {
       const byKey = new Map(items.map((item) => [item.key, item]))
-      return recentPalette(conversations ?? [], byKey, {
+      const recent = recentPalette(conversations ?? [], byKey, {
         currentProjectId,
         currentConversationId,
         visibleProjects: new Set(visibleProjects.map((project) => project.id)),
       })
+      const command = byKey.get('command:concentration')
+      if (command) {
+        const hit = { item: command, score: 0, title: [], detail: [] }
+        const general = recent.find((group) => group.key === 'general')
+        if (general) general.hits.unshift(hit)
+        else recent.unshift({ key: 'general', projectId: null, score: 0, hits: [hit] })
+      }
+      return recent
     }
     // Server replies may lag a keystroke; rerank against current input so stale nonmatches never appear.
     const searchable = [

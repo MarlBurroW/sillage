@@ -348,10 +348,11 @@ function summarizeNames(tools: ToolItem[]): string {
  * second.
  */
 export const ToolCallGroup = memo(function ToolCallGroup({
-  tools, conversationId, complete = true, mayCollapse = true, variant,
+  tools, conversationId, complete = true, mayCollapse = true, variant, quiet = false,
 }: {
   tools: ToolItem[]
   conversationId: string
+  quiet?: boolean
   complete?: boolean
   mayCollapse?: boolean
   variant?: ToolStyle
@@ -376,8 +377,9 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   useLayoutEffect(() => {
     if (eligible && mayCollapse && !manual && !pinnedIntent && opened.size === 0) setCollapsed(true)
   }, [eligible, mayCollapse, manual, pinnedIntent, opened.size])
-  const folded = eligible && collapsed
-  const header = folded || manual
+  const [quietExpanded, setQuietExpanded] = useState(false)
+  const folded = quiet ? mayCollapse && !quietExpanded : eligible && collapsed
+  const header = quiet || folded || manual
   const failed = tools.filter((tool) => tool.status === 'failed').length
   const interrupted = tools.filter((tool) => tool.status === 'interrupted').length
   const total = tools.reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0)
@@ -387,15 +389,15 @@ export const ToolCallGroup = memo(function ToolCallGroup({
 
   return <div className={`sg-tool-sequence sg-tools-${style}`} data-thread-anchor={`tools-${tools[0]?.id}`} data-tool-sequence data-folded={folded}>
     {header ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}
-      onClick={() => { setManual(true); setCollapsed(!folded) }}>
+      onClick={() => { if (quiet) setQuietExpanded(folded); else { setManual(true); setCollapsed(!folded) } }}>
       <ChevronRight size={14} className={cx('shrink-0 text-ink-faint', !folded && 'rotate-90')} />
       <span className="shrink-0 font-medium">{t(tools.length > 1 ? 'toolcall.group.count.other' : 'toolcall.group.count.one', { count: tools.length })}</span>
       <span className="min-w-0 flex-1 truncate text-xs text-ink-faint" title={summarizeNames(tools)}>{summarizeNames(tools)}</span>
-      {sillage ? <span className="sg-origin-badge text-accent" title={t('toolStyle.origin.sillage', { count: sillage })}><Logo size={16} />{sillage}</span> : null}
-      {external ? <span className="sg-origin-badge" title={servers} aria-label={`${t('toolStyle.origin.mcp', { count: external })}: ${servers}`}><span className="sg-mcp-mark">MCP</span>{external}</span> : null}
+      {sillage && !quiet ? <span className="sg-origin-badge text-accent" title={t('toolStyle.origin.sillage', { count: sillage })}><Logo size={16} />{sillage}</span> : null}
+      {external && !quiet ? <span className="sg-origin-badge" title={servers} aria-label={`${t('toolStyle.origin.mcp', { count: external })}: ${servers}`}><span className="sg-mcp-mark">MCP</span>{external}</span> : null}
       {failed > 0 ? <span className="shrink-0 text-xs text-critical">{t(failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one', { count: failed })}</span> : null}
       {interrupted > 0 ? <span className="shrink-0 text-xs text-ink-faint" title={t('toolStyle.interrupted', { count: interrupted })}><CircleSlash size={13} />{interrupted}</span> : null}
-      {total > 0 ? <span className="sg-tool-duration text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span> : null}
+      {total > 0 && !quiet ? <span className="sg-tool-duration text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span> : null}
     </button> : null}
     {!folded ? <div className="sg-tool-list">
       {style === 'intent' ? intentSections(tools).map((section) => <IntentSection key={section[0]!.id} label={t(INTENT_LABELS[toolIntent(section[0]!)])} count={section.length} onInteract={() => setPinnedIntent(true)}>
@@ -403,7 +405,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
       </IntentSection>) : tools.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={style} onOpenChange={onOpenChange} />)}
     </div> : null}
   </div>
-}, (previous, next) => previous.conversationId === next.conversationId && previous.complete === next.complete && previous.mayCollapse === next.mayCollapse && previous.variant === next.variant && previous.tools.length === next.tools.length && previous.tools.every((tool, index) => tool === next.tools[index]))
+}, (previous, next) => previous.conversationId === next.conversationId && previous.complete === next.complete && previous.quiet === next.quiet && previous.mayCollapse === next.mayCollapse && previous.variant === next.variant && previous.tools.length === next.tools.length && previous.tools.every((tool, index) => tool === next.tools[index]))
 
 /** Des catégories locales, sans générer de titres ni prétendre connaître l’intention du modèle. */
 function intentSections(tools: ToolItem[]): ToolItem[][] {

@@ -83,6 +83,7 @@ export interface SummarySegment {
 export const MODEL_EFFORT_KEYS: readonly string[] = ['model', 'effort']
 
 export interface ComposerSettingsProps {
+  concentration?: boolean
   groups: SettingGroup[]
   summary: SummarySegment[]
   /**
@@ -105,9 +106,9 @@ export function pinnedExtras(groups: SettingGroup[], pinned: string[]): SettingG
 }
 
 /** Signals for the all-settings button: Plan mode and removed safeguards not already visible in chips. */
-function useStatus({ groups, summary, pinned, narrow }: Pick<ComposerSettingsProps, 'groups' | 'summary' | 'pinned' | 'narrow'>) {
+function useStatus({ groups, summary, pinned, narrow, concentration }: Pick<ComposerSettingsProps, 'groups' | 'summary' | 'pinned' | 'narrow' | 'concentration'>) {
   const t = useTranslate()
-  const visible = new Set([...MODEL_EFFORT_KEYS, ...(narrow ? [] : pinnedExtras(groups, pinned).map((group) => group.key))])
+  const visible = new Set(concentration ? [] : [...MODEL_EFFORT_KEYS, ...(narrow ? [] : pinnedExtras(groups, pinned).map((group) => group.key))])
   const warnings = summary.filter((segment) => segment.tone === 'caution' && !visible.has(segment.key))
   const plan = groups.find((group) => (group.key === 'mode' || group.key === 'permission') && group.value === 'plan' && !visible.has(group.key))
   const statusLabels = [
@@ -208,6 +209,7 @@ export function ComposerSettingsButton(props: ComposerSettingsProps) {
   const { disabled = false, inputRef } = props
   const t = useTranslate()
   const { statusLabels, summaryLabel, caution } = useStatus(props)
+  const plan = props.concentration && props.groups.find((group) => (group.key === 'mode' || group.key === 'permission') && group.value === 'plan')
   return (
     <SettingsSurface
       label={t('composer.settings.title')}
@@ -217,9 +219,10 @@ export function ComposerSettingsButton(props: ComposerSettingsProps) {
         <TooltipButton type="button" disabled={disabled}
           aria-label={t('composer.settings.label', { summary: summaryLabel })}
           title={[t('composer.settings.all'), ...statusLabels].join(' · ')}
-          className={cx(toolButtonClass(false), 'relative text-ink-soft data-[state=open]:bg-accent-wash')}
+          className={cx(toolButtonClass(false), 'relative text-ink-soft data-[state=open]:bg-accent-wash', plan && 'min-w-max gap-1 px-2')}
         >
           <SlidersHorizontal size={16} />
+          {plan ? <span className="ml-1 text-xs">{valueLabel(plan, t)}</span> : null}
           {statusLabels.length > 0 ? <span aria-hidden className={cx('absolute right-1 top-1 size-1.5 rounded-full', caution ? 'bg-caution' : 'bg-accent')} /> : null}
         </TooltipButton>
       }

@@ -1,3 +1,4 @@
+import { useConcentration } from '../../lib/concentration'
 import { DiffCard } from './DiffCard'
 import { Fragment, type RefObject } from 'react'
 import { noticeText, type MessageItem, type TurnCheckpoint } from '../../lib/chat-fold'
@@ -68,6 +69,7 @@ export function ChatThread({
   onRestoreCheckpoint?: (checkpoint: TurnCheckpoint) => void
 }) {
   const t = useTranslate()
+  const concentration = useConcentration()
 
   // Place turn markers at their ends, before the next user message or after the final item.
   // Identify turns by their opening message.
@@ -109,7 +111,7 @@ export function ChatThread({
 
   function renderRow(row: ChatRow) {
         if (row.kind === 'tool-group') {
-          return <ToolCallGroup key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
+          return <ToolCallGroup quiet={concentration} key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
         }
         if (row.kind === 'tool') {
           return <ToolCall key={row.key} tool={row.tool} conversationId={conversationId} />

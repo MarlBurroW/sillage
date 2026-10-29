@@ -38,6 +38,13 @@ function defaultWidth(): number {
 }
 
 let open = localStorage.getItem(OPEN_KEY) === '1'
+// Temporary overlays in focus mode must not overwrite the normal panel layout.
+let concentrationOpen: boolean | null = null
+export function setPanelConcentration(active: boolean): void {
+  if (active === (concentrationOpen !== null)) return
+  concentrationOpen = active ? false : null
+  for (const listener of listeners) listener()
+}
 let expanded = localStorage.getItem(EXPANDED_KEY) === '1'
 const listeners = new Set<() => void>()
 
@@ -55,7 +62,8 @@ export function setPanelExpanded(next: boolean): void {
 /** Actual space remaining after the sidebar determines whether the thread and changes fit. */
 export function usePanelLayout() {
   const [width, setWidth] = useState(0)
-  const isExpanded = useSyncExternalStore(subscribe, () => expanded, () => false)
+  const isExpanded = useSyncExternalStore(subscribe, () => expanded || concentrationOpen !== null, () => false)
+  const concentration = useSyncExternalStore(subscribe, () => concentrationOpen !== null, () => false)
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     if (!node) return
     setWidth(node.clientWidth)
@@ -65,14 +73,14 @@ export function usePanelLayout() {
     observer.observe(node)
     return () => observer.disconnect()
   }, [])
-  const canDock = width >= 960
+  const canDock = width >= 960 && !concentration
   return { containerRef, canDock, docked: canDock && !isExpanded }
 }
 
 export function usePanelOpen(): boolean {
   return useSyncExternalStore(
     subscribe,
-    () => open,
+    () => concentrationOpen ?? open,
     () => false,
   )
 }
@@ -105,6 +113,12 @@ export function usePanelPresence(): { mounted: boolean; open: boolean } {
 }
 
 export function setPanelOpen(next: boolean): void {
+  if (concentrationOpen !== null) {
+    if (concentrationOpen === next) return
+    concentrationOpen = next
+    for (const listener of listeners) listener()
+    return
+  }
   if (next === open) return
   open = next
   localStorage.setItem(OPEN_KEY, next ? '1' : '0')

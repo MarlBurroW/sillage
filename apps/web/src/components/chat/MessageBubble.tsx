@@ -1,4 +1,6 @@
-import { Brain, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
+import { useConcentration } from '../../lib/concentration'
+import { TooltipButton } from '../ui/Tooltip'
+import { MoreHorizontal, Brain, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
 import { memo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@sillage/protocol'
@@ -41,13 +43,20 @@ function MessageFooter({
   onFork?: () => void
 }) {
   const t = useTranslate()
+  const concentration = useConcentration()
+  const [expanded, setExpanded] = useState(false)
   return (
     <div
       className={cx(
-        'flex items-center gap-1 px-1.5 text-[0.6875rem] text-ink-faint',
+        'sg-message-footer flex items-center gap-1 px-1.5 text-[0.6875rem] text-ink-faint',
+        concentration && 'sg-quiet-footer',
+        expanded && 'sg-footer-expanded',
         align === 'end' && 'flex-row-reverse',
       )}
     >
+      {concentration ? <TooltipButton type="button" aria-expanded={expanded} aria-label={t('concentration.actions')} title={t('concentration.actions')}
+        className="sg-message-reveal hidden size-11 items-center justify-center pointer-coarse:flex"
+        onClick={() => setExpanded(!expanded)}><MoreHorizontal size={16} /></TooltipButton> : null}
       {/* Always visible unlike actions: reading markers would be useless if hover-only. */}
       <time dateTime={new Date(ts).toISOString()} title={new Date(ts).toLocaleString(locale())}>
         {formatTimestamp(ts)}
@@ -264,7 +273,7 @@ function ThinkingBlock({ text }: { text: string }) {
   const t = useTranslate()
 
   return (
-    <div className="rounded-md border border-line bg-surface/40">
+    <div className="sg-thinking rounded-md border border-line bg-surface/40">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
