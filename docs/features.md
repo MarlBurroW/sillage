@@ -23,7 +23,8 @@ explains the differences.
   manage branches and remotes, or copy and move several files at once. The commit
   history draws its branches and merges as a graph, over the current branch or all
   of them, with a diff inspector for each commit. Images that agents read or
-  produce open in a viewer with zoom, rotation, copy and download.
+  produce open in a viewer with zoom, rotation, copy and download. Markdown images
+  also resolve in worktrees linked after the conversation started.
 - **What each turn changed, and a way back.** With turn checkpoints enabled on a
   project, Sillage captures the workspace before and after every turn in hidden git
   refs. Each turn lists the files it changed, opens them as a diff, and can be
@@ -55,6 +56,10 @@ explains the differences.
   view. Completed sequences fold when the agent speaks again. Open details to read
   inputs, outputs and file changes; failures remain visible in folded groups.
   Long histories load progressively and full tool outputs load on demand.
+- **Concentration mode.** Hide navigation and secondary controls while keeping the
+  conversation, composer and temporary file panels available. Restore the previous
+  layout without losing a draft or your reading position. Conversation actions
+  remain directly accessible as icons outside this mode, including on phones.
 - **Reading preferences.** Adjust the conversation width and activity indicator in
   Appearance settings. Optionally add RSS or Atom feeds in News to read headlines
   while an agent works; the feed is off until you enable it.
@@ -127,7 +132,7 @@ explains the differences.
   turn. Manual compaction and live steering are unavailable in this protocol.
   [Coverage and limitations](antigravity-integration.md).
 - **A composer you can arrange.** Model and effort sit in one chip under the
-  message box; pin the other settings you use next to it: permissions, speed,
+  message box, with a slider for supported effort levels; pin the other settings you use next to it: permissions, speed,
   account, advisor or other controls supported by that CLI, and order them. Each
   CLI keeps its own layout; on a phone the chip stays and the rest lives in the
   settings panel.
