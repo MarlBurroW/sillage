@@ -1,3 +1,4 @@
+import { EffortSlider } from './EffortSlider'
 import { TooltipButton } from '../ui/Tooltip'
 import {
   closestCenter,
@@ -103,8 +104,10 @@ export function SettingsPanel({ groups, pinned = [], onPinnedChange, disabled, e
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
           {detail.notice ? <p className="mb-2 text-xs text-caution">{detail.notice}</p> : null}
           {/* Selection returns to the overview, confirming the applied value and allowing the next setting. */}
-          <SettingOptions group={detail} disabled={disabled} compact={detail.key === 'effort' || detail.key === 'mode'}
-            onPick={(value) => { detail.onChange(value); back() }} />
+          {detail.key === 'effort'
+            ? <EffortSlider group={detail} model={groups.find((group) => group.key === 'model')} disabled={disabled} />
+            : <SettingOptions group={detail} disabled={disabled} compact={detail.key === 'mode'}
+                onPick={(value) => { detail.onChange(value); back() }} />}
         </div>
         {footer}
       </>
@@ -193,7 +196,9 @@ function InlineModelEffort({ groups, disabled, onOpen }: { groups: SettingGroup[
             {group.refresh ? <RefreshButton group={group} refresh={group.refresh} /> : null}
           </div>
           {group.notice ? <p className="mb-2 text-xs text-caution">{group.notice}</p> : null}
-          <SettingOptions group={group} disabled={disabled} compact={group.key === 'effort'} onPick={group.onChange} />
+          {group.key === 'effort'
+            ? <EffortSlider group={group} model={groups.find((item) => item.key === 'model')} disabled={disabled} />
+            : <SettingOptions group={group} disabled={disabled} onPick={group.onChange} />}
         </section>
       ))}
     </div>

@@ -1,3 +1,4 @@
+import { EffortSlider } from './EffortSlider'
 import { TooltipButton } from '../ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Popover from '@radix-ui/react-popover'
@@ -188,8 +189,7 @@ export function ComposerQuickSettings(props: ComposerSettingsProps) {
               </div>
               {effort ? (
                 <section aria-label={effort.label} className="shrink-0 border-t border-line p-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
-                  <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-ink-soft">{effort.icon}{effort.label}</h3>
-                  <SettingOptions group={effort} disabled={disabled} compact onPick={(value) => { effort.onChange(value); close(true) }} />
+                  <EffortSlider group={effort} model={model} disabled={disabled} />
                 </section>
               ) : <div aria-hidden className="shrink-0 pb-[var(--sg-safe-bottom)]" />}
             </>
