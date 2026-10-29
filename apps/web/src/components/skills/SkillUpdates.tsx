@@ -1,3 +1,4 @@
+import { SkillLoading } from './SkillLoading'
 import { useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { useState } from 'react'
@@ -24,6 +25,7 @@ export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySki
   const [errors, setErrors] = useState<string[]>([])
   const [failedSources, setFailedSources] = useState<Set<string>>(new Set())
   const [completed, setCompleted] = useState(0)
+  const [progress, setProgress] = useState({ done: 0, total: 0, name: '' })
   const linked = new Set(skills.map((skill) => skill.origin?.sourceId).filter(Boolean))
   const relevant = (sources.data?.sources ?? []).filter((source) => source.enabled && linked.has(source.id))
   const activeSources = new Set(relevant.map((source) => source.id))
@@ -41,12 +43,15 @@ export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySki
     setCompleted(0)
     setSelected(new Set())
     const failed = new Set<string>()
+    setProgress({ done: 0, total: relevant.length, name: '' })
     for (const source of relevant) {
+      setProgress((previous) => ({ ...previous, name: source.name }))
       try { await refresh.mutateAsync(source.id) }
       catch (error) {
         failed.add(source.id)
         setErrors((previous) => [...previous, `${source.name} : ${message(error)}`])
       }
+      setProgress((previous) => ({ ...previous, done: previous.done + 1 }))
     }
     setFailedSources(failed)
     setChecked(true)
@@ -58,8 +63,10 @@ export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySki
     setBusy('apply')
     setErrors([])
     setCompleted(0)
+    setProgress({ done: 0, total: selection.length, name: '' })
     // Recheck local state before each write because the list may predate edits.
     for (const skill of selection) {
+      setProgress((previous) => ({ ...previous, name: skill.name }))
       try {
         const latest = await api.get<LibrarySkillDto>(`/api/skill-library/${skill.id}`)
         if (latest.locallyModified || latest.problem) throw new Error(t('skills.updates.reviewRequired'))
@@ -71,11 +78,13 @@ export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySki
       } catch (error) {
         setErrors((previous) => [...previous, `${skill.name} : ${message(error)}`])
       }
+      setProgress((previous) => ({ ...previous, done: previous.done + 1 }))
     }
     await queryClient.invalidateQueries({ queryKey: ['skill-library'] })
     setBusy(null)
   }
 
+  if (sources.isLoading) return <SkillLoading label={t('skills.loading.sources')} rows={2} />
   if (linked.size === 0) return showEmpty ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.updates.noLinked')}</p> : null
   return <section className="rounded-lg border border-line p-4" aria-label={t('skills.updates.title')}>
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -83,11 +92,13 @@ export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySki
         <h2 className="text-sm font-semibold">{t('skills.updates.title')}</h2>
         <p className="mt-1 text-xs text-ink-faint">{t('skills.updates.description')}</p>
       </div>
-      {permissions.isAdmin ? <Button size="sm" variant="secondary" icon={<RefreshCw size={14} className={busy === 'check' ? 'animate-spin' : undefined} />}
-        disabled={busy !== null || relevant.length === 0 || sources.isFetching} onClick={() => void check()}>
+      {permissions.isAdmin ? <Button size="sm" variant="secondary" icon={<RefreshCw size={14} />}
+        busy={busy === 'check'} disabled={busy !== null || relevant.length === 0 || sources.isFetching} onClick={() => void check()}>
         {t(busy === 'check' ? 'skills.updates.checking' : 'skills.updates.check')}
       </Button> : null}
     </div>
+    {busy ? <SkillLoading label={t(busy === 'check' ? 'skills.loading.checkSource' : 'skills.loading.applySkills')}
+      detail={progress.name} progress={progress} /> : null}
     {sources.error ? <Banner>{sources.error.message}</Banner> : null}
     {checked && !busy ? <p role="status" className="mt-3 text-sm text-ink-soft">
       {t(errors.length > 0 ? 'skills.updates.partial' : pending.length === 0 ? 'skills.updates.current' : 'skills.updates.found', { count: pending.length })}
@@ -97,7 +108,7 @@ export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySki
         <Button size="sm" variant="ghost" disabled={busy !== null || available.length === 0} onClick={() => setSelected(selection.length === available.length ? new Set() : new Set(available.map((skill) => skill.id)))}>
           {t(selection.length === available.length && available.length > 0 ? 'skills.batch.clearVisible' : 'skills.batch.selectVisible')}
         </Button>
-        <Button size="sm" disabled={busy !== null || selection.length === 0} onClick={() => void update()}>
+        <Button size="sm" busy={busy === 'apply'} disabled={busy !== null || selection.length === 0} onClick={() => void update()}>
           {t(busy === 'apply' ? 'skills.update.applying' : 'skills.updates.applySelected', { count: selection.length })}
         </Button>
       </div>
@@ -122,7 +133,7 @@ export function SkillUpdates({ skills, showEmpty = false }: { skills: LibrarySki
       </ul>
       {pending.some((skill) => skill.locallyModified) ? <p className="mt-2 text-xs text-ink-faint">{t('skills.updates.localHint')}</p> : null}
     </> : null}
-    {completed > 0 ? <p role="status" className="mt-3 text-sm text-positive">{t('skills.updates.completed', { count: completed })}</p> : null}
+    {!busy && completed > 0 ? <p role="status" className="mt-3 text-sm text-positive">{t('skills.updates.completed', { count: completed })}</p> : null}
     {errors.map((error, index) => <div key={index} className="mt-2"><Banner>{error}</Banner></div>)}
     {review ? <UpdateDialog key={review.id} open onClose={() => setReview(null)} skill={review} canWrite={permissions.canWrite(review.scope, review.projectId)} /> : null}
   </section>

@@ -54,7 +54,7 @@ export function AddSkillMenu({ scope, projectId, onDiscover }: { scope: LibraryS
     <div className="flex flex-col items-end gap-2">
       <Menu
         trigger={
-          <Button size="sm" icon={<Plus size={15} />} disabled={importSkill.isPending}>
+          <Button size="sm" icon={<Plus size={15} />} busy={importSkill.isPending}>
             {importSkill.isPending ? t('skills.add.importing') : t('skills.add.action')}
           </Button>
         }

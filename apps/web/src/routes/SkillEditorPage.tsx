@@ -1,3 +1,4 @@
+import { SkillLoading } from '../components/skills/SkillLoading'
 import {
   ArrowLeft,
   BookOpen,
@@ -66,7 +67,7 @@ export function SkillEditorPage() {
   const { data: skill, isLoading, error } = useLibrarySkill(skillId)
   const permissions = useSkillPermissions()
 
-  if (isLoading) return <p className="p-8 text-sm text-ink-faint">{t('skills.editor.loading')}</p>
+  if (isLoading) return <SkillLoading label={t('skills.editor.loading')} rows={3} />
   if (error || !skill) {
     return (
       <EmptyState
@@ -174,12 +175,12 @@ function SkillEditor({
                   {t('skills.editor.discard')}
                 </Button>
               ) : null}
-              <Button size="sm" icon={<Save size={15} />} disabled={!dirty || !valid || update.isPending} onClick={save}>
+              <Button size="sm" icon={<Save size={15} />} busy={update.isPending} disabled={!dirty || !valid} onClick={save}>
                 {update.isPending ? t('skills.editor.saving') : t('skills.editor.save')}
               </Button>
             </>
           ) : null}
-          <Menu trigger={<IconButton label={t('skills.editor.actions')}><MoreHorizontal size={18} /></IconButton>}>
+          <Menu trigger={<IconButton disabled={update.isPending} label={t('skills.editor.actions')}><MoreHorizontal size={18} /></IconButton>}>
             {canWrite ? (
               <MenuItem icon={<Power size={15} />} onSelect={() => update.mutate({ id: skill.id, enabled: !skill.enabled })}>
                 {t(skill.enabled ? 'skills.action.disable' : 'skills.action.enable')}
@@ -217,6 +218,7 @@ function SkillEditor({
       {skill.problem ? <Banner>{t(`skills.problem.${skill.problem}.detail`)}</Banner> : null}
       {!skill.enabled ? <Banner tone="info">{t('skills.editor.disabled')}</Banner> : null}
       {!canWrite ? <Banner tone="info">{t('skills.editor.readonly')}</Banner> : null}
+      {update.isSuccess && !dirty ? <p role="status" className="text-sm text-positive">{t('settings.saved')}</p> : null}
       {errorOf(update.error) ? <Banner>{errorOf(update.error)}</Banner> : null}
 
       <Card>

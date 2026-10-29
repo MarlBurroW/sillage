@@ -56,7 +56,7 @@ export function SkillDialog({
               {!hideCancel ? <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
                 {t('skills.dialog.cancel')}
               </Button> : null}
-              <Button type="submit" disabled={!canSubmit || busy}>
+              <Button type="submit" busy={busy} disabled={!canSubmit}>
                 {submitLabel}
               </Button>
             </footer>

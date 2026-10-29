@@ -1,3 +1,4 @@
+import { SkillLoading } from '../components/skills/SkillLoading'
 import { BookOpen, Search } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -42,14 +43,14 @@ export function SkillLibrarySettingsPage() {
       value={tab} onChange={setTab}>
       {tab === 'installed' ? <div className="flex flex-col gap-4">
         <Field label={t('skills.installed.filter')} icon={<Search size={15} />} value={filter} onChange={(event) => setFilter(event.target.value)} />
-        {isLoading ? <p role="status" className="text-sm text-ink-faint">{t('skills.files.loading')}</p> : error ? <Banner>{error.message}</Banner>
+        {isLoading ? <SkillLoading label={t('skills.loading.library')} rows={3} /> : error ? <Banner>{error.message}</Banner>
           : skills.length === 0 ? <EmptyState icon={<BookOpen size={22} />} title={t('skills.empty.title')} description={t('skills.empty.description')} />
           : filtered.length === 0 ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.search.empty')}</p>
           : <SkillList skills={filtered} />}
       </div> : null}
       {tab === 'discover' ? <SkillDiscovery scope="global" projectId={null} /> : null}
       {tab === 'sources' ? <SkillSourcesSection isAdmin={isAdmin} /> : null}
-      {tab === 'updates' ? <SkillUpdates skills={skills} showEmpty /> : null}
+      {tab === 'updates' ? isLoading ? <SkillLoading label={t('skills.loading.library')} rows={3} /> : error ? <Banner>{error.message}</Banner> : <SkillUpdates skills={skills} showEmpty /> : null}
     </SkillTabs>
   </div>
 }

@@ -1,3 +1,4 @@
+import { SkillLoading } from './SkillLoading'
 import { BookOpen } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -18,8 +19,8 @@ import { SkillList, originLabel } from './SkillList'
 export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const t = useTranslate()
   const [tab, setTab] = useState<'installed' | 'discover' | 'updates' | 'repository'>('installed')
-  const { data } = useSkillLibrary(projectId)
-  const { data: local } = useLocalSkills(projectId, true)
+  const { data, isLoading, error } = useSkillLibrary(projectId)
+  const { data: local, isLoading: localLoading, error: localError } = useLocalSkills(projectId, true)
   const skills = data?.skills ?? []
   const own = skills.filter((skill) => skill.scope === 'project')
   const globals = skills.length - own.length
@@ -41,7 +42,7 @@ export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwn
           { value: 'updates', label: t('skills.tabs.updates') },
           { value: 'repository', label: t('skills.tabs.repository') },
         ]}>
-          {tab === 'installed' ? <div className="flex flex-col gap-4">
+          {tab === 'installed' ? isLoading ? <SkillLoading label={t('skills.loading.library')} rows={3} /> : error ? <Banner>{error.message}</Banner> : <div className="flex flex-col gap-4">
             <p className="text-xs text-ink-faint">
               {t('skills.project.globals', { count: globals })}{' '}
               <Link to="/settings/skills" className="text-accent hover:underline">
@@ -53,8 +54,8 @@ export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwn
             )}
           </div> : null}
         {tab === 'discover' ? <SkillDiscovery scope="project" projectId={projectId} /> : null}
-        {tab === 'updates' ? <SkillUpdates skills={own} showEmpty /> : null}
-        {tab === 'repository' ? (
+        {tab === 'updates' ? isLoading ? <SkillLoading label={t('skills.loading.library')} rows={3} /> : error ? <Banner>{error.message}</Banner> : <SkillUpdates skills={own} showEmpty /> : null}
+        {tab === 'repository' ? localLoading ? <SkillLoading label={t('skills.local.loading')} rows={3} /> : localError ? <Banner>{localError.message}</Banner> : (
           <section className="flex flex-col gap-2">
             <div>
               <h3 className="text-sm font-semibold text-ink-soft">{t('skills.project.repo.title')}</h3>

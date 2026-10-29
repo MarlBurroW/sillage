@@ -1,3 +1,4 @@
+import { SkillLoading } from '../skills/SkillLoading'
 import { TooltipButton } from '../ui/Tooltip'
 import { BookOpen, Search } from 'lucide-react'
 import { useState, type RefObject } from 'react'
@@ -66,7 +67,7 @@ function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
       {view === 'library' ? <section>
         <p className="py-3 text-xs text-ink-faint">{t('composer.skills.configuredHint')}</p>
-        {library.isPending ? <p role="status" className="py-3 text-sm text-ink-faint">{t('composer.skills.loading')}</p> : null}
+        {library.isPending ? <SkillLoading compact label={t('composer.skills.loading')} /> : null}
         {library.isError ? <p role="alert" className="py-3 text-sm text-critical">{t('composer.skills.error')}</p> : null}
         {!library.isPending && !library.isError && !libraryEnabled ? <p className="py-3 text-sm text-ink-faint">{t('composer.skills.disabled')}</p> : null}
         {libraryEnabled && visibleLibrary.map((skill) => <InventoryRow key={skill.id} name={skill.name} description={skill.description}

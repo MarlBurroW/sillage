@@ -1,3 +1,5 @@
+import { SkillLoading, SkillSpinner } from './SkillLoading'
+import { Check, Circle } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { skillNameSchema, type LibrarySkillScope } from '@sillage/protocol'
@@ -50,15 +52,24 @@ export function InstallSkillDialog({ candidate, scope, projectId, onClose }: {
         {candidate.skill.scripts ? <Banner tone="caution">{t('skills.compat.runs_scripts')}</Banner> : null}
         <details onToggle={(event) => setReading(event.currentTarget.open)}>
           <summary className="cursor-pointer text-sm text-ink-soft">{t('skills.install.contents')}</summary>
-          {preview.isFetching ? <p className="py-2 text-sm text-ink-faint">{t('skills.files.loading')}</p> : null}
+          {preview.isFetching ? <SkillLoading label={t('skills.loading.preview')} rows={1} /> : null}
           {preview.error ? <Banner>{preview.error.message}</Banner> : null}
           {preview.data ? <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-ink-faint">{preview.data.main}</pre> : null}
         </details>
       </> : null}
-      {install.isPending ? <ol aria-live="polite" className="list-inside list-decimal space-y-2 text-sm">
-        <li className={install.phase === 'source' ? 'text-accent' : 'text-ink-faint'}>{t('skills.install.sourceStep')}</li>
-        <li className={install.phase === 'skill' ? 'text-accent' : 'text-ink-faint'}>{t('skills.install.skillStep')}</li>
-      </ol> : null}
+      {install.isPending ? <div className="border-l-2 border-accent bg-accent-wash p-4">
+        <p role="status" className="sr-only">{t(install.phase === 'skill' ? 'skills.install.skillStep' : 'skills.install.sourceStep')}</p>
+        <ol className="space-y-3 text-sm">
+          {(['source', 'skill'] as const).map((step, index) => {
+            const active = (install.phase ?? 'source') === step
+            const done = step === 'source' && install.phase === 'skill'
+            return <li key={step} aria-current={active ? 'step' : undefined} className={`flex items-center gap-2 ${active ? 'text-accent' : done ? 'text-positive' : 'text-ink-faint'}`}>
+              {done ? <Check size={16} aria-hidden="true" /> : active ? <SkillSpinner /> : <Circle size={16} aria-hidden="true" />}
+              <span>{index + 1}. {t(step === 'source' ? 'skills.install.sourceStep' : 'skills.install.skillStep')}</span>
+            </li>
+          })}
+        </ol>
+      </div> : null}
       {install.error ? <Banner>{install.error.message}</Banner> : null}
     </>}
   </SkillDialog>

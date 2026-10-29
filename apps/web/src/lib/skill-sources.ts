@@ -55,7 +55,7 @@ export function useSkillSearch(query: string, enabled = true) {
   const trimmed = query.trim()
   return useQuery({
     queryKey: [...ROOT, 'search', trimmed],
-    queryFn: () => api.get<SkillSearchDto>(`/api/skill-sources/search?q=${encodeURIComponent(trimmed)}`),
+    queryFn: ({ signal }) => api.get<SkillSearchDto>(`/api/skill-sources/search?q=${encodeURIComponent(trimmed)}`, signal),
     enabled: enabled && trimmed.length >= 2,
     staleTime: 5 * 60_000,
   })
@@ -80,7 +80,7 @@ export function useSavedSkillSearch(query: string, enabled: boolean) {
     results: catalogs.flatMap((catalog) => (catalog.data?.skills ?? [])
       .filter((skill) => !needle || `${skill.name} ${skill.description} ${skill.path}`.toLocaleLowerCase().includes(needle))
       .map((skill): DiscoverableSkill => ({ kind: 'source', source: catalog.data!.source, skill }))),
-    loading: sources.isLoading || catalogs.some((catalog) => catalog.isFetching),
+    loading: enabled && (sources.isLoading || catalogs.some((catalog) => catalog.isFetching)),
     errors: [sources.error, ...catalogs.map((catalog) => catalog.error)].filter((error) => error !== null),
     unfetched: (sources.data?.sources ?? []).filter((source) => source.enabled && !source.lastCommit).length,
   }

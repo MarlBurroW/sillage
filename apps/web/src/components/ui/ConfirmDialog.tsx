@@ -31,7 +31,7 @@ export function ConfirmDialog({
 }) {
   const t = useTranslate()
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next) }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
         <Dialog.Content
@@ -49,11 +49,11 @@ export function ConfirmDialog({
 
           <div className="mt-1 flex justify-end gap-2">
             <Dialog.Close asChild>
-              <Button variant="ghost">{t('dialog.cancel')}</Button>
+              <Button variant="ghost" disabled={busy}>{t('dialog.cancel')}</Button>
             </Dialog.Close>
             <Button
               variant={tone === 'critical' ? 'danger' : 'primary'}
-              disabled={busy}
+              busy={busy}
               onClick={onConfirm}
             >
               {confirmLabel}

@@ -1,3 +1,4 @@
+import { SkillLoading, SkillSpinner } from './SkillLoading'
 import { ExternalLink, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { LibrarySkillScope } from '@sillage/protocol'
@@ -24,11 +25,12 @@ export function SkillDiscovery({ scope, projectId }: { scope: LibrarySkillScope;
   const results: DiscoverableSkill[] = directory
     ? (remote.data?.results ?? []).map((result) => ({ kind: 'directory', result }))
     : saved.results
-  const waiting = directory && (query !== settled || remote.isFetching)
+  const searching = query.trim().length >= 2
+  const waiting = directory && searching && (query !== settled || remote.isFetching)
   const loading = waiting || (!directory && saved.loading)
   return <section className="flex flex-col gap-4">
     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,auto)]">
-      <Field label={t('skills.discovery.search')} icon={<Search size={15} />} value={query} maxLength={100}
+      <Field label={t('skills.discovery.search')} icon={loading ? <SkillSpinner size={15} /> : <Search size={15} />} value={query} maxLength={100}
         onChange={(event) => setQuery(event.target.value)} placeholder={t('skills.search.placeholder')} />
       <Select label={t('skills.discovery.where')} value={directory ? 'directory' : 'sources'} onChange={setWhere}
         options={[
@@ -38,12 +40,14 @@ export function SkillDiscovery({ scope, projectId }: { scope: LibrarySkillScope;
     </div>
     <p className="text-sm text-ink-faint">{t(directory ? 'skills.discovery.directoryHint' : 'skills.discovery.sourcesHint')}</p>
     {!directory && saved.unfetched > 0 ? <Banner tone="info">{t('skills.discovery.unfetched', { count: saved.unfetched })}</Banner> : null}
-    {directory && remote.error ? <Banner>{remote.error.message}</Banner> : null}
+    {directory && !waiting && remote.error ? <Banner>{remote.error.message}</Banner> : null}
     {!directory ? saved.errors.map((error, index) => <Banner key={index}>{error.message}</Banner>) : null}
-    {directory && remote.data?.available === false ? <Banner tone="caution">{t('skills.discovery.unavailable')}</Banner> : null}
-    {loading ? <p role="status" className="text-sm text-ink-faint">{t('skills.search.loading')}</p> : null}
+    {directory && !waiting && remote.data?.available === false ? <Banner tone="caution">{t('skills.discovery.unavailable')}</Banner> : null}
+    {loading ? <SkillLoading label={t(directory ? 'skills.loading.search' : 'skills.loading.catalog')}
+      detail={directory ? t('skills.loading.searchQuery', { query: query.trim() }) : t('skills.discovery.sourcesHint')} rows={3} /> : null}
     {directory && query.trim().length < 2 ? <EmptyState icon={<Search size={22} />}
-      title={t('skills.discovery.prompt')} description={t('skills.discovery.promptHint')} /> : !waiting ? <>
+      title={t('skills.discovery.prompt')} description={t('skills.discovery.promptHint')} /> : !loading ? <>
+      {results.length > 0 ? <p role="status" className="text-sm text-ink-soft">{t('skills.loading.results', { count: results.length })}</p> : null}
       <ul className="divide-y divide-line">
         {results.map((candidate) => {
           const name = candidate.kind === 'source' ? candidate.skill.name : candidate.result.name
@@ -65,7 +69,7 @@ export function SkillDiscovery({ scope, projectId }: { scope: LibrarySkillScope;
           </li>
         })}
       </ul>
-      {!loading && results.length === 0 && !(directory && remote.data?.available === false) ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.search.empty')}</p> : null}
+      {!loading && results.length === 0 && !(directory && (remote.error || remote.data?.available === false)) ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.search.empty')}</p> : null}
     </> : null}
     {chosen ? <InstallSkillDialog candidate={chosen} scope={scope} projectId={projectId} onClose={() => setChosen(null)} /> : null}
   </section>
@@ -84,9 +88,12 @@ function DiscoveryInfo({ candidate }: { candidate: DiscoverableSkill }) {
       <button type="button" className="text-xs text-accent hover:underline" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         {t(expanded ? 'skills.discovery.less' : 'skills.discovery.more')}
       </button>
-    </> : <p className="text-sm text-ink-faint">
-      {t(result && details.isLoading ? 'skills.discovery.descriptionLoading' : 'skills.discovery.noDescription')}
-    </p>}
+    </> : result && details.isLoading ? <div role="status" className="w-full py-1">
+      <span className="sr-only">{t('skills.discovery.descriptionLoading')}</span>
+      <div aria-hidden="true" className="space-y-2 motion-safe:animate-pulse">
+        <div className="h-3 w-5/6 rounded-sm bg-ink/10" /><div className="h-3 w-2/3 rounded-sm bg-ink/5" />
+      </div>
+    </div> : <p className="text-sm text-ink-faint">{t('skills.discovery.noDescription')}</p>}
     {result ? <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-faint">
       <span>{t('skills.discovery.installs', { count: result.installs.toLocaleString(locale()) })}</span>
       <a href={directoryUrl!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-ink-soft hover:underline">

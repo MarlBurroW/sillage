@@ -39,7 +39,9 @@ async function mount(page, component = 'settings') {
     const { SkillLibrarySettingsPage } = await import('/src/routes/SkillLibrarySettingsPage.tsx')
     const { ProjectSkills } = await import('/src/components/skills/ProjectSkills.tsx')
     const { CatalogDialog } = await import('/src/components/skills/CatalogDialog.tsx')
-    const child = component === 'project' ? React.createElement(ProjectSkills, { projectId: 'project-a', isOwner: true })
+    const { SkillFiles } = await import('/src/components/skills/SkillFiles.tsx')
+    const child = component === 'files' ? React.createElement(SkillFiles, { skill: { id: 'file-test', files: ['SKILL.md', 'broken.txt'] }, canWrite: true })
+      : component === 'project' ? React.createElement(ProjectSkills, { projectId: 'project-a', isOwner: true })
       : component === 'missing' ? React.createElement(CatalogDialog, { open: true, sourceId: 'gone', scope: 'global', projectId: null, onClose: () => {} })
       : React.createElement(SkillLibrarySettingsPage)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -70,6 +72,7 @@ try {
     const requests = []
     let admin = true
     let directoryAvailable = true
+    let localFails = false
     const failRefresh = new Set(['team/wanted', 'team/manual'])
     const sources = [makeSource('unrelated', 'team/unrelated'), makeSource('disabled', 'team/disabled')]
     sources[1].enabled = false
@@ -93,13 +96,22 @@ try {
       if (url.pathname === '/api/system/instance') return send({ profile, capabilities: { passwordAuth: profile === 'server', sharedProjects: profile === 'server' } })
       if (url.pathname === '/api/projects') return send([{ id: 'project-a', name: 'Projet test', isOwner: true, archivedAt: null }])
       if (url.pathname === '/api/skill-library') return send({ enabled: true, skills: installed })
-      if (url.pathname === '/api/skill-library/local') return send({ skills: [{ ...makeSkill('native-skill'), origin: 'claude-repo' }] })
+      if (url.pathname === '/api/skill-library/local') {
+        await delay(600)
+        return localFails ? send({ error: { code: 'test_failure', message: 'Lecture locale impossible' } }, 500)
+          : send({ skills: [{ ...makeSkill('native-skill'), origin: 'claude-repo' }] })
+      }
+      if (url.pathname === '/api/skill-library/file-test/files/broken.txt') {
+        await delay(600)
+        return send({ error: { code: 'test_failure', message: 'Lecture du fichier impossible' } }, 500)
+      }
       if (url.pathname === '/api/skill-sources/search') {
         assert.ok(admin)
         const name = url.searchParams.get('q')
+        await delay(name === 'wanted' ? 1200 : 300)
         return send({ available: directoryAvailable, results: directoryAvailable ? [{ name, repository: `team/${name}`, installs: 42, sourceId: sources.find((source) => source.name === `team/${name}`)?.id ?? null }] : [] })
       }
-      if (url.pathname === '/api/skill-sources/discovery-description') return send({ description: 'Generate videos with multiple AI models. ' + 'Full description with capabilities and prerequisites. '.repeat(12) })
+      if (url.pathname === '/api/skill-sources/discovery-description') { await delay(500); return send({ description: 'Generate videos with multiple AI models. ' + 'Full description with capabilities and prerequisites. '.repeat(12) }) }
       if (url.pathname === '/api/skill-sources') {
         if (method === 'GET') return send({ sources })
         assert.ok(admin)
@@ -112,7 +124,7 @@ try {
       const source = sources.find((item) => url.pathname.startsWith(`/api/skill-sources/${item.id}/`))
       if (source && url.pathname.endsWith('/refresh')) {
         assert.ok(admin)
-        await delay(120)
+        await delay(600)
         if (failRefresh.delete(source.name)) return send({ error: { code: 'test_fetch_failed', message: 'Récupération impossible pour ce test' } }, 502)
         source.lastCommit = 'abcdef123456'
         return send(source)
@@ -120,6 +132,7 @@ try {
       if (source && url.pathname.endsWith('/catalog')) return send({ source, skills: catalogs.get(source.name) ?? [] })
       if (source && url.pathname.endsWith('/preview')) return send({ main: '# Instructions du skill', files: ['SKILL.md'] })
       if (source && url.pathname.endsWith('/install')) {
+        await delay(600)
         const body = req.postDataJSON()
         const skill = catalogs.get(source.name).find((item) => item.path === body.path)
         assert.ok(skill, 'must install the requested skill path')
@@ -140,7 +153,16 @@ try {
     await page.getByRole('tab', { name: 'Découvrir', exact: true, selected: true }).waitFor()
     assert.equal(await page.getByText('installed-34', { exact: true }).count(), 0)
     const query = page.getByRole('textbox', { name: 'Rechercher un skill', exact: true })
+    await query.fill('w')
+    await delay(350)
+    assert.equal(await page.getByText('Recherche de skills en cours…', { exact: true }).count(), 0)
     await query.fill('wanted')
+    await page.getByRole('status').filter({ hasText: 'Recherche de skills en cours…' }).waitFor()
+    assert.equal(await page.getByText('Aucun skill trouvé.', { exact: true }).count(), 0)
+    await page.screenshot({ path: `/var/tmp/skills-loading-search-${profile}-${viewport.width}.png` })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    assert.equal(await page.getByRole('status').filter({ hasText: 'Recherche de skills en cours…' }).locator('svg').evaluate((el) => getComputedStyle(el).animationName), 'none')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.getByText('wanted', { exact: true }).waitFor()
     await page.getByText('42 installations sur skills.sh', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Lire toute la description', exact: true }).click()
@@ -153,7 +175,12 @@ try {
     await page.getByRole('button', { name: 'Installer…', exact: true }).click()
     let dialog = page.getByRole('dialog', { name: 'Installer wanted', exact: true })
     await dialog.getByRole('button', { name: 'Installer le skill', exact: true }).click()
+    await dialog.locator('button[aria-busy="true"]').waitFor()
+    assert.ok(await dialog.getByRole('button', { name: 'Annuler', exact: true }).isDisabled())
+    assert.ok(await dialog.locator('[aria-current="step"]').isVisible())
+    await page.screenshot({ path: `/var/tmp/skills-loading-install-${profile}-${viewport.width}.png` })
     await dialog.getByText('Récupération impossible pour ce test').waitFor()
+    assert.equal(await dialog.locator('button[aria-busy="true"]').count(), 0)
     assert.equal(await page.getByRole('dialog', { name: 'Catalogues de skills' }).count(), 0)
     assert.equal(installed.length, 35)
     await dialog.getByRole('button', { name: 'Installer le skill', exact: true }).click()
@@ -236,7 +263,18 @@ try {
     await dialog.getByRole('button', { name: 'Terminer', exact: true }).click()
     assert.equal(installed.at(-1).scope, 'project')
     assert.equal(installed.at(-1).projectId, 'project-a')
-    assert.deepEqual(errors, [])
+    await mount(page, 'files')
+    await page.getByRole('button', { name: 'broken.txt', exact: true }).click()
+    await page.getByRole('status').waitFor()
+    await page.getByRole('alert').filter({ hasText: 'Lecture du fichier impossible' }).waitFor()
+    assert.equal(await page.getByRole('status').count(), 0, 'Read errors must stop loading')
+    localFails = true
+    await mount(page, 'project')
+    await page.getByRole('tab', { name: 'Dépôt', exact: true }).click()
+    await page.getByRole('status').waitFor()
+    await page.getByRole('alert').filter({ hasText: 'Lecture locale impossible' }).waitFor()
+    assert.equal(await page.getByRole('status').count(), 0)
+        assert.deepEqual(errors, [])
     assert.deepEqual(unexpected, [])
     await context.close()
     console.log(`OK skills navigation ${profile} ${viewport.width}: tabs, search scope, direct install, retries, missing/ambiguous/disabled sources, permissions.`)

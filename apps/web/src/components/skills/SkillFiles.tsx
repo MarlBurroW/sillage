@@ -1,3 +1,4 @@
+import { SkillLoading } from './SkillLoading'
 import { FileCode2, FilePlus2, Save, Trash2, Upload, X } from 'lucide-react'
 import { useRef, useState, type ChangeEvent } from 'react'
 import { SKILL_MAIN_FILE, skillFilePathSchema, type LibrarySkillDetailDto } from '@sillage/protocol'
@@ -178,7 +179,7 @@ function SkillFileEditor({
   onClose: () => void
 }) {
   const t = useTranslate()
-  const { data: file, isLoading } = useSkillFile(skillId, path)
+  const { data: file, isLoading, error } = useSkillFile(skillId, path)
   const write = useWriteSkillFile()
   /** Null until input changes: reread file contents remain authoritative. */
   const [draft, setDraft] = useState<string | null>(null)
@@ -198,7 +199,7 @@ function SkillFileEditor({
           {dirty ? <span className="ml-1.5 text-accent">●</span> : null}
         </span>
         {canWrite && file?.content !== null ? (
-          <Button size="sm" variant="ghost" icon={<Save size={14} />} disabled={!dirty || write.isPending} onClick={save}>
+          <Button size="sm" variant="ghost" icon={<Save size={14} />} busy={write.isPending} disabled={!dirty} onClick={save}>
             {write.isPending ? t('skills.editor.saving') : t('skills.editor.save')}
           </Button>
         ) : null}
@@ -206,8 +207,8 @@ function SkillFileEditor({
           <X size={14} />
         </IconButton>
       </div>
-      {isLoading || !file ? (
-        <p className="px-3 py-4 text-sm text-ink-faint">{t('skills.files.loading')}</p>
+      {error ? <Banner>{error.message}</Banner> : isLoading || !file ? (
+        <SkillLoading label={t('skills.files.loading')} rows={2} />
       ) : file.content === null ? (
         <p className="px-3 py-4 text-sm text-ink-faint">{t('skills.files.binary', { size: formatBytes(file.size) })}</p>
       ) : (
@@ -228,6 +229,7 @@ function SkillFileEditor({
           />
         </div>
       )}
+      {write.isSuccess && !dirty ? <p role="status" className="px-3 py-2 text-sm text-positive">{t('settings.saved')}</p> : null}
       {errorOf(write.error) ? <div className="p-2"><Banner>{errorOf(write.error)}</Banner></div> : null}
     </div>
   )

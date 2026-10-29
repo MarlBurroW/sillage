@@ -82,6 +82,7 @@ try {
       if (url.pathname === '/api/projects') return send([])
       if (url.pathname === '/api/skill-sources') return send({ sources: [{ id: 'team', name: 'Équipe', enabled: true }, { id: 'second', name: 'Autre source', enabled: true }, { id: 'unused', name: 'Sans skill installé', enabled: true }] })
       if (url.pathname.endsWith('/refresh')) {
+        await delay(700)
         refreshed.push(url.pathname)
         if (url.pathname.includes('/second/') && refreshFail) return send({ error: { code: 'unknown', message: 'Source inaccessible' } }, 500)
         skills.filter((skill) => url.pathname.includes('/' + skill.origin.sourceId + '/')).forEach((skill) => { skill.updateAvailable = true })
@@ -91,6 +92,7 @@ try {
       const id = url.pathname.split('/')[3]
       const skill = skills.find((item) => item.id === id)
       if (url.pathname.endsWith('/update')) {
+        await delay(500)
         if (route.request().method() === 'GET') return send({ skill, fromCommit: 'abcdef0', toCommit: '1234567', patch })
         if (id === 'beta' && fail) return send({ error: { code: 'unknown', message: 'Échec de mise à jour' } }, 500)
         applied.push(id)
@@ -106,6 +108,9 @@ try {
     })
     await mount(page)
     await page.getByRole('button', { name: 'Rechercher les mises à jour', exact: true }).click()
+    await page.getByRole('progressbar', { name: 'Vérification des sources…' }).waitFor()
+    assert.equal(await page.getByRole('progressbar').getAttribute('max'), '2')
+    await page.screenshot({ path: `/var/tmp/skills-loading-updates-${width}.png` })
     await page.getByText(/Autre source : Source inaccessible/).waitFor()
     assert.equal(refreshed.length, 2, 'Une récupération par source utilisée, aucune pour une source sans skill installé')
     refreshFail = false
@@ -115,6 +120,7 @@ try {
     const first = page.locator('li').filter({ has: page.getByText('alpha', { exact: true }) })
     await first.getByRole('button', { name: 'Voir les changements' }).click()
     const dialog = page.getByRole('dialog')
+    await dialog.getByText('Comparaison des versions…', { exact: true }).waitFor()
     await dialog.locator('details').first().waitFor()
     assert.equal(await dialog.locator('details').count(), 20)
     const heights = await dialog.locator('details').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
@@ -130,6 +136,8 @@ try {
     await page.getByRole('button', { name: 'Tout sélectionner dans les résultats', exact: true }).click()
     assert.equal(await page.getByRole('checkbox', { name: 'Sélectionner local', exact: true }).isChecked(), false)
     await page.getByRole('button', { name: 'Mettre à jour la sélection (4)', exact: true }).click()
+    await page.getByRole('progressbar', { name: 'Mise à jour des skills…' }).waitFor()
+    assert.equal(await page.getByRole('progressbar').getAttribute('max'), '4')
     await page.getByText('Skills mis à jour : 2.', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Mettre à jour la sélection (1)', exact: true }).waitFor()
     assert.deepEqual(applied, ['alpha', 'gamma'])

@@ -1,3 +1,4 @@
+import { LoaderCircle } from 'lucide-react'
 import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from 'react'
 import { TooltipButton } from './Tooltip'
 import { cx } from './cx'
@@ -21,12 +22,14 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
   size?: ButtonSize
   icon?: ReactNode
+  busy?: boolean
 }
 
 export function Button({
   variant = 'primary',
   size = 'md',
   icon,
+  busy = false,
   children,
   className,
   ...props
@@ -34,16 +37,19 @@ export function Button({
   return (
     <button
       {...props}
+      disabled={busy || props.disabled}
+      aria-busy={busy || props['aria-busy']}
       className={cx(
         'inline-flex items-center justify-center rounded-md font-medium whitespace-nowrap',
         'transition-[background,border-color,filter,color] duration-150',
-        'disabled:pointer-events-none disabled:opacity-45',
+        'disabled:pointer-events-none',
+        busy ? 'cursor-wait' : 'disabled:opacity-45',
         VARIANTS[variant],
         SIZES[size],
         className,
       )}
     >
-      {icon}
+      {busy ? <LoaderCircle size={16} aria-hidden="true" className="shrink-0 motion-safe:animate-spin" /> : icon}
       {children}
     </button>
   )

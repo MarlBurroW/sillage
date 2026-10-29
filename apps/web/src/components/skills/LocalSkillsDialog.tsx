@@ -1,3 +1,4 @@
+import { SkillLoading } from './SkillLoading'
 import * as Dialog from '@radix-ui/react-dialog'
 import { HardDrive, X } from 'lucide-react'
 import { useState } from 'react'
@@ -27,7 +28,7 @@ export function LocalSkillsDialog({
   projectId: string | null
 }) {
   const t = useTranslate()
-  const { data, isLoading } = useLocalSkills(projectId, open)
+  const { data, isLoading, error } = useLocalSkills(projectId, open)
   const skills = (data?.skills ?? []).filter((skill) => scope === 'project' || !skill.origin.endsWith('-repo'))
 
   return (
@@ -47,8 +48,8 @@ export function LocalSkillsDialog({
           <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-5">
             <p className="text-sm text-ink-faint">{t('skills.local.description')}</p>
             {isLoading ? (
-              <p className="text-sm text-ink-faint">{t('skills.local.loading')}</p>
-            ) : skills.length === 0 ? (
+              <SkillLoading label={t('skills.local.loading')} rows={3} />
+            ) : error ? <Banner>{error.message}</Banner> : skills.length === 0 ? (
               <EmptyState icon={<HardDrive size={22} />} title={t('skills.local.empty')} />
             ) : (
               skills.map((skill) => (
@@ -106,6 +107,7 @@ function LocalSkillRow({
         <Button
           size="sm"
           variant="secondary"
+          busy={adopt.isPending}
           disabled={skill.problem === 'skill_unreadable' || adopt.isPending || (renaming && !skillNameSchema.safeParse(name).success)}
           onClick={submit}
         >

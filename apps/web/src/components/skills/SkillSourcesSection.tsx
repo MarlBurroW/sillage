@@ -1,3 +1,4 @@
+import { SkillLoading } from './SkillLoading'
 import { GitBranch, Library, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { SkillSourceDto } from '@sillage/protocol'
@@ -50,7 +51,7 @@ export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       {adding ? <AddSourceDialog onClose={() => setAdding(false)} onAdded={(id) => { setAdding(false); setBrowsing({ sourceId: id, skillName: null }) }} /> : null}
-      {isLoading ? <p role="status" className="text-sm text-ink-faint">{t('skills.files.loading')}</p> : null}
+      {isLoading ? <SkillLoading label={t('skills.loading.sources')} rows={3} /> : null}
       {error ? <Banner>{error.message}</Banner> : null}
       {!isLoading && !error && sources.length === 0 ? <p className="py-8 text-center text-sm text-ink-faint">{t('skills.sources.empty')}</p> : null}
 
@@ -123,13 +124,13 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
                 <Button
                   size="sm"
                   variant="ghost"
-                  icon={<RefreshCw size={14} className={refresh.isPending ? 'animate-spin' : undefined} />}
-                  disabled={refresh.isPending}
+                  icon={<RefreshCw size={14} />}
+                  busy={refresh.isPending} disabled={update.isPending}
                   onClick={() => refresh.mutate(source.id)}
                 >
                   {refresh.isPending ? t('skills.sources.refreshing') : t('skills.sources.refresh')}
                 </Button>
-                <Menu trigger={<IconButton label={t('skills.sources.actions')} size="sm"><MoreHorizontal size={16} /></IconButton>}>
+                <Menu trigger={<IconButton disabled={refresh.isPending || update.isPending} label={t('skills.sources.actions')} size="sm"><MoreHorizontal size={16} /></IconButton>}>
                   <MenuItem onSelect={() => update.mutate({ id: source.id, enabled: !source.enabled })}>
                     {t(source.enabled ? 'skills.action.disable' : 'skills.action.enable')}
                   </MenuItem>
@@ -142,6 +143,8 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
             ) : null}
           </div>
         </div>
+        {refresh.isPending ? <SkillLoading label={t('skills.sources.refreshing')} detail={source.name} /> : null}
+        {update.isPending ? <SkillLoading compact label={t('skills.editor.saving')} /> : null}
         {source.lastError && !refresh.isPending ? <Banner tone="caution">{source.lastError}</Banner> : null}
         {errorOf(update.error) ? <Banner>{errorOf(update.error)}</Banner> : null}
         {errorOf(refresh.error) ? <Banner>{errorOf(refresh.error)}</Banner> : null}
@@ -155,6 +158,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
           onConfirm={() => remove.mutate(source.id)}
         >
           {t('skills.sources.delete.body')}
+          {remove.error ? <Banner>{remove.error.message}</Banner> : null}
         </ConfirmDialog>
       </CardBody>
     </Card>
@@ -188,6 +192,7 @@ export function AddSourceDialog({ onClose, onAdded }: { onClose: () => void; onA
       onChange={(event) => setRef(event.target.value)} disabled={busy || !!created} autoCapitalize="none" />
     <Field label={t('skills.sources.subpath')} hint={t('skills.sources.subpath.hint')} value={subpath}
       onChange={(event) => setSubpath(event.target.value)} disabled={busy || !!created} autoCapitalize="none" />
+    {busy ? <SkillLoading label={t(refresh.isPending ? 'skills.sources.refreshing' : 'skills.sources.adding')} detail={url} /> : null}
     {create.error ? <Banner>{create.error.message}</Banner> : null}
     {refresh.error ? <Banner>{refresh.error.message}</Banner> : null}
   </SkillDialog>

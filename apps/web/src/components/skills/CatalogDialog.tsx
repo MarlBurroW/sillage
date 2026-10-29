@@ -1,3 +1,4 @@
+import { SkillLoading } from './SkillLoading'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Library, X } from 'lucide-react'
 import { useState } from 'react'
@@ -46,6 +47,7 @@ export function CatalogDialog({
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [completed, setCompleted] = useState(0)
+  const [progress, setProgress] = useState({ done: 0, total: 0, name: '' })
   const { data, isLoading: sourcesLoading, error: sourcesError } = useSkillSources()
   const fetched = (data?.sources ?? []).filter((source) => source.enabled && source.lastCommit !== null)
   const [chosen, setChosen] = useState<string | null>(sourceId ?? null)
@@ -84,8 +86,11 @@ export function CatalogDialog({
     setBusy(true)
     setErrors({})
     setCompleted(0)
+    const batch = (catalog?.skills ?? []).filter((item) => checked.has(item.path) && eligible(item))
+    setProgress({ done: 0, total: batch.length, name: '' })
     // Retain every success: name conflicts do not block other skills.
-    for (const skill of (catalog?.skills ?? []).filter((item) => checked.has(item.path) && eligible(item))) {
+    for (const skill of batch) {
+      setProgress((previous) => ({ ...previous, name: skill.name }))
       try {
         await install.mutateAsync({ sourceId: current.id, path: skill.path, scope: destination.scope, projectId: destination.projectId })
         setCompleted((count) => count + 1)
@@ -93,8 +98,10 @@ export function CatalogDialog({
       } catch (error) {
         setErrors((previous) => ({ ...previous, [skill.path]: error instanceof ApiRequestError ? error.message : t('skills.batch.error') }))
       }
+      setProgress((previous) => ({ ...previous, done: previous.done + 1 }))
     }
     setBusy(false)
+    setProgress({ done: 0, total: 0, name: '' })
   }
   const close = () => { if (!busy) onClose() }
 
@@ -113,7 +120,8 @@ export function CatalogDialog({
             </IconButton>
           </header>
 
-          {sourcesLoading ? <p role="status" className="p-5 text-sm text-ink-faint">{t('skills.files.loading')}</p>
+          {busy && progress.total > 0 ? <div className="px-4"><SkillLoading label={t('skills.loading.installBatch')} detail={progress.name} progress={progress} /></div> : null}
+          {sourcesLoading ? <SkillLoading label={t('skills.loading.catalog')} rows={2} />
           : sourcesError ? <div className="p-5"><Banner>{sourcesError.message}</Banner></div>
           : chosen && !current ? <div className="p-5"><Banner>{t('skills.install.sourceMissing')}</Banner></div>
           : fetched.length === 0 ? (
@@ -146,7 +154,7 @@ export function CatalogDialog({
                   else available.forEach((skill) => next.add(skill.path))
                   return next
                 })}>{t(available.length > 0 && available.every((skill) => checked.has(skill.path)) ? 'skills.batch.clearVisible' : 'skills.batch.selectVisible')}</Button>
-                {isPending ? <p role="status" className="text-sm text-ink-faint">{t('skills.files.loading')}</p> : null}
+                {isPending ? <SkillLoading label={t('skills.loading.catalog')} rows={2} /> : null}
                 {catalogError ? <Banner>{catalogError.message}</Banner> : null}
                 <ul className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
                   {skills.map((skill) => (
@@ -209,8 +217,8 @@ export function CatalogDialog({
               <Select label={t('skills.field.destination')} value={destination?.value ?? ''} disabled={busy}
                 onChange={(value) => { setTarget(value); setChecked(new Set()); setErrors({}); setCompleted(0) }}
                 options={permissions.destinations.map((entry) => ({ value: entry.value, label: entry.label }))} />
-              <Button disabled={busy || checked.size === 0 || !destination} onClick={() => void installSelected()}>
-                {busy ? t('skills.catalog.installing') : t('skills.batch.install', { count: checked.size })}
+              <Button busy={busy && progress.total > 0} disabled={busy || checked.size === 0 || !destination} onClick={() => void installSelected()}>
+                {busy && progress.total > 0 ? t('skills.catalog.installing') : t('skills.batch.install', { count: checked.size })}
               </Button>
             </div>
             {completed > 0 ? <p role="status" className="mt-2 text-sm text-positive">{t('skills.batch.completed', { count: completed })}</p> : null}
@@ -284,7 +292,7 @@ function SkillPreview({
           </div>
         ) : null}
         {previewError ? <Banner>{previewError.message}</Banner> : isLoading || !preview ? (
-          <p className="text-sm text-ink-faint">{t('skills.files.loading')}</p>
+          <SkillLoading label={t('skills.loading.preview')} rows={2} />
         ) : (
           <>
             <pre className="rounded-md border border-line bg-sunken p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-ink-soft">
@@ -309,6 +317,7 @@ function SkillPreview({
         {install.error instanceof ApiRequestError ? <Banner>{install.error.message}</Banner> : null}
         <Button
           className="self-end"
+          busy={install.isPending}
           disabled={disabled || skill.installed.some((entry) => entry.scope === scope && entry.projectId === projectId && entry.name === name) || !destination || !skillNameSchema.safeParse(name).success || skill.problem === 'skill_unreadable' || install.isPending}
           onClick={() => {
             if (!destination) return
