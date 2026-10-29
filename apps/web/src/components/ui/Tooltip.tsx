@@ -5,11 +5,11 @@ import { cx } from './cx'
 
 const TooltipEnabled = createContext(true)
 
-export function TooltipProvider({ children }: { children: ReactNode }) {
+export function TooltipProvider({ children, delayDuration = 400 }: { children: ReactNode; delayDuration?: number }) {
   // Automatic panel focus must not leave sticky touch tooltips.
   const enabled = useMediaQuery('(hover: hover) and (pointer: fine)')
   return <TooltipEnabled.Provider value={enabled}>
-    <RadixTooltip.Provider delayDuration={400} skipDelayDuration={150}>{children}</RadixTooltip.Provider>
+    <RadixTooltip.Provider delayDuration={delayDuration} skipDelayDuration={150}>{children}</RadixTooltip.Provider>
   </TooltipEnabled.Provider>
 }
 
@@ -39,8 +39,8 @@ export function Tooltip({ label, children, side = 'top', sideOffset = 6, classNa
 }
 
 /** Preserve button styles and refs, especially Radix menu triggers. */
-export function TooltipButton({ title, ...props }: ComponentPropsWithRef<'button'>) {
+export function TooltipButton({ title, tooltipDisabled, ...props }: ComponentPropsWithRef<'button'> & { tooltipDisabled?: boolean }) {
   const label = title ?? props['aria-label']
   const button = <button {...props} />
-  return label ? <Tooltip label={label}>{button}</Tooltip> : button
+  return label ? <Tooltip label={label} disabled={tooltipDisabled}>{button}</Tooltip> : button
 }

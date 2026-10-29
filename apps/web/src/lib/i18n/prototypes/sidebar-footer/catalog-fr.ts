@@ -1,0 +1,17 @@
+export const fr = {
+  title: 'Le bas de la sidebar', intro: 'Trois pistes, les mêmes accès. Survole les icônes ou clique pour explorer.',
+  theme: 'Thème', dark: 'Sombre', light: 'Clair', edition: 'Édition', width: 'Largeur', normal: 'Normale', narrow: 'Étroite', current: 'Voir l’actuel', language: 'Langue',
+  aTitle: 'A · Barre discrète', aText: 'Les outils à gauche, le compte à droite. Une seule ligne, uniquement des icônes.',
+  bTitle: 'B · Compte en premier', bText: 'Ton identité ancre le bas de la sidebar. Les deux outils restent à portée de main.',
+  cTitle: 'C · Accès explicites', cText: 'Deux lignes lisibles, puis le compte. Plus facile à découvrir, mais plus haut.',
+  oldTitle: 'Aujourd’hui', oldText: 'Les deux libellés et l’avatar partagent la même ligne.',
+  recommend: 'Ma préférence', search: 'Rechercher', activity: 'Activité', running: '2 en cours', favorites: 'Favoris', decisions: 'À décider', discussions: 'Discussions',
+  board: 'Board', worktrees: 'Worktrees', schedules: 'Planifiées', sessions: 'Sessions', archives: 'Archives', services: 'Services', settings: 'Réglages', account: 'Compte',
+  session1: 'Propositions pour la sidebar', session2: 'Détails des skills à découvrir', session3: 'Navigation des réglages', session4: 'Lenteur des envois Windows', session5: 'Refus des CLI désactivés',
+  update: 'Une mise à jour est disponible', updateToggle: 'Mise à jour disponible', close: 'Fermer', logout: 'Se déconnecter',
+  servicesText: 'Tes applications et processus en cours. Dans Sillage, ce bouton ouvre la page Services.',
+  settingsText: 'Apparence, comptes des agents, API et MCP. Dans Sillage, ce bouton ouvre les réglages.',
+  accountText: 'Le menu du compte reste séparé des réglages de l’application.',
+  preview: 'Aperçu interactif', demoLogout: 'Cette maquette ne te déconnecte pas.', serverNote: 'Server : compte et déconnexion accessibles depuis l’avatar.', desktopNote: 'Desktop : aucun compte ni bouton de déconnexion dans le pied.',
+  note: 'Les pieds restent fixes ; seule la liste des sessions défile. Les fonctions présentées sont simulées.',
+} as const

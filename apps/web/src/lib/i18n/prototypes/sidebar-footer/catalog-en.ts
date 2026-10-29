@@ -1,0 +1,17 @@
+export const en = {
+  title: 'The sidebar footer', intro: 'Three layouts, the same destinations. Hover over icons or click to explore.',
+  theme: 'Theme', dark: 'Dark', light: 'Light', edition: 'Edition', width: 'Width', normal: 'Regular', narrow: 'Narrow', current: 'Show current layout', language: 'Language',
+  aTitle: 'A · Quiet toolbar', aText: 'Tools on the left, account on the right. A single row of icons.',
+  bTitle: 'B · Account first', bText: 'Your identity anchors the sidebar. Both tools remain within reach.',
+  cTitle: 'C · Explicit destinations', cText: 'Two readable rows followed by your account. Easier to discover, but taller.',
+  oldTitle: 'Today', oldText: 'Both labels and the avatar share a single row.',
+  recommend: 'My preference', search: 'Search', activity: 'Activity', running: '2 running', favorites: 'Favorites', decisions: 'Decisions', discussions: 'Discussions',
+  board: 'Board', worktrees: 'Worktrees', schedules: 'Scheduled', sessions: 'Sessions', archives: 'Archives', services: 'Services', settings: 'Settings', account: 'Account',
+  session1: 'Sidebar proposals', session2: 'Skill discovery details', session3: 'Settings navigation', session4: 'Slow sends on Windows', session5: 'Reject disabled CLIs',
+  update: 'An update is available', updateToggle: 'Update available', close: 'Close', logout: 'Sign out',
+  servicesText: 'Your running applications and processes. In Sillage, this button opens Services.',
+  settingsText: 'Appearance, agent accounts, API and MCP. In Sillage, this button opens Settings.',
+  accountText: 'The account menu stays separate from application settings.',
+  preview: 'Interactive preview', demoLogout: 'This prototype does not sign you out.', serverNote: 'Server: account and sign out are accessible from the avatar.', desktopNote: 'Desktop: no account or sign-out button in the footer.',
+  note: 'Footers stay fixed while the session list scrolls. The destinations shown here are simulated.',
+} as const
