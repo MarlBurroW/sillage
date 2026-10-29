@@ -31,7 +31,11 @@
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--sg-ink-faint);
+  background: var(--sg-ink-soft);
+}
+
+.effort-slider-ticks span[data-filled] {
+  background: white;
 }
 
 /* The native range keeps keyboard and touch semantics; its transparent track reveals the ticks. */
@@ -43,7 +47,8 @@
   margin: 0;
   appearance: none;
   background: transparent;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: pan-y;
 }
 
 .effort-slider input:focus { outline: none; }
@@ -69,4 +74,19 @@
   border-radius: 50%;
   background: white;
   box-shadow: 0 1px 3px #0003;
+}
+
+/* Pointer feedback stays on the thumb, leaving the track and ticks steady. */
+.effort-slider input::-webkit-slider-thumb { transition: transform 140ms ease; }
+.effort-slider input::-moz-range-thumb { transition: transform 140ms ease; }
+@media (hover: hover) {
+  .effort-slider input:not(:disabled):hover::-webkit-slider-thumb { transform: scale(1.12); }
+  .effort-slider input:not(:disabled):hover::-moz-range-thumb { transform: scale(1.12); }
+}
+.effort-slider[data-dragging] input { cursor: grabbing; }
+.effort-slider[data-dragging] input::-webkit-slider-thumb { transform: scale(1.12); }
+.effort-slider[data-dragging] input::-moz-range-thumb { transform: scale(1.12); }
+@media (prefers-reduced-motion: reduce) {
+  .effort-slider input::-webkit-slider-thumb { transition: none; }
+  .effort-slider input::-moz-range-thumb { transition: none; }
 }

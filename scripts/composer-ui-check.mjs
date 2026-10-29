@@ -366,6 +366,35 @@ try {
     assert.equal(await slider().getAttribute('aria-valuetext'), 'Très élevé')
     await slider().press('ArrowLeft')
     assert.equal(await slider().getAttribute('aria-valuetext'), 'Élevé')
+    // The thumb follows a fractional position while only the released stop is saved.
+    const dragTrack = await slider().boundingBox()
+    const dragY = dragTrack.y + dragTrack.height / 2
+    const dragX = (level) => dragTrack.x + 12 + (dragTrack.width - 24) * level / 3
+    const cdp = touch ? await context.newCDPSession(page) : null
+    if (cdp) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: dragX(2), y: dragY }] })
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: dragX(1.4), y: dragY }] })
+    } else {
+      await page.mouse.move(dragX(2), dragY)
+      await page.mouse.down()
+      await page.mouse.move(dragX(1.4), dragY, { steps: 5 })
+    }
+    const duringDrag = Number(await slider().inputValue())
+    assert.ok(duringDrag > 1.2 && duringDrag < 1.6, 'Dragging is continuous between stops')
+    assert.equal(await page.evaluate(() => window.settings.config.reasoningEffort), 'high', 'Dragging does not persist intermediate levels')
+    if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    else await page.mouse.up()
+    assert.equal(await slider().inputValue(), '1', 'Release snaps to the nearest stop')
+    assert.equal(await page.evaluate(() => window.settings.config.reasoningEffort), 'medium')
+    if (cdp) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: dragX(1), y: dragY }] })
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: dragX(2.6), y: dragY }] })
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+      assert.equal(await slider().inputValue(), '1', 'Cancelled gestures restore the saved stop')
+      assert.equal(await page.evaluate(() => window.settings.config.reasoningEffort), 'medium')
+      await cdp.detach()
+    }
+    await slider().press('ArrowRight')
     await slider().evaluate((node) => node.blur())
     await page.screenshot({ path: `/var/tmp/effort-slider-${viewport.width}.png` })
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
