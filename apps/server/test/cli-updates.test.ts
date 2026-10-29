@@ -146,6 +146,7 @@ test('Session maintenance waits for startup, turns, questions and detached work,
   const startup = deferred()
   const contexts: RunnerContext[] = []
   let stops = 0
+  let sent = 0
   const adapter = {
     kind: 'codex', label: 'Codex', binary: 'sillage-test-no-cli', rawFormat: 'test',
     cli: { managedDir: config.paths.agents },
@@ -154,7 +155,7 @@ test('Session maintenance waits for startup, turns, questions and detached work,
       return {
         appliedConfig: ctx.config,
         async start() { await startup.promise; ctx.setAgentSessionId('native-session') },
-        async send() { ctx.setStatus('running') },
+        async send() { sent++; ctx.setStatus('running') },
         async stop() { stops++ },
       } as AgentRunner
     },
@@ -166,6 +167,8 @@ test('Session maintenance waits for startup, turns, questions and detached work,
   assert.equal(await sessions.prepareCliUpdate('codex'), null, 'startup must not be interrupted')
   startup.resolve()
   await send
+  // Delivery is detached from the send: wait for the hand-over before touching the status.
+  await until(() => sent === 1)
   assert.equal(await sessions.prepareCliUpdate('codex'), null, 'active turn')
   const ctx = contexts[0]!
   ctx.setStatus('awaiting_input')

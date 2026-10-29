@@ -914,13 +914,19 @@ export function applyEvent(
     }
 
     case 'checkpoint.started': {
+      // The message is journaled before the snapshot since sends stopped waiting for the CLI, so
+      // the turn's message usually precedes this marker: adopt the last user message when no
+      // checkpoint claims it. Older journals wrote the marker first and link on the next message.
+      const last = state.items.at(-1)
+      const opener = last?.kind === 'message' && last.role === 'user' && !last.parentToolCallId
+        && !state.checkpoints.some((checkpoint) => checkpoint.openerId === last.id) ? last : null
       state.checkpoints = [
         ...state.checkpoints,
         {
           key: event.key,
           seq,
-          openerId: null,
-          openerText: '',
+          openerId: opener?.id ?? null,
+          openerText: opener ? opener.blocks.filter((block) => block.type === 'text').map((block) => block.text).join('\n\n') : '',
           status: 'pending',
           files: [],
           truncated: false,

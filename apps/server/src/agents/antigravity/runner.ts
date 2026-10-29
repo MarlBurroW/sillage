@@ -299,7 +299,7 @@ export class AntigravityRunner implements AgentRunner {
       await copyFile(attachment.path, dest)
       nativeAttachments.push({ ...attachment, path: dest })
     }
-    const { blocks, promptText } = describeOutgoingMessage(text, nativeAttachments, this.ctx.sessionReferenceContext?.(text, this.config))
+    const { promptText } = describeOutgoingMessage(text, nativeAttachments, this.ctx.sessionReferenceContext?.(text, this.config))
     const command = parseSlashCommand(text)
     const prompt: AcpContent[] = [{ type: 'text', text: command && this.commands.has(command.name) ? text : promptText }]
     if (!command || !this.commands.has(command.name)) {
@@ -314,7 +314,7 @@ export class AntigravityRunner implements AgentRunner {
         else prompt.push({ type: 'resource_link', name: attachment.filename, uri: pathToFileURL(attachment.path).href, mimeType: attachment.mimeType })
       }
     }
-    this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
+    // The manager journaled the message before starting this runner.
     this.active = true
     this.ctx.emit({ type: 'turn.started' })
     this.ctx.setStatus('running')

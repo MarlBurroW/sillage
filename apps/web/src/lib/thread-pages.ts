@@ -21,9 +21,12 @@ export async function fetchThreadPage(id: string, signal: AbortSignal, before?: 
   }
 }
 
-/** Page and patches describe one exact cursor, including edits to previously loaded rows. */
+/** Page and patches describe one exact cursor, including edits to previously loaded rows. A live event for a message omitted from the loaded pages creates a row at its own position; the server's row for that ID, at the original position, replaces it here. */
 export function mergeThreadPage(current: ChatState, page: ChatState): ChatState {
-  const items = new Map(current.items.map((item) => [item.position, item]))
+  const known = new Map(page.items.flatMap((item) => (item.kind === 'message' ? [[item.id, item.position]] : [])))
+  const items = new Map(current.items
+    .filter((item) => item.kind !== 'message' || known.get(item.id) === undefined || known.get(item.id) === item.position)
+    .map((item) => [item.position, item]))
   for (const item of page.items) items.set(item.position, item)
   const checkpoints = new Map(current.checkpoints.map((item) => [item.key, item]))
   for (const item of page.checkpoints) checkpoints.set(item.key, item)

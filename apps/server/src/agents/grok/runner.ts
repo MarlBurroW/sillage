@@ -770,9 +770,7 @@ export class GrokRunner implements AgentRunner {
 
   async send(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<void> {
     if (!this.client || !this.sessionId) throw new Error("La session Grok n'est pas démarrée.")
-    const { blocks } = describeOutgoingMessage(text, attachments)
-    this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
-
+    // The manager journaled the message before starting this runner.
     // Known slash commands pass unchanged for Grok expansion.
     const command = parseSlashCommand(text)
     const prompt = command && this.commandNames.has(command.name)

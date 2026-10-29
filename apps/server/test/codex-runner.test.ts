@@ -18,8 +18,9 @@ test('session references reach CLI sends and steering without changing the journ
   assert.deepEqual(seen, ['Read this session', 'Also compare this one'])
   for (const turn of turns) assert.match(turn.params.input[0].text, /Referenced session metadata/)
   const messages = state.events.filter(event => event.type === 'message.completed' && event.role === 'user')
+  // The manager echoes sent messages; the runner only echoes steered ones.
   assert.deepEqual(messages.map(event => event.type === 'message.completed' && event.blocks), [
-    [{ type: 'text', text: 'Read this session' }], [{ type: 'text', text: 'Also compare this one' }],
+    [{ type: 'text', text: 'Also compare this one' }],
   ])
 })
 
@@ -240,8 +241,9 @@ for (const prefix of ['fixture:', 'fixture-late:']) test(`steer pendant la répo
   const steerRecord = (await f.records()).find((record) => record.method === 'turn/steer')
   assert.equal(steerRecord.params.expectedTurnId, 'turn-1')
   const completed = f.events.filter((event) => event.type === 'message.completed')
-  assert.deepEqual(completed.map((event) => event.role), ['user', 'user', 'assistant', 'assistant'])
-  const [cut, next] = completed.slice(2)
+  // The sent message is echoed by the manager, not the runner: only the steer echo appears here.
+  assert.deepEqual(completed.map((event) => event.role), ['user', 'assistant', 'assistant'])
+  const [cut, next] = completed.slice(1)
   assert.ok(cut?.type === 'message.completed' && next?.type === 'message.completed')
   assert.equal(cut.messageId, 'cut')
   assert.deepEqual(cut.blocks, [{ type: 'text', text: 'un\ndeux\ntrois\n' }])

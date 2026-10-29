@@ -1208,14 +1208,8 @@ export class CodexRunner implements AgentRunner {
   ): Promise<void> {
     if (!this.client || !this.threadId) throw new Error('La session Codex n\'est pas démarrée.')
 
-    const { blocks, input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills), this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
-    this.ctx.emit({
-      type: 'message.completed',
-      messageId: randomUUID(),
-      role: 'user',
-      blocks,
-      parentToolCallId: null,
-    })
+    // The manager journaled the message before starting this runner; only steering echoes here.
+    const { input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills), this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     this.ctx.setStatus('running')
 
     try {

@@ -193,7 +193,8 @@ test('infléchir : refusé au repos, pris dans le tour en cours sans en ouvrir u
   assert.equal(await f.runner.steer(`fixture:${JSON.stringify({ events: [busy(), idle()] })}`, [], []), true)
   await until(() => f.count('turn.completed') === 1)
   assert.equal(f.count('turn.started'), 1)
-  assert.equal(f.events.filter((event) => event.type === 'message.completed' && event.role === 'user').length, 2)
+  // The manager echoes sent messages; the runner only echoes steered ones.
+  assert.equal(f.events.filter((event) => event.type === 'message.completed' && event.role === 'user').length, 1)
   assert.equal((await f.records()).filter((record) => record.path.endsWith('/prompt_async')).length, 2)
 })
 

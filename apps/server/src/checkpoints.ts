@@ -85,15 +85,17 @@ interface Repo {
   top: string
   /** Conversation directory relative to the root, with trailing `/`, or empty. */
   prefix: string
+  /** Absolute path of the index file; worktrees keep theirs outside the main `.git`. */
+  index: string
 }
 
-/** Repository location and conversation directory within it. Projects may target subdirectories: capture and restore then affect only that subtree and return relative paths like the rest of the panel. Null outside repositories because projects may point anywhere. */
+/** Repository location and conversation directory within it. Projects may target subdirectories: capture and restore then affect only that subtree and return relative paths like the rest of the panel. Null outside repositories because projects may point anywhere. The index path rides along in the same call: every git process costs tens of milliseconds on Windows, and capture runs before each turn. */
 async function locate(cwd: string): Promise<Repo | null> {
-  const result = await run(cwd, ['rev-parse', '--show-toplevel', '--show-prefix'])
+  const result = await run(cwd, ['rev-parse', '--show-toplevel', '--show-prefix', '--git-path', 'index'])
   if (result.code !== 0) return null
-  const [top, prefix] = result.stdout.split('\n')
-  if (!top) return null
-  return { top, prefix: prefix ?? '' }
+  const [top, prefix, index] = result.stdout.split('\n')
+  if (!top || !index) return null
+  return { top, prefix: prefix ?? '', index: resolve(cwd, index) }
 }
 
 /** Pathspec limiting commands to the conversation directory. */
@@ -138,36 +140,20 @@ export async function captureSnapshot(cwd: string, ref: string): Promise<Snapsho
 
   const tmp = await mkdtemp(join(tmpdir(), 'sillage-checkpoint-'))
   try {
-    const indexPath = resolve(repo.top, (await read(repo.top, ['rev-parse', '--git-path', 'index'])).trim())
     const workIndex = join(tmp, 'work')
     const snapIndex = join(tmp, 'snap')
     // Newly initialized repositories have no index yet: start from nothing.
-    await cp(indexPath, workIndex).catch(() => {})
-    await cp(indexPath, snapIndex).catch(() => {})
+    await Promise.all([cp(repo.index, workIndex).catch(() => {}), cp(repo.index, snapIndex).catch(() => {})])
 
-    const work = { GIT_INDEX_FILE: workIndex }
+    // The working-tree walk, the index tree and HEAD are independent: run them side by side.
+    // Sends wait for this capture, and sequential git processes made Windows users wait seconds
+    // after pressing Enter. Each process has its own index file or none, so nothing races.
     const scope = scopeOf(repo)
-    await read(repo.top, ['add', '-u', '--ignore-errors', '--', repo.prefix || '.'], work)
-
-    const untracked = splitZ(await read(repo.top, ['ls-files', '-z', '-o', '--exclude-standard', ...scope], work))
-    const kept: string[] = []
-    for (const path of untracked) {
-      const info = await lstat(join(repo.top, path)).catch(() => null)
-      if (!info) continue
-      if (info.isFile() && info.size > MAX_UNTRACKED_BYTES) continue
-      if (!info.isFile() && !info.isSymbolicLink()) continue
-      kept.push(path)
-    }
-    if (kept.length > 0) {
-      await read(repo.top, ['update-index', '--add', '-z', '--stdin'], work, `${kept.join('\0')}\0`)
-    }
-    const tree = (await read(repo.top, ['write-tree'], work)).trim()
-
-    const indexWrite = await run(repo.top, ['write-tree'], { GIT_INDEX_FILE: snapIndex })
-    const indexTree = indexWrite.code === 0 ? indexWrite.stdout.trim() : null
-
-    const headResult = await run(repo.top, ['rev-parse', '--verify', '-q', 'HEAD'])
-    const head = headResult.code === 0 ? headResult.stdout.trim() : null
+    const [tree, indexTree, head] = await Promise.all([
+      captureWorkTree(repo, workIndex, scope),
+      run(repo.top, ['write-tree'], { GIT_INDEX_FILE: snapIndex }).then((result) => (result.code === 0 ? result.stdout.trim() : null)),
+      run(repo.top, ['rev-parse', '--verify', '-q', 'HEAD']).then((result) => (result.code === 0 ? result.stdout.trim() : null)),
+    ])
 
     const meta: Meta = { head, indexTree, ts: Date.now() }
     const metaBlob = (await read(repo.top, ['hash-object', '-w', '--stdin'], undefined, JSON.stringify(meta))).trim()
@@ -189,6 +175,25 @@ export async function captureSnapshot(cwd: string, ref: string): Promise<Snapsho
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }
+}
+
+/** Tree of tracked and untracked files as on disk, built in a scratch index so the real one is never touched. */
+async function captureWorkTree(repo: Repo, workIndex: string, scope: string[]): Promise<string> {
+  const work = { GIT_INDEX_FILE: workIndex }
+  await read(repo.top, ['add', '-u', '--ignore-errors', '--', repo.prefix || '.'], work)
+
+  const untracked = splitZ(await read(repo.top, ['ls-files', '-z', '-o', '--exclude-standard', ...scope], work))
+  const infos = await Promise.all(untracked.map((path) => lstat(join(repo.top, path)).catch(() => null)))
+  const kept = untracked.filter((_, i) => {
+    const info = infos[i]
+    if (!info) return false
+    if (info.isFile() && info.size > MAX_UNTRACKED_BYTES) return false
+    return info.isFile() || info.isSymbolicLink()
+  })
+  if (kept.length > 0) {
+    await read(repo.top, ['update-index', '--add', '-z', '--stdin'], work, `${kept.join('\0')}\0`)
+  }
+  return (await read(repo.top, ['write-tree'], work)).trim()
 }
 
 /** Rereads a snapshot. Null if its ref is gone (cleaned conversation or recloned repository). */

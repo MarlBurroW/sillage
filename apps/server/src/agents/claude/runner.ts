@@ -1096,15 +1096,8 @@ export class ClaudeRunner implements AgentRunner {
     _mentions: OutgoingMention[],
     _skills: string[],
   ): Promise<void> {
-    const { blocks, prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
-
-    this.ctx.emit({
-      type: 'message.completed',
-      messageId: randomUUID(),
-      role: 'user',
-      blocks,
-      parentToolCallId: null,
-    })
+    // The manager journaled the message before starting this runner; only steering echoes here.
+    const { prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     this.openTurn()
 
     this.input.push({

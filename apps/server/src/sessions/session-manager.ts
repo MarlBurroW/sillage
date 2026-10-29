@@ -24,6 +24,7 @@ import {
 import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
+import { describeOutgoingMessage } from '../agents/outgoing.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { publicUrlOf } from '../settings/app-settings.js'
@@ -102,7 +103,15 @@ interface ActiveCheckpoint {
   key: string
   cwd: string
   edited: Set<string>
+  /** Resolves once the before snapshot exists, false when its capture failed. Turns may start while it runs. */
+  capture: Promise<boolean>
 }
+
+/** How long a send waits for the before snapshot. Capture takes tens of milliseconds on Linux but seconds on Windows, where every git process is slow: beyond this, the turn starts and the capture finishes alongside. The agent's first write follows a model round trip, so the snapshot still precedes it in practice. */
+const CHECKPOINT_WAIT_MS = 1_000
+
+/** Sends slower than this are logged with their phases. */
+const SLOW_SEND_MS = 1_000
 
 /** Beyond this limit, completion events omit files because conversations cannot display that many. */
 const CHECKPOINT_EVENT_FILES = 500
@@ -165,6 +174,8 @@ export class SessionManager {
   /** Pending messages per conversation, memory-only: messages never reaching CLIs need not survive restarts, and journals already allow clean closure on recovery (see `expireQueuedMessages`). */
   private readonly queues = new Map<string, QueuedMessage[]>()
   private readonly checkpoints = new Map<string, ActiveCheckpoint>()
+  /** Conversations whose announced message has not reached the CLI yet; see `announce`. */
+  private readonly pendingDeliveries = new Set<string>()
   /** Set later because the WebSocket hub tracking viewers does not exist when managers are constructed. */
   private notifier: ConversationNotifier | null = null
   readonly statusBus = new EventEmitter()
@@ -574,6 +585,7 @@ export class SessionManager {
 
   /** Whether messages sent now would not reach CLIs immediately. */
   private isBusy(conversationId: string): boolean {
+    if (this.pendingDeliveries.has(conversationId)) return true
     const status = this.runners.get(conversationId)?.status
     return status === 'running' || status === 'awaiting_input'
   }
@@ -609,7 +621,9 @@ export class SessionManager {
     })
 
     try {
-      await this.deliver(conversationId, next.text, next.attachments, next.mentions, next.skills)
+      const prepared = this.prepareSend(conversationId, next.mentions)
+      this.announce(prepared.conversation, next.text, next.attachments)
+      await this.deliver(prepared.conversation, prepared.release, next.text, next.attachments, prepared.resolved, next.skills)
     } catch (err) {
       this.log.append(conversationId, {
         type: 'error',
@@ -1231,44 +1245,82 @@ export class SessionManager {
       return
     }
 
+    let prepared: ReturnType<SessionManager['prepareSend']>
     try {
-      await this.deliver(conversationId, text, attachments, mentions, skills)
+      prepared = this.prepareSend(conversationId, mentions)
     } catch (err) {
       // Sends failed before reaching CLIs: release IDs so clients can retry
       // without deduplication swallowing their messages.
       this.releaseClientMessage(conversationId, clientMessageId)
       throw err
     }
+    this.announce(prepared.conversation, text, attachments)
+    // Detached: the reply is 'accepted' and the thread already shows the message. The CLI start
+    // that follows is what took seconds on Windows.
+    void this.deliver(prepared.conversation, prepared.release, text, attachments, prepared.resolved, skills).then((delivered) => {
+      if (!delivered) this.releaseClientMessage(conversationId, clientMessageId)
+    })
   }
 
-  /** Actually delivers messages to CLIs, starting runners when necessary. */
+  /** Journals the user's message and opens the turn before any CLI work. Starting a CLI takes seconds on Windows, MCP servers included, and users saw nothing until then: the thread shows the message and the activity indicator at Enter, for every CLI alike. Runners therefore no longer echo in `send`. `isBusy` holds until the hand-over so a second message queues instead of racing the start. */
+  private announce(conversation: ConversationRow, text: string, attachments: OutgoingAttachment[]): void {
+    const { blocks } = describeOutgoingMessage(text, attachments)
+    this.log.append(conversation.id, { type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
+    this.log.append(conversation.id, { type: 'turn.started' })
+    this.pendingDeliveries.add(conversation.id)
+    this.setStatus(conversation.id, 'running')
+  }
+
+  /** Hands an announced message to the CLI, starting it when necessary. Failures are journaled where the message already sits and the conversation returns to idle: nobody awaits an HTTP reply anymore. Returns whether the CLI took the message. */
   private async deliver(
-    conversationId: string,
+    conversation: ConversationRow,
+    release: () => void,
     text: string,
     attachments: OutgoingAttachment[],
-    mentions: string[],
+    resolved: OutgoingMention[],
     skills: string[],
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const conversationId = conversation.id
+    const started = Date.now()
+    try {
+      // Cold starts and the before snapshot are independent, and both are slow on Windows:
+      // overlap them rather than paying for one after the other.
+      const [runner] = await Promise.all([this.ensureRunner(conversation), this.openCheckpoint(conversation)])
+      const prepared = Date.now()
+      await runner.send(text, attachments, resolved, skills)
+      // Only slow hand-overs are worth a log line: the Desktop keeps stderr, and this is what
+      // the user waits for after Enter.
+      if (Date.now() - started > SLOW_SEND_MS) {
+        console.warn(`[sessions] slow send ${conversationId}: ${prepared - started} ms to start and snapshot, ${Date.now() - prepared} ms to hand over`)
+      }
+      this.touch(conversationId)
+      return true
+    } catch (err) {
+      this.checkpoints.delete(conversationId)
+      this.log.append(conversationId, {
+        type: 'error',
+        code: 'send_failed',
+        message: `The message could not be handed to the CLI: ${err instanceof Error ? err.message : String(err)}`,
+        recoverable: true,
+      })
+      this.pendingDeliveries.delete(conversationId)
+      this.setStatus(conversationId, 'idle')
+      return false
+    } finally {
+      this.pendingDeliveries.delete(conversationId)
+      release()
+    }
+  }
+
+  /** Synchronous part of a send: the conversation, the CLI lock and the mentions. Invalid mentions must reject sends rather than leave launched sessions with lost messages. */
+  private prepareSend(conversationId: string, mentions: string[]): { conversation: ConversationRow; release: () => void; resolved: OutgoingMention[] } {
     const conversation = this.loadConversation(conversationId)
     const release = this.useCli(conversation.agent)
     try {
-      // Resolve before starting runners: invalid mentions must reject sends
-      // rather than leave launched sessions with lost messages.
-      const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
-
-      const runner = await this.ensureRunner(conversation)
-      // After potentially slow runner startup, immediately before sending:
-      // capture as close as possible to the agent's first action.
-      await this.openCheckpoint(conversation)
-      try {
-        await runner.send(text, attachments, resolved, skills)
-      } catch (err) {
-        this.checkpoints.delete(conversationId)
-        throw err
-      }
-      this.touch(conversationId)
-    } finally {
+      return { conversation, release, resolved: this.resolveMentions(this.resolveCwd(conversation), mentions) }
+    } catch (err) {
       release()
+      throw err
     }
   }
 
@@ -1284,16 +1336,50 @@ export class SessionManager {
 
     const cwd = this.resolveCwd(conversation)
     const key = randomUUID()
-    try {
-      await captureSnapshot(cwd, checkpointRef(conversation.id, key, 'before'))
-    } catch (err) {
-      if (!(err instanceof CheckpointError && err.code === 'checkpoint_not_repository')) {
-        console.warn(`[checkpoints] capture avant le tour impossible (${conversation.id}) :`, err)
-      }
-      return
-    }
-    this.checkpoints.set(conversation.id, { key, cwd, edited: new Set() })
+    const capture = captureSnapshot(cwd, checkpointRef(conversation.id, key, 'before')).then(
+      () => true,
+      (err: unknown) => {
+        if (!(err instanceof CheckpointError && err.code === 'checkpoint_not_repository')) {
+          console.warn(`[checkpoints] capture avant le tour impossible (${conversation.id}) :`, err)
+        }
+        return false
+      },
+    )
+    const entry: ActiveCheckpoint = { key, cwd, edited: new Set(), capture }
+
+    let timer: NodeJS.Timeout | undefined
+    const settled = await Promise.race([
+      capture,
+      new Promise<null>((resolveWait) => {
+        timer = setTimeout(() => resolveWait(null), CHECKPOINT_WAIT_MS)
+      }),
+    ])
+    clearTimeout(timer)
+    if (settled === false) return
+
+    // Journal the opening now even when the capture is still running: the thread attaches each
+    // checkpoint to the next user message, so the marker must precede it.
+    this.checkpoints.set(conversation.id, entry)
     this.log.append(conversation.id, { type: 'checkpoint.started', key })
+    if (settled === null) {
+      void capture.then((ok) => {
+        if (ok || this.checkpoints.get(conversation.id) !== entry) return
+        this.checkpoints.delete(conversation.id)
+        this.failCheckpoint(conversation.id, key, 'The workspace could not be captured before the turn.')
+      })
+    }
+  }
+
+  private failCheckpoint(conversationId: string, key: string, reason: string): void {
+    this.log.append(conversationId, {
+      type: 'checkpoint.completed',
+      key,
+      status: 'failed',
+      reason,
+      files: [],
+      truncated: false,
+      excluded: 0,
+    })
   }
 
   /** Captures post-turn state and journals changes without blocking. Remove open checkpoints before capture because queued messages may start another turn needing its own checkpoint meanwhile. */
@@ -1303,6 +1389,11 @@ export class SessionManager {
     this.checkpoints.delete(conversationId)
 
     void (async () => {
+      // A short turn can end before the before snapshot is in: without it there is nothing to diff.
+      if (!(await active.capture)) {
+        this.failCheckpoint(conversationId, active.key, 'The workspace could not be captured before the turn.')
+        return
+      }
       try {
         await captureSnapshot(active.cwd, checkpointRef(conversationId, active.key, 'after'))
         const diff = await diffCheckpoint(active.cwd, conversationId, active.key, [...active.edited])
@@ -1316,15 +1407,7 @@ export class SessionManager {
           excluded: diff.excluded,
         })
       } catch (err) {
-        this.log.append(conversationId, {
-          type: 'checkpoint.completed',
-          key: active.key,
-          status: 'failed',
-          reason: err instanceof Error ? err.message : String(err),
-          files: [],
-          truncated: false,
-          excluded: 0,
-        })
+        this.failCheckpoint(conversationId, active.key, err instanceof Error ? err.message : String(err))
       }
     })().catch((err: unknown) => {
       // Conversations may disappear during capture, leaving no journal to write.

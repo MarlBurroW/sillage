@@ -217,14 +217,11 @@ export function useChatStream(
     void loadFromRest()
             return
           }
-          // An omitted old message can receive more blocks under the same native ID. Resolve its
-          // persisted row before folding: inventing a new row here would duplicate it on paging.
-          if (more && ((event.type === 'message.completed' || event.type === 'message.delta' || event.type === 'thinking.delta')
-            ? !currentState.items.some((item) => item.kind === 'message' && item.id === event.messageId)
-            : event.type === 'agent.notice' && event.id && !currentState.items.some((item) => item.kind === 'notice' && item.id === event.id))) {
-            void loadFromRest('refresh')
-            return
-          }
+          // Fold unknown message IDs directly, even with older pages unloaded. Refetching first made
+          // every send in a long conversation wait for a REST round trip, and for the projection to
+          // catch up with the event just journaled: seconds on Windows, where SQLite writes are
+          // slow. A new row for a genuinely new message lands at the same position as the server's,
+          // and `mergeThreadPage` drops the rare duplicate when an omitted old message reappears.
           pending.push({ seq, ts, event })
           if (event.type === 'agent.notice' && event.code === 'antigravity_account_signed_out') {
             void queryClient.invalidateQueries({ queryKey: ['antigravity-accounts'] })

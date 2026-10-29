@@ -2959,6 +2959,7 @@ export const en = {
   'error.runner_failed': "The CLI stopped",
   'error.daemon_restarted': "The daemon restarted during this conversation. The agent was interrupted.",
   'error.queued_message_failed': "The queued message could not be sent",
+  'error.send_failed': "The message could not be handed to the CLI",
   'error.config_applied_by_restart': "Settings applied by restarting the session",
   'error.config_applied_by_restart.live': "The CLI cannot apply this change live.",
   'error.event_unreadable': "Unreadable event",

@@ -810,8 +810,8 @@ export class OpencodeRunner implements AgentRunner {
   async send(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<void> {
     if (!this.server || !this.sessionId) throw new Error("La session opencode n'est pas démarrée.")
 
-    const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
-    this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
+    // The manager journaled the message before starting this runner; only steering echoes here.
+    const { promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     this.ctx.setStatus('running')
     // Messages during reload would lose events.
     if (this.reloading) await this.reloading

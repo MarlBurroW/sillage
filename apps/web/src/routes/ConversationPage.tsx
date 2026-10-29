@@ -861,8 +861,13 @@ export function ConversationPage() {
     mentions: string[],
     skills: string[],
   ) => {
+    // Desktop diagnostics split a slow send between settings and delivery: Windows reports of
+    // seconds after Enter could not be located without it.
+    const started = performance.now()
     await flushConfig()
+    const configMs = performance.now() - started
     await sendMessage(conversationId, text, attachmentIds, mentions, skills)
+    recordPerformance('send', { configMs, postMs: performance.now() - started - configMs })
     void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
   }
 

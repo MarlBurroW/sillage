@@ -2952,6 +2952,7 @@ export const fr: Catalog = {
   'error.runner_failed': "Le CLI s'est arrêté",
   'error.daemon_restarted': "Le daemon a redémarré pendant cette conversation. L'agent a été interrompu.",
   'error.queued_message_failed': "Le message en attente n'a pas pu partir",
+  'error.send_failed': "Le message n'a pas pu être transmis au CLI",
   'error.config_applied_by_restart': "Réglages appliqués en relançant la session",
   'error.config_applied_by_restart.live': "Le CLI ne sait pas appliquer ce changement à chaud.",
   'error.event_unreadable': "Événement illisible",
