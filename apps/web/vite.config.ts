@@ -67,7 +67,7 @@ export default defineConfig({
         // default limit requires further bundle reduction.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/s\//],
         runtimeCaching: [{ urlPattern: /^\/api\//, handler: 'NetworkOnly' }],
         cleanupOutdatedCaches: true,
       },
@@ -77,6 +77,10 @@ export default defineConfig({
   server: {
     port: 5317,
     proxy: {
+      '/s/': {
+        target: `http://127.0.0.1:${SERVER_PORT}`,
+        changeOrigin: true,
+      },
       '/api': {
         target: `http://127.0.0.1:${SERVER_PORT}`,
         changeOrigin: true,

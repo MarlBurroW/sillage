@@ -21,10 +21,12 @@ import {
   Loader,
   PanelRight,
   Search,
+  Share2,
   Shrink,
   Terminal,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+const ExportDialog = lazy(() => import('../components/chat/ExportDialog'))
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES } from '@sillage/protocol'
@@ -304,6 +306,7 @@ export function ConversationPage() {
   /** “Continue in another CLI” dialog: switching tools requires confirmation. */
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const [handoffOpen, setHandoffOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
 
@@ -1011,6 +1014,9 @@ export function ConversationPage() {
               <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
                 <Search size={18} />
               </IconButton>
+              {isOwner && <IconButton label={t('export.title')} onClick={() => setExportOpen(true)}>
+                <Share2 size={18} />
+              </IconButton>}
               {isOwner && AGENT_CAPABILITIES[conversation.agent].compact ? (
                 <IconButton
                   label={compacting || stream.state.compacting
@@ -1249,6 +1255,7 @@ export function ConversationPage() {
         {handoffOpen ? (
           <HandoffDialog open={handoffOpen} onOpenChange={setHandoffOpen} source={conversation} />
         ) : null}
+        {exportOpen && <Suspense fallback={null}><ExportDialog source={conversation} onClose={() => setExportOpen(false)} /></Suspense>}
 
         <ThreadSearch
           scroller={scroller}

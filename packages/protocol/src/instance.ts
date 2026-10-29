@@ -34,6 +34,8 @@ export interface InstanceCapabilities {
    * and a lock on a project nobody else can see conveys nothing.
    */
   sharedProjects: boolean
+  /** Publishing reviewed conversation snapshots at the configured public URL. */
+  publicConversationSharing: boolean
 }
 
 export interface InstanceInfo {

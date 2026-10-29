@@ -261,7 +261,7 @@ export class EventLog {
   readForReplay(
     conversationId: string,
     afterSeq: number,
-    limits: { rows: number; bytes: number; bodies?: boolean; unfiltered?: boolean },
+    limits: { rows: number; bytes: number; bodies?: boolean; unfiltered?: boolean; throughSeq?: number; onlyTypes?: string[]; maxEventBytes?: number },
   ): { entries: JournalEntry[]; nextAfter: number } {
     // Returning to an unchanged projected thread needs no historical supersession index.
     const lastSeq = this.db.select({ seq: conversations.lastSeq }).from(conversations).where(eq(conversations.id, conversationId)).get()?.seq ?? 0
@@ -276,7 +276,9 @@ export class EventLog {
           then ${events.payload} ->> '$.toolCallId' end`,
       })
       .from(events)
-      .where(and(eq(events.conversationId, conversationId), gt(events.seq, afterSeq)))
+      .where(and(eq(events.conversationId, conversationId), gt(events.seq, afterSeq),
+        limits.throughSeq === undefined ? undefined : lte(events.seq, limits.throughSeq),
+        limits.onlyTypes ? inArray(events.type, limits.onlyTypes) : undefined))
       .orderBy(asc(events.seq))
       .limit(limits.rows)
       .all()
@@ -287,6 +289,13 @@ export class EventLog {
     for (const row of listed) {
       if (!index || !isSuperseded(index, row)) {
         if (kept.length > 0 && bytes + row.bytes > limits.bytes) break
+        // Export must fail explicitly before a giant message crosses into the daemon heap.
+        // Large image/tool rows can still be small after the body projection.
+        if (limits.maxEventBytes && row.bytes > limits.maxEventBytes) {
+          const projected = this.db.select({ bytes: sql<number>`octet_length(${limits.bodies ? bodyPayload : replayPayload})` })
+            .from(events).where(and(eq(events.conversationId, conversationId), eq(events.seq, row.seq))).get()!.bytes
+          if (projected > limits.maxEventBytes) throw new RangeError('Replay event exceeds the byte limit.')
+        }
         kept.push(row.seq)
         bytes += row.bytes
       }

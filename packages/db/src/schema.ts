@@ -1763,3 +1763,14 @@ export const threadProjectionRows = sqliteTable('thread_projection_rows', {
 ])
 
 export type AntigravityAccountRow = typeof antigravityAccounts.$inferSelect
+
+/** Published artifacts contain only the reviewed HTML. The journal remains the private source. */
+export const conversationShares = sqliteTable('conversation_shares', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  expiresAt: timestamp('expires_at'),
+  revokedAt: timestamp('revoked_at'),
+}, (t) => [index('idx_conversation_shares_conversation').on(t.conversationId)])

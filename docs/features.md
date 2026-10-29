@@ -7,6 +7,47 @@ Features that need remote access, push notifications or incoming webhooks use
 Sillage Server. The [desktop guide](desktop.md#what-differs-from-sillage-server)
 explains the differences.
 
+## Exporting and sharing conversations
+
+The conversation owner can open **Export and share** from the conversation's
+action bar. Preparation freezes the current journal: later replies do not change
+the export. Choose a first and last message, exclude individual items, and edit
+the page title, introduction and optional pseudonym. The selection counter includes
+all pages, even while searching. Search filters the chooser without changing the
+export. On phones, presentation and tool settings fold away above the selection.
+
+Tools default to an activity summary without their arguments, results or paths.
+You can hide them, include inputs and outputs independently, or override the
+setting for a particular call. Reasoning, internal events and binary attachments
+are excluded. Local images are opt-in and each selected image needs visual review;
+remote images are never fetched. Image pixels and embedded metadata are not scanned.
+
+Secretlint and local rules scan the selected text for credentials, email addresses,
+IP addresses and personal paths. Findings are masked by default. Review individual
+findings or identical occurrences together. Separate tabs show detected values,
+all text and images awaiting review. Select text to add a manual mask, or enter a
+literal word or phrase to mask every occurrence in the selected content.
+Going back preserves review choices; a new analysis retains choices only for
+unchanged fields. Images already reviewed remain approved when still selected.
+Detection is not exhaustive; review the final preview before sharing.
+
+The preview, HTML download and public page use the same artifact. It works offline,
+includes its styles and selected images, and runs no JavaScript. Excluded data is
+absent from the file. Enlarge the preview inside the dialog for reading on a phone.
+Exports are limited to 50 MiB; preparation expires after an hour.
+
+Both editions can download HTML. **Server** additionally offers anonymous public
+links when its public URL is configured in Settings. Links expire after 30 days by
+default, with a custom date or no expiration available. **Shared links** lists the
+session's published copies and lets the owner revoke them. A published copy is
+immutable: export again to share changes. Archiving preserves links; deleting the
+session invalidates them. Revocation cannot remove files readers already downloaded.
+
+HTML artifacts are stored under the instance data directory in
+`conversation-exports/`, outside the frontend directory. Public pages are served
+at `/s/:token`, without authentication, with sandboxing, no indexing and no caching.
+The periodic cleanup removes expired, revoked and orphaned files.
+
 ## Working with your agents
 
 - **Sessions that outlive the client.** The event journal on the server is the

@@ -13,9 +13,8 @@ import {
   filesExistBodySchema,
   type FileContentDto,
 } from '@sillage/protocol'
-import { resolveInside, resolveRealInside } from '../../workspace.js'
-import { readableConversation } from '../../conversations/access.js'
-import { linkedWorktreePaths } from '../../worktrees/linked.js'
+import { resolveInside } from '../../workspace.js'
+import { workspaceImagePath } from '../../workspace-images.js'
 import { attachmentHeader } from '../attachment-header.js'
 import type { AppContext } from '../context.js'
 import { HttpError, notFound } from '../errors.js'
@@ -62,29 +61,8 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
     // A worktree created during a turn is linked without changing the CLI's resume cwd.
     // Only image reads use this fallback; editor writes retain their workspace boundary.
-    const imagePath = async (id: string, userId: string, path: string): Promise<string> => {
-      const root = workspaceOf(id, userId)
-      const existing = async (directory: string): Promise<string | null> => {
-        try {
-          const absolute = await resolveRealInside(directory, path)
-          return (await stat(absolute)).isFile() ? absolute : null
-        } catch {
-          return null
-        }
-      }
-      const primary = await existing(root)
-      if (primary) return primary
-      if (base === '/api/conversations/:id') {
-        const conversation = readableConversation(ctx.db, id, userId)
-        if (conversation.projectId) {
-          const roots = linkedWorktreePaths(ctx.db, id, conversation.projectId)
-          const matches = [...new Set((await Promise.all(roots.map(existing))).filter((entry) => entry !== null))]
-          // Relative paths shared by multiple linked trees are ambiguous: require an absolute path.
-          if (matches.length === 1) return matches[0]!
-        }
-      }
-      throw notFound('file_not_found', 'File not found.')
-    }
+    const imagePath = (id: string, userId: string, path: string): Promise<string> =>
+      workspaceImagePath(ctx.db, workspaceOf(id, userId), base === '/api/conversations/:id' ? id : null, userId, path)
 
     app.get(`${base}/file`, async (request): Promise<FileContentDto> => {
       const user = requireUser(request)

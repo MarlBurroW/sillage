@@ -6,7 +6,10 @@
  * change keys. Keep keys flat: nested objects complicate diffs and completeness checks. Parameters
  * use `{name}` and are substituted by `t()`.
  */
+import { exportEn } from './export-en'
+
 export const en = {
+  ...exportEn,
   "concentration.enter": "Enter focus mode",
   "concentration.exit": "Exit focus mode",
   "concentration.add": "Add to message",

@@ -141,6 +141,12 @@ previews, a compact console or the classic view. Expand a tool to inspect its
 output and file changes. Adjust the reading width in Appearance settings.
 Long conversations load progressively, with tool details fetched when you open them.
 
+Share a session as a self-contained HTML page, with an editable title, introduction
+and pseudonym. Choose an excerpt, remove individual messages, control tool details
+and review automatic or manual redactions before downloading. Server instances with
+a configured public URL can also publish the same page as an expiring, revocable link.
+[Export and sharing](docs/features.md#exporting-and-sharing-conversations)
+
 Concentration mode hides the surrounding navigation while you read or write.
 Conversation actions stay directly accessible as icons, including on phones.
 Choose reasoning effort with a slider when the selected model supports it.

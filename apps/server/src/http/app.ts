@@ -72,6 +72,7 @@ import { registerCardRoutes } from './routes/cards.js'
 import { registerBoardLinkRoutes } from './routes/board-link.js'
 import type { BoardSync } from '../board/board-sync.js'
 import { registerConversationRoutes } from './routes/conversations.js'
+import { registerExportRoutes } from './routes/exports.js'
 import { registerSessionMessageRoutes } from './routes/session-messages.js'
 import { registerFileRoutes } from './routes/files.js'
 import { registerGitActionRoutes } from './routes/git-actions.js'
@@ -222,6 +223,7 @@ export async function buildApp(
   registerAuthRoutes(app, ctx)
   registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals, sessions)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
+  registerExportRoutes(app, ctx, log)
   registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
@@ -359,7 +361,7 @@ async function registerWebClient(app: FastifyInstance, ctx: AppContext): Promise
     // MIME type error instead of the actual problem.
     const looksLikeAsset = /\.[a-z0-9]+$/i.test(path)
 
-    if (path.startsWith('/api/') || looksLikeAsset || !hasBuild) {
+    if (path.startsWith('/api/') || path.startsWith('/s/') || looksLikeAsset || !hasBuild) {
       return reply.status(404).send({ error: { code: 'not_found', message: 'Route inconnue.' } })
     }
     // SPA fallback: react-router handles client-side routes.

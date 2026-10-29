@@ -1,7 +1,9 @@
 import type { Catalog } from './catalog-en'
+import { exportFr } from './export-fr'
 
 /** French catalog. Typed from English so missing keys fail the build. */
 export const fr: Catalog = {
+  ...exportFr,
   "concentration.enter": "Activer le mode concentration",
   "concentration.exit": "Quitter le mode concentration",
   "concentration.add": "Ajouter au message",

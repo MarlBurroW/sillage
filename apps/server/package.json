@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",
-    "build": "tsup && mkdir -p dist/migrations dist/mcp dist/git-credential && cp -r ../../packages/db/migrations/. dist/migrations/ && cp src/mcp/*.mjs dist/mcp/ && cp src/git-credential/*.mjs dist/git-credential/",
+    "build": "tsup && mkdir -p dist/migrations dist/mcp dist/git-credential dist/exports && cp -r ../../packages/db/migrations/. dist/migrations/ && cp src/mcp/*.mjs dist/mcp/ && cp src/git-credential/*.mjs dist/git-credential/ && cp src/exports/*.mjs dist/exports/",
     "start": "node --max-old-space-size=256 dist/main.js",
     "migrate": "tsx src/cli/migrate.ts",
     "user:create": "tsx src/cli/user-create.ts",
@@ -29,6 +29,8 @@
     "@fastify/static": "^8.0.4",
     "@fastify/websocket": "^11.3.0",
     "@node-rs/argon2": "^2.0.2",
+    "@secretlint/core": "^13.1.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.1.0",
     "@sillage/codex-bindings": "workspace:*",
     "@sillage/db": "workspace:*",
     "@sillage/opencode-bindings": "workspace:*",
@@ -40,6 +42,7 @@
     "fastify": "^5.2.1",
     "fflate": "^0.8.3",
     "ipaddr.js": "^2.5.0",
+    "markdown-it": "^14.3.0",
     "node-pty": "^1.1.0",
     "quickjs-emscripten": "0.32.0",
     "smol-toml": "^1.3.1",
@@ -49,6 +52,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "1.9.0",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.10.7",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",

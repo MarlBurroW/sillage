@@ -414,6 +414,13 @@
       "when": 1793294774579,
       "tag": "0058_hesitant_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1793306723902,
+      "tag": "0059_luxuriant_sabra",
+      "breakpoints": true
     }
   ]
 }

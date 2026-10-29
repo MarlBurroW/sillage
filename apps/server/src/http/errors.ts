@@ -48,7 +48,7 @@ export const conflict = (code: string, message: string, params?: Params) =>
  * All errors use { error: { code, message } } so the UI needs only one display path.
  */
 /** Routes whose request bodies must never appear in logs. */
-const SENSITIVE_ROUTES = ['/api/auth/login']
+const SENSITIVE_ROUTES = ['/api/auth/login', '/api/exports/']
 
 function redactBody(url: string, body: unknown): unknown {
   const path = url.split('?')[0] ?? url
