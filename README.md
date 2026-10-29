@@ -136,6 +136,12 @@ previews, a compact console or the classic view. Expand a tool to inspect its
 output and file changes. Adjust the reading width in Appearance settings.
 Long conversations load progressively, with tool details fetched when you open them.
 
+Concentration mode hides the surrounding navigation while you read or write.
+Conversation actions stay directly accessible as icons, including on phones.
+Choose reasoning effort with a slider when the selected model supports it.
+Images saved in the conversation workspace or a linked worktree appear inline
+and open in the image viewer.
+
 Sillage also has scheduled tasks, webhook automations, voice dictation, full-text
 search, MCP connections and a task API.
 [Full feature guide](docs/features.md)
