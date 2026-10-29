@@ -7,7 +7,14 @@
   border-color: transparent;
   box-shadow: none;
 }
-.sg-concentration-header > :not(.sg-conversation-heading):not([data-concentration-toggle]) {
+.sg-concentration-header > :not(.sg-conversation-heading):not([data-concentration-toggle]):not([data-conversation-toolbar]) {
+  display: none;
+}
+/* The toolbar wraps on phones; focus keeps only its exit action in the heading row. */
+.sg-concentration-header [data-conversation-toolbar] {
+  display: contents;
+}
+.sg-concentration-header [data-conversation-toolbar] > :not([data-concentration-toggle]) {
   display: none;
 }
 .sg-concentration-header .sg-conversation-heading > div {

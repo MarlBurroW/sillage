@@ -104,6 +104,18 @@ try {
       const exit = () => page.getByRole('button', { name: 'Quitter le mode concentration', exact: true })
       const composer = page.locator('textarea').last()
       await enter().waitFor()
+      // The merged toolbar keeps every action reachable alongside concentration mode.
+      const toolbar = page.locator('[data-conversation-toolbar]')
+      await toolbar.waitFor()
+      assert.equal(await toolbar.locator('svg.lucide-ellipsis').count(), 0)
+      for (const name of ['Rechercher dans la conversation', 'Détails de la session']) {
+        const action = toolbar.getByRole('button', { name, exact: true })
+        await action.scrollIntoViewIfNeeded()
+        assert.ok(await action.isVisible())
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      await page.screenshot({ path: join(shots, `${profile}-${size}-toolbar.png`) })
+
       await composer.fill('Brouillon conservé pendant la lecture')
       // An open docked panel must return after the temporary overlays are closed.
       await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
