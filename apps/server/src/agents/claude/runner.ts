@@ -193,6 +193,8 @@ export class ClaudeRunner implements AgentRunner {
   private appliedMcpServers: Record<string, McpServerConfig> = {}
   /** Servers that failed to launch, added to CLI-reported inventory. */
   private mcpFailures: McpServerStatus[] = []
+  /** Last inventory the CLI reported, so each turn knows which servers to retry. */
+  private lastMcpStatus: McpServerStatus[] = []
   /**
    * Skill-library roots received at launch. Plugins are launch-only options: changed lists require
    * restart; see `applyConfig`.
@@ -989,10 +991,9 @@ export class ClaudeRunner implements AgentRunner {
     try {
       // Servers skipped for missing secrets never reached CLI and cannot be reported; add them so
       // failures remain visible instead of vanishing.
-      this.ctx.emit({
-        type: 'mcp.updated',
-        servers: [...this.mcpFailures, ...fromSdkMcpStatus(await session.mcpServerStatus())],
-      })
+      const servers = fromSdkMcpStatus(await session.mcpServerStatus())
+      this.lastMcpStatus = servers
+      this.ctx.emit({ type: 'mcp.updated', servers: [...this.mcpFailures, ...servers] })
     } catch (err) {
       // Missing inventory must not kill session: conversation works, only status screen lags.
       process.stderr.write(
@@ -1099,6 +1100,7 @@ export class ClaudeRunner implements AgentRunner {
     // The manager journaled the message before starting this runner; only steering echoes here.
     const { prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     this.openTurn()
+    this.retryFailedMcpServers()
 
     this.input.push({
       type: 'user',
@@ -1235,6 +1237,45 @@ export class ClaudeRunner implements AgentRunner {
 
     this.config = config
     return true
+  }
+
+  /**
+   * See `AgentRunner`. Servers skipped for a missing secret never reached the CLI: for those, the
+   * registry is re-resolved and the live list reapplied, the same path as a settings change.
+   */
+  async reconnectMcpServer(name: string): Promise<boolean> {
+    if (!this.session) return false
+    try {
+      if (this.mcpFailures.some((server) => server.name === name)) {
+        const resolved = this.ctx.resolveMcpServers(this.config)
+        this.appliedMcpServers = toSdkMcpServers(resolved.servers)
+        this.mcpFailures = failedStatuses(resolved.failures)
+        await this.session.setMcpServers(this.appliedMcpServers)
+      } else {
+        // Throws with the CLI's reason when the attempt fails (probed on 2.1.312: `ECONNREFUSED…`).
+        await this.session.reconnectMcpServer(name)
+      }
+    } finally {
+      // A failed attempt still changes what the CLI reports.
+      await this.publishMcpStatus()
+    }
+    return true
+  }
+
+  /**
+   * Retry servers still failed from launch, without waiting for the attempts. Probed on 2.1.312: the
+   * CLI never retries on its own, so a dependency the user or the agent started afterwards would
+   * stay down for the whole session. Attempts are cheap (a refused connection returns at once) and
+   * run while the model reads the prompt; tools appear for the turn's later calls.
+   */
+  private retryFailedMcpServers(): void {
+    const session = this.session
+    if (!session) return
+    const failed = this.lastMcpStatus.filter((server) => server.state === 'failed')
+    if (failed.length === 0) return
+    void Promise.allSettled(failed.map((server) => session.reconnectMcpServer(server.name))).then(() =>
+      this.publishMcpStatus(),
+    )
   }
 
   /**

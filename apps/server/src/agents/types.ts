@@ -119,6 +119,14 @@ export interface AgentRunner {
   applyConfig(config: AgentConfig): Promise<boolean>
   /** Reloads libraries after writes without restarting. Claude reloads on demand; Codex requires resending roots. Encapsulate CLI-specific differences here. */
   reloadSkillLibrary(): Promise<void>
+  /**
+   * Retries one MCP server the CLI reported as failed, by the name `mcp.updated` carries. CLIs
+   * connect servers once at launch and never again, so a dependency started after the session
+   * stays unreachable until restart without this. False when the CLI offers no such call; errors
+   * from the attempt itself propagate. Must work mid-turn: agents start those dependencies
+   * themselves.
+   */
+  reconnectMcpServer(name: string): Promise<boolean>
   /** CLI-derived title or null, replacing unhelpful 'New conversation' defaults. */
   suggestedTitle(): Promise<string | null>
   interrupt(): Promise<void>

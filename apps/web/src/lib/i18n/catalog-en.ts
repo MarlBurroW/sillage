@@ -943,6 +943,8 @@ export const en = {
   'panel.mcp.tools.one': '{count} tool',
   'panel.mcp.tools.many': '{count} tools',
   'panel.mcp.external': 'From the CLI',
+  'panel.mcp.reconnect': 'Reconnect',
+  'panel.mcp.reconnecting': 'Reconnecting…',
   'panel.mcp.empty.title': 'No MCP server',
   'panel.mcp.empty.description': 'Declare servers in settings, then enable them on this conversation.',
 

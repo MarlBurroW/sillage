@@ -261,6 +261,11 @@ export function compactConversation(conversationId: string): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/compact`)
 }
 
+/** Retry a failed MCP server; the new state arrives through `mcp.updated`. */
+export function reconnectMcpServer(conversationId: string, name: string): Promise<unknown> {
+  return api.post(`/api/conversations/${conversationId}/mcp/${encodeURIComponent(name)}/reconnect`)
+}
+
 export function interruptConversation(conversationId: string): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/interrupt`)
 }

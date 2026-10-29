@@ -400,7 +400,7 @@ export function SidePanel({
       ) : null}
 
       {/* Like subagents, log-derived content loses nothing by mounting only when viewed. */}
-      {tab === 'mcp' ? <McpPane servers={mcpServers} /> : null}
+      {tab === 'mcp' ? <McpPane servers={mcpServers} conversationId={conversationId} agent={agent} /> : null}
 
       {tab === 'card' && projectId && cardId ? <CardPane projectId={projectId} cardId={cardId} onChange={cardActions?.change} onDetach={cardActions?.detach} detaching={cardActions?.detaching} /> : null}
 

@@ -1626,6 +1626,25 @@ export class SessionManager {
     await this.restartForConfig(conversationId, reason)
   }
 
+  /**
+   * Retries one failed MCP server in an open session. Allowed mid-turn, unlike compaction: the
+   * agent itself often starts the dependency and needs the tools before the turn ends. A cold
+   * conversation has nothing to reconnect, its next start connects everything anew.
+   */
+  async reconnectMcpServer(conversationId: string, name: string): Promise<boolean> {
+    const managed = this.runners.get(conversationId)
+    if (!managed) {
+      throw new HttpError(409, 'conversation_cold', 'The session is not running: its next message reconnects every server.')
+    }
+    try {
+      return await managed.runner.reconnectMcpServer(name)
+    } catch (err) {
+      if (err instanceof HttpError) throw err
+      // The CLI's own words (ECONNREFUSED, 401…) tell the user what to fix; a generic 500 would hide them.
+      throw new HttpError(502, 'mcp_reconnect_failed', err instanceof Error ? err.message : String(err))
+    }
+  }
+
   /** Reloads skills in affected open sessions: all for global scope (`null`), project sessions otherwise. Fire and forget without failure: writes already succeeded and unsuccessful reloads apply on next resume. */
   reloadSkillLibrary(projectId: string | null): void {
     for (const [conversationId, managed] of this.runners) {

@@ -1354,6 +1354,11 @@ export class CodexRunner implements AgentRunner {
     if (this.skillRoots.length > 0) await this.setSkillRoots(this.skillRoots)
   }
 
+  /** No per-server call: `config/mcpServer/reload` rereads config files, not the thread overrides Sillage passes. */
+  async reconnectMcpServer(): Promise<boolean> {
+    return false
+  }
+
   /**
    * Replace library roots with each plugin's skills directory, the skill-directory shape app-server
    * expects. Failure leaves sessions usable without libraries so older CLIs lacking this method

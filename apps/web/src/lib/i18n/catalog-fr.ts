@@ -933,6 +933,8 @@ export const fr: Catalog = {
   'panel.mcp.tools.one': '{count} outil',
   'panel.mcp.tools.many': '{count} outils',
   'panel.mcp.external': 'Venu du CLI',
+  'panel.mcp.reconnect': 'Reconnecter',
+  'panel.mcp.reconnecting': 'Reconnexion…',
   'panel.mcp.empty.title': 'Aucun serveur MCP',
   'panel.mcp.empty.description': 'Déclare des serveurs dans les réglages, puis active-les sur cette conversation.',
 

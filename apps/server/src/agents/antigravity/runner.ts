@@ -382,6 +382,7 @@ export class AntigravityRunner implements AgentRunner {
     return true
   }
   async reloadSkillLibrary(): Promise<void> { this.refreshSkills = true }
+  async reconnectMcpServer(): Promise<boolean> { return false }
   async suggestedTitle(): Promise<string | null> { return this.suggested }
   resolvePermission(id: string, decision: PermissionDecision): boolean { return this.interactions.resolvePermission(id, decision) }
   answerQuestion(id: string, answer: QuestionAnswer): boolean { return this.interactions.resolveQuestion(id, answer) }

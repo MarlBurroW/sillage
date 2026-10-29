@@ -918,6 +918,16 @@ export class OpencodeRunner implements AgentRunner {
     await this.reloadInstance()
   }
 
+  /** See `AgentRunner`. Forget the last payload: the inventory must republish even when the retry leaves the same failure. */
+  async reconnectMcpServer(name: string): Promise<boolean> {
+    const server = this.server
+    if (!server) return false
+    await server.post(`/mcp/${encodeURIComponent(name)}/connect`)
+    this.lastMcpPayload = null
+    await this.publishMcpStatus()
+    return true
+  }
+
   private reloadInstance(): Promise<void> {
     this.reloadPending = false
     const server = this.server

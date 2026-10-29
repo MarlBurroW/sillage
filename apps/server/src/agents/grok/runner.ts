@@ -926,6 +926,11 @@ export class GrokRunner implements AgentRunner {
     return true
   }
 
+  /** MCP servers are launch-time settings; the ACP extension reports status but offers no reconnect. */
+  async reconnectMcpServer(): Promise<boolean> {
+    return false
+  }
+
   /** Libraries arrive through `--plugin-dir`; `_x.ai/plugins/reload` reloads without session restarts. Failures preserve old skills and go to logs rather than conversations. */
   async reloadSkillLibrary(): Promise<void> {
     if (!this.client) return

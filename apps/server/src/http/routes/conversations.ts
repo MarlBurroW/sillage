@@ -841,6 +841,18 @@ export function registerConversationRoutes(
     return reply.status(202).send({ accepted: true })
   })
 
+  /** Retries an MCP server the CLI reported as failed. The new state is not in the response: it arrives through the journal's next `mcp.updated` event. */
+  app.post('/api/conversations/:id/mcp/:name/reconnect', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, name } = request.params as { id: string; name: string }
+    await loadWritable(id, user.id)
+
+    if (!(await sessions.reconnectMcpServer(id, name))) {
+      throw badRequest('mcp_reconnect_unsupported', 'This CLI cannot reconnect an MCP server without a restart.')
+    }
+    return reply.status(202).send({ accepted: true })
+  })
+
   /** Stops background work (command, workflow, watch) without affecting the turn. Completion is not in the response: it arrives through the journal's next `background.updated` event. */
   app.post('/api/conversations/:id/background/:taskId/stop', async (request, reply) => {
     const user = requireUser(request)
