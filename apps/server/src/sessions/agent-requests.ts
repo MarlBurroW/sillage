@@ -139,6 +139,7 @@ const WORKTREE_STATE_WORDS = {
   missing: 'missing (directory gone)',
   dirty: 'uncommitted',
   unmerged: 'committed, awaiting merge',
+  leftovers: 'merged, but files remain in the tree (commit, delete or ask the user whether to keep them)',
   merged: 'merged, nothing to retain (ready for cleanup)',
 } as const
 
@@ -643,6 +644,7 @@ export class AgentRequests {
         tree.ahead > 0 ? `${tree.ahead} commit(s) ahead` : null,
         tree.behind > 0 ? `${tree.behind} behind` : null,
         tree.conflicts ? 'conflict expected' : null,
+        tree.kept > 0 ? `${tree.kept} leftover file(s) kept by the user` : null,
       ].filter(Boolean)
       const sessions = tree.conversations.map((entry) => {
         const who = entry.id === requester.id ? 'you' : `“${titles.get(entry.id) ?? entry.id}”`
@@ -651,6 +653,10 @@ export class AgentRequests {
       return [
         `- \`${tree.name}\` : ${WORKTREE_STATE_WORDS[tree.state]}${facts.length ? ` (${facts.join(', ')})` : ''}`,
         `  ${tree.path}${tree.external ? ' · created outside Sillage' : ''}`,
+        // Agents that merged and moved on need the names to sort what they left behind.
+        ...(tree.state === 'leftovers'
+          ? [`  Left: ${tree.files.map((file) => `${file.path} (${file.kind})`).join(', ')}${tree.modified + tree.untracked > tree.files.length ? ', …' : ''}`]
+          : []),
         sessions.length ? `  Sessions: ${sessions.join('; ')}` : '  No attached sessions.',
       ].join('\n')
     })

@@ -165,6 +165,27 @@ export const worktrees = sqliteTable(
 )
 
 /**
+ * Files a user chose to leave in a merged worktree: demo setup, a test script, captures. Keyed by
+ * path rather than `worktrees.id` because trees created from the shell have no row. The fingerprint
+ * covers the exact set shown when keeping; once anything changes the tree is reported again, so
+ * keeping can never hide work written afterwards.
+ */
+export const worktreeKeptFiles = sqliteTable(
+  'worktree_kept_files',
+  {
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    files: integer('files').notNull(),
+    keptBy: text('kept_by').references(() => users.id, { onDelete: 'set null' }),
+    keptAt: timestamp('kept_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.path] })],
+)
+
+/**
  * Absolute paths a conversation has touched outside its working directory.
  *
  * A session recorded at the project root that writes to `~/projects/x-feature` actually works

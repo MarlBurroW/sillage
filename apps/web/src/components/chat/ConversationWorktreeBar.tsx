@@ -1,11 +1,12 @@
-import { BrushCleaning, FolderGit2, GitBranch } from 'lucide-react'
+import { BrushCleaning, FileCheck, FolderGit2, GitBranch } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ConversationDto } from '@sillage/protocol'
-import { useTranslate } from '../../lib/i18n'
+import { translate, useTranslate } from '../../lib/i18n'
 import { setPanelOpen, setPanelTab } from '../../lib/panel'
 import { useConversationWorktree, useWorktreeStatuses } from '../../lib/worktrees'
 import { WorktreeCleanupDialog } from '../WorktreeCleanupDialog'
+import { WorktreeLeftoversDialog } from '../WorktreeLeftoversDialog'
 import { WorktreeStateMark } from '../WorktreeTag'
 import { IconButton } from '../ui'
 
@@ -15,6 +16,7 @@ export function ConversationWorktreeBar({ conversation, canClean }: { conversati
   const tree = useConversationWorktree(conversation)
   const { data } = useWorktreeStatuses(conversation.projectId)
   const [cleaningPath, setCleaningPath] = useState<string | null>(null)
+  const [reviewingPath, setReviewingPath] = useState<string | null>(null)
   const base = data?.base ?? null
   const workingHere = tree?.conversations.some((entry) => entry.id === conversation.id && entry.link === 'worktree')
   // Deleted trees may remain session cwd: report even when absent from Git. Formerly edited-only
@@ -23,7 +25,10 @@ export function ConversationWorktreeBar({ conversation, canClean }: { conversati
   if (!tree && (!conversation.worktreeId || !data)) return null
 
   const state = tree
-    ? tree.state === 'merged' && base ? t('worktrees.conversation.merged', { base }) : t(`worktrees.state.${tree.state}`)
+    ? [
+        tree.state === 'merged' && base ? t('worktrees.conversation.merged', { base }) : t(`worktrees.state.${tree.state}`),
+        tree.kept > 0 ? translate(tree.kept > 1 ? 'worktrees.kept.many' : 'worktrees.kept.one', { count: tree.kept }) : null,
+      ].filter(Boolean).join(' · ')
     : t('worktrees.conversation.missing')
   const canOpenGit = workingHere && tree?.state !== 'missing'
   return (
@@ -45,6 +50,16 @@ export function ConversationWorktreeBar({ conversation, canClean }: { conversati
           <GitBranch size={14} />
         </IconButton>
       ) : null}
+      {canClean && tree?.state === 'leftovers' ? (
+        <button
+          type="button"
+          onClick={() => setReviewingPath(tree.path)}
+          className="flex h-11 shrink-0 items-center gap-1.5 rounded-sm px-2 text-ink-soft hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent md:h-8 pointer-coarse:h-11"
+        >
+          <FileCheck size={13} />
+          {t('worktrees.leftovers.review')}
+        </button>
+      ) : null}
       {canClean && tree && (tree.state === 'merged' || tree.state === 'missing') ? (
         <button
           type="button"
@@ -54,6 +69,9 @@ export function ConversationWorktreeBar({ conversation, canClean }: { conversati
           <BrushCleaning size={13} />
           {t('worktrees.clean')}
         </button>
+      ) : null}
+      {tree && reviewingPath === tree.path ? (
+        <WorktreeLeftoversDialog projectId={conversation.projectId} tree={tree} base={base} onClose={() => setReviewingPath(null)} />
       ) : null}
       {tree && cleaningPath === tree.path ? (
         <WorktreeCleanupDialog projectId={conversation.projectId} tree={tree} base={base} onClose={() => setCleaningPath(null)} />

@@ -17,6 +17,7 @@ export function ConfirmDialog({
   onConfirm,
   tone = 'accent',
   busy = false,
+  confirmDisabled = false,
   children,
 }: {
   open: boolean
@@ -27,6 +28,8 @@ export function ConfirmDialog({
   /** Use critical for destructive actions so color reinforces the label. */
   tone?: 'accent' | 'critical'
   busy?: boolean
+  /** The action cannot apply as things stand; the body says why. */
+  confirmDisabled?: boolean
   children: ReactNode
 }) {
   const t = useTranslate()
@@ -54,6 +57,7 @@ export function ConfirmDialog({
             <Button
               variant={tone === 'critical' ? 'danger' : 'primary'}
               busy={busy}
+              disabled={confirmDisabled}
               onClick={onConfirm}
             >
               {confirmLabel}

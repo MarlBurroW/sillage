@@ -555,10 +555,17 @@ export interface WorktreeDto {
 
 /**
  * Worktree state relative to the project's default branch, from most urgent to least: missing,
- * uncommitted work absent from base, commits absent from base, nothing base does not already
+ * uncommitted work absent from base, commits absent from base, branch merged but files left in the
+ * tree (a forgotten file or a demo leftover, for the user to sort), nothing base does not already
  * have (ready for cleanup).
  */
-export type WorktreeState = 'missing' | 'dirty' | 'unmerged' | 'merged'
+export type WorktreeState = 'missing' | 'dirty' | 'unmerged' | 'leftovers' | 'merged'
+
+/** File the tree holds beyond its last commit, as `git status` reports it. */
+export interface WorktreeFileDto {
+  path: string
+  kind: 'modified' | 'deleted' | 'untracked'
+}
 
 /** How a conversation is associated with a worktree: its cwd or files it wrote there. */
 export type WorktreeLink = 'worktree' | 'edited'
@@ -583,6 +590,15 @@ export interface WorktreeStatusDto {
   conflicts: boolean
   lastCommitAt: number | null
   lastEditAt: number | null
+  /** First files beyond the last commit, enough to recognise them without opening the tree. */
+  files: WorktreeFileDto[]
+  /**
+   * Identity of the files left in a `leftovers` tree, sent back to keep exactly what was shown:
+   * any later change gives another value. Null in every other state.
+   */
+  fingerprint: string | null
+  /** Files the user chose to keep after merging: the tree counts as merged while they stay unchanged. */
+  kept: number
   conversations: { id: string; link: WorktreeLink }[]
 }
 
@@ -618,6 +634,12 @@ export interface WorktreeCleanupPlanDto {
   /** Unfinished card handled by an associated session. */
   card: { id: string; number: number; title: string } | null
 }
+
+/** Keep the leftovers of a merged tree; `fingerprint` must match the current one. */
+export const worktreeKeepBodySchema = z.object({
+  path: z.string().min(1),
+  fingerprint: z.string().min(1),
+})
 
 export const worktreeCleanupBodySchema = z.object({
   path: z.string().min(1),

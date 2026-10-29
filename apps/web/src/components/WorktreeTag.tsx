@@ -1,5 +1,5 @@
 import type { ConversationDto, WorktreeState } from '@sillage/protocol'
-import { Check, CircleHelp, GitPullRequestArrow, Pencil, TriangleAlert } from 'lucide-react'
+import { Check, CircleHelp, FileCheck, GitPullRequestArrow, Pencil, TriangleAlert } from 'lucide-react'
 import { useTranslate } from '../lib/i18n'
 import { useConversationWorktree } from '../lib/worktrees'
 import { cx } from './ui'
@@ -9,6 +9,7 @@ export const WORKTREE_STATE_COLOR: Record<WorktreeState, string> = {
   missing: 'bg-critical',
   dirty: 'bg-caution',
   unmerged: 'bg-accent',
+  leftovers: 'bg-positive',
   merged: 'bg-positive',
 }
 
@@ -16,15 +17,16 @@ export const WORKTREE_STATE_TONE: Record<WorktreeState, 'critical' | 'caution' |
   missing: 'critical',
   dirty: 'caution',
   unmerged: 'accent',
+  leftovers: 'positive',
   merged: 'positive',
 }
 
 export type WorktreePreviewState = WorktreeState | 'unknown'
 export const WORKTREE_STATE_TEXT: Record<WorktreePreviewState, string> = {
   missing: 'text-critical', dirty: 'text-caution', unmerged: 'text-accent',
-  merged: 'text-positive', unknown: 'text-ink-faint',
+  leftovers: 'text-positive', merged: 'text-positive', unknown: 'text-ink-faint',
 }
-const STATE_ICONS = { missing: TriangleAlert, dirty: Pencil, unmerged: GitPullRequestArrow, merged: Check, unknown: CircleHelp }
+const STATE_ICONS = { missing: TriangleAlert, dirty: Pencil, unmerged: GitPullRequestArrow, leftovers: FileCheck, merged: Check, unknown: CircleHelp }
 
 /** The row and its explanation share the same glyph, including unavailable Git state. */
 export function WorktreeStateIcon({ state }: { state: WorktreePreviewState }) {
@@ -32,9 +34,17 @@ export function WorktreeStateIcon({ state }: { state: WorktreePreviewState }) {
   return <Icon size={15} aria-hidden className={cx('shrink-0', WORKTREE_STATE_TEXT[state])} />
 }
 
-/** Solid square with sharp corners distinguishes tree state from circular current-activity signals. */
+/**
+ * Solid square with sharp corners distinguishes tree state from circular current-activity signals.
+ * Leftovers keep the merged hue but only its outline: delivered, yet not empty.
+ */
 export function WorktreeStateMark({ state, className }: { state: WorktreeState; className?: string }) {
-  return <span aria-hidden className={cx('size-1.5 shrink-0', WORKTREE_STATE_COLOR[state], className)} />
+  return (
+    <span
+      aria-hidden
+      className={cx('size-1.5 shrink-0', state === 'leftovers' ? 'border border-positive' : WORKTREE_STATE_COLOR[state], className)}
+    />
+  )
 }
 
 /**

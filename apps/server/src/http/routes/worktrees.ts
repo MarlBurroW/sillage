@@ -3,10 +3,11 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { and, count, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, worktrees, type ProjectRow, type WorktreeRow } from '@sillage/db'
+import { conversations, projects, worktreeKeptFiles, worktrees, type ProjectRow, type WorktreeRow } from '@sillage/db'
 import {
   createWorktreeBodySchema,
   worktreeCleanupBodySchema,
+  worktreeKeepBodySchema,
   type WorktreeCleanupPlanDto,
   type WorktreeCleanupResultDto,
   type WorktreeDto,
@@ -102,6 +103,51 @@ export function registerWorktreeRoutes(
     const result = await cleanup.run(project, body)
     if (!result) throw notFound('worktree_not_found', 'Worktree not found.')
     return result
+  })
+
+  /** Keeps the files left in a merged tree, exactly those the user saw: a fingerprint computed since then means something changed, and keeping it would hide work never reviewed. */
+  app.post('/api/projects/:id/worktrees/keep', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = worktreeKeepBodySchema.parse(request.body)
+    const project = loadProject(id, user.id)
+    if (project.ownerId !== user.id) throw forbidden('worktree_keep_forbidden', 'Only the project owner can keep worktree files.')
+    worktreeStatus.invalidate(project.id)
+    const tree = (await worktreeStatus.current(project)).worktrees.find((entry) => entry.path === body.path)
+    if (!tree) throw notFound('worktree_not_found', 'Worktree not found.')
+    if (tree.state !== 'leftovers' || tree.fingerprint !== body.fingerprint) {
+      throw conflict('worktree_leftovers_changed', 'The files left in this worktree have changed. Review them again.')
+    }
+    const row = {
+      projectId: project.id,
+      path: tree.path,
+      fingerprint: body.fingerprint,
+      files: tree.modified + tree.untracked,
+      keptBy: user.id,
+      keptAt: Date.now(),
+    }
+    ctx.db
+      .insert(worktreeKeptFiles)
+      .values(row)
+      .onConflictDoUpdate({ target: [worktreeKeptFiles.projectId, worktreeKeptFiles.path], set: row })
+      .run()
+    worktreeStatus.forget(project.id)
+    return reply.status(204).send()
+  })
+
+  app.delete('/api/projects/:id/worktrees/keep', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { path } = request.query as { path?: string }
+    const project = loadProject(id, user.id)
+    if (project.ownerId !== user.id) throw forbidden('worktree_keep_forbidden', 'Only the project owner can keep worktree files.')
+    if (!path) throw badRequest('worktree_path_required', 'Worktree path required.')
+    ctx.db
+      .delete(worktreeKeptFiles)
+      .where(and(eq(worktreeKeptFiles.projectId, project.id), eq(worktreeKeptFiles.path, path)))
+      .run()
+    worktreeStatus.forget(project.id)
+    return reply.status(204).send()
   })
 
   app.post('/api/projects/:id/worktrees', async (request, reply) => {

@@ -1,6 +1,6 @@
 import { rm, stat } from 'node:fs/promises'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { cards, conversations, worktrees, type Db, type ProjectRow } from '@sillage/db'
+import { cards, conversations, worktreeKeptFiles, worktrees, type Db, type ProjectRow } from '@sillage/db'
 import type { WorktreeCleanupPlanDto, WorktreeCleanupResultDto, WorktreeStatusDto } from '@sillage/protocol'
 import { GitError, removeWorktree } from '../git.js'
 import { deleteBranch } from '../git-workflow.js'
@@ -124,6 +124,11 @@ export class WorktreeCleanup {
     if (tree.id) {
       this.db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, tree.id)).run()
     }
+    // A tree recreated at the same path must not inherit a choice made for other files.
+    this.db
+      .delete(worktreeKeptFiles)
+      .where(and(eq(worktreeKeptFiles.projectId, project.id), eq(worktreeKeptFiles.path, tree.path)))
+      .run()
     this.status.forget(project.id)
     return result
   }

@@ -882,14 +882,14 @@ function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
 
 /**
  * Worktree summary beside projects in the board's format: remaining work (uncommitted, unmerged,
- * missing) and amber cleanup-only trees. Omit when no extra trees exist because the row matters
+ * missing), merged trees with files to sort, and amber cleanup-only trees. Omit when no extra trees exist because the row matters
  * only through its count.
  */
 function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigate: () => void }) {
   const t = useTranslate()
   const { data } = useWorktreeStatuses(projectId)
   if (!data || data.worktrees.length === 0) return null
-  const { pending, cleanable } = worktreeCounts(data)
+  const { pending, leftovers, cleanable } = worktreeCounts(data)
   return (
     <li>
       <NavLink
@@ -899,13 +899,20 @@ function WorktreesLine({ projectId, onNavigate }: { projectId: string; onNavigat
       >
         <FolderGit2 size={14} className="shrink-0" />
         <span className="flex-1">{t('shell.project.worktrees')}</span>
-        <span className="shrink-0 font-medium tracking-normal normal-case tabular-nums">
-          {pending > 0
-            ? t(pending > 1 ? 'shell.project.worktreesPending.many' : 'shell.project.worktreesPending.one', { count: String(pending) })
-            : null}
-          {pending > 0 && cleanable > 0 ? ' · ' : null}
+        {/* Three counts outgrow the default sidebar width: wrap between them rather than overflow. */}
+        <span className="min-w-0 text-right font-medium tracking-normal normal-case tabular-nums !whitespace-normal">
+          {pending > 0 ? (
+            <span className="whitespace-nowrap">
+              {t(pending > 1 ? 'shell.project.worktreesPending.many' : 'shell.project.worktreesPending.one', { count: String(pending) })}
+            </span>
+          ) : null}
+          {pending > 0 && leftovers > 0 ? ' · ' : null}
+          {leftovers > 0 ? (
+            <span className="whitespace-nowrap">{t('shell.project.worktreesLeftovers', { count: String(leftovers) })}</span>
+          ) : null}
+          {(pending > 0 || leftovers > 0) && cleanable > 0 ? ' · ' : null}
           {cleanable > 0 ? (
-            <span className="text-caution">{t('shell.project.worktreesCleanable', { count: String(cleanable) })}</span>
+            <span className="whitespace-nowrap text-caution">{t('shell.project.worktreesCleanable', { count: String(cleanable) })}</span>
           ) : null}
         </span>
       </NavLink>
