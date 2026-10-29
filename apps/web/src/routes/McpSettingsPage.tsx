@@ -1,6 +1,6 @@
 import { MoreHorizontal, Pencil, Plug, Plus, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import type { McpServer, McpTransport } from '@sillage/protocol'
 import {
   Badge,
@@ -31,6 +31,7 @@ import {
   useUpdateMcpServer,
   type McpServerInput,
 } from '../lib/mcp'
+import { useSecrets } from '../lib/secrets'
 import { useCurrentUser } from '../lib/session'
 
 /**
@@ -59,6 +60,13 @@ interface FormState {
   args: Row[]
   env: Row[]
   url: string
+  /**
+   * Bearer is the usual scheme for remote MCP servers: a dedicated field spares users from
+   * remembering the header name and the `Bearer ` prefix, which were easy to get wrong.
+   */
+  auth: 'none' | 'bearer'
+  /** Raw token or a `{{secret.NAME}}` reference, without the `Bearer ` prefix. */
+  token: string
   headers: Row[]
 }
 
@@ -69,8 +77,16 @@ const EMPTY_FORM: FormState = {
   args: [],
   env: [],
   url: '',
+  auth: 'none',
+  token: '',
   headers: [],
 }
+
+const BEARER = /^Bearer\s+(.+)$/i
+const isAuthorization = (key: string) => key.trim().toLowerCase() === 'authorization'
+
+/** Exact single-secret reference, the case the secret picker can represent. */
+const SECRET_REFERENCE = /^\{\{\s*secret\.([A-Za-z0-9_]+)\s*\}\}$/
 
 /** Shared row-field styling, with each field retaining its own width. */
 const ROW_INPUT =
@@ -114,8 +130,23 @@ const toTransport = (form: FormState): McpTransport =>
     : {
         type: form.type,
         url: form.url.trim(),
-        headers: toRecord(form.headers),
+        headers: form.auth === 'bearer' && form.token.trim().length > 0
+          ? {
+              // Drop any manual Authorization row so the CLI does not receive two values whose
+              // precedence depends on header-name casing.
+              ...toRecord(form.headers.filter((row) => !isAuthorization(row.key))),
+              Authorization: `Bearer ${form.token.trim()}`,
+            }
+          : toRecord(form.headers),
       }
+
+/** Lift a stored `Authorization: Bearer …` header back into the dedicated field. */
+const fromHeaders = (headers: Record<string, string>): Pick<FormState, 'auth' | 'token' | 'headers'> => {
+  const entry = Object.entries(headers).find(([key, value]) => isAuthorization(key) && BEARER.test(value))
+  if (!entry) return { auth: 'none', token: '', headers: fromRecord(headers) }
+  const rest = Object.fromEntries(Object.entries(headers).filter(([key]) => key !== entry[0]))
+  return { auth: 'bearer', token: entry[1].match(BEARER)?.[1] ?? '', headers: fromRecord(rest) }
+}
 
 const toForm = (server: McpServer): FormState => ({
   ...EMPTY_FORM,
@@ -129,7 +160,7 @@ const toForm = (server: McpServer): FormState => ({
       }
     : {
         url: server.transport.url,
-        headers: fromRecord(server.transport.headers),
+        ...fromHeaders(server.transport.headers),
       }),
 })
 
@@ -306,6 +337,7 @@ function TransportFields({
             autoCorrect="off"
             required
           />
+          <BearerFields form={form} onChange={onChange} />
           <RowList
             label={t('mcp.headers.label')}
             hint={t('mcp.headers.hint')}
@@ -324,6 +356,80 @@ function TransportFields({
        */}
       <Banner tone="caution">{t('mcp.secrets')}</Banner>
     </>
+  )
+}
+
+/**
+ * Authentication section of remote transports. Stored secrets are offered first: a pasted token
+ * is kept as plain text, and the picker makes the safer choice the shortest one.
+ */
+function BearerFields({ form, onChange }: { form: FormState; onChange: (form: FormState) => void }) {
+  const t = useTranslate()
+  const { data: me } = useCurrentUser()
+  // Only administrators edit MCP servers, and only they may list secrets.
+  const secrets = useSecrets(me?.isAdmin === true).data?.secrets ?? []
+  const referenced = form.token.trim().match(SECRET_REFERENCE)?.[1]
+  const [typing, setTyping] = useState(false)
+  const source = !typing && referenced && secrets.some((secret) => secret.name === referenced)
+    ? `secret:${referenced}`
+    : 'literal'
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Select
+        label={t('mcp.auth.label')}
+        value={form.auth}
+        onChange={(auth) => onChange({ ...form, auth })}
+        options={[
+          { value: 'none' as const, label: t('mcp.auth.none') },
+          { value: 'bearer' as const, label: t('mcp.auth.bearer') },
+        ]}
+      />
+      {form.auth === 'bearer' ? (
+        <>
+          {secrets.length > 0 ? (
+            <Select
+              label={t('mcp.auth.source')}
+              value={source}
+              onChange={(value) => {
+                if (value === 'literal') {
+                  setTyping(true)
+                  // Leaving a secret empties the field rather than showing its reference as text.
+                  onChange({ ...form, token: referenced ? '' : form.token })
+                  return
+                }
+                setTyping(false)
+                onChange({ ...form, token: `{{secret.${value.slice('secret:'.length)}}}` })
+              }}
+              options={[
+                ...secrets.map((secret) => ({ value: `secret:${secret.name}`, label: secret.name })),
+                { value: 'literal', label: t('mcp.auth.literal') },
+              ]}
+            />
+          ) : null}
+          {source === 'literal' ? (
+            <div className="flex flex-col gap-1.5">
+              <Field
+                label={t('mcp.auth.token')}
+                type="password"
+                value={form.token}
+                onChange={(event) => onChange({ ...form, token: event.target.value })}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                required
+              />
+              <p className="text-xs text-ink-faint">
+                {t('mcp.auth.token.hint')}{' '}
+                <Link to="/settings/secrets" className="text-accent hover:underline">
+                  {t('mcp.auth.token.secrets')}
+                </Link>
+              </p>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </div>
   )
 }
 

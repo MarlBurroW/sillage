@@ -1223,7 +1223,9 @@ export class ClaudeRunner implements AgentRunner {
     // Library plugins too. Compare actual received roots, not just toggle.
     if (JSON.stringify(this.ctx.skillRoots(config)) !== JSON.stringify(this.skillRoots)) return false
 
-    await this.session.setModel(config.model)
+    // The CLI default is stored as '': 2.1.312 rejects it as an unknown model id, which made every
+    // live change fail and fall back to a restart. Undefined is the SDK's way to ask for the default.
+    await this.session.setModel(config.model || undefined)
     await this.session.applyFlagSettings(liveFlagSettings(this.config, config))
     await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
 

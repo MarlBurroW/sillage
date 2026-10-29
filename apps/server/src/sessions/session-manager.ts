@@ -1554,6 +1554,23 @@ export class SessionManager {
     }
   }
 
+  /** Reapplies configuration in open sessions using an edited or deleted registry server. Runners compare resolved servers, so an unchanged ID list with a new URL or token still reconnects; restarts wait for turn ends like any setting change. Fire and forget: the write already succeeded. */
+  reloadMcpServer(serverId: string): void {
+    for (const conversationId of this.runners.keys()) {
+      const row = this.db
+        .select({ config: conversations.config })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .get()
+      if (!row || !parseAgentConfig(row.config).mcpServers.includes(serverId)) continue
+      this.reloadConfig(conversationId).catch((err: unknown) => {
+        process.stderr.write(
+          `[mcp ${conversationId}] reconfiguration failed: ${err instanceof Error ? err.message : String(err)}\n`,
+        )
+      })
+    }
+  }
+
   /** Stops runners to reload current configuration. Explain fallback in conversations because reloading context has real cost users should understand. */
   private async restartForConfig(conversationId: string, reason: string | null): Promise<void> {
     // Queues survive: the next send finds them, and `deliver` starts fresh runners

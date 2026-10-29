@@ -21,11 +21,15 @@ import { requireAdmin, requireUser } from '../require-user.js'
  * CLIs execute as the server's system user, granting execution rights rather
  * than changing display preferences.
  *
- * Changes apply when conversations next launch. Running sessions are not
- * reconfigured: Claude resends servers only when conversation settings change,
- * and Codex cannot replace them without reopening its thread.
+ * Edits reach open sessions using the server through `serverChanged`: each runner
+ * applies them live when its CLI can, otherwise restarts once its turn ends.
+ * Without it, a fixed URL or token stayed broken until a new conversation.
  */
-export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerMcpRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  serverChanged: (serverId: string) => void = () => {},
+): void {
   const listAll = (): McpServer[] =>
     ctx.db.select().from(mcpServers).orderBy(mcpServers.name).all().map(rowToMcpServer)
 
@@ -97,6 +101,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
       updatedAt: Date.now(),
     }
     ctx.db.update(mcpServers).set(next).where(eq(mcpServers.id, current.id)).run()
+    serverChanged(current.id)
 
     return rowToMcpServer(next)
   })
@@ -110,6 +115,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
     requireAdmin(request)
     const current = requireServer(request.params)
     ctx.db.delete(mcpServers).where(eq(mcpServers.id, current.id)).run()
+    serverChanged(current.id)
     reply.status(204)
   })
 }

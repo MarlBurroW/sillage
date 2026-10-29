@@ -14,6 +14,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @sillage/server test",
     "test:api-mcp-ui": "node scripts/api-mcp-ui-check.mjs",
+    "test:mcp-auth-ui": "node scripts/mcp-auth-ui-check.mjs",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "test:claude-sync-ui": "node --import ./apps/server/node_modules/tsx/dist/loader.mjs scripts/claude-sync-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",

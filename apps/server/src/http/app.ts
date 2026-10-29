@@ -265,7 +265,7 @@ export async function buildApp(
     grokAccounts,
     antigravityAccounts,
   )
-  registerMcpRoutes(app, ctx)
+  registerMcpRoutes(app, ctx, (serverId) => sessions.reloadMcpServer(serverId))
   // Sources read the library to install skills; the library reads source catalogs
   // to detect updates, so initialize sources first.
   const skillSources = new SkillSources(ctx.db, ctx.config.paths.skillSourcesCache)

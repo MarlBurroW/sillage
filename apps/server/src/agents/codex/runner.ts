@@ -1334,6 +1334,13 @@ export class CodexRunner implements AgentRunner {
     // restart the process and resume threads from the new home, sharing
     // session directories.
     if (config.account !== this.config.account) return false
+    // MCP servers are thread overrides read at thread/start and thread/resume only: app-server has
+    // no call to replace them (`config/mcpServer/reload` takes no server list).
+    // Accepting the change here left newly enabled servers missing until a new conversation
+    // (probed on codex-cli 0.163.0); restarting resumes the thread with the new list.
+    if (JSON.stringify(this.ctx.resolveMcpServers(config).servers) !== JSON.stringify(this.mcpServers)) {
+      return false
+    }
     // Unlike Claude plugins, roots change live. Empty lists remove the library
     // and skills/changed updates inventory.
     const skillRoots = this.ctx.skillRoots(config)
