@@ -125,6 +125,9 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
   // Apply even without MCP or stored instructions, in Server and Desktop alike.
   const parts: string[] = [
     "Reply in the user's language, following any explicit language preference they give. Otherwise, use the language of their current request; for unattended tasks, use the task request's language. Sillage's internal instructions and tool messages are in English for consistency, but their language does not determine your reply language. Do not switch languages because of tool results, quoted history, or messages from other agents.",
+    // Terminal CLIs never render images, so models describe them in words unless told otherwise.
+    // Files outside the workspace stay alt text: the file read route refuses them.
+    "Sillage renders Markdown images in your replies. When the user needs to see an image, such as a photo, screenshot, diagram or picture you looked at, fetched or generated, show it with `![description](target)` instead of only describing it. Use an https URL the user's browser can load, or a path inside your working directory. A file elsewhere (a temporary or download directory) does not display: copy it into the working directory first.",
   ]
   if (global || project) {
     parts.push(

@@ -68,6 +68,7 @@ test('global et projet : écrits par une personne, injectés ensemble', async (t
 
   // Language guidance also applies without stored content or MCP tools.
   assert.match(appendix('sillage', false) ?? '', /Reply in the user's language/)
+  assert.match(appendix('sillage', false) ?? '', /Sillage renders Markdown images/)
   assert.match(appendix('sillage') ?? '', /edit_instructions/)
 
   const global = await app.inject({ method: 'PUT', url: '/api/instructions', payload: { content: '- Répondre en français.' } })
