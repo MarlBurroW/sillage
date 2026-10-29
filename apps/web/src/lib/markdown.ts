@@ -73,12 +73,18 @@ md.core.ruler.push('sg_task_lists', (state) => {
  */
 const PATH_CANDIDATE = /^(?!-)(?!\w+:\/\/)[\w./@+-]{1,300}$/
 const LINE_SUFFIX = /:\d+(?::\d+)?$/
+const WINDOWS_ABSOLUTE = /^\/?[a-z]:[/\\](?![/\\])/i
+const WINDOWS_PATH_BODY = /^[\p{L}\p{N}\p{M}_ ./@+()'-]{1,300}$/u
 
 /** Path carried by a code span, or null if it cannot be one. */
 function pathCandidate(content: string): string | null {
   // Strip the written `./` prefix: the workspace expects a path relative to its root.
-  const path = content.replace(LINE_SUFFIX, '').replace(/^\.\//, '')
-  if (!PATH_CANDIDATE.test(path)) return null
+  let path = content.replace(LINE_SUFFIX, '').replace(/^\.\//, '')
+  // Agents also write URL-shaped drive paths (/D:/...), which Windows cannot resolve as-is.
+  if (WINDOWS_ABSOLUTE.test(path)) {
+    path = path.replace(/^\//, '').replace(/\\/g, '/')
+    if (!WINDOWS_PATH_BODY.test(path.slice(3))) return null
+  } else if (!PATH_CANDIDATE.test(path)) return null
   // A path with no separator or extension is a word: `useState`, `null`, `main`. This excludes
   // `Makefile` and `LICENSE` unless written with their directory; otherwise every backticked word
   // in a sentence would reach the server.
@@ -90,7 +96,7 @@ function pathCandidate(content: string): string | null {
 
 /**
  * Link or image target that cannot name a file: it has a scheme (`https:`, `mailto:`), is
- * protocol-relative, or is an anchor.
+ * protocol-relative, or is an anchor. Drive-qualified Windows paths are handled separately.
  */
 const NON_PATH_TARGET = /^(\w+:|\/\/|#)/
 
@@ -103,14 +109,15 @@ const NON_PATH_TARGET = /^(\w+:|\/\/|#)/
  * authoring agent's convention.
  */
 function pathTarget(target: string | null, base?: string): string | null {
-  if (!target || NON_PATH_TARGET.test(target)) return null
+  if (!target) return null
   let decoded = target
   try {
     decoded = decodeURI(target)
   } catch {
     // Invalid escape sequence: use the target as written.
   }
-  if (base !== undefined && !decoded.startsWith('/')) {
+  if (NON_PATH_TARGET.test(decoded) && !WINDOWS_ABSOLUTE.test(decoded)) return null
+  if (base !== undefined && !decoded.startsWith('/') && !WINDOWS_ABSOLUTE.test(decoded)) {
     const joined = joinPath(base, decoded)
     if (joined === null) return null
     decoded = joined
