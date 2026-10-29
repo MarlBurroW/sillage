@@ -47,7 +47,7 @@ export class CodexAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = config.agents.codex.binary
-    this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled, config.paths.agents)
+    this.cli = new CliBinary('codex', this.label, this.binary, config.agents.codex.enabled, config.paths.agents)
     // Configured names alone are insufficient: spawn resolves PATH while Sillage's
     // managed-install prefix takes precedence. Probing bare names would list
     // models from versions conversations do not use.

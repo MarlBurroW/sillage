@@ -63,7 +63,7 @@ export class OpencodeAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = configuredBinary(config.agents.opencode.binary, config.paths.agents)
-    this.cli = new CliBinary('opencode', this.binary, config.agents.opencode.enabled, config.paths.agents)
+    this.cli = new CliBinary('opencode', this.label, this.binary, config.agents.opencode.enabled, config.paths.agents)
     this.catalog = new OpencodeCatalog(() => this.cli.executable())
   }
 

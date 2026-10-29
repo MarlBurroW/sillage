@@ -297,6 +297,8 @@ export function registerConversationRoutes(
     if (body.config.agent !== body.agent) {
       throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
     }
+    // Before `resolveDefaults`, which may launch the CLI to list its models.
+    sessions.assertCliEnabled(body.agent)
 
     if (id) {
       const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
@@ -491,6 +493,8 @@ export function registerConversationRoutes(
     if (body.config.agent !== body.agent) {
       throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
     }
+    // Before `resolveDefaults`, which may launch the CLI to list its models.
+    sessions.assertCliEnabled(body.agent)
 
     const budgetTokens = clampHandoffTokens(body.budgetTokens)
     let handoff

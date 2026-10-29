@@ -525,6 +525,7 @@ export const en = {
 
   // Agent CLI availability
   'agent.unavailable.disabled': 'Disabled in the server configuration.',
+  'agent.availability.pending': 'Checking which CLIs are available. Try again in a moment.',
   'agent.unavailable.notExecutable': 'Found at {binary}, but not executable.',
   'agent.unavailable.notOnPath': "Not on the server's PATH ({binary}).",
   'agent.version.mismatch':
@@ -558,6 +559,7 @@ export const en = {
   "cliUpdates.manage": "Manage CLI versions",
   "error.cli_install_verification": "Could not verify {label} {version} after installation (found: {found}).",
   "error.cli_updating": "{label} is being updated. Try again when installation finishes.",
+  "error.cli_disabled": "{label} is disabled in this server's configuration.",
   "error.cli_install_unmanaged": "This CLI is disabled or uses a custom executable. Update it outside Sillage.",
   "error.cli_newer_version": "A newer version is already installed. Sillage will not downgrade it.",
   "error.cli_install_not_queued": "Only a waiting installation can be cancelled.",

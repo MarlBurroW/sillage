@@ -192,6 +192,9 @@ export function DraftConversationPage() {
 
   const selectedAvailability = availability?.agents.find((a) => a.agent === agent)
   const blocked = unavailableReason(selectedAvailability)
+  // Model and usage probes launch the CLI server-side: wait until it is known to be installed,
+  // otherwise a disabled or missing CLI only answers with refusals shown under its banner.
+  const usable = selectedAvailability?.installed === true
   const selectedVersionNotice = versionMismatch(selectedAvailability)
 
   // Arriving from the board does not count: neither a card launch carrying its
@@ -285,6 +288,10 @@ export function DraftConversationPage() {
     mentions: string[],
     skills: string[],
   ) => {
+    // The composer stays usable while availability loads, but the CLI picked meanwhile
+    // may be disabled or missing: wait for the answer rather than send blind. The
+    // server refuses disabled CLIs too; this only spares the round trip.
+    if (selectedAvailability === undefined) throw new Error(t('agent.availability.pending'))
     const created = await createConversation.mutateAsync({
       agent,
       config: effective,
@@ -500,6 +507,7 @@ export function DraftConversationPage() {
               // Missing CLIs cannot be recovered server-side: the turn would fail after creation,
               // leaving an empty thread and a lost message.
               disabled={createConversation.isPending || blocked !== null}
+              probeModels={usable}
               onSend={send}
               onInterrupt={() => {}}
               onConfigChange={setConfig}
@@ -508,7 +516,7 @@ export function DraftConversationPage() {
             />
           )}
 
-          <DraftUsage agent={agent} account={usageAccountOf(effective)} enabled={blocked === null} />
+          <DraftUsage agent={agent} account={usageAccountOf(effective)} enabled={usable} />
 
           {/*
            * CLI-started sessions in this directory can be adopted instead of creating a

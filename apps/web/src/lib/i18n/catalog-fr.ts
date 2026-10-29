@@ -517,6 +517,7 @@ export const fr: Catalog = {
   'draft.commands.unavailable': "Les commandes en / de ce CLI n'ont pas pu être lues.",
 
   'agent.unavailable.disabled': 'Désactivé dans la configuration du serveur.',
+  'agent.availability.pending': 'Vérification des CLI disponibles. Réessaie dans un instant.',
   'agent.unavailable.notExecutable': 'Trouvé à {binary}, mais pas exécutable.',
   'agent.unavailable.notOnPath': 'Introuvable sur le PATH du serveur ({binary}).',
   'agent.version.mismatch':
@@ -550,6 +551,7 @@ export const fr: Catalog = {
   "cliUpdates.manage": "Gérer les versions des CLI",
   "error.cli_install_verification": "Impossible de vérifier {label} {version} après installation (version détectée : {found}).",
   "error.cli_updating": "{label} est en cours de mise à jour. Réessaie à la fin de l’installation.",
+  "error.cli_disabled": "{label} est désactivé dans la configuration de ce serveur.",
   "error.cli_install_unmanaged": "Ce CLI est désactivé ou utilise un exécutable personnalisé. Mets-le à jour en dehors de Sillage.",
   "error.cli_newer_version": "Une version plus récente est déjà installée. Sillage la conserve.",
   "error.cli_install_not_queued": "Seule une installation en attente peut être annulée.",

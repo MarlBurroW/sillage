@@ -14,6 +14,7 @@ import { CliBinary } from '../src/agents/cli-binary.js'
 import { AgentRegistry, type AgentAdapter } from '../src/agents/registry.js'
 import type { AgentRunner, RunnerContext } from '../src/agents/types.js'
 import { loadConfig } from '../src/config.js'
+import { createConversation } from '../src/conversations/create.js'
 import { createPersonalWorkspace } from '../src/conversations/personal-workspaces.js'
 import { EventLog } from '../src/events/event-log.js'
 import { registerAgentRoutes } from '../src/http/routes/agents.js'
@@ -129,9 +130,9 @@ test('Installation routes require admin rights and refuse disabled, custom and n
   assert.equal((await app.inject({ method: 'DELETE', url: '/api/agents/codex/install' })).statusCode, 403)
   assert.equal((await app.inject({ method: 'DELETE', url: '/api/agents/codex/install', headers: { 'x-admin': '1' } })).statusCode, 204)
   assert.deepEqual(installer.installCalls, [])
-  assert.equal(new CliBinary('codex', 'C:\\Tools\\codex.exe', true, '/unused').installable, false)
-  assert.equal(new CliBinary('codex', 'codex', true, '/unused').installable, true)
-  assert.equal(new CliBinary('codex', 'codex', false, '/unused').installable, false)
+  assert.equal(new CliBinary('codex', 'Codex', 'C:\\Tools\\codex.exe', true, '/unused').installable, false)
+  assert.equal(new CliBinary('codex', 'Codex', 'codex', true, '/unused').installable, true)
+  assert.equal(new CliBinary('codex', 'Codex', 'codex', false, '/unused').installable, false)
 })
 
 test('Session maintenance waits for startup, turns, questions and detached work, then resumes on a fresh runner', async (t) => {
@@ -149,7 +150,7 @@ test('Session maintenance waits for startup, turns, questions and detached work,
   let sent = 0
   const adapter = {
     kind: 'codex', label: 'Codex', binary: 'sillage-test-no-cli', rawFormat: 'test',
-    cli: { managedDir: config.paths.agents },
+    cli: { managedDir: config.paths.agents, assertEnabled() {} },
     createRunner(ctx: RunnerContext) {
       contexts.push(ctx)
       return {
@@ -188,4 +189,36 @@ test('Session maintenance waits for startup, turns, questions and detached work,
   await sessions.sendMessage('conversation', 'retry', 'hello again')
   assert.equal(contexts.length, 2)
   assert.equal(contexts[1]?.resumeSessionId, 'native-session')
+})
+
+test('Disabled CLIs are refused before anything is journaled or spawned', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'sillage-cli-disabled-'))
+  const { db, sqlite } = openDatabase(join(root, 'test.db'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values({ id: 'user', username: 'user', displayName: 'User', passwordHash: '', createdAt: 1 }).run()
+  const workspace = createPersonalWorkspace(db, root, 'user', 'Test')
+  db.insert(conversations).values({ id: 'conversation', userId: 'user', workspaceId: workspace.id, title: 'Test', status: 'idle', agent: 'claude', config: JSON.stringify(defaultConfigFor('claude')), createdAt: 1, updatedAt: 1 }).run()
+  const config = loadConfig()
+  config.paths = { ...config.paths, data: root, agents: join(root, 'agents'), memory: join(root, 'memory') }
+  let runners = 0
+  const adapter = {
+    kind: 'claude', label: 'Claude Code', binary: 'sillage-test-no-cli', rawFormat: 'test',
+    cli: new CliBinary('claude', 'Claude Code', 'sillage-test-no-cli', false, config.paths.agents),
+    createRunner() { runners++; throw new Error('A disabled CLI must never be launched') },
+  } as unknown as AgentAdapter
+  const log = new EventLog(db)
+  const sessions = new SessionManager(db, log, config, new AgentRegistry([adapter]), {} as never, {} as never, {} as never, {} as never, {} as never)
+  t.after(async () => { await sessions.stopAll(); sqlite.close(); await rm(root, { recursive: true, force: true }) })
+
+  await assert.rejects(sessions.sendMessage('conversation', 'first', 'hello'), { statusCode: 503, code: 'cli_disabled' })
+  await assert.rejects(createConversation(db, sessions, {
+    projectId: null, workspaceId: workspace.id, userId: 'user', agent: 'claude', config: defaultConfigFor('claude'),
+    worktreeId: null, cardId: null, origin: null,
+    firstMessage: { clientMessageId: 'new', text: 'hello', attachments: [], mentions: [], skills: [] },
+  }), { code: 'cli_disabled' })
+  assert.equal(runners, 0)
+  // Catalogs and usage gauges launch through `executable()`, outside sessions.
+  await assert.rejects((adapter.cli as CliBinary).executable(), { code: 'cli_disabled' })
+  assert.equal(log.read('conversation', 0, 100).length, 0, 'the refused message must not be journaled')
+  assert.equal(db.select().from(conversations).all().length, 1, 'no conversation row for a disabled CLI')
 })

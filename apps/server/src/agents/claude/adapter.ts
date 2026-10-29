@@ -52,7 +52,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = config.agents.claude.binary
-    this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled, config.paths.agents)
+    this.cli = new CliBinary('claude', this.label, this.binary, config.agents.claude.enabled, config.paths.agents)
     // Both SDK probes need conversation-resolved absolute paths;
     // otherwise `agents.claude.binary` would be ignored
     // and SDKs would select unbundled binaries.

@@ -544,8 +544,14 @@ export class SessionManager {
     }
   }
 
+  /** Rejects CLIs turned off with `[agents.<cli>] enabled = false`. Called before anything is written or spawned: the interface hides them, but stale clients, the API and scheduled tasks can still name them. */
+  assertCliEnabled(kind: AgentKind): void {
+    this.registry.adapter(kind).cli.assertEnabled()
+  }
+
   /** Reserve the CLI synchronously before awaiting checkpoints/startup, when runner status can still be idle. */
   private useCli(kind: AgentKind): () => void {
+    this.assertCliEnabled(kind)
     if (this.updatingClis.has(kind)) {
       throw new HttpError(503, 'cli_updating', '{label} is being updated. Try again when installation finishes.',
         { label: this.registry.adapter(kind).label })
@@ -1108,6 +1114,8 @@ export class SessionManager {
 
     // Reread from the database: previous runners may have set agentSessionId.
     const fresh = this.loadConversation(conversationId)
+    // Last guard before spawning: queued deliveries outlive the check made when they were accepted.
+    this.assertCliEnabled(fresh.agent)
     const context = this.buildContext(fresh)
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
 

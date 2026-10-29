@@ -133,6 +133,8 @@ interface ComposerProps {
   config: AgentConfig
   status: ConversationStatus
   disabled: boolean
+  /** See `useAgentSettings`: the draft turns it off until its CLI is known to be usable. */
+  probeModels?: boolean
   /** Session MCP inventory identifying what is actually loaded. */
   mcpInventory: McpServerStatus[]
   /**
@@ -204,6 +206,7 @@ export function Composer({
   config,
   status,
   disabled,
+  probeModels,
   mcpInventory,
   appliedConfig = null,
   commands,
@@ -263,6 +266,7 @@ export function Composer({
     appliedConfig,
     mcpInventory,
     disabled,
+    probeModels,
   })
 
   // Settings pinned beneath text for this conversation's CLI. Until account loading completes, use

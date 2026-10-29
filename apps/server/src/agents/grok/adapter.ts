@@ -57,7 +57,7 @@ export class GrokAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = configuredBinary(config.agents.grok.binary, config.paths.agents)
-    this.cli = new CliBinary('grok', this.binary, config.agents.grok.enabled, config.paths.agents)
+    this.cli = new CliBinary('grok', this.label, this.binary, config.agents.grok.enabled, config.paths.agents)
     this.catalog = new GrokCatalog(() => this.cli.executable())
     this.usageReader = new GrokUsageReader(() => this.cli.executable())
   }

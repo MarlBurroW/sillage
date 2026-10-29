@@ -4,6 +4,7 @@ import nodePath from 'node:path'
 import { promisify } from 'node:util'
 import { PREFERRED_CLI_RELEASES, type AgentAvailabilityDto, type AgentKind } from '@sillage/protocol'
 import { CachedProbe } from './cached-probe.js'
+import { HttpError } from '../http/errors.js'
 import { launchOf } from './launch.js'
 
 const run = promisify(execFile)
@@ -117,6 +118,7 @@ export class CliBinary {
 
   constructor(
     private readonly kind: AgentKind,
+    private readonly label: string,
     readonly configured: string,
     private readonly enabled: boolean,
     /** Managed CLI npm prefix. */
@@ -183,8 +185,16 @@ export class CliBinary {
     }
   }
 
-  /** Absolute executable path or configured name when resolution fails. Let `spawn` produce its precise `ENOENT` rather than invent errors, and avoid blocking launches that may succeed despite failed cold resolution. */
+  /** Throws a 503 `cli_disabled` for configuration-disabled CLIs. Sessions check before journaling anything; `executable` checks for every other launch. */
+  assertEnabled(): void {
+    if (!this.enabled) {
+      throw new HttpError(503, 'cli_disabled', '{label} is disabled in this server\'s configuration.', { label: this.label })
+    }
+  }
+
+  /** Absolute executable path or configured name when resolution fails. Let `spawn` produce its precise `ENOENT` rather than invent errors, and avoid blocking launches that may succeed despite failed cold resolution. Every launch (sessions, model and command catalogs, usage gauges) resolves through here, so a disabled CLI is refused before anything spawns. */
   async executable(): Promise<string> {
+    this.assertEnabled()
     const status = await this.status()
     return status.found ? status.path : this.configured
   }

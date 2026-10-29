@@ -67,7 +67,8 @@
     "lint": "pnpm --filter @sillage/web lint",
     "test:settings-navigation-ui": "node scripts/project-settings-ui-check.mjs",
     "test:project-settings-ui": "node scripts/project-settings-ui-check.mjs",
-    "test:news-ui": "node scripts/news-ui-check.mjs"
+    "test:news-ui": "node scripts/news-ui-check.mjs",
+    "test:disabled-cli-ui": "node scripts/disabled-cli-ui-check.mjs"
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0",

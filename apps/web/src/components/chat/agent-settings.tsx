@@ -320,6 +320,8 @@ interface AgentSettingsParams {
    */
   mcpInventory?: McpServerStatus[]
   disabled?: boolean
+  /** False skips the model probe: a draft whose CLI is disabled, missing or not yet known gets only a refusal back. */
+  probeModels?: boolean
 }
 
 /** Stable reference: a default array literal would retrigger control rendering. */
@@ -331,11 +333,12 @@ export function useAgentSettings({
   appliedConfig = null,
   mcpInventory = NO_INVENTORY,
   disabled = false,
+  probeModels = true,
 }: AgentSettingsParams): AgentSettings {
   const t = useTranslate()
   // Probe only the selected agent: each probe starts its corresponding server-side CLI. Codex and
   // Antigravity list the models of the signed-in plan, so the chosen account selects the catalog.
-  const { data: catalog, error: catalogError, isFetching: catalogFetching } = useAgentModels(config.agent, true, modelsAccount(config))
+  const { data: catalog, error: catalogError, isFetching: catalogFetching } = useAgentModels(config.agent, probeModels, modelsAccount(config))
   // A list that lags a login or plan change should not wait an hour of cache: the model panel can reread it.
   const refetchCatalog = useRefreshAgentModels(config.agent, modelsAccount(config))
   const [catalogRefreshing, setCatalogRefreshing] = useState(false)

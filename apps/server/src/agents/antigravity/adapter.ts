@@ -21,7 +21,7 @@ export class AntigravityAdapter implements AgentAdapter {
   private readonly catalog: AntigravityCatalog
   constructor(config: Config) {
     this.binary = config.agents.antigravity.binary
-    this.cli = new CliBinary(this.kind, this.binary, config.agents.antigravity.enabled, config.paths.agents, async (binary) => {
+    this.cli = new CliBinary(this.kind, this.label, this.binary, config.agents.antigravity.enabled, config.paths.agents, async (binary) => {
       const client = new AcpClient({ label: 'antigravity-version', binary, args: antigravityArgs(), env: antigravityEnv(userAntigravityHome(), false), onStderr: () => {} })
       try { return (await client.initialize(CLIENT_INFO)).agentInfo?.version ?? null } catch { return null } finally { client.close() }
     })

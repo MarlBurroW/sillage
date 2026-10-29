@@ -8,7 +8,7 @@ import { CliBinary } from '../src/agents/cli-binary.js'
 /** CLIs installed while presence probes are cached must appear immediately after invalidation. Interface installation does this; otherwise 'Install' remained offered for a minute after success. */
 test("un CLI installé après la sonde apparaît dès que la sonde est invalidée", async () => {
   const managed = mkdtempSync(join(tmpdir(), 'sillage-cli-'))
-  const cli = new CliBinary('codex', 'sillage-test-absent-cli', true, managed)
+  const cli = new CliBinary('codex', 'Codex', 'sillage-test-absent-cli', true, managed)
 
   assert.equal((await cli.status()).found, false)
 
