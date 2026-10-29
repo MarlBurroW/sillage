@@ -119,6 +119,8 @@ export interface LibrarySkillUpdateDto {
 
 /** A skills.sh result. `sourceId` identifies the already registered source for this repository. */
 export interface SkillSearchResultDto {
+  /** Directory identifier, which can differ from the display name. */
+  slug?: string
   /** GitHub `owner/repo`. */
   repository: string
   name: string

@@ -204,3 +204,16 @@ export const useApplySkillUpdate = () =>
 export function shortCommit(commit: string | null): string {
   return commit ? commit.slice(0, 7) : ''
 }
+
+/** Load descriptions independently so directory search remains usable during upstream failures. */
+export function useDiscoveryDescription(result: SkillSearchResultDto | null) {
+  const slug = result?.slug ?? result?.name
+  return useQuery({
+    queryKey: [...ROOT, 'discovery-description', result?.repository, slug],
+    queryFn: ({ signal }) => api.get<{ description: string | null }>(
+      `/api/skill-sources/discovery-description?repository=${encodeURIComponent(result!.repository)}&slug=${encodeURIComponent(slug!)}`, signal),
+    enabled: result !== null,
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+}

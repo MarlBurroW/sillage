@@ -15,7 +15,7 @@ import {
 import { z } from 'zod'
 import { credentialEnv } from '../../git-credential/helper.js'
 import { comparableUrl, normalizeSourceUrl, type SkillSources } from '../../skill-library/sources.js'
-import { searchSkillsSh } from '../../skill-library/skills-sh.js'
+import { searchSkillsSh, skillsShDescription } from '../../skill-library/skills-sh.js'
 import type { SkillLibrary } from '../../skill-library/store.js'
 import type { AppContext } from '../context.js'
 import { conflict } from '../errors.js'
@@ -124,6 +124,15 @@ export function registerSkillSourceRoutes(
         sourceId: known.get(comparableUrl(normalizeSourceUrl(result.repository).url)) ?? null,
       })),
     }
+  })
+
+  app.get('/api/skill-sources/discovery-description', async (request) => {
+    requireAdmin(request)
+    const { repository, slug } = z.object({
+      repository: z.string().max(200).regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+      slug: z.string().min(1).max(200).regex(/^[A-Za-z0-9_.-]+$/).refine((value) => value !== '.' && value !== '..'),
+    }).parse(request.query)
+    return { description: await skillsShDescription(repository, slug) }
   })
 
   /** Skill, source and changes an update would make. */

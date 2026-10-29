@@ -99,6 +99,7 @@ try {
         const name = url.searchParams.get('q')
         return send({ available: directoryAvailable, results: directoryAvailable ? [{ name, repository: `team/${name}`, installs: 42, sourceId: sources.find((source) => source.name === `team/${name}`)?.id ?? null }] : [] })
       }
+      if (url.pathname === '/api/skill-sources/discovery-description') return send({ description: 'Generate videos with multiple AI models. ' + 'Full description with capabilities and prerequisites. '.repeat(12) })
       if (url.pathname === '/api/skill-sources') {
         if (method === 'GET') return send({ sources })
         assert.ok(admin)
@@ -141,6 +142,13 @@ try {
     const query = page.getByRole('textbox', { name: 'Rechercher un skill', exact: true })
     await query.fill('wanted')
     await page.getByText('wanted', { exact: true }).waitFor()
+    await page.getByText('42 installations sur skills.sh', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Lire toute la description', exact: true }).click()
+    await page.getByRole('button', { name: 'Réduire', exact: true }).waitFor()
+    assert.equal(await page.getByRole('link', { name: 'Fiche complète sur skills.sh' }).getAttribute('href'), 'https://skills.sh/team/wanted/wanted')
+    assert.equal(await page.getByRole('link', { name: 'Dépôt GitHub' }).getAttribute('href'), 'https://github.com/team/wanted')
+    await page.getByRole('button', { name: 'Réduire', exact: true }).click()
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     await page.screenshot({ path: `/var/tmp/sillage-skills-discover-${profile}-${viewport.width}.png` })
     await page.getByRole('button', { name: 'Installer…', exact: true }).click()
     let dialog = page.getByRole('dialog', { name: 'Installer wanted', exact: true })

@@ -1,8 +1,8 @@
-import { Search } from 'lucide-react'
+import { ExternalLink, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { LibrarySkillScope } from '@sillage/protocol'
-import { useTranslate } from '../../lib/i18n'
-import { useSavedSkillSearch, useSkillSearch, type DiscoverableSkill } from '../../lib/skill-sources'
+import { locale, useTranslate } from '../../lib/i18n'
+import { useDiscoveryDescription, useSavedSkillSearch, useSkillSearch, type DiscoverableSkill } from '../../lib/skill-sources'
 import { Badge, Banner, Button, EmptyState, Field, Select } from '../ui'
 import { InstallSkillDialog } from './InstallSkillDialog'
 import { useSkillPermissions } from './permissions'
@@ -50,11 +50,11 @@ export function SkillDiscovery({ scope, projectId }: { scope: LibrarySkillScope;
           const repository = candidate.kind === 'source' ? candidate.source.name : candidate.result.repository
           const installed = candidate.kind === 'source' && candidate.skill.installed.some((entry) => entry.scope === scope && entry.projectId === projectId)
           return <li key={candidate.kind === 'source' ? `${candidate.source.id}:${candidate.skill.path}` : `${repository}:${name}`}
-            className="flex items-start gap-3 py-4">
+            className="flex flex-wrap items-start gap-3 py-5 sm:flex-nowrap">
             <div className="min-w-0 flex-1">
               <p className="break-words text-sm font-medium">{name}</p>
               <p className="mt-1 break-words text-xs text-ink-faint">{repository}</p>
-              {candidate.kind === 'source' ? <p className="mt-2 line-clamp-2 text-sm text-ink-soft">{candidate.skill.description}</p> : null}
+              <DiscoveryInfo candidate={candidate} />
               {candidate.kind === 'directory' && candidate.result.sourceId ? <Badge>{t('skills.discovery.knownSource')}</Badge> : null}
               {installed ? <Badge tone="positive">{t('skills.catalog.installed')}</Badge> : null}
             </div>
@@ -69,4 +69,32 @@ export function SkillDiscovery({ scope, projectId }: { scope: LibrarySkillScope;
     </> : null}
     {chosen ? <InstallSkillDialog candidate={chosen} scope={scope} projectId={projectId} onClose={() => setChosen(null)} /> : null}
   </section>
+}
+
+function DiscoveryInfo({ candidate }: { candidate: DiscoverableSkill }) {
+  const t = useTranslate()
+  const result = candidate.kind === 'directory' ? candidate.result : null
+  const details = useDiscoveryDescription(result)
+  const [expanded, setExpanded] = useState(false)
+  const description = candidate.kind === 'source' ? candidate.skill.description : details.data?.description
+  const directoryUrl = result ? 'https://skills.sh/' + result.repository.split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(result.slug ?? result.name) : null
+  return <div className="mt-2 flex flex-col items-start gap-2">
+    {description ? <>
+      <p className={`whitespace-pre-line break-words text-sm leading-relaxed text-ink-soft ${expanded ? '' : 'line-clamp-3'}`}>{description}</p>
+      <button type="button" className="text-xs text-accent hover:underline" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+        {t(expanded ? 'skills.discovery.less' : 'skills.discovery.more')}
+      </button>
+    </> : <p className="text-sm text-ink-faint">
+      {t(result && details.isLoading ? 'skills.discovery.descriptionLoading' : 'skills.discovery.noDescription')}
+    </p>}
+    {result ? <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-faint">
+      <span>{t('skills.discovery.installs', { count: result.installs.toLocaleString(locale()) })}</span>
+      <a href={directoryUrl!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-ink-soft hover:underline">
+        {t('skills.discovery.directoryPage')}<ExternalLink size={12} />
+      </a>
+      <a href={`https://github.com/${result.repository.split('/').map(encodeURIComponent).join('/')}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-ink-soft hover:underline">
+        {t('skills.discovery.repository')}<ExternalLink size={12} />
+      </a>
+    </div> : null}
+  </div>
 }
