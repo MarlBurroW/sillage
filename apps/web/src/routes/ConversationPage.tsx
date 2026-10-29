@@ -5,7 +5,7 @@ import { useConcentration } from '../lib/concentration'
 import { ConcentrationButton } from '../components/chat/ConcentrationButton'
 import { useThreadLayout } from '../lib/use-thread-layout'
 import { NewsTicker } from '../components/chat/NewsTicker'
-import { TooltipButton } from '../components/ui/Tooltip'
+import { TooltipButton, TooltipProvider } from '../components/ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowDown,
@@ -14,11 +14,11 @@ import {
   X,
   FileText,
   FolderTree,
+  FolderPlus,
   GaugeCircle,
   GitBranch,
   SquareKanban,
   Loader,
-  MoreHorizontal,
   PanelRight,
   Search,
   Shrink,
@@ -52,7 +52,7 @@ import { useClaudeAccounts } from '../lib/claude-accounts'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
-import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
+import { Banner, ConfirmDialog, EmptyState, IconButton, cx } from '../components/ui'
 import {
   compactConversation,
   conversationsKey,
@@ -923,7 +923,7 @@ export function ConversationPage() {
 
         <header
           className={cx(
-            'surface sticky top-0 z-10 flex shrink-0 items-center gap-1.5',
+            'surface sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-1.5',
             'border-b border-line px-2 py-2 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
             // The show-navigation button occupies this corner: without reserved space,
             // it covers the CLI icon.
@@ -972,125 +972,57 @@ export function ConversationPage() {
            */}
           <SignalRow signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))} />
 
-          {/*
-           * Usage belongs to the account, not the conversation: the panel stays the same
-           * regardless of the open thread.
-           */}
-          <button
-            type="button"
-            onClick={() => setUsageOpen(true)}
-            title={t('conversation.usage.title')}
-            className={cx(
-              'hidden shrink-0 items-center gap-1.5 rounded-full border border-line @min-[44rem]/thread:flex',
-              'bg-surface-high px-2 py-1 text-[0.6875rem] font-medium text-ink-soft',
-              'transition-colors hover:border-line-strong hover:text-ink',
-            )}
-          >
-            <GaugeCircle size={13} />
-            {/*
-             * Icon-only on touch screens: usage must remain accessible from phones; the label
-             * takes space, not the button.
-             */}
-            <span className="hidden md:inline">{t('conversation.usage.label')}</span>
-          </button>
-
-          {/*
-           * Large screens expose both actions directly: a menu hiding just two costs an
-           * unnecessary click. On touch screens, limited space moves them behind the ellipsis.
-           *
-           * Read access to shared conversations includes search; only compaction changes thread
-           * state and remains owner-only.
-           */}
-          <span className="hidden @min-[44rem]/thread:contents">
-            {/*
-             * Instructions are frequently reread and edited while working: one action, without
-             * leaving the thread or using the editor.
-             */}
-            <IconButton label={t(conversation.projectId ? 'conversation.instructions' : 'discussions.context')} onClick={() => setInstructionsOpen(true)}>
-              <FileText size={18} />
-            </IconButton>
-            <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
-              <Search size={18} />
-            </IconButton>
-            {isOwner && AGENT_CAPABILITIES[conversation.agent].compact ? (
-              <IconButton
-                label={
-                  compacting || stream.state.compacting
-                    ? t('conversation.compact.running')
-                    : t('conversation.compact.action')
-                }
-                // Context still changes during a turn: compacting midway would summarize
-                // state the agent is actively changing.
-                disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
-                onClick={() => void compact()}
-              >
-                <Shrink size={18} />
+          {/* Narrow threads keep full touch targets on a separate action row. */}
+          <TooltipProvider delayDuration={120}>
+            <div className="flex w-full shrink-0 items-center justify-start gap-0.5 overflow-x-auto @min-[56rem]/thread:justify-end @min-[56rem]/thread:w-auto" data-conversation-toolbar>
+              <IconButton label={t('conversation.usage.title')} onClick={() => setUsageOpen(true)}>
+                <GaugeCircle size={18} />
               </IconButton>
-            ) : null}
-          </span>
-
-          <span className="hidden @min-[44rem]/thread:contents">
-            <Menu trigger={<IconButton label={t('conversation.actions')}><MoreHorizontal size={18} /></IconButton>}>
-              <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
-                {t('conversation.meta.details')}
-              </MenuItem>
-              {!conversation.projectId ? <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setCreateProjectOpen(true)}>{t('discussions.project.create')}</MenuItem> : null}
-              <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setHandoffOpen(true)}>
-                {t('conversation.handoff.menu')}
-              </MenuItem>
-            </Menu>
-          </span>
-          <span className="shrink-0 @min-[44rem]/thread:hidden">
-            <Menu
-              trigger={
-                <IconButton label={t('conversation.actions')}>
-                  <MoreHorizontal size={18} />
-                </IconButton>
-              }
-            >
-              <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
-                {t('conversation.meta.details')}
-              </MenuItem>
-              {!conversation.projectId ? <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setCreateProjectOpen(true)}>{t('discussions.project.create')}</MenuItem> : null}
-              <MenuItem icon={<ArrowRightLeft size={14} />} onSelect={() => setHandoffOpen(true)}>
-                {t('conversation.handoff.menu')}
-              </MenuItem>
-              <MenuItem icon={<GaugeCircle size={14} />} onSelect={() => setUsageOpen(true)}>
-                {t('conversation.usage.label')}
-              </MenuItem>
-              <MenuItem icon={<FileText size={14} />} onSelect={() => setInstructionsOpen(true)}>
-                {t(conversation.projectId ? 'conversation.instructions' : 'discussions.context')}
-              </MenuItem>
-              <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
-                {t('conversation.search')}
-              </MenuItem>
+              <IconButton label={t(conversation.projectId ? 'conversation.instructions' : 'discussions.context')} onClick={() => setInstructionsOpen(true)}>
+                <FileText size={18} />
+              </IconButton>
+              <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
+                <Search size={18} />
+              </IconButton>
               {isOwner && AGENT_CAPABILITIES[conversation.agent].compact ? (
-                <MenuItem
-                  icon={<Shrink size={14} />}
-                  disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
-                  onSelect={() => void compact()}
-                >
-                  {compacting || stream.state.compacting
+                <IconButton
+                  label={compacting || stream.state.compacting
                     ? t('conversation.compact.running')
                     : t('conversation.compact.action')}
-                </MenuItem>
+                  // Summarizing during a turn would discard context still being changed.
+                  disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
+                  onClick={() => void compact()}
+                >
+                  <Shrink size={18} />
+                </IconButton>
               ) : null}
-            </Menu>
-          </span>
+              <IconButton label={t('conversation.meta.details')} onClick={() => setMetaOpen(true)}>
+                <Info size={18} />
+              </IconButton>
+              {!conversation.projectId ? (
+                <IconButton label={t('discussions.project.create')} onClick={() => setCreateProjectOpen(true)}>
+                  <FolderPlus size={18} />
+                </IconButton>
+              ) : null}
+              <IconButton label={t('conversation.handoff.menu')} onClick={() => setHandoffOpen(true)}>
+                <ArrowRightLeft size={18} />
+              </IconButton>
 
-          {/*
-           * At the far right edge, where the panel opens. The panel belongs to the conversation
-           * and reads this thread's working directory, including its worktree, not the
-           * project's.
-           */}
-          {conversation.projectId ? <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} /> : null}
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
-          <ConcentrationButton />
+              {/*
+               * At the far right edge, where the panel opens. The panel belongs to the conversation
+               * and reads this thread's working directory, including its worktree, not the
+               * project's.
+               */}
+              {conversation.projectId ? <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} /> : null}
+              <IconButton
+                label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
+                onClick={() => setPanelOpen(!panel.open)}
+              >
+                <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
+              </IconButton>
+              <ConcentrationButton />
+            </div>
+          </TooltipProvider>
         </header>
         {!concentration && !conversation.projectId && allConversations?.some(entry => entry.handoffFromId === conversation.id && entry.projectId) ? <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs text-ink-soft">
           <span>{t('discussions.project.linked')}</span>
