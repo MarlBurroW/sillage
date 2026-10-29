@@ -21,10 +21,10 @@ export async function checkSettingsMenu(context, origin, width, profile, shots, 
   if (width < 1024) await page.locator('main').getByRole('link', { name: 'Réglages', exact: true }).click()
   assert.equal(await search.inputValue(), 'apparence')
   await search.press('Escape')
-  await menu.getByRole('button', { name: /^Agents/ }).click()
-  assert.equal(await menu.getByRole('button', { name: /^Agents/ }).getAttribute('aria-expanded'), 'true')
-  await menu.getByRole('button', { name: /^Agents/ }).click()
-  assert.equal(await menu.getByRole('button', { name: /^Agents/ }).getAttribute('aria-expanded'), 'false')
+  // Groups are plain headings: every category stays reachable without unfolding anything.
+  assert.equal(await menu.getByRole('button', { name: /^Agents/ }).count(), 0)
+  await menu.getByRole('heading', { name: 'Agents', exact: true }).waitFor()
+  await menu.getByRole('link', { name: /^Comptes Grok/ }).waitFor()
   await search.fill('grok')
   await menu.getByRole('link', { name: /^Comptes Grok/ }).waitFor()
   await menu.getByRole('button', { name: 'Effacer la recherche', exact: true }).click()
@@ -35,6 +35,6 @@ export async function checkSettingsMenu(context, origin, width, profile, shots, 
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   await page.goto(`${origin}/settings/comptes-grok`)
   if (width < 1024) await page.locator('main').getByRole('link', { name: 'Réglages', exact: true }).click()
-  assert.equal(await menu.getByRole('button', { name: /^Agents/ }).getAttribute('aria-expanded'), 'true')
+  else await menu.getByRole('link', { name: /^Comptes Grok/ }).and(page.locator('[aria-current="page"]')).waitFor()
   await page.close()
 }

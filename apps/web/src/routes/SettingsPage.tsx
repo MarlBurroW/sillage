@@ -10,7 +10,9 @@ import {
   Cpu,
   Info,
   GitBranch,
-  IdCard,
+  Globe,
+  Shield,
+  Bot,
   KeyRound,
   Mic,
   Palette,
@@ -20,7 +22,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { foldForMatch, type InstanceCapabilities } from '@sillage/protocol'
@@ -29,6 +31,7 @@ import { useCurrentUser } from '../lib/session'
 import { useCliUpdateNotice } from '../lib/agents'
 import { useVersionInfo } from '../lib/system'
 import { UpdateDot } from '../components/UpdateDot'
+import { AgentIcon } from '../components/AgentIcon'
 import { useMediaQuery } from '../lib/viewport'
 import { Field, IconButton, cx } from '../components/ui'
 
@@ -42,6 +45,9 @@ import { Field, IconButton, cx } from '../components/ui'
  * section. On touch screens the list is the page: `/settings` shows it alone; opening a
  * category replaces it with a back link. This familiar list-detail pattern avoids squeezing a
  * navigation column into insufficient width.
+ *
+ * Groups are headings, not disclosure buttons: the list is short enough to scroll, and folding
+ * hid where a category lived behind a click, which is what the user came to find out.
  */
 interface Section {
   to: string
@@ -67,10 +73,6 @@ export function visibleSections(isAdmin: boolean, capabilities: InstanceCapabili
 
 /** Read through `visibleSections`, which enforces permissions and capabilities. */
 const SECTIONS: Section[] = [
-  {
-    to: 'cli-versions', group: 'agents', labelKey: 'cliUpdates.title',
-    descriptionKey: 'cliUpdates.navDescription', icon: <Terminal size={16} />,
-  },
   {
     to: 'veille',
     group: 'personal',
@@ -107,6 +109,10 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.cli',
     descriptionKey: 'settings.section.cli.description',
     icon: <SlidersHorizontal size={16} />,
+  },
+  {
+    to: 'cli-versions', group: 'agents', labelKey: 'cliUpdates.title',
+    descriptionKey: 'cliUpdates.navDescription', icon: <Terminal size={16} />,
   },
   {
     to: 'mcp',
@@ -148,28 +154,28 @@ const SECTIONS: Section[] = [
     group: 'agents',
     labelKey: 'settings.section.claudeAccounts',
     descriptionKey: 'settings.section.claudeAccounts.description',
-    icon: <IdCard size={16} />,
+    icon: <AgentIcon agent="claude" size={16} />,
   },
   {
     to: 'comptes-codex',
     group: 'agents',
     labelKey: 'settings.section.codexAccounts',
     descriptionKey: 'settings.section.codexAccounts.description',
-    icon: <IdCard size={16} />,
+    icon: <AgentIcon agent="codex" size={16} />,
   },
   {
     to: 'comptes-grok',
     group: 'agents',
     labelKey: 'settings.section.grokAccounts',
     descriptionKey: 'settings.section.grokAccounts.description',
-    icon: <IdCard size={16} />,
+    icon: <AgentIcon agent="grok" size={16} />,
   },
   {
     to: 'comptes-antigravity',
     group: 'agents',
     labelKey: 'settings.section.antigravityAccounts',
     descriptionKey: 'settings.section.antigravityAccounts.description',
-    icon: <IdCard size={16} />,
+    icon: <AgentIcon agent="antigravity" size={16} />,
   },
   {
     to: 'secrets',
@@ -222,6 +228,13 @@ const SECTIONS: Section[] = [
 ]
 
 const GROUPS = ['personal', 'agents', 'workspace', 'administration', 'about'] as const
+const GROUP_ICONS: Record<Section['group'], ReactNode> = {
+  personal: <UserRound size={13} />,
+  agents: <Bot size={13} />,
+  workspace: <Globe size={13} />,
+  administration: <Shield size={13} />,
+  about: null,
+}
 
 export function SettingsLayout() {
   const t = useTranslate()
@@ -232,11 +245,6 @@ export function SettingsLayout() {
   const { data: instance } = useInstance()
   const sections = visibleSections(Boolean(user?.isAdmin), instance?.capabilities)
   const [query, setQuery] = useState('')
-  const [openGroups, setOpenGroups] = useState<Set<Section['group']>>(() => new Set(['personal']))
-  const activeGroup = sections.find((entry) => pathname === `/settings/${entry.to}`)?.group
-  useEffect(() => {
-    if (activeGroup) setOpenGroups((current) => new Set([...current, activeGroup]))
-  }, [activeGroup])
   const terms = foldForMatch(query).trim().split(/\s+/).filter(Boolean)
   const filtered = sections.filter((entry) => {
     const text = foldForMatch(`${t(entry.labelKey)} ${t(entry.descriptionKey)} ${entry.group === 'about' ? '' : t(`settings.group.${entry.group}`)}`)
@@ -268,23 +276,15 @@ export function SettingsLayout() {
           const entries = filtered.filter((section) => section.group === group)
           if (entries.length === 0) return null
           return (
-            <div key={group} className="mb-2">
-              {group !== 'about' ? <h2>
-                <button type="button" disabled={terms.length > 0} aria-expanded={terms.length > 0 || openGroups.has(group)} aria-controls={`settings-group-${group}`}
-                  className="flex min-h-11 w-full items-center gap-2 px-2.5 text-left text-sm font-medium text-ink-soft"
-                  onClick={() => setOpenGroups((current) => {
-                    const next = new Set(current)
-                    if (next.has(group)) next.delete(group)
-                    else next.add(group)
-                    return next
-                  })}>
-                  <ChevronRight size={14} className={cx('shrink-0', (terms.length > 0 || openGroups.has(group)) && 'rotate-90')} />
-                  <span className="flex-1">{t(`settings.group.${group}`)}</span>
-                  <span className="text-xs text-ink-faint">{entries.length}</span>
-                </button>
-              </h2> : null}
-              <ul id={`settings-group-${group}`} hidden={group !== 'about' && !terms.length && !openGroups.has(group)}
-                className={cx('flex flex-col gap-1', group !== 'about' && !terms.length && !openGroups.has(group) && 'hidden')}>
+            <div key={group} className="mb-3">
+              {group !== 'about' ? (
+                <h2 id={`settings-group-${group}`}
+                  className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-ink-faint">
+                  {GROUP_ICONS[group]}
+                  <span>{t(`settings.group.${group}`)}</span>
+                </h2>
+              ) : null}
+              <ul aria-labelledby={group !== 'about' ? `settings-group-${group}` : undefined} className="flex flex-col gap-0.5">
                 {entries.map((section) => (
                   <li key={section.to}>
                     <NavLink
@@ -298,7 +298,7 @@ export function SettingsLayout() {
                         )
                       }
                     >
-                      <span className="relative shrink-0 text-ink-faint">
+                      <span aria-hidden className="relative shrink-0 text-ink-faint">
                         {section.icon}
                         {(section.to === 'a-propos' && versionInfo?.updateAvailable) || (section.to === 'cli-versions' && cliUpdateNotice) ? <UpdateDot /> : null}
                       </span>
