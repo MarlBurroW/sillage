@@ -125,6 +125,11 @@ working folder. Track it on the board, link a GitHub issue, review the diff, and
 see which branches are ready to merge. Enable checkpoints to inspect or undo the
 changes from a turn.
 
+Tag cards to sort the board, and attach a conversation to its card from the
+sidebar, the conversation header or an agent. A merged worktree that still holds
+stray files is shown apart from work in progress, with the files named, so you can
+keep them or clean up.
+
 Link an earlier conversation by typing `@@` in your message, or copy its reference
 to share with another agent. References in replies open the original conversation.
 The **Insert** menu helps you find shortcuts for files, sessions, cards and skills.

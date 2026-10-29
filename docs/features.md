@@ -43,9 +43,11 @@ explains the differences.
   default branch: uncommitted work, commits to merge, merged, or folder missing, with
   the sessions working there. The sidebar shows each conversation's branch and state.
   Cleaning up a tree is one action that first says what would be lost; once a tree
-  is merged and clean, Sillage proposes the cleanup as a decision. Agents create and
-  list worktrees through `create_worktree` and `list_worktrees`, so the interface
-  sees them.
+  is merged and clean, Sillage proposes the cleanup as a decision. A merged branch
+  whose tree still holds files (a capture, a demo script) is shown as *leftovers*
+  rather than uncommitted, with the files named; keep them and the tree counts as
+  merged until they change. Agents create and list worktrees through
+  `create_worktree` and `list_worktrees`, so the interface sees them.
 - **References between conversations.** Type `@@` to find a session and insert a
   reference, or copy one from the session menu. References in messages and agent
   replies show a preview and open the original conversation. The composer's
@@ -75,7 +77,11 @@ explains the differences.
   Any session in a project can edit its cards and leave notes through the built-in
   MCP server, as well as create cards and close or reopen linked issues. Link tickets
   as blockers, related work, duplicates, parent/sub-tickets or replacements from the
-  interface or an agent. Relations appear in both directions and stay local to Sillage. Optional maintenance starts a session for a new
+  interface or an agent. Relations appear in both directions and stay local to Sillage.
+  Tags sort cards on the board; agents may create them unless the project owner turns
+  that off. Attach a conversation to its card from the conversation, or let the agent
+  do it with `attach_card`: the card appears in the sidebar, the header and a Card
+  tab in the panel. Optional maintenance starts a session for a new
   issue and brings subsequent comments into that issue's session, using your
   instructions, CLI and worktree choice.
 - **Sessions that coordinate.** Through the same server, a session can message
@@ -118,7 +124,8 @@ explains the differences.
   [How the handoff is built](cli-handoff.md).
 - **MCP servers** declared once and handed to the agents that should get them.
 - **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, with global and
-  project skills managed from the interface. [Skill library](skill-library.md).
+  project skills managed from the interface, with visible progress while searching,
+  installing or updating. [Skill library](skill-library.md).
 - **Extra accounts.** Register other Claude subscriptions or API keys, other Codex
   subscriptions or API keys, and other Grok subscriptions or xAI API keys from the
   interface, then pick one when creating
