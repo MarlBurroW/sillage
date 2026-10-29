@@ -599,7 +599,11 @@ export interface WorktreeStatusDto {
   fingerprint: string | null
   /** Files the user chose to keep after merging: the tree counts as merged while they stay unchanged. */
   kept: number
-  conversations: { id: string; link: WorktreeLink }[]
+  /**
+   * Sessions attached through their cwd (`worktree`) or files they wrote there (`edited`), with
+   * their latest activity in the tree: clients showing one tree per session pick the most recent.
+   */
+  conversations: { id: string; link: WorktreeLink; lastActiveAt: number }[]
 }
 
 export interface WorktreeStatusListDto {

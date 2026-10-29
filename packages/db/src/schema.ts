@@ -630,6 +630,7 @@ export const agentRequests = sqliteTable(
         // Worktrees: git and worktree progress live only in the daemon.
         'create_worktree',
         'list_worktrees',
+        'remove_worktree',
       ],
     }).notNull(),
     /** Tool arguments as JSON, exactly as supplied by the agent. */

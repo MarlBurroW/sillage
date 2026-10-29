@@ -109,10 +109,11 @@ try {
 
   const docsSessionId = '00000000-0000-4000-8000-000000000046'
   const bannerSessionId = '00000000-0000-4000-8000-000000000047'
+  const supervisorId = '00000000-0000-4000-8000-000000000048'
   const fixture = run(['--import', 'tsx', '--input-type=module', '-e', `
     import { randomUUID } from 'node:crypto'
     import { eq } from 'drizzle-orm'
-    import { openDatabase, projects, worktrees, conversations } from '@sillage/db'
+    import { openDatabase, projects, worktrees, conversations, conversationPaths } from '@sillage/db'
     import { loadConfig } from './src/config.ts'
     const { db, sqlite } = openDatabase(loadConfig().paths.database)
     const project = db.select().from(projects).where(eq(projects.name, 'Nimbus')).get()
@@ -123,6 +124,14 @@ try {
     const bannerTree = randomUUID()
     db.insert(worktrees).values({ id: bannerTree, projectId: project.id, name: 'feat/banner', path: ${JSON.stringify(leftovers)}, baseRef: 'main', createdBy: project.ownerId, createdAt: Date.now() }).run()
     db.insert(conversations).values({ ...source, id: ${JSON.stringify(bannerSessionId)}, worktreeId: bannerTree, title: 'Ship the forecast banner', status: 'idle', cardId: null, scheduleId: null, archivedAt: null }).run()
+    // A long-lived root session that prepared the missing tree hours ago and wrote in the
+    // unmerged one just now: the sidebar must follow its latest work, not its oldest ghost.
+    const radar = db.select().from(worktrees).where(eq(worktrees.name, 'feat/radar-prefetch')).get()
+    db.insert(conversations).values({ ...source, id: ${JSON.stringify(supervisorId)}, worktreeId: null, title: 'Supervise the forecast work', status: 'idle', cardId: null, scheduleId: null, archivedAt: null }).run()
+    db.insert(conversationPaths).values([
+      { conversationId: ${JSON.stringify(supervisorId)}, path: ${JSON.stringify(gone)}, lastTs: Date.now() - 7_200_000 },
+      { conversationId: ${JSON.stringify(supervisorId)}, path: radar.path, lastTs: Date.now() },
+    ]).run()
     sqlite.close()
   `], serverDir, env)
   const [fixtureCode] = await once(fixture, 'exit')
@@ -239,8 +248,11 @@ try {
   await offline.waitFor()
   await offline.getByRole('button', { name: /Détails de .*Non commité/ }).waitFor()
   await row(nav, 'Radar tile prefetching').getByRole('button', { name: /Détails de .*À fusionner/ }).waitFor()
+  // Root session that wrote in two trees: labelled with the one it touched last, not the missing one.
+  await row(nav, 'Supervise the forecast work').getByRole('button', { name: /Détails de .*À fusionner/ }).waitFor()
+  assert.equal(await row(nav, 'Supervise the forecast work').getByRole('button', { name: /Introuvable/ }).count(), 0)
   // Main-tree details have no Git state icon.
-  assert.equal(await nav.locator('[data-worktree-state]').count(), 3)
+  assert.equal(await nav.locator('[data-worktree-state]').count(), 4)
   const chantiers = nav.getByRole('link', { name: /^Chantiers/ })
   await chantiers.waitFor()
   assert.match(await chantiers.innerText(), /3 en attente/)

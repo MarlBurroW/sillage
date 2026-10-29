@@ -201,6 +201,7 @@ export const en = {
   'sillageTool.start_session': "Start a session",
   'sillageTool.create_worktree': "Prepare a worktree",
   'sillageTool.list_worktrees': "List worktrees",
+  'sillageTool.remove_worktree': "Remove a worktree",
   'sillageTool.schedule_task': "Schedule a task",
   'sillageTool.list_models': "List available models",
   'sillageTool.set_project_image': "Set the project image",

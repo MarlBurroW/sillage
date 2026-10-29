@@ -93,6 +93,8 @@ const REQUEST_WAIT_MS = {
   create_worktree: 60000,
   // The first progress assessment launches several Git commands per tree.
   list_worktrees: 30000,
+  // Stops services in the tree, then `git worktree remove` deletes it file by file.
+  remove_worktree: 60000,
 }
 
 /** Maximum wait_for_session timeout, below the HTTP bridge's two-minute limit. */
@@ -626,7 +628,7 @@ const TOOLS = [
   {
     name: 'create_worktree',
     description:
-      "Create a Git worktree through Sillage and attach your session to it. The user sees its branch and state in the sidebar and can clean it up after merging from Worktrees. Use this to work separately from the main tree; do not run `git worktree add` yourself, as Sillage would not track the tree or your work in it. Your working directory does not change: use the absolute paths returned. Call list_worktrees first to reuse an existing tree. To delegate work to a new session in a separate tree, prefer start_session with `worktree`.",
+      "Create a Git worktree through Sillage and attach your session to it. The user sees its branch and state in the sidebar and can clean it up after merging from Worktrees; once merged, remove_worktree lets you clean it up yourself. Use this to work separately from the main tree; do not run `git worktree add` or `git worktree remove` yourself, as Sillage would not track the tree or your work in it. Your working directory does not change: use the absolute paths returned. Call list_worktrees first to reuse an existing tree. To delegate work to a new session in a separate tree, prefer start_session with `worktree`.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -646,8 +648,36 @@ const TOOLS = [
   {
     name: 'list_worktrees',
     description:
-      "List project worktrees, including those created outside Sillage, with their state relative to the default branch (uncommitted, awaiting merge, merged, missing) and sessions working in them. Use before create_worktree to reuse a tree and check whether work is already merged.",
+      "List project worktrees, including those created outside Sillage, with their state relative to the default branch (uncommitted, awaiting merge, merged, missing) and sessions working in them. Use before create_worktree to reuse a tree, and before remove_worktree to check whether work is already merged.",
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'remove_worktree',
+    description:
+      "Remove a project worktree through Sillage once its work is merged: the tree, its Sillage entry, services running in it and the sessions that lived there are cleaned up together. Do not run `git worktree remove` or delete the directory yourself: Sillage would keep showing the tree as missing. Without `force`, only trees whose commits and files are already in the default branch (merged, or missing) are removed; uncommitted, unmerged or leftover work is refused and described. Sessions still working in the tree block the removal; finished sessions whose working directory was the tree are archived unless `archive_sessions` is false. Your own working tree cannot be removed. Call list_worktrees first.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        worktree: {
+          type: 'string',
+          description: 'Worktree name as listed by list_worktrees (its branch, e.g. `fix/truncated-title`), or its absolute path.',
+        },
+        force: {
+          type: 'boolean',
+          description:
+            'Also remove a tree with uncommitted changes, unmerged commits or leftover files. Everything absent from the default branch is lost; use only when the user asked for it. Defaults to false.',
+        },
+        delete_branch: {
+          type: 'boolean',
+          description: 'Delete the branch with the tree. Defaults to true when the work is merged, false otherwise so the commits survive.',
+        },
+        archive_sessions: {
+          type: 'boolean',
+          description: 'Archive the finished sessions whose working directory was this tree. Defaults to true. Sessions that edited the tree from elsewhere are never archived.',
+        },
+      },
+      required: ['worktree'],
+    },
   },
   {
     name: 'schedule_task',
@@ -2825,7 +2855,8 @@ async function callTool(name, args) {
     name === 'interrupt_session' ||
     name === 'reply_session' ||
     name === 'create_worktree' ||
-    name === 'list_worktrees'
+    name === 'list_worktrees' ||
+    name === 'remove_worktree'
   ) {
     if (!CURRENT_CONVERSATION && !USER) {
       return { ...text('This session has no identity: Sillage would not know whom to act for.'), isError: true }
@@ -2873,6 +2904,9 @@ async function callTool(name, args) {
     }
     if (name === 'create_worktree' && !(typeof args?.branch === 'string' && args.branch.trim())) {
       return { ...text('The `branch` parameter is required, e.g. `fix/truncated-title`.'), isError: true }
+    }
+    if (name === 'remove_worktree' && !(typeof args?.worktree === 'string' && args.worktree.trim())) {
+      return { ...text('The `worktree` parameter is required: a name from list_worktrees, or the tree path.'), isError: true }
     }
     if (name === 'create_automation' && !(typeof args?.name === 'string' && args.name.trim())) {
       return { ...text('The `name` parameter is required.'), isError: true }
