@@ -2,7 +2,7 @@ import { readableConversation } from './conversations/access.js'
 import { personalWorkspace } from './conversations/personal-workspaces.js'
 import { createWriteStream } from 'node:fs'
 import { cp, lstat, mkdir, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { eq } from 'drizzle-orm'
@@ -421,9 +421,9 @@ const ENTRY_ORDER = new Intl.Collator('fr', { numeric: true })
 /**
  * One level of the tree, directories first then files, each sorted by name.
  *
- * Symlinks are not followed (`withFileTypes` returns their own type): a link to
- * the root would make the explorer loop, and following it would bypass the
- * workspace boundary.
+ * Symlinks used to be hidden, `CLAUDE.md -> AGENTS.md` included. They are listed as what they lead
+ * to when that stays inside the working directory, levels being read one at a time so a link to an
+ * ancestor cannot loop; any other link is listed as such and goes nowhere.
  */
 export async function listDirectory(
   root: string,
@@ -444,17 +444,27 @@ export async function listDirectory(
   // browse wherever it points.
   await resolveRealInside(root, relativePath)
 
-  const listed: TreeEntryDto[] = entries
-    // `.git` stores git data rather than project content: opening it makes no
-    // sense and would expose the root's largest subtree. Other hidden files
-    // remain visible because `.gitignore` is ordinary project content.
-    .filter((entry) => entry.name !== '.git')
-    .filter((entry) => entry.isDirectory() || entry.isFile())
-    .map((entry) => ({
-      name: entry.name,
-      path: relativePath ? `${relativePath}/${entry.name}` : entry.name,
-      isDirectory: entry.isDirectory(),
-    }))
+  const realRoot = await realpath(root)
+  const listed = (
+    await Promise.all(
+      entries
+        // `.git` stores git data rather than project content: opening it makes no
+        // sense and would expose the root's largest subtree. Other hidden files
+        // remain visible because `.gitignore` is ordinary project content.
+        .filter((entry) => entry.name !== '.git')
+        .map(async (entry): Promise<TreeEntryDto | null> => {
+          const path = relativePath ? `${relativePath}/${entry.name}` : entry.name
+          if (entry.isDirectory() || entry.isFile()) return { name: entry.name, path, isDirectory: entry.isDirectory() }
+          // Sockets and pipes are no project content.
+          if (!entry.isSymbolicLink()) return null
+          const target = await realpath(join(absolute, entry.name)).catch(() => null)
+          const info = target && !escapes(realRoot, target) ? await stat(target).catch(() => null) : null
+          if (!info) return { name: entry.name, path, isDirectory: false, symlink: 'outside' }
+          return { name: entry.name, path, isDirectory: info.isDirectory(), symlink: 'inside' }
+        }),
+    )
+  )
+    .filter((entry): entry is TreeEntryDto => entry !== null)
     .sort((a, b) => {
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
       return ENTRY_ORDER.compare(a.name, b.name)

@@ -1,6 +1,6 @@
 import { PanelEmptyState } from './PanelEmptyState'
-import { TooltipButton } from '../ui/Tooltip'
-import { Check, Code2, Download, Eye, FileDiff, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
+import { Tooltip, TooltipButton } from '../ui/Tooltip'
+import { Check, Code2, Download, Eye, FileDiff, Loader, MoreHorizontal, RotateCcw, Save, Search, WrapText, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import {
   OPENABLE_MODEL_EXTENSIONS,
@@ -9,6 +9,7 @@ import {
   VIEWABLE_MEDIA_TYPES,
 } from '@sillage/protocol'
 import { useEditorDocument, useEditorDraftPaths } from '../../lib/editor-documents'
+import { clearReveal, useReveal } from '../../lib/editor-reveal'
 import { useCurrentUser } from '../../lib/session'
 import {
   activateTab,
@@ -17,19 +18,29 @@ import {
   openTab,
   pinTab,
   reorderTabs,
+  restoreTabs,
   useEditorTabs,
 } from '../../lib/editor-tabs'
 import { fileIconUrl } from '../../lib/file-icons'
 import { languageFromPath } from '../../lib/highlight'
 import { downloadFile, rawFileUrl } from '../../lib/files-io'
 import { useTranslate } from '../../lib/i18n'
-import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/markdown-view'
+import {
+  isMarkdownPath,
+  isSvgPath,
+  setEditorWrap,
+  setMarkdownView,
+  setSvgView,
+  useEditorWrap,
+  useMarkdownView,
+  useSvgView,
+} from '../../lib/editor-preferences'
 import { wsClient } from '../../lib/ws-client'
 import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
 import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
-import { lineBreakOf } from './editor-setup'
+import { indentationOf, lineBreakOf } from './editor-setup'
 import { MediaView } from './MediaView'
 
 /** Lazy-load the viewer because three exceeds the rest of the app's size. */
@@ -46,6 +57,7 @@ export function EditorPane({ scope }: { scope: string }) {
 
 function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
   const { paths, active, preview } = useEditorTabs(scope)
+  useEffect(() => restoreTabs(scope), [scope])
   const drafts = useEditorDraftPaths(userId, scope)
   const closedDrafts = drafts.filter((path) => !paths.includes(path))
   const t = useTranslate()
@@ -254,12 +266,25 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   /** Draft shown against the version on disk; meaningless once nothing differs. */
   const [comparing, setComparing] = useState(false)
   const extension = languageFromPath(path)
-  const isImage = extension in VIEWABLE_IMAGE_TYPES
+  const isMarkdown = isMarkdownPath(path)
+  // An SVG is text: it opens like Markdown, rendered or as its source, rather than as an image only.
+  const isSvg = isSvgPath(path)
+  const isImage = extension in VIEWABLE_IMAGE_TYPES && !isSvg
   const isDocument = extension in VIEWABLE_DOCUMENT_TYPES
   const mediaType = VIEWABLE_MEDIA_TYPES[extension]
   const isModel = OPENABLE_MODEL_EXTENSIONS.has(extension)
-  const isMarkdown = isMarkdownPath(path)
-  const view = useMarkdownView()
+  const markdownView = useMarkdownView()
+  const svgView = useSvgView()
+  const wrap = useEditorWrap()
+  const previewable = isMarkdown || isSvg
+  const reveal = useReveal(scope, path)
+  /** Source shown for a search result's line without changing the preference for other files. */
+  const [sourceForced, setSourceForced] = useState(false)
+  const showingSource = (isMarkdown ? markdownView : isSvg ? svgView : 'source') === 'source' || sourceForced
+  const setView = isMarkdown ? setMarkdownView : setSvgView
+  useEffect(() => {
+    if (reveal && !showingSource) setSourceForced(true)
+  }, [reveal, showingSource])
   const t = useTranslate()
   const rawView = isImage || isDocument || Boolean(mediaType) || isModel
   useEffect(() => {
@@ -295,7 +320,10 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   // From the version on disk rather than the draft, and only when it changes: scanning a large
   // file on every keystroke would cost more than the editor itself.
   const baseContent = file?.content
-  const lineBreak = useMemo(() => (baseContent === undefined ? undefined : lineBreakOf(baseContent)), [baseContent])
+  const style = useMemo(
+    () => (baseContent === undefined ? null : { lineBreak: lineBreakOf(baseContent), indent: indentationOf(baseContent, path) }),
+    [baseContent, path],
+  )
 
   const discard = () => {
     if (dirty && !confirm(t('editor.discard.confirm', { path }))) return
@@ -320,6 +348,8 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   if (!file) {
     return error ? <div data-editor-file={path} tabIndex={-1} className="min-h-0 flex-1 overflow-auto p-3 outline-none">
       <Banner>{error.message}</Banner>
+      {/* Too large to edit, an SVG still displays as an image. */}
+      {isSvg ? <img src={rawFileUrl(scope, path)} alt={path} className="mt-3 max-h-full max-w-full object-contain" /> : null}
       <Button size="sm" variant="ghost" className="mt-2" disabled={loading} onClick={() => void load()}>{t('editor.retry')}</Button>
     </div> : <div className="flex min-h-0 flex-1 items-center justify-center text-ink-faint">
       <Loader size={20} className="animate-spin" aria-label={t('editor.loading')} />
@@ -327,7 +357,14 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   }
 
   return (
-    <div data-editor-file={path} tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
+    <div data-editor-file={path} tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+      // The editor handles its own Ctrl+S; elsewhere in the file (Markdown preview, footer) the browser
+      // would offer to save the page instead.
+      onKeyDown={(event) => {
+        if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+        event.preventDefault()
+        if (!conflict) void save()
+      }}>
       {error ? <div className="shrink-0 p-2">
         <Banner>{error.message} {dirty ? t('editor.error.kept') : ''}</Banner>
         <Button variant="ghost" size="sm" disabled={loading || saving} onClick={() => void (error.kind === 'read' ? load() : save())}>{t('editor.retry')}</Button>
@@ -345,9 +382,9 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         }}>{t('editor.conflict.overwrite')}</Button>
       </div> : null}
 
-      {comparing && !(isMarkdown && view === 'preview') ? <p role="note" className="shrink-0 border-b border-line bg-sunken px-3 py-2 text-xs text-ink-soft">{t('editor.compare.hint')}</p> : null}
+      {comparing && showingSource ? <p role="note" className="shrink-0 border-b border-line bg-sunken px-3 py-2 text-xs text-ink-soft">{t('editor.compare.hint')}</p> : null}
 
-      {isMarkdown && view === 'preview' ? (
+      {isSvg && !showingSource ? <SvgPreview content={content} label={path} /> : !showingSource ? (
         <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3">
           {/* Editor scope rather than thread scope: project panels also preview outside conversations. */}
           <FileLinkContext.Provider value={scope}>
@@ -363,39 +400,71 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
             onPosition={(line, column) => setPosition({ line, column })}
             initial={content}
             path={file.path}
-            lineBreak={lineBreak}
+            lineBreak={style?.lineBreak}
+            indent={style?.indent}
             readOnly={file.lossy === true}
+            wrap={wrap}
             original={comparing ? file.content : null}
+            reveal={reveal}
+            onRevealed={() => clearReveal(scope, path)}
             onChange={(value) => { edit(value); pinTab(scope, path) }}
             onSave={() => { if (!conflict) void save() }}
           />
         </div>
       )}
 
-      <div className="flex shrink-0 flex-col gap-1 border-t border-line px-2.5 py-1.5 text-xs text-ink-faint">
-        <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate" title={path}>{path}</span>
-          {isMarkdown && view === 'preview' ? null : <button type="button" className="shrink-0 rounded px-1 py-1 hover:text-ink" aria-label={t('editor.position', position)} title={t('editor.goToLine')} onClick={() => editor.current?.goToLine()}>
-            {t('editor.position.short', position)}
-          </button>}
-          <span role="status" className={dirty ? 'shrink-0 text-ink-soft' : 'shrink-0'}>
+      {/* Only drafts at risk get a visible line; a draft kept on the device is the expected case. */}
+      {dirty && persisted !== 'device' ? <p role="note" className="shrink-0 border-t border-caution/40 bg-caution/12 px-2.5 py-1 text-xs text-ink-soft">
+        {t(persisted === 'tab' ? 'editor.drafts.tab' : 'editor.drafts.memory')}
+      </p> : null}
+
+      {/*
+       * One line, wrapping only when the panel is narrow: path and state on the left, file
+       * commands as icons on the right, Save last. It took three lines of every file's height.
+       */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-2.5 py-1 text-xs text-ink-faint">
+        <span className="min-w-16 flex-1 basis-24 truncate" title={path}>{path}</span>
+        {showingSource ? <button type="button" className="shrink-0 rounded px-1 py-1 hover:text-ink" aria-label={t('editor.position', position)} title={t('editor.goToLine')} onClick={() => editor.current?.goToLine()}>
+          {t('editor.position.short', position)}
+        </button> : null}
+        <Tooltip label={t('editor.drafts.kept')} disabled={!dirty || persisted !== 'device'}>
+          <span role="status" tabIndex={dirty ? 0 : undefined} className={cx('shrink-0 rounded outline-none focus-visible:ring-2 focus-visible:ring-accent', dirty && 'text-ink-soft')}>
             {t(saving ? 'editor.saving' : loading ? 'editor.loading' : dirty ? 'editor.tab.unsaved' : 'editor.saved')}
+            {dirty && persisted === 'device' ? <span className="sr-only"> {t('editor.drafts.kept')}</span> : null}
           </span>
-        </div>
-        {dirty ? <p>{t(persisted === 'device' ? 'editor.drafts.kept' : persisted === 'tab' ? 'editor.drafts.tab' : 'editor.drafts.memory')}</p> : null}
-        <div className="flex flex-wrap items-center justify-end gap-1">
-          {isMarkdown && view === 'preview' ? null : <IconButton size="sm" label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></IconButton>}
-          {dirty && !conflict && !(isMarkdown && view === 'preview') ? <IconButton size="sm" label={t(comparing ? 'editor.compare.hide' : 'editor.compare')} aria-pressed={comparing}
+        </Tooltip>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {showingSource ? <IconButton size="sm" label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></IconButton> : null}
+          {showingSource ? <IconButton size="sm" label={t('editor.wrap')} aria-pressed={wrap}
+            className={wrap ? 'bg-accent-wash text-ink' : undefined} onClick={() => setEditorWrap(!wrap)}><WrapText size={14} /></IconButton> : null}
+          {dirty && !conflict && showingSource ? <IconButton size="sm" label={t(comparing ? 'editor.compare.hide' : 'editor.compare')} aria-pressed={comparing}
             className={comparing ? 'bg-accent-wash text-ink' : undefined} onClick={() => setComparing(!comparing)}><FileDiff size={14} /></IconButton> : null}
-          {isMarkdown ? <Button size="sm" variant="ghost" icon={view === 'preview' ? <Code2 size={13} /> : <Eye size={13} />}
-            onClick={() => setMarkdownView(view === 'preview' ? 'source' : 'preview')}>
-            {t(view === 'preview' ? 'editor.markdown.source' : 'editor.markdown.preview')}
-          </Button> : null}
-          {dirty && !conflict ? <Button size="sm" variant="ghost" aria-label={t('editor.discard')} title={t('editor.discard')} disabled={saving || loading} onClick={discard}>{t('editor.discard.short')}</Button> : null}
+          {previewable ? <IconButton size="sm" label={t(showingSource ? 'editor.view.preview' : 'editor.view.source')}
+            onClick={() => {
+              setSourceForced(false)
+              setView(showingSource ? 'preview' : 'source')
+            }}>{showingSource ? <Eye size={14} /> : <Code2 size={14} />}</IconButton> : null}
+          {dirty && !conflict ? <IconButton size="sm" label={t('editor.discard')} disabled={saving || loading} onClick={discard}><RotateCcw size={14} /></IconButton> : null}
           <Button size="sm" variant={dirty ? 'primary' : 'ghost'} icon={saving ? <Loader size={13} className="animate-spin" /> : <Save size={13} />}
             disabled={!dirty || saving || loading || conflict} onClick={() => void save()}>{t(saving ? 'editor.saving' : 'editor.save')}</Button>
         </div>
       </div>
     </div>
   )
+}
+
+/**
+ * The draft rendered as an image, so the preview follows edits before they are saved. An `img`
+ * never runs the scripts an SVG may carry.
+ */
+function SvgPreview({ content, label }: { content: string; label: string }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const next = URL.createObjectURL(new Blob([content], { type: 'image/svg+xml' }))
+    setUrl(next)
+    return () => URL.revokeObjectURL(next)
+  }, [content])
+  return <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+    {url ? <img src={url} alt={label} className="max-h-full max-w-full object-contain" /> : null}
+  </div>
 }

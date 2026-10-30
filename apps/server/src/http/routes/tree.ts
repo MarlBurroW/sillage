@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import {
   MAX_UPLOAD_BYTES,
   archiveQuerySchema,
+  contentSearchQuerySchema,
   copyEntryBodySchema,
   createEntryBodySchema,
   deleteEntryBodySchema,
@@ -9,11 +10,13 @@ import {
   treeQuerySchema,
   treeSearchQuerySchema,
   uploadQuerySchema,
+  type ContentSearchDto,
   type FileState,
   type TreeListingDto,
   type TreeSearchDto,
 } from '@sillage/protocol'
 import { readFileStates } from '../../git.js'
+import { searchContent } from '../../search/search-content.js'
 import { forgetListings, searchTree } from '../../search/search-files.js'
 import {
   copyEntry,
@@ -108,6 +111,14 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const cwd = cwdOf(ctx.db, id, user.id)
       return searchTree(cwd, q)
+    })
+
+    /** Lines containing a text throughout the working directory, grouped by file. */
+    app.get(`${base}/tree/content`, async (request): Promise<ContentSearchDto> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const { q } = contentSearchQuerySchema.parse(request.query)
+      return searchContent(cwdOf(ctx.db, id, user.id), q)
     })
 
     /**

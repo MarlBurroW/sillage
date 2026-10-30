@@ -1028,6 +1028,12 @@ export interface TreeEntryDto {
   isDirectory: boolean
   /** Absent if the file is unchanged or the workspace is not a repository. */
   state?: FileState
+  /**
+   * Symbolic link. `inside`: it leads into the working directory and behaves as its target
+   * (`isDirectory` follows it). `outside`: it leads elsewhere or nowhere; shown so it can be renamed
+   * or deleted, but it neither opens nor expands.
+   */
+  symlink?: 'inside' | 'outside'
 }
 
 export interface TreeListingDto {
@@ -1050,6 +1056,29 @@ export interface TreeListingDto {
 export const treeSearchQuerySchema = z.object({
   q: z.string().min(1).max(200),
 })
+
+/** Search inside file contents. Fixed text: what users look for is a name or a phrase, not a pattern. */
+export const contentSearchQuerySchema = z.object({
+  q: z.string().min(2).max(200),
+})
+
+export interface ContentMatchDto {
+  /** 1-based, as editors number them. */
+  line: number
+  /** 1-based character where the first match starts in the full line. */
+  column: number
+  /** The line, cut around the match when long. */
+  text: string
+  /** The match within `text`, for highlighting. */
+  from: number
+  length: number
+}
+
+export interface ContentSearchDto {
+  files: Array<{ path: string; matches: ContentMatchDto[] }>
+  /** More matches exist than returned: the query can be refined. */
+  truncated: boolean
+}
 
 export interface TreeSearchDto {
   entries: TreeEntryDto[]

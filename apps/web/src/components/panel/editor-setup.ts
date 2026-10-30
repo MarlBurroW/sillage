@@ -199,6 +199,8 @@ function legacy(load: () => Promise<StreamParser<unknown>>): () => Promise<Langu
  */
 const LOADERS: Record<string, () => Promise<LanguageSupport>> = {
   ts: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true })),
+  mts: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true })),
+  cts: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true })),
   tsx: () =>
     import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true, jsx: true })),
   js: () => import('@codemirror/lang-javascript').then((m) => m.javascript()),
@@ -206,9 +208,15 @@ const LOADERS: Record<string, () => Promise<LanguageSupport>> = {
   cjs: () => import('@codemirror/lang-javascript').then((m) => m.javascript()),
   jsx: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ jsx: true })),
   json: () => import('@codemirror/lang-json').then((m) => m.json()),
+  // JSON with comments (tsconfig, VS Code settings): the JSON grammar marks comments as errors.
+  jsonc: () => import('@codemirror/lang-javascript').then((m) => m.javascript()),
+  json5: () => import('@codemirror/lang-javascript').then((m) => m.javascript()),
   md: () => import('@codemirror/lang-markdown').then((m) => m.markdown()),
   markdown: () => import('@codemirror/lang-markdown').then((m) => m.markdown()),
+  mdx: () => import('@codemirror/lang-markdown').then((m) => m.markdown()),
   css: () => import('@codemirror/lang-css').then((m) => m.css()),
+  scss: legacy(() => import('@codemirror/legacy-modes/mode/css').then((m) => m.sCSS)),
+  less: legacy(() => import('@codemirror/legacy-modes/mode/css').then((m) => m.less)),
   html: () => import('@codemirror/lang-html').then((m) => m.html()),
   py: () => import('@codemirror/lang-python').then((m) => m.python()),
   rs: () => import('@codemirror/lang-rust').then((m) => m.rust()),
@@ -255,6 +263,7 @@ const LOADERS: Record<string, () => Promise<LanguageSupport>> = {
   r: legacy(() => import('@codemirror/legacy-modes/mode/r').then((m) => m.r)),
   hs: legacy(() => import('@codemirror/legacy-modes/mode/haskell').then((m) => m.haskell)),
   cmake: legacy(() => import('@codemirror/legacy-modes/mode/cmake').then((m) => m.cmake)),
+  proto: legacy(() => import('@codemirror/legacy-modes/mode/protobuf').then((m) => m.protobuf)),
 }
 
 /**
@@ -271,8 +280,13 @@ const NAMED: { prefix: string; extension: string }[] = [
   { prefix: '.editorconfig', extension: 'ini' },
   { prefix: '.npmrc', extension: 'ini' },
   { prefix: '.bashrc', extension: 'sh' },
+  { prefix: '.bash_profile', extension: 'sh' },
   { prefix: '.zshrc', extension: 'sh' },
+  { prefix: '.zshenv', extension: 'sh' },
+  { prefix: '.zprofile', extension: 'sh' },
   { prefix: '.profile', extension: 'sh' },
+  { prefix: 'tsconfig', extension: 'jsonc' },
+  { prefix: 'jsconfig', extension: 'jsonc' },
 ]
 
 /**
@@ -374,4 +388,49 @@ export function smallestChange(before: string, after: string): { from: number; t
     before.charCodeAt(before.length - 1 - end) === after.charCodeAt(after.length - 1 - end)
   ) end += 1
   return { from: start, to: before.length - end, insert: after.slice(start, after.length - end) }
+}
+
+/** Files whose format requires tabs, empty ones included: Go (gofmt) and make recipes. */
+function tabsRequired(path: string): boolean {
+  const name = (path.split('/').pop() ?? '').toLowerCase()
+  return name.endsWith('.go') || name.endsWith('.mk') || name === 'makefile' || name === 'gnumakefile'
+}
+
+/** Beyond this, the file's start has said enough about its style. */
+const INDENT_SAMPLE_LINES = 2_000
+
+/**
+ * Indentation a file already uses, inserted by Tab and new lines: two spaces everywhere broke Go
+ * files (gofmt wants tabs), Makefiles (recipes require them) and four-space Python. Tabs when more
+ * lines start with one; otherwise the most frequent step between consecutive indented lines.
+ */
+export function indentationOf(text: string, path: string): string {
+  let tabs = 0
+  let spaces = 0
+  let previous = 0
+  const steps = new Map<number, number>()
+  const lines = text.split(/\r\n?|\n/, INDENT_SAMPLE_LINES)
+  for (const line of lines) {
+    const indent = /^[ \t]*/.exec(line)?.[0] ?? ''
+    if (indent.length === line.length) continue
+    if (indent.startsWith('\t')) {
+      tabs += 1
+      continue
+    }
+    if (indent.length > 0) spaces += 1
+    // Steps of one are block-comment stars (` * `), not indentation.
+    const step = Math.abs(indent.length - previous)
+    if (step >= 2 && step <= 8) steps.set(step, (steps.get(step) ?? 0) + 1)
+    previous = indent.length
+  }
+  if (tabs > spaces || (tabs === 0 && spaces === 0 && tabsRequired(path))) return '\t'
+  let width = 2
+  let best = 0
+  for (const [step, count] of steps) {
+    if (count > best) {
+      width = step
+      best = count
+    }
+  }
+  return ' '.repeat(width)
 }

@@ -1,6 +1,6 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { Compartment, EditorState, StateEffect, Text, Transaction, type TransactionSpec } from '@codemirror/state'
-import { gotoLine, openSearchPanel, search, searchKeymap } from '@codemirror/search'
+import { gotoLine, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import {
   EditorView,
   drawSelection,
@@ -12,10 +12,12 @@ import {
 import {
   bracketMatching,
   foldGutter,
+  foldKeymap,
   indentOnInput,
   indentUnit,
 } from '@codemirror/language'
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
+import type { RevealTarget } from '../../lib/editor-reveal'
 import { translate } from '../../lib/i18n'
 import {
   editorHighlight,
@@ -23,6 +25,7 @@ import {
   externalChange,
   flashLines,
   flashedChanges,
+  indentationOf,
   lineBreakOf,
   loadLanguage,
   smallestChange,
@@ -127,7 +130,11 @@ export function CodeEditor({
   onPosition,
   readOnly = false,
   lineBreak,
+  indent,
+  wrap = true,
   original = null,
+  reveal = null,
+  onRevealed,
   ref,
 }: {
   initial: string
@@ -145,11 +152,18 @@ export function CodeEditor({
    * saves with the file's.
    */
   lineBreak?: string
+  /** Indentation inserted by Tab and new lines; defaults to the one `initial` uses. */
+  indent?: string
+  /** Wrap long lines; changing it keeps the editor mounted. */
+  wrap?: boolean
   /**
    * Text to compare with, usually the version on disk: changes show inline with buttons to keep
    * or restore each chunk. Null hides the comparison.
    */
   original?: string | null
+  /** Place to select and scroll to, such as a search result's line; `onRevealed` once shown. */
+  reveal?: RevealTarget | null
+  onRevealed?: () => void
   ref?: Ref<CodeEditorHandle>
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -162,8 +176,8 @@ export function CodeEditor({
    * Read callbacks at event time rather than capturing them in extensions: recreating extensions
    * rebuilds editor state and loses the cursor per keystroke.
    */
-  const handlers = useRef({ onChange, onSave, onPosition })
-  handlers.current = { onChange, onSave, onPosition }
+  const handlers = useRef({ onChange, onSave, onPosition, onRevealed })
+  handlers.current = { onChange, onSave, onPosition, onRevealed }
   /**
    * Typing never comes back through `initial`: following it on each render would fight the
    * cursor. A text replaced elsewhere is signaled by `revision` and applied in place.
@@ -173,6 +187,9 @@ export function CodeEditor({
   const comparedWith = useRef(original)
   comparedWith.current = original
   const merge = useRef<Compartment | null>(null)
+  const wrapping = useRef<Compartment | null>(null)
+  const wrapped = useRef(wrap)
+  wrapped.current = wrap
 
   /** The comparison module loads on first use: most sessions never compare anything. */
   const showComparison = (editor: EditorView, compartment: Compartment, text: string | null) => {
@@ -200,6 +217,7 @@ export function CodeEditor({
 
     const language = new Compartment()
     const comparison = new Compartment()
+    const lines = new Compartment()
     const separator = lineBreak ?? lineBreakOf(content.current)
     const text = (state: EditorState) => state.doc.sliceString(0, state.doc.length, separator)
 
@@ -217,16 +235,18 @@ export function CodeEditor({
         history(),
         indentOnInput(),
         bracketMatching(),
-        indentUnit.of('  '),
+        indentUnit.of(indent ?? indentationOf(content.current, path)),
         language.of([]),
         comparison.of([]),
         flashedChanges,
         // Search at top: at bottom it sits below file status and consumes half the visible height in narrow panels.
         search({ top: true }),
+        // Other occurrences of the selected word, as the theme already styles them.
+        highlightSelectionMatches(),
         EditorState.phrases.of(searchPhrases()),
         editorTheme,
         editorHighlight,
-        EditorView.lineWrapping,
+        lines.of(wrapped.current ? EditorView.lineWrapping : []),
         EditorState.readOnly.of(readOnly),
         EditorView.editable.of(!readOnly),
         keymap.of([
@@ -243,6 +263,7 @@ export function CodeEditor({
           ...defaultKeymap,
           ...historyKeymap,
           ...searchKeymap,
+          ...foldKeymap,
         ]),
         EditorView.updateListener.of((update) => {
           const typed = update.transactions.some((transaction) => transaction.docChanged && !transaction.annotation(externalChange))
@@ -278,6 +299,7 @@ export function CodeEditor({
     let measured = false
     const frame = requestAnimationFrame(() => requestAnimationFrame(() => { measured = true }))
     merge.current = comparison
+    wrapping.current = lines
     if (flashed) clearFlashLater(editor)
     position(editor.state)
     if (comparedWith.current !== null) showComparison(editor, comparison, comparedWith.current)
@@ -300,9 +322,10 @@ export function CodeEditor({
       if (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value!)
       current.current = null
       merge.current = null
+      wrapping.current = null
       editor.destroy()
     }
-  }, [path, sessionKey, readOnly, lineBreak])
+  }, [path, sessionKey, readOnly, lineBreak, indent])
 
   useEffect(() => {
     if (current.current) syncText(current.current, content.current)
@@ -311,6 +334,33 @@ export function CodeEditor({
   useEffect(() => {
     if (current.current && merge.current) showComparison(current.current, merge.current, original)
   }, [original])
+
+  useEffect(() => {
+    const editor = current.current
+    if (!editor || !reveal) return
+    const { doc } = editor.state
+    const line = doc.line(Math.min(Math.max(reveal.line, 1), doc.lines))
+    const from = line.from + Math.min(Math.max(reveal.column - 1, 0), line.length)
+    editor.dispatch({
+      selection: { anchor: from, head: Math.min(from + reveal.length, line.to) },
+      effects: EditorView.scrollIntoView(from, { y: 'center' }),
+    })
+    editor.focus()
+    // Done once the view has measured: React's strict mode remounts at once, and the second
+    // mount must still find the target rather than the previous scroll position.
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (editor.dom.isConnected) handlers.current.onRevealed?.()
+    }))
+    return () => cancelAnimationFrame(frame)
+  }, [reveal])
+
+  useEffect(() => {
+    const editor = current.current
+    const compartment = wrapping.current
+    // Only on an actual change: a transaction right after mounting cancels the restored scroll.
+    if (!editor || !compartment || (compartment.get(editor.state) === EditorView.lineWrapping) === wrap) return
+    editor.dispatch({ effects: compartment.reconfigure(wrap ? EditorView.lineWrapping : []) })
+  }, [wrap])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }

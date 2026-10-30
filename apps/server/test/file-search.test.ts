@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -68,4 +68,59 @@ test('a file created outside the explorer shows up after a short pause', async (
   await writeFile(join(repo, 'src/lib/radar.ts'), 'x')
   await new Promise((resolve) => setTimeout(resolve, 2_100))
   assert.deepEqual((await searchTree(repo, 'radar')).entries.map((entry) => entry.path), ['src/lib/radar.ts'])
+})
+
+test('symlinks show as what they lead to inside the workspace, and as links otherwise', async (t) => {
+  const root = await directory(t)
+  const outside = await directory(t)
+  await mkdir(join(root, 'src'))
+  await writeFile(join(root, 'src/a.ts'), 'x')
+  await writeFile(join(root, 'AGENTS.md'), '# Agents')
+  await symlink('AGENTS.md', join(root, 'CLAUDE.md'))
+  await symlink('src', join(root, 'linked-src'))
+  await symlink(outside, join(root, 'escape'))
+  await symlink('missing.txt', join(root, 'dangling'))
+
+  const { entries } = await listDirectory(root, '')
+  const byName = Object.fromEntries(entries.map((entry) => [entry.name, entry]))
+  assert.deepEqual(byName['CLAUDE.md'], { name: 'CLAUDE.md', path: 'CLAUDE.md', isDirectory: false, symlink: 'inside' })
+  assert.deepEqual(byName['linked-src'], { name: 'linked-src', path: 'linked-src', isDirectory: true, symlink: 'inside' })
+  assert.equal(byName.escape?.symlink, 'outside')
+  assert.equal(byName.dangling?.symlink, 'outside')
+  // A link leading inside expands like its target.
+  assert.deepEqual((await listDirectory(root, 'linked-src')).entries.map((entry) => entry.path), ['linked-src/a.ts'])
+})
+
+test('content search finds lines in a repository, ignored files excluded, case smart', async (t) => {
+  const { searchContent } = await import('../src/search/search-content.js')
+  const repo = await repository(t)
+  await writeFile(join(repo, 'src/lib/forecast.ts'), 'export const a = 1\nfetchForecast(city)\n')
+  await writeFile(join(repo, 'src/lib/untracked.ts'), 'const x = fetchforecast()\n')
+  await writeFile(join(repo, 'node_modules/weather/forecast.js'), 'fetchForecast()\n')
+  await writeFile(join(repo, 'src/lib/long.ts'), `${'x'.repeat(500)}fetchForecast${'y'.repeat(500)}\n`)
+
+  const loose = await searchContent(repo, 'fetchforecast')
+  const files = Object.fromEntries(loose.files.map((file) => [file.path, file.matches]))
+  assert.deepEqual(Object.keys(files).sort(), ['src/lib/forecast.ts', 'src/lib/long.ts', 'src/lib/untracked.ts'])
+  assert.deepEqual(files['src/lib/forecast.ts'], [{ line: 2, column: 1, text: 'fetchForecast(city)', from: 0, length: 13 }])
+  // Long lines are cut around the match, which stays highlighted at the right place.
+  const [long] = files['src/lib/long.ts'] ?? []
+  assert.equal(long?.column, 501)
+  assert.equal(long?.text.slice(long.from, long.from + long.length), 'fetchForecast')
+  assert.ok((long?.text.length ?? 0) < 260)
+
+  // A capital makes the query exact.
+  assert.deepEqual((await searchContent(repo, 'fetchForecast')).files.map((file) => file.path).sort(), ['src/lib/forecast.ts', 'src/lib/long.ts'])
+})
+
+test('content search scans plain folders and stops at its limits', async (t) => {
+  const { searchContent } = await import('../src/search/search-content.js')
+  const root = await directory(t)
+  await writeFile(join(root, 'many.txt'), Array.from({ length: 50 }, (_, index) => `needle ${index}`).join('\n'))
+  await writeFile(join(root, 'binary.bin'), Buffer.from([0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65, 0, 1]))
+
+  const result = await searchContent(root, 'needle')
+  assert.deepEqual(result.files.map((file) => file.path), ['many.txt'])
+  assert.equal(result.files[0]?.matches.length, 20)
+  assert.equal(result.files[0]?.matches[19]?.line, 20)
 })

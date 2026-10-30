@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
-import type { TreeListingDto, TreeSearchDto } from '@sillage/protocol'
+import type { ContentSearchDto, TreeListingDto, TreeSearchDto } from '@sillage/protocol'
 import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 import { wsClient } from './ws-client'
@@ -75,6 +75,19 @@ export function useFileSearch(scope: WorkspaceScope, query: string, { keepPrevio
   })
 }
 
+/** Lines containing a text, grouped by file. Kept while the next query loads, like file search. */
+export function useContentSearch(scope: WorkspaceScope, query: string) {
+  const trimmed = query.trim()
+  return useQuery({
+    queryKey: ['tree-content', scope, trimmed],
+    queryFn: () =>
+      api.get<ContentSearchDto>(`${workspaceApiBase(scope)}/tree/content?q=${encodeURIComponent(trimmed)}`),
+    enabled: trimmed.length >= 2,
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
+  })
+}
+
 /** Invalidate all open levels and search within a scope at once. */
 export function useRefreshTree(scope: WorkspaceScope): () => void {
   const queryClient = useQueryClient()
@@ -82,5 +95,6 @@ export function useRefreshTree(scope: WorkspaceScope): () => void {
     void queryClient.invalidateQueries({ queryKey: ['tree', scope] })
     // Search has a separate query and expiry: otherwise refresh leaves deleted files in results.
     void queryClient.invalidateQueries({ queryKey: ['tree-search', scope] })
+    void queryClient.invalidateQueries({ queryKey: ['tree-content', scope] })
   }, [queryClient, scope])
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -81,6 +81,12 @@ try {
   await writeFile(join(editorFixture, 'crlf.txt'), 'one\r\ntwo\r\nthree\r\n')
   await writeFile(join(editorFixture, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
   await writeFile(join(editorFixture, 'draft.txt'), 'draft base\n')
+  await writeFile(join(editorFixture, 'main.go'), 'package main\n\nfunc main() {\n\tprintln("x")\n}\n')
+  await writeFile(join(editorFixture, 'AGENTS.md'), '# Agents\n')
+  await symlink('AGENTS.md', join(editorFixture, 'CLAUDE.md'))
+  await symlink(tmpdir(), join(editorFixture, 'escape'))
+  await writeFile(join(editorFixture, 'search-me.ts'), 'export {}\n\nconst marker = "needle-content-check"\n')
+  await writeFile(join(editorFixture, 'logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18" fill="teal"/></svg>\n')
   const lines = (count, change = () => null) => Array.from({ length: count }, (_, index) => change(index + 1) ?? `line ${index + 1}`).join('\n') + '\n'
   await writeFile(join(editorFixture, 'live.txt'), lines(12))
   await writeFile(join(editorFixture, 'long.txt'), lines(300))
@@ -223,6 +229,30 @@ try {
   await panel.locator('[data-tree-path="ab-editor/.env.local"]').waitFor()
   await panel.getByRole('searchbox').fill('')
 
+  // Symlinks show: one leading inside opens as its target, one leading outside stays closed.
+  await panel.locator('[data-tree-path="ab-editor"]').click()
+  await panel.locator('[data-tree-path="ab-editor/CLAUDE.md"]').click()
+  await panel.locator('[data-editor-file="ab-editor/CLAUDE.md"]').getByText('Agents', { exact: false }).first().waitFor()
+  const escapeRow = panel.locator('[data-tree-path="ab-editor/escape"]')
+  assert.equal(await escapeRow.getAttribute('data-tree-unreachable'), '1')
+  await escapeRow.click()
+  await delay(300)
+  assert.equal(await panel.locator('[data-file-tabs] [aria-label="Ouvrir ab-editor/escape"]').count(), 0)
+  await panel.locator('[data-tree-path="ab-editor"]').click()
+
+  // Content search finds the line and opens the file there, the match selected.
+  await panel.getByRole('button', { name: 'Chercher dans le contenu des fichiers', exact: true }).click()
+  await panel.getByRole('searchbox').fill('needle-content')
+  await panel.getByRole('button', { name: 'Ligne 3 de ab-editor/search-me.ts', exact: true }).click()
+  // The match is selected, the cursor at its end: 'needle-content' spans columns 17 to 31.
+  await panel.getByRole('button', { name: /^Ligne 3, colonne 31\./ }).waitFor()
+  await panel.getByRole('searchbox').fill('')
+  await panel.getByRole('button', { name: 'Chercher dans le contenu des fichiers', exact: true }).click()
+  // The tree follows the opened file: fold its folder back for the steps below.
+  if ((await panel.locator('[data-tree-path="ab-editor"]').getAttribute('aria-expanded')) === 'true') {
+    await panel.locator('[data-tree-path="ab-editor"]').click()
+  }
+
   // A level cut at the server's limit says so, after sorting numbers by value.
   const manyRow = (path) => panel.locator(`[data-tree-path="ad-many${path ? `/${path}` : ''}"]`)
   await manyRow('').click()
@@ -298,10 +328,42 @@ try {
   await delay(200)
   const scrolled = await longScroller.evaluate((node) => node.scrollTop)
   await writeFile(join(editorFixture, 'long.txt'), lines(300, (number) => number === 150 ? 'line 150 from the agent' : null))
-  await editorOf('long.txt').getByText('line 150 from the agent').waitFor()
+  await editorOf('long.txt').getByText('line 150 from the agent').waitFor().catch(async (error) => {
+    // Failed once without reproducing since: keep what the editor showed for the next time.
+    await page.screenshot({ path: '/tmp/sillage-explorer-reread-failure.png' })
+    console.error('long.txt after the write:', await longScroller.evaluate((node) => node.scrollTop), (await editorOf('long.txt').locator('.cm-content').textContent())?.slice(0, 300))
+    throw error
+  })
   assert.ok(Math.abs((await longScroller.evaluate((node) => node.scrollTop)) - scrolled) < 30, 'A reread moved the scroll position')
   assert.equal(await editorOf('long.txt').locator('.cm-externalChange').count(), 1)
   await editorOf('long.txt').getByRole('status').filter({ hasText: 'À jour' }).waitFor()
+
+  // Tab inserts the file's own indentation: a tab in Go, not two spaces.
+  await editorRow('main.go').dblclick()
+  await editorOf('main.go').locator('.cm-content').click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.press('Tab')
+  await page.keyboard.type('// end')
+  await page.keyboard.press('ControlOrMeta+s')
+  await until(async () => (await readFile(join(editorFixture, 'main.go'), 'utf8')).endsWith('\t// end'), 'Tab did not insert a tab in a Go file')
+
+  // Line wrapping switches without reopening the file, and stays as chosen.
+  const wrapToggle = editorOf('main.go').getByRole('button', { name: 'Retour à la ligne automatique', exact: true })
+  assert.equal(await wrapToggle.getAttribute('aria-pressed'), 'true')
+  await wrapToggle.click()
+  await until(async () => !(await editorOf('main.go').locator('.cm-content').getAttribute('class')).includes('cm-lineWrapping'), 'Wrapping did not turn off')
+  assert.equal(await page.evaluate(() => localStorage.getItem('sillage.editorWrap')), 'off')
+  await wrapToggle.click()
+
+  // An SVG opens rendered, from the draft, and shows its source on demand.
+  await editorRow('logo.svg').dblclick()
+  await editorOf('logo.svg').locator('img[src^="blob:"]').waitFor()
+  await editorOf('logo.svg').getByRole('button', { name: 'Source', exact: true }).click()
+  await editorOf('logo.svg').locator('.cm-content').getByText('circle', { exact: false }).first().waitFor()
+  await delay(150)
+  await page.screenshot({ path: '/tmp/sillage-editor-footer.png' })
+  await editorOf('logo.svg').getByRole('button', { name: 'Rendu', exact: true }).click()
+  await editorOf('logo.svg').locator('img[src^="blob:"]').waitFor()
 
   // A draft learns about a write on disk without waiting for its save, then compares with it.
   await editorRow('live.txt').dblclick()
@@ -357,7 +419,10 @@ try {
   reopened.on('pageerror', (error) => errors.push(error.message))
   await reopened.goto(`${base}/p/${project.id}/c/${conversation.id}`)
   const reopenedPanel = reopened.locator('[data-panel="workspace"]')
-  await reopenedPanel.getByRole('button', { name: 'ab-editor/draft.txt' }).click()
+  // Open tabs come back with the page.
+  await reopenedPanel.locator('[data-file-tabs] [aria-label="Ouvrir ab-editor/long.txt"]').waitFor()
+  // Its tab comes back with the others, marked unsaved.
+  await reopenedPanel.locator('[data-file-tabs] [data-editor-tab][aria-label*="ab-editor/draft.txt"]').click()
   await until(
     async () => (await reopenedPanel.locator('[data-editor-file="ab-editor/draft.txt"] .cm-content').textContent().catch(() => '')) === 'unsaved draft base',
     'Draft did not survive closing the page',
@@ -400,6 +465,16 @@ try {
   await mobile.screenshot({ path: '/tmp/sillage-explorer-mobile-background.png' })
   await mobile.keyboard.press('Escape')
 
+  // Content search fits a phone.
+  await mobilePanel.getByRole('button', { name: 'Chercher dans le contenu des fichiers', exact: true }).tap()
+  await mobilePanel.getByRole('searchbox').fill('needle-content')
+  await mobilePanel.getByRole('button', { name: 'Ligne 3 de ab-editor/search-me.ts', exact: true }).waitFor()
+  assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  await delay(150)
+  await mobile.screenshot({ path: '/tmp/sillage-explorer-content-mobile.png' })
+  await mobilePanel.getByRole('searchbox').fill('')
+  await mobilePanel.getByRole('button', { name: 'Chercher dans le contenu des fichiers', exact: true }).tap()
+
   // The comparison fits a phone: footer and chunk buttons stay within the screen.
   await mobilePanel.locator('[data-tree-path="ab-editor"]').tap()
   await mobilePanel.locator('[data-tree-path="ab-editor/crlf.txt"]').tap()
@@ -419,7 +494,7 @@ try {
   await mobile.screenshot({ path: '/tmp/sillage-editor-compare-mobile.png' })
 
   assert.deepEqual(errors, [])
-  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche floue avec fichiers ignorés, dossier tronqué, menu unique de l’arbre et de l’espace vide, CRLF, lecture seule hors UTF-8, fichier ouvert qui suit le disque, conflit annoncé et comparaison, couleurs des dossiers parents, brouillon durable et mode sélection au doigt.')
+  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche floue avec fichiers ignorés, recherche dans le contenu, liens symboliques, indentation, retour à la ligne, SVG, onglets rouverts, dossier tronqué, menu unique de l’arbre et de l’espace vide, CRLF, lecture seule hors UTF-8, fichier ouvert qui suit le disque, conflit annoncé et comparaison, couleurs des dossiers parents, brouillon durable et mode sélection au doigt.')
 } finally {
   await browser?.close()
   for (const child of children.reverse()) {

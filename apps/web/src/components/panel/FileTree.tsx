@@ -12,6 +12,7 @@ import {
   FilePlus2,
   FileSymlink,
   FolderPlus,
+  Link2,
   Loader,
   MoreHorizontal,
   Pencil,
@@ -19,6 +20,7 @@ import {
   Scissors,
   Search,
   SquareCheckBig,
+  TextSearch,
   Trash2,
   Upload,
   X,
@@ -55,7 +57,8 @@ import { fileIconUrl } from '../../lib/file-icons'
 import { downloadArchive, downloadFile } from '../../lib/files-io'
 import { formatCount, translate, useTranslate } from '../../lib/i18n'
 import { useDebounced } from '../../lib/search'
-import { useFileSearch, useRefreshTree, useTreeLevel } from '../../lib/tree'
+import { requestReveal } from '../../lib/editor-reveal'
+import { useContentSearch, useFileSearch, useRefreshTree, useTreeLevel } from '../../lib/tree'
 import {
   clearSelection,
   clearTreeClipboard,
@@ -86,6 +89,7 @@ import {
   useUploads,
   type Upload as UploadItem,
 } from '../../lib/uploads'
+import { Tooltip } from '../ui/Tooltip'
 import {
   ConfirmDialog,
   ContextMenu,
@@ -170,6 +174,8 @@ export function FileTree({
   const queryClient = useQueryClient()
   const { active: activePath, paths: openPaths } = useEditorTabs(scope)
   const [query, setQuery] = useState('')
+  /** Search file contents rather than names. */
+  const [inContent, setInContent] = useState(false)
   /** Entries proposed for irreversible deletion. */
   const [pendingDelete, setPendingDelete] = useState<Picked[] | null>(null)
   /** Row the tree's menu opens for, or null for the empty space (the root). */
@@ -506,12 +512,14 @@ export function FileTree({
                 actions.rows()[0]?.focus()
               }
             }}
-            placeholder={t('filetree.search.placeholder')}
-            aria-label={t('filetree.search.label')}
+            placeholder={t(inContent ? 'filetree.content.placeholder' : 'filetree.search.placeholder')}
+            aria-label={t(inContent ? 'filetree.content.placeholder' : 'filetree.search.label')}
             className={cx(
               'h-9 w-full rounded-md border border-line bg-sunken pr-6 pl-7',
               'text-[0.8125rem] text-ink placeholder:text-ink-faint',
               'outline-none focus:border-accent',
+              // The field has its own clear button: the browser's would make two.
+              '[&::-webkit-search-cancel-button]:hidden',
             )}
           />
           {query ? (
@@ -525,6 +533,18 @@ export function FileTree({
             </TooltipButton>
           ) : null}
         </div>
+        <TooltipButton
+          type="button"
+          aria-label={t('filetree.content.toggle')}
+          aria-pressed={inContent}
+          onClick={() => setInContent(!inContent)}
+          className={cx(
+            'flex size-11 shrink-0 items-center justify-center rounded md:size-9 pointer-coarse:size-11',
+            inContent ? 'bg-accent-wash text-ink' : 'text-ink-faint hover:bg-surface-high hover:text-ink',
+          )}
+        >
+          <TextSearch size={14} />
+        </TooltipButton>
       </div>
 
       <SelectionBar actions={actions} />
@@ -579,7 +599,9 @@ export function FileTree({
               if (event.pointerType !== 'mouse') setMenuEntry(entryAt(event.target))
             }}
           >
-            {searching ? (
+            {searching && inContent ? (
+              <ContentResults scope={scope} query={query} actions={actions} />
+            ) : searching ? (
               <SearchResults scope={scope} query={query} actions={actions} />
             ) : (
               <Level path="" depth={0} expanded actions={actions} />
@@ -712,6 +734,7 @@ function handleTreeKey(
     }
     case 'Enter':
       // Without preventDefault below, buttons also receive a click, previewing what Enter opens permanently.
+      if (row.dataset.treeUnreachable) break
       if (isDirectory) setExpanded(scope, path, !view.expanded.has(path))
       else actions.open(path)
       break
@@ -820,7 +843,12 @@ function entryAt(target: EventTarget): TreeEntryDto | null {
     target.closest('[data-tree-entry]')?.querySelector<HTMLElement>('[data-tree-path]') ??
     target.closest<HTMLElement>('[data-tree-path]')
   if (!item) return null
-  return { name: item.dataset.treeName ?? '', path: item.dataset.treePath ?? '', isDirectory: item.dataset.treeDir === '1' }
+  return {
+    name: item.dataset.treeName ?? '',
+    path: item.dataset.treePath ?? '',
+    isDirectory: item.dataset.treeDir === '1',
+    ...(item.dataset.treeUnreachable ? { symlink: 'outside' as const } : {}),
+  }
 }
 
 /** Opens the tree's menu below a row's … button, as a right-click there would. */
@@ -994,6 +1022,70 @@ function statusOf(upload: UploadItem): string {
     sent: formatBytes(upload.sentBytes),
     total: formatBytes(upload.sizeBytes),
   })
+}
+
+/**
+ * Lines containing the query, grouped by file. Each opens its file at the line, the match
+ * selected. Plain buttons rather than tree rows: they are places in files, not entries.
+ */
+function ContentResults({ scope, query, actions }: { scope: string; query: string; actions: Actions }) {
+  const t = useTranslate()
+  // Searching contents costs more than names: wait for a longer pause in typing.
+  const settled = useDebounced(query, 250)
+  const { data, isPending, error } = useContentSearch(scope, settled)
+
+  if (error) {
+    return <p className="px-2 py-1.5 text-xs text-critical">{error instanceof Error ? error.message : t('filetree.search.error')}</p>
+  }
+  if (isPending) {
+    return (
+      <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-ink-faint">
+        <Loader size={11} className="animate-spin" />
+        {t('filetree.search.loading')}
+      </p>
+    )
+  }
+  if (data.files.length === 0) return <p className="px-2 py-1.5 text-xs text-ink-faint">{t('filetree.content.empty')}</p>
+
+  return (
+    <ul aria-label={t('filetree.content.results')}>
+      {data.files.map((file) => {
+        const slash = file.path.lastIndexOf('/')
+        return (
+          <li key={file.path} className="pb-1">
+            <div className="flex min-w-0 items-center gap-1.5 px-2 pt-1 text-[0.75rem]" title={file.path}>
+              <img src={fileIconUrl(file.path.slice(slash + 1), false)} alt="" aria-hidden className="size-4 shrink-0" />
+              <span className="shrink-0 text-ink-soft">{file.path.slice(slash + 1)}</span>
+              <span className="min-w-0 truncate text-ink-faint">{slash > 0 ? file.path.slice(0, slash) : ''}</span>
+            </div>
+            <ul>
+              {file.matches.map((match) => (
+                <li key={match.line}>
+                  <button
+                    type="button"
+                    aria-label={t('filetree.content.match', { line: match.line, path: file.path })}
+                    onClick={() => {
+                      requestReveal(scope, file.path, { line: match.line, column: match.column, length: match.length })
+                      actions.open(file.path, true)
+                    }}
+                    className="flex w-full min-w-0 items-baseline gap-2 py-0.5 pr-2 pl-7 text-left font-mono text-[0.75rem] hover:bg-surface-high focus-visible:-outline-offset-2"
+                  >
+                    <span className="w-7 shrink-0 text-right text-ink-faint">{match.line}</span>
+                    <span className="min-w-0 truncate whitespace-pre text-ink-soft">
+                      {match.text.slice(0, match.from)}
+                      <mark className="rounded-sm bg-accent-wash text-ink">{match.text.slice(match.from, match.from + match.length)}</mark>
+                      {match.text.slice(match.from + match.length)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </li>
+        )
+      })}
+      {data.truncated ? <li className="px-2 py-1.5 text-[0.6875rem] text-ink-faint">{t('filetree.content.truncated')}</li> : null}
+    </ul>
+  )
 }
 
 /** Flat search results: full paths explain file origins better than indentation. */
@@ -1257,7 +1349,9 @@ function entryActions(entry: TreeEntryDto, actions: Actions, view: TreeView): En
             },
           },
         ]
-      : [
+      : entry.symlink === 'outside'
+        ? []
+        : [
           {
             key: 'open',
             group: 'open',
@@ -1602,6 +1696,9 @@ const Entry = memo(function Entry({
   const [dropping, setDropping] = useState(false)
   const active = useIsActiveTab(scope, entry.path)
   const renaming = useTreeView(scope, (view) => view.draft?.mode === 'rename' && view.draft.path === entry.path)
+  /** A link leading outside the working directory, or nowhere: it can be renamed or deleted, not opened. */
+  const unreachable = entry.symlink === 'outside'
+  const symlinkLabel = entry.symlink ? t(unreachable ? 'filetree.symlink.outside' : 'filetree.symlink.inside') : ''
   const button = useRef<HTMLButtonElement>(null)
   const state = entry.state ? STATES[entry.state] : null
 
@@ -1687,6 +1784,7 @@ const Entry = memo(function Entry({
           data-tree-path={entry.path}
           data-tree-dir={entry.isDirectory ? '1' : undefined}
           data-tree-name={entry.name}
+          data-tree-unreachable={unreachable ? '1' : undefined}
           onMouseDown={(event) => {
             // Shift-click extends selection; prevent browser text selection too.
             if (event.shiftKey) event.preventDefault()
@@ -1698,12 +1796,12 @@ const Entry = memo(function Entry({
            * double-click keeps it permanently. Ctrl or Shift clicks only select.
            */
           onClick={(event) => {
-            if (selectFromClick(event, entry, actions)) return
+            if (selectFromClick(event, entry, actions) || unreachable) return
             if (entry.isDirectory) setExpanded(scope, entry.path, !open)
             else actions.open(entry.path, true)
           }}
           onDoubleClick={(event) => {
-            if (entry.isDirectory || event.shiftKey || event.metaKey || event.ctrlKey) return
+            if (entry.isDirectory || unreachable || event.shiftKey || event.metaKey || event.ctrlKey) return
             if (getTreeView(scope).selecting) return
             actions.open(entry.path)
           }}
@@ -1732,9 +1830,18 @@ const Entry = memo(function Entry({
             className="size-4 shrink-0"
           />
 
-          <span className={cx('min-w-0 flex-1 truncate', state && state.tone)}>
+          <span className={cx('min-w-0 flex-1 truncate', state && state.tone, unreachable && 'italic text-ink-faint')}>
             {entry.name}
           </span>
+
+          {entry.symlink ? (
+            <Tooltip label={symlinkLabel}>
+              <span className="shrink-0 text-ink-faint">
+                <Link2 size={11} aria-hidden />
+                <span className="sr-only">{symlinkLabel}</span>
+              </span>
+            </Tooltip>
+          ) : null}
 
           {state?.letter ? (
             <span className={cx('shrink-0 font-mono text-[0.625rem]', state.tone)}>
