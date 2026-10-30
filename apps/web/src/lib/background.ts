@@ -1,4 +1,5 @@
 import { isSpawnTool } from '@sillage/protocol'
+import type { WorkflowProgress } from '@sillage/protocol'
 import type { ChatState } from './chat-fold'
 
 /**
@@ -18,6 +19,9 @@ export interface BackgroundWork {
   lastTool: string | null
   toolUses: number
   totalTokens: number
+  /** Script name and phase/agent snapshot, null for other work and until the first report. */
+  workflowName: string | null
+  workflow: WorkflowProgress | null
 }
 
 export function buildBackground(state: ChatState): BackgroundWork[] {
@@ -43,6 +47,8 @@ export function buildBackground(state: ChatState): BackgroundWork[] {
       lastTool: task?.lastTool ?? null,
       toolUses: task?.toolUses ?? 0,
       totalTokens: task?.totalTokens ?? 0,
+      workflowName: task?.workflowName ?? null,
+      workflow: task?.workflow ?? null,
     })
   }
 

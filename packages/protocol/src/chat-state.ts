@@ -14,6 +14,7 @@ import type {
   SillageEvent,
   SlashCommandDto,
   ToolPresentation,
+  WorkflowProgress,
 } from './index.js'
 
 /** Fold the event log into the display model (invariant I2: rendering is a pure function of the log, replayable from scratch).
@@ -383,6 +384,12 @@ export interface TaskState {
    * must say so rather than show normal completion of its spawning call.
    */
   outcome: 'completed' | 'failed' | 'stopped' | null
+  /**
+   * Script name and latest phase/agent snapshot of a workflow, null for other jobs. Optional
+   * because thread projections saved before these fields existed deserialize without them.
+   */
+  workflowName?: string | null
+  workflow?: WorkflowProgress | null
 }
 
 export function emptyChatState(): ChatState {
@@ -1177,6 +1184,9 @@ export function applyEvent(
         toolCallId: event.toolCallId,
         kind: event.kind,
         description: event.description,
+        // Journals written before this field carry none.
+        workflowName: event.workflowName ?? null,
+        workflow: null,
         activity: null,
         lastTool: null,
         toolUses: 0,
@@ -1201,6 +1211,7 @@ export function applyEvent(
         toolUses: event.toolUses,
         totalTokens: event.totalTokens,
         durationMs: event.durationMs,
+        workflow: event.workflow ?? known.workflow ?? null,
       })
       break
     }

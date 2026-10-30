@@ -46,6 +46,7 @@
     "test:typing-indicator-ui": "node scripts/typing-indicator-ui-check.mjs",
     "test:tool-styles-ui": "node scripts/tool-styles-ui-check.mjs",
     "test:worktrees-ui": "node scripts/worktree-status-ui-check.mjs",
+    "test:workflow-progress-ui": "node scripts/workflow-progress-ui-check.mjs",
     "test:desktop-ui": "node scripts/desktop-ui-check.mjs",
     "test:desktop-mac-install": "node scripts/desktop-mac-install-check.mjs",
     "test:desktop-updates-ui": "node scripts/desktop-updates-ui-check.mjs",

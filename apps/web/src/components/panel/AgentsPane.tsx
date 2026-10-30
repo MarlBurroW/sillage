@@ -10,10 +10,12 @@ import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
 import { formatTokens } from '../../lib/tokens'
+import { currentPhase } from '../../lib/workflows'
 import { buildRows } from '../../lib/tool-rows'
 import { ChatThread } from '../chat/ChatThread'
 import { SubAgentRow } from '../chat/SubAgentRow'
 import { EmptyState, cx } from '../ui'
+import { WorkflowPhases } from './WorkflowPhases'
 
 /**
  * Conversation subagents: list and selected thread. Share rendering with the main thread: messages,
@@ -141,45 +143,50 @@ function BackgroundList({
       {tasks.map((task) => {
         // Display unknown types unchanged rather than forcing a family because CLI versions add new kinds.
         const family = KIND_ALIASES[task.kind.replace(/^local_/, '')]
+        const kindLabel = family ? t(KIND_LABELS[family]) : task.kind
+        const phase = task.workflow ? currentPhase(task.workflow) : null
+        // A workflow's CLI activity names whichever agent reported last, so it hops between them:
+        // its script name and phase describe it, and its agents are listed below. CLIs that send no
+        // snapshot keep the activity line.
+        const subtitle = task.workflow
+          ? [kindLabel, task.workflowName, phase ? t('panel.workflow.phase', phase) : null].filter(Boolean).join(' · ')
+          : task.activity ? `${kindLabel} · ${task.activity}` : kindLabel
         return (
-          <div
-            key={task.id}
-            className="flex items-center gap-2 rounded-md border border-line bg-surface-high px-2 py-1.5"
-          >
-            <span className="shrink-0 text-accent">
-              {family ? KIND_ICONS[family] : <Waves size={13} />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs text-ink">{task.description}</span>
-              <span className="block truncate text-[0.6875rem] text-ink-faint">
-                {/* Family identifies work kind; activity describes its current action. Both fit on the row. */}
-                {task.activity
-                  ? `${family ? t(KIND_LABELS[family]) : task.kind} · ${task.activity}`
-                  : family
-                    ? t(KIND_LABELS[family])
-                    : task.kind}
+          <div key={task.id} className="flex flex-col gap-1.5 rounded-md border border-line bg-surface-high px-2 py-1.5">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-accent">
+                {family ? KIND_ICONS[family] : <Waves size={13} />}
               </span>
-            </span>
-
-            {task.toolUses > 0 ? (
-              <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
-                {t(task.toolUses > 1 ? 'panel.background.tools.many' : 'panel.background.tools.one', {
-                  count: task.toolUses,
-                })}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs text-ink">{task.description}</span>
+                <span className="block truncate text-[0.6875rem] text-ink-faint">{subtitle}</span>
               </span>
-            ) : null}
 
-            {canStop ? (
-              <TooltipButton
-                type="button"
-                onClick={() => void stop(task.id)}
-                disabled={stopping.has(task.id)}
-                title={t('panel.background.stop')}
-                aria-label={t('panel.background.stop')}
-                className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
-              >
-                <Square size={11} fill="currentColor" />
-              </TooltipButton>
+              {task.toolUses > 0 ? (
+                <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+                  {t(task.toolUses > 1 ? 'panel.background.tools.many' : 'panel.background.tools.one', {
+                    count: task.toolUses,
+                  })}
+                </span>
+              ) : null}
+
+              {canStop ? (
+                <TooltipButton
+                  type="button"
+                  onClick={() => void stop(task.id)}
+                  disabled={stopping.has(task.id)}
+                  title={t('panel.background.stop')}
+                  aria-label={t('panel.background.stop')}
+                  className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
+                >
+                  <Square size={11} fill="currentColor" />
+                </TooltipButton>
+              ) : null}
+            </div>
+            {task.workflow ? (
+              <div className="border-t border-line pt-1.5">
+                <WorkflowPhases progress={task.workflow} />
+              </div>
             ) : null}
           </div>
         )

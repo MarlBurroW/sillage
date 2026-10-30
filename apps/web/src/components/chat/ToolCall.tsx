@@ -30,6 +30,7 @@ import { useTranslate } from '../../lib/i18n'
 import { showSubAgent } from '../../lib/panel'
 import { useEventBody, useToolOutput } from '../../lib/tool-output'
 import { readableView } from '../tools/registry'
+import { WorkflowStrip } from './WorkflowStrip'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
 import { ScheduleApprovalStrip } from './ScheduleApprovalStrip'
@@ -238,6 +239,8 @@ export const ToolCall = memo(function ToolCall({
           {t('toolcall.subagent.view')}
         </button>
       ) : null}
+
+      {tool.name === 'Workflow' ? <WorkflowStrip toolCallId={tool.id} /> : null}
 
       {tool.status === 'done' && isSillageTool(tool.name, 'schedule_task') ? <ScheduleApprovalStrip tool={tool} /> : null}
     </div>

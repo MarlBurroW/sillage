@@ -82,6 +82,7 @@ import { useCurrentUser } from '../lib/session'
 import { useSidebarHidden } from '../lib/sidebar'
 import { describeActivity, type MessageItem, type TurnCheckpoint } from '../lib/chat-fold'
 import { buildBackground, type BackgroundWork } from '../lib/background'
+import { WorkflowTasksContext, workflowTasksByToolCall } from '../lib/workflows'
 import { buildLoops, type ArmedLoop } from '../lib/loops'
 import { buildSignals, type SignalKind } from '../lib/signals'
 import { SignalRow } from '../components/chat/Signals'
@@ -223,6 +224,14 @@ export function ConversationPage() {
   const subAgents = useMemo(
     () => buildSubAgents(stream.state.items, stream.state.tasks),
     [stream.state.items, stream.state.tasks],
+  )
+  /**
+   * Same caveat as background work below: a cold session runs nothing, so a workflow the journal
+   * never saw end must not keep claiming running agents.
+   */
+  const workflowTasks = useMemo(
+    () => workflowTasksByToolCall(stream.state.tasks, stream.warm === false),
+    [stream.state.tasks, stream.warm],
   )
   const runningSubAgents = useMemo(
     () => subAgents.filter((agent) => agent.status === 'running'),
@@ -1335,18 +1344,20 @@ export function ConversationPage() {
                 </button>
               ) : null}
     
-              <ChatThread
-                rows={view.rows}
-                mayCollapseTools={concentration ? !findOpen : !placed || stuckToBottom}
-                conversationId={conversationId}
-                canDecide={isOwner}
-                onFork={isOwner && !forking ? setForkTarget : undefined}
-                flashedId={flashed}
-                anchors={turnAnchors}
-                checkpoints={stream.state.checkpoints}
-                onShowChanges={(checkpoint) => showCheckpoint(checkpoint.key)}
-                onRestoreCheckpoint={isOwner && !stream.state.turnRunning ? setRestoreTarget : undefined}
-              />
+              <WorkflowTasksContext.Provider value={workflowTasks}>
+                <ChatThread
+                  rows={view.rows}
+                  mayCollapseTools={concentration ? !findOpen : !placed || stuckToBottom}
+                  conversationId={conversationId}
+                  canDecide={isOwner}
+                  onFork={isOwner && !forking ? setForkTarget : undefined}
+                  flashedId={flashed}
+                  anchors={turnAnchors}
+                  checkpoints={stream.state.checkpoints}
+                  onShowChanges={(checkpoint) => showCheckpoint(checkpoint.key)}
+                  onRestoreCheckpoint={isOwner && !stream.state.turnRunning ? setRestoreTarget : undefined}
+                />
+              </WorkflowTasksContext.Provider>
     
               {activity && !concentration ? <TurnActivity label={activity} /> : null}
               {stream.state.turnRunning && !concentration ? <NewsTicker key={conversationId} /> : null}

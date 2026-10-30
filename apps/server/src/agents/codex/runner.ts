@@ -866,7 +866,7 @@ export class CodexRunner implements AgentRunner {
     this.childThreads.set(threadId, { toolId, parent, description: label, startedAt: Date.now(), running: true })
     this.ctx.emit({ type: 'tool.started', toolCallId: toolId, name: 'Agent',
       input: { description: label, prompt: prompt || label }, parentToolCallId: parent })
-    this.ctx.emit({ type: 'task.started', taskId: threadId, toolCallId: toolId, kind: 'agent', description: label })
+    this.ctx.emit({ type: 'task.started', taskId: threadId, toolCallId: toolId, kind: 'agent', description: label, workflowName: null })
     this.publishSubAgents()
     return toolId
   }

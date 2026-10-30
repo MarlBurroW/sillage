@@ -136,6 +136,48 @@ export const backgroundTaskSchema = z.object({
 export type BackgroundTask = z.infer<typeof backgroundTaskSchema>
 
 /**
+ * Where a workflow agent stands. `queued` is the CLI's `start` before a slot opened: it counts
+ * agents as running only once `startedAt` is set, and the panel must not claim more parallelism
+ * than the CLI does.
+ */
+export const workflowAgentStateSchema = z.enum(['queued', 'running', 'done', 'error'])
+export type WorkflowAgentState = z.infer<typeof workflowAgentStateSchema>
+
+/** One agent of a workflow script, as the CLI last described it. */
+export const workflowAgentSchema = z.object({
+  /** Position in the script, stable across reports: the key the CLI merges updates on. */
+  index: z.number(),
+  label: z.string(),
+  /** Null for agents launched outside any `phase()`. */
+  phaseIndex: z.number().nullable().default(null),
+  state: workflowAgentStateSchema,
+  model: z.string().nullable().default(null),
+  /** Last tool name and its target, the closest description of what the agent is doing. */
+  lastTool: z.string().nullable().default(null),
+  lastToolSummary: z.string().nullable().default(null),
+  tokens: z.number().default(0),
+  toolCalls: z.number().default(0),
+  /** Retry number, from 1: above 1 the CLI restarted a stalled or failed agent. */
+  attempt: z.number().default(1),
+  /** Failure or safety-classifier block, null otherwise. */
+  error: z.string().nullable().default(null),
+})
+export type WorkflowAgent = z.infer<typeof workflowAgentSchema>
+
+/**
+ * Full state of a running workflow: its declared phases and every agent started so far.
+ *
+ * Read from an undocumented `workflow_progress` field of Claude Code's `task_progress` (probed on
+ * 2.1.312): absent from the SDK types, so the adapter parses it defensively and drops it rather
+ * than fail when its shape changes.
+ */
+export const workflowProgressSchema = z.object({
+  phases: z.array(z.object({ index: z.number(), title: z.string() })),
+  agents: z.array(workflowAgentSchema),
+})
+export type WorkflowProgress = z.infer<typeof workflowProgressSchema>
+
+/**
  * A scheduled task that reopens the session itself: `/loop`, at a fixed interval or an
  * agent-chosen cadence. Both use the same CLI registry; the latter registers as a one-shot task
  * rearmed each turn.
@@ -568,6 +610,8 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     toolCallId: z.string().nullable().default(null),
     kind: z.string(),
     description: z.string(),
+    /** Script name (`meta.name`) for workflows, null for other jobs. */
+    workflowName: z.string().nullable().default(null),
   }),
 
   /**
@@ -587,6 +631,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     toolUses: z.number(),
     totalTokens: z.number(),
     durationMs: z.number(),
+    /**
+     * Phases and agents of a workflow, null for other jobs and for reports that omit it. The CLI
+     * sends a full snapshot, not a delta, but skips it on some reports: null keeps the last one.
+     */
+    workflow: workflowProgressSchema.nullable().default(null),
   }),
 
   /**

@@ -35,6 +35,7 @@ import { describeOutgoingMessage } from '../outgoing.js'
 import { journalDeath } from '../session-close.js'
 import { toWorkspacePath } from '../paths.js'
 import { ToolDurations } from '../tool-durations.js'
+import { parseWorkflowProgress } from './workflow-progress.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -484,6 +485,7 @@ export class ClaudeRunner implements AgentRunner {
               // keeps same family as top-level list.
               kind: message.task_type ?? 'local_agent',
               description: message.description,
+              workflowName: message.workflow_name ?? null,
             },
             message,
           )
@@ -499,6 +501,8 @@ export class ClaudeRunner implements AgentRunner {
               toolUses: message.usage.tool_uses,
               totalTokens: message.usage.total_tokens,
               durationMs: message.usage.duration_ms,
+              // Undocumented in the SDK types: read through `unknown`, see parseWorkflowProgress.
+              workflow: parseWorkflowProgress((message as { workflow_progress?: unknown }).workflow_progress),
             },
             message,
           )

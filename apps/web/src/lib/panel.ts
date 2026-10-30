@@ -230,6 +230,14 @@ export function showSubAgent(id: string): void {
   for (const listener of listeners) listener()
 }
 
+/** Open the panel on the subagent and background work list, where workflows show their agents. */
+export function showAgentList(): void {
+  subAgentId = null
+  tab = 'agents'
+  setPanelOpen(true)
+  for (const listener of listeners) listener()
+}
+
 /**
  * Return to the list. Also called on conversation changes: a spawning call exists only in its own
  * thread, so retaining the selection would display an empty thread.
