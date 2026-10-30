@@ -6,7 +6,7 @@ type: application
 # Chart version: increment for every template change.
 version: 0.3.0
 # Default application version, used as image tag when image.tag is empty.
-appVersion: "0.31.0"
+appVersion: "0.31.1"
 
 home: https://github.com/MarlBurroW/sillage
 sources:
