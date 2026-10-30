@@ -107,6 +107,21 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       }
     })
 
+    /**
+     * Fingerprint alone. An open tab checks it each time its directory changes, which an agent's
+     * turn does many times, without downloading up to 2 MB to learn that nothing changed.
+     */
+    app.get(`${base}/file/fingerprint`, async (request) => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const { path } = filePathQuerySchema.parse(request.query)
+
+      const absolute = await resolveRealInside(workspaceOf(id, user.id), path)
+      const info = await stat(absolute).catch(() => null)
+      if (!info?.isFile()) throw new HttpError(404, 'not_a_file', 'This path is not a file.')
+      return { fingerprint: fingerprint(info.size, info.mtimeMs) }
+    })
+
     /** Filters candidate paths to actual workspace files. Conversations use this to make only working links clickable. Path-like syntax proves nothing: `text/plain`, `@sillage/protocol` and `fs/promises` all resemble paths, and broken links are worse than text. Uses `POST` for reads because lists fit poorly in URLs and form the client cache key. */
     app.post(`${base}/files/exist`, async (request) => {
       const user = requireUser(request)

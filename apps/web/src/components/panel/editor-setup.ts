@@ -4,7 +4,8 @@ import {
   syntaxHighlighting,
   type StreamParser,
 } from '@codemirror/language'
-import { EditorView } from '@codemirror/view'
+import { Annotation, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
+import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 
 /**
@@ -112,6 +113,46 @@ export const editorTheme = EditorView.theme({
     border: '1px solid var(--sg-line)',
     color: 'var(--sg-ink-faint)',
   },
+  /*
+   * Comparison with the disk (@codemirror/merge). Its base theme only knows fixed light colors and
+   * outranks plain selectors: the app's tones need `!important` here, like selection above.
+   */
+  '.cm-changedLine, .cm-insertedLine': {
+    backgroundColor: 'color-mix(in srgb, var(--sg-positive) 10%, transparent) !important',
+  },
+  '.cm-changedText': {
+    background: 'color-mix(in srgb, var(--sg-positive) 28%, transparent) !important',
+  },
+  '.cm-deletedChunk': {
+    position: 'relative',
+    paddingLeft: '6px',
+    backgroundColor: 'color-mix(in srgb, var(--sg-critical) 10%, transparent) !important',
+  },
+  '.cm-deletedChunk .cm-deletedText, .cm-deletedText': {
+    background: 'color-mix(in srgb, var(--sg-critical) 28%, transparent) !important',
+  },
+  '.cm-changedLineGutter, .cm-insertedLineGutter': { background: 'var(--sg-positive) !important' },
+  '.cm-deletedLineGutter': { background: 'var(--sg-critical) !important' },
+  '.cm-deletedChunk .cm-chunkButtons': {
+    position: 'absolute',
+    top: '2px',
+    insetInlineEnd: '6px',
+    display: 'flex',
+    gap: '4px',
+  },
+  '.cm-deletedChunk .cm-chunkButtons button': {
+    height: '1.5rem',
+    padding: '0 0.5rem',
+    border: '1px solid var(--sg-line)',
+    borderRadius: 'var(--radius-md, 0.5rem)',
+    background: 'var(--sg-surface)',
+    color: 'var(--sg-ink)',
+    fontFamily: 'var(--font-sans, inherit)',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+  },
+  '.cm-deletedChunk .cm-chunkButtons button[name=accept]:hover': { borderColor: 'var(--sg-positive)' },
+  '.cm-deletedChunk .cm-chunkButtons button[name=reject]:hover': { borderColor: 'var(--sg-critical)' },
 })
 
 /** Same seven syntax families as the thread: one app palette. */
@@ -274,4 +315,63 @@ export function lineBreakOf(text: string): '\n' | '\r\n' | '\r' {
   if (crlf > lf && crlf >= cr) return '\r\n'
   if (cr > lf && cr > crlf) return '\r'
   return '\n'
+}
+
+/**
+ * Marks text replaced from outside, after a reread: the editor must not report it as typing,
+ * which would pin a preview tab and rewrite the draft.
+ */
+export const externalChange = Annotation.define<boolean>()
+
+/** Lines touched by a reread, or null to clear them. */
+export const flashLines = StateEffect.define<{ from: number; to: number } | null>()
+
+/** Beyond this, a reread replaced the whole file: flashing all of it would show nothing more. */
+const MAX_FLASHED_LINES = 400
+const flashedLine = Decoration.line({ class: 'cm-externalChange' })
+
+/**
+ * Briefly highlights lines an agent just changed in the open file. Without it, text shifted
+ * under the reader's eyes with no hint of where.
+ */
+export const flashedChanges = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(lines, transaction) {
+    let next = lines.map(transaction.changes)
+    for (const effect of transaction.effects) {
+      if (!effect.is(flashLines)) continue
+      if (!effect.value) {
+        next = Decoration.none
+        continue
+      }
+      const { doc } = transaction.state
+      const first = doc.lineAt(effect.value.from).number
+      const last = doc.lineAt(Math.max(effect.value.from, effect.value.to - 1)).number
+      if (last - first > MAX_FLASHED_LINES) continue
+      const builder = new RangeSetBuilder<Decoration>()
+      for (let number = first; number <= last; number += 1) {
+        const line = doc.line(number)
+        builder.add(line.from, line.from, flashedLine)
+      }
+      next = builder.finish()
+    }
+    return next
+  },
+  provide: (field) => EditorView.decorations.from(field),
+})
+
+/**
+ * Single change turning `before` into `after`: common start and end kept, so the cursor, the
+ * scroll position and undo history around them survive a reread.
+ */
+export function smallestChange(before: string, after: string): { from: number; to: number; insert: string } {
+  const shortest = Math.min(before.length, after.length)
+  let start = 0
+  while (start < shortest && before.charCodeAt(start) === after.charCodeAt(start)) start += 1
+  let end = 0
+  while (
+    end < shortest - start &&
+    before.charCodeAt(before.length - 1 - end) === after.charCodeAt(after.length - 1 - end)
+  ) end += 1
+  return { from: start, to: before.length - end, insert: after.slice(start, after.length - end) }
 }

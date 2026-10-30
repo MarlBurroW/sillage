@@ -250,3 +250,18 @@ test('saving accepts a file near the editable limit despite JSON escaping', asyn
   assert.equal(saved.statusCode, 200)
   assert.equal(await readFile(join(root, 'big.json'), 'utf8'), `${content}x`)
 })
+
+test('the fingerprint route follows writes without sending the content', async (t) => {
+  const { app, root } = await harness(t)
+  await writeFile(join(root, 'notes.md'), 'a')
+  const read = await app.inject({ method: 'GET', url: '/api/projects/p/file?path=notes.md' })
+  const first = await app.inject({ method: 'GET', url: '/api/projects/p/file/fingerprint?path=notes.md' })
+  assert.deepEqual(first.json(), { fingerprint: read.json().fingerprint })
+
+  await writeFile(join(root, 'notes.md'), 'ab')
+  const second = await app.inject({ method: 'GET', url: '/api/projects/p/file/fingerprint?path=notes.md' })
+  assert.notEqual(second.json().fingerprint, first.json().fingerprint)
+
+  const missing = await app.inject({ method: 'GET', url: '/api/projects/p/file/fingerprint?path=gone.md' })
+  assert.equal(missing.statusCode, 404)
+})

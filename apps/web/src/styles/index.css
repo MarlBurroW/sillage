@@ -598,6 +598,29 @@
   max-width: calc(var(--sg-conversation-width) * 1px);
 }
 
+/* Lines an agent just changed in the open file (CodeEditor): seen, then gone. Keep in step with FLASH_MS. */
+@keyframes sg-external-change {
+  from { background-color: color-mix(in srgb, var(--sg-accent) 22%, transparent); }
+  to { background-color: transparent; }
+}
+.cm-line.cm-externalChange { animation: sg-external-change 1.6s ease-out; }
+
+/*
+ * Touch: the comparison's chunk buttons get a row of their own at finger size, rather than
+ * 24 px buttons over the code. `!important` outranks the editor theme injected after this sheet.
+ */
+@media (pointer: coarse) {
+  .cm-editor .cm-deletedChunk .cm-chunkButtons {
+    position: static !important;
+    justify-content: flex-end;
+    padding: 4px 0;
+  }
+  .cm-editor .cm-deletedChunk .cm-chunkButtons button {
+    height: 2.75rem !important;
+    padding: 0 0.875rem !important;
+  }
+}
+
 @keyframes news-reveal {
   from { opacity: 0.3; }
   to { opacity: 1; }

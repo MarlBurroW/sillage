@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { Compartment, EditorState, StateEffect } from '@codemirror/state'
+import { Compartment, EditorState, StateEffect, Text, Transaction } from '@codemirror/state'
 import { gotoLine, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import {
   EditorView,
@@ -15,9 +15,18 @@ import {
   indentOnInput,
   indentUnit,
 } from '@codemirror/language'
-import { useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
 import { translate } from '../../lib/i18n'
-import { editorHighlight, editorTheme, lineBreakOf, loadLanguage } from './editor-setup'
+import {
+  editorHighlight,
+  editorTheme,
+  externalChange,
+  flashLines,
+  flashedChanges,
+  lineBreakOf,
+  loadLanguage,
+  smallestChange,
+} from './editor-setup'
 
 export interface CodeEditorHandle {
   find: () => void
@@ -26,8 +35,45 @@ export interface CodeEditorHandle {
 
 // Memory-only state per account/workspace/file. Keep only one CodeMirror DOM mounted, restoring
 // selection, scroll, and undo when returning to documents.
-const sessions = new Map<string, { state: EditorState; scroll: ReturnType<EditorView['scrollSnapshot']>; revision: number }>()
+const sessions = new Map<string, { state: EditorState; scroll: ReturnType<EditorView['scrollSnapshot']> }>()
 const MAX_SESSIONS = 40
+
+/** How long lines changed by a reread stay highlighted; matches the CSS animation. */
+const FLASH_MS = 1600
+
+/**
+ * Brings the editor to `next` with the smallest change, outside undo history and without
+ * reporting typing. Rebuilding the state instead sent the reader back to the top of the file at
+ * every agent write.
+ */
+function syncText(editor: EditorView, next: string): void {
+  // CodeMirror splits on any line break and joins with \n.
+  const target = next.replace(/\r\n?/g, '\n')
+  const before = editor.state.doc.toString()
+  if (before === target) return
+  const change = smallestChange(before, target)
+  editor.dispatch({
+    changes: change,
+    annotations: [externalChange.of(true), Transaction.addToHistory.of(false)],
+    effects: flashLines.of({ from: change.from, to: change.from + change.insert.length }),
+  })
+  setTimeout(() => {
+    // Destroyed views keep their state but no longer belong to the page.
+    if (editor.dom.isConnected) editor.dispatch({ effects: flashLines.of(null) })
+  }, FLASH_MS)
+}
+
+/** Chunk buttons of the comparison, labeled for its meaning here: the other side is the disk. */
+function chunkButton(type: 'accept' | 'reject', action: (event: MouseEvent) => void): HTMLElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.name = type
+  button.textContent = translate(type === 'accept' ? 'editor.compare.keep' : 'editor.compare.restore')
+  button.title = translate(type === 'accept' ? 'editor.compare.keep.title' : 'editor.compare.restore.title')
+  // Like the package's own buttons: on mousedown, before the editor takes focus and moves the cursor.
+  button.onmousedown = action
+  return button
+}
 
 /**
  * Search-panel labels through CodeMirror's phrases facet, its intended translation mechanism,
@@ -71,6 +117,7 @@ export function CodeEditor({
   onPosition,
   readOnly = false,
   lineBreak,
+  original = null,
   ref,
 }: {
   initial: string
@@ -88,6 +135,11 @@ export function CodeEditor({
    * saves with the file's.
    */
   lineBreak?: string
+  /**
+   * Text to compare with, usually the version on disk: changes show inline with buttons to keep
+   * or restore each chunk. Null hides the comparison.
+   */
+  original?: string | null
   ref?: Ref<CodeEditorHandle>
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -103,11 +155,31 @@ export function CodeEditor({
   const handlers = useRef({ onChange, onSave, onPosition })
   handlers.current = { onChange, onSave, onPosition }
   /**
-   * Do not push contents into a live editor: following props by rebuilding would erase cursor and
-   * undo history. Read on mount only so callers choose replacement through remounting.
+   * Typing never comes back through `initial`: following it on each render would fight the
+   * cursor. A text replaced elsewhere is signaled by `revision` and applied in place.
    */
   const content = useRef(initial)
   content.current = initial
+  const comparedWith = useRef(original)
+  comparedWith.current = original
+  const merge = useRef<Compartment | null>(null)
+
+  /** The comparison module loads on first use: most sessions never compare anything. */
+  const showComparison = (editor: EditorView, compartment: Compartment, text: string | null) => {
+    if (text === null) {
+      editor.dispatch({ effects: compartment.reconfigure([]) })
+      return
+    }
+    void import('@codemirror/merge').then(({ unifiedMergeView }) => {
+      // The comparison may have been closed or changed while the module loaded.
+      if (current.current !== editor || comparedWith.current !== text) return
+      editor.dispatch({
+        effects: compartment.reconfigure(
+          unifiedMergeView({ original: Text.of(text.split(/\r\n?|\n/)), mergeControls: chunkButton }),
+        ),
+      })
+    })
+  }
 
   // Capture scroll before React detaches the previous file's DOM.
   useLayoutEffect(() => {
@@ -115,6 +187,7 @@ export function CodeEditor({
     if (!parent) return
 
     const language = new Compartment()
+    const comparison = new Compartment()
     const separator = lineBreak ?? lineBreakOf(content.current)
     const text = (state: EditorState) => state.doc.sliceString(0, state.doc.length, separator)
 
@@ -134,6 +207,8 @@ export function CodeEditor({
         bracketMatching(),
         indentUnit.of('  '),
         language.of([]),
+        comparison.of([]),
+        flashedChanges,
         // Search at top: at bottom it sits below file status and consumes half the visible height in narrow panels.
         search({ top: true }),
         EditorState.phrases.of(searchPhrases()),
@@ -158,20 +233,25 @@ export function CodeEditor({
           ...searchKeymap,
         ]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) handlers.current.onChange(text(update.state))
+          const typed = update.transactions.some((transaction) => transaction.docChanged && !transaction.annotation(externalChange))
+          if (typed) handlers.current.onChange(text(update.state))
           if (update.docChanged || update.selectionSet) position(update.state)
         }),
       ]
     const cached = sessions.get(sessionKey)
-    const reusable = cached?.revision === revision && text(cached.state) === content.current
     // Reconnect callbacks to the current component without clearing historyField.
-    const state = reusable
+    const state = cached
       ? cached.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state
       : EditorState.create({ doc: content.current, extensions })
 
-    const editor = new EditorView({ state, parent, scrollTo: reusable ? cached.scroll : undefined })
+    const editor = new EditorView({ state, parent, scrollTo: cached?.scroll })
     current.current = editor
-    position(state)
+    merge.current = comparison
+    // Text reread while this file was not displayed, typically an agent's write: applied in place
+    // so returning to the file keeps its scroll position and shows what changed.
+    syncText(editor, content.current)
+    position(editor.state)
+    if (comparedWith.current !== null) showComparison(editor, comparison, comparedWith.current)
 
     // Language mode loads afterward: waiting would leave an empty editor despite available text.
     let cancelled = false
@@ -183,12 +263,21 @@ export function CodeEditor({
     return () => {
       cancelled = true
       sessions.delete(sessionKey)
-      sessions.set(sessionKey, { state: editor.state, scroll: editor.scrollSnapshot(), revision })
+      sessions.set(sessionKey, { state: editor.state, scroll: editor.scrollSnapshot() })
       if (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value!)
       current.current = null
+      merge.current = null
       editor.destroy()
     }
-  }, [path, sessionKey, revision, readOnly, lineBreak])
+  }, [path, sessionKey, readOnly, lineBreak])
+
+  useEffect(() => {
+    if (current.current) syncText(current.current, content.current)
+  }, [revision])
+
+  useEffect(() => {
+    if (current.current && merge.current) showComparison(current.current, merge.current, original)
+  }, [original])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }

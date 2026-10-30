@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -81,6 +81,15 @@ try {
   await writeFile(join(editorFixture, 'crlf.txt'), 'one\r\ntwo\r\nthree\r\n')
   await writeFile(join(editorFixture, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
   await writeFile(join(editorFixture, 'draft.txt'), 'draft base\n')
+  const lines = (count, change = () => null) => Array.from({ length: count }, (_, index) => change(index + 1) ?? `line ${index + 1}`).join('\n') + '\n'
+  await writeFile(join(editorFixture, 'live.txt'), lines(12))
+  await writeFile(join(editorFixture, 'long.txt'), lines(300))
+  // Tracked file deep in the tree, whose ancestors must follow its Git color.
+  await mkdir(join(project.workspace_path, 'ac-tracked/deep/nested'), { recursive: true })
+  await writeFile(join(project.workspace_path, 'ac-tracked/deep/nested/file.ts'), 'export {}\n')
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=check', '-c', 'user.email=check@example.com', ...args], { cwd: project.workspace_path })
+  git('add', 'ac-tracked')
+  git('commit', '-qm', 'Track the explorer check fixture')
 
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -249,6 +258,56 @@ try {
   assert.equal(await editorOf('latin1.txt').locator('.cm-content').textContent(), 'caf\ufffd')
   assert.deepEqual([...await readFile(join(editorFixture, 'latin1.txt'))], [0x63, 0x61, 0x66, 0xe9, 0x0a])
 
+  // An open file follows the disk: an agent's write appears in place, keeping the scroll
+  // position, and its lines are highlighted for a moment.
+  await editorRow('long.txt').dblclick()
+  const longScroller = editorOf('long.txt').locator('.cm-scroller')
+  await editorOf('long.txt').locator('.cm-content').waitFor()
+  await longScroller.evaluate((node) => { node.scrollTop = 3000 })
+  await delay(200)
+  const scrolled = await longScroller.evaluate((node) => node.scrollTop)
+  await writeFile(join(editorFixture, 'long.txt'), lines(300, (number) => number === 150 ? 'line 150 from the agent' : null))
+  await editorOf('long.txt').getByText('line 150 from the agent').waitFor()
+  assert.ok(Math.abs((await longScroller.evaluate((node) => node.scrollTop)) - scrolled) < 30, 'A reread moved the scroll position')
+  assert.equal(await editorOf('long.txt').locator('.cm-externalChange').count(), 1)
+  await editorOf('long.txt').getByRole('status').filter({ hasText: 'À jour' }).waitFor()
+
+  // A draft learns about a write on disk without waiting for its save, then compares with it.
+  await editorRow('live.txt').dblclick()
+  await editorOf('live.txt').locator('.cm-content').click()
+  await page.keyboard.press('ControlOrMeta+Home')
+  await page.keyboard.type('mine ')
+  await writeFile(join(editorFixture, 'live.txt'), lines(12, (number) => number === 10 ? 'line 10 from the agent' : null))
+  const conflictBanner = editorOf('live.txt').getByRole('alert')
+  await conflictBanner.waitFor()
+  await conflictBanner.getByRole('button', { name: 'Comparer', exact: true }).click()
+  await editorOf('live.txt').getByRole('note').waitFor()
+  const agentChunk = editorOf('live.txt').locator('.cm-deletedChunk').filter({ hasText: 'line 10 from the agent' })
+  const mineChunk = editorOf('live.txt').locator('.cm-deletedChunk').filter({ hasText: 'line 1' }).filter({ hasNotText: 'line 10' })
+  await agentChunk.waitFor()
+  await delay(150)
+  await page.screenshot({ path: '/tmp/sillage-editor-compare.png' })
+  await agentChunk.getByRole('button', { name: 'Rétablir', exact: true }).click()
+  await mineChunk.getByRole('button', { name: 'Garder', exact: true }).click()
+  await editorOf('live.txt').locator('.cm-deletedChunk').first().waitFor({ state: 'detached' })
+  await editorOf('live.txt').getByRole('button', { name: 'Enregistrer', exact: true }).click()
+  const merged = lines(12, (number) => (number === 1 ? 'mine line 1' : number === 10 ? 'line 10 from the agent' : null))
+  await until(async () => (await readFile(join(editorFixture, 'live.txt'), 'utf8')) === merged, 'The comparison did not save the merged text')
+
+  // A file changed deep in the tree colors its ancestors too.
+  const trackedRow = (path) => panel.locator(`[data-tree-path="ac-tracked${path ? `/${path}` : ''}"]`)
+  await trackedRow('').click()
+  await trackedRow('deep').click()
+  await trackedRow('deep/nested').click()
+  await trackedRow('deep/nested/file.ts').waitFor()
+  assert.equal((await trackedRow('').textContent()).trim(), 'ac-tracked')
+  // Watches start a moment after a level opens: a write within it would go unseen.
+  await delay(500)
+  await writeFile(join(project.workspace_path, 'ac-tracked/deep/nested/file.ts'), 'export const changed = true\n')
+  for (const path of ['deep/nested/file.ts', 'deep/nested', 'deep', '']) {
+    await until(async () => (await trackedRow(path).textContent()).trim().endsWith('M'), `${path || 'ac-tracked'} did not turn modified`)
+  }
+
   // A draft outlives closing the page and comes back in a new one.
   await editorRow('draft.txt').dblclick()
   await editorOf('draft.txt').locator('.cm-content').click()
@@ -303,8 +362,26 @@ try {
   await mobile.screenshot({ path: '/tmp/sillage-explorer-mobile-background.png' })
   await mobile.keyboard.press('Escape')
 
+  // The comparison fits a phone: footer and chunk buttons stay within the screen.
+  await mobilePanel.locator('[data-tree-path="ab-editor"]').tap()
+  await mobilePanel.locator('[data-tree-path="ab-editor/crlf.txt"]').tap()
+  const mobileEditor = mobilePanel.locator('[data-editor-file="ab-editor/crlf.txt"]')
+  await mobileEditor.locator('.cm-content').tap()
+  await mobile.keyboard.press('ControlOrMeta+Home')
+  await mobile.keyboard.type('phone ')
+  await mobileEditor.getByRole('button', { name: 'Comparer avec le disque', exact: true }).tap()
+  await mobileEditor.locator('.cm-deletedChunk').getByRole('button', { name: 'Rétablir', exact: true }).waitFor()
+  assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  for (const name of ['Rétablir', 'Garder']) {
+    const box = await mobileEditor.locator('.cm-deletedChunk').getByRole('button', { name, exact: true }).boundingBox()
+    assert.ok(box.x >= 0 && box.x + box.width <= 390, `${name} outside the phone screen`)
+    assert.ok(box.height >= 44, `${name} too small for a finger`)
+  }
+  await delay(150)
+  await mobile.screenshot({ path: '/tmp/sillage-editor-compare-mobile.png' })
+
   assert.deepEqual(errors, [])
-  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche, menu de l’espace vide, CRLF, lecture seule hors UTF-8, brouillon durable et mode sélection au doigt.')
+  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche, menu de l’espace vide, CRLF, lecture seule hors UTF-8, fichier ouvert qui suit le disque, conflit annoncé et comparaison, couleurs des dossiers parents, brouillon durable et mode sélection au doigt.')
 } finally {
   await browser?.close()
   for (const child of children.reverse()) {

@@ -1,6 +1,6 @@
 import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
-import { Check, Code2, Download, Eye, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
+import { Check, Code2, Download, Eye, FileDiff, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import {
   OPENABLE_MODEL_EXTENSIONS,
@@ -24,6 +24,7 @@ import { languageFromPath } from '../../lib/highlight'
 import { downloadFile, rawFileUrl } from '../../lib/files-io'
 import { useTranslate } from '../../lib/i18n'
 import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/markdown-view'
+import { wsClient } from '../../lib/ws-client'
 import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
 import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui'
@@ -248,8 +249,10 @@ function Tab({
 function FileView({ userId, scope, path }: { userId: string; scope: string; path: string }) {
   const editor = useRef<CodeEditorHandle>(null)
   const [position, setPosition] = useState({ line: 1, column: 1 })
-  const { document, dirty, load, save, edit } = useEditorDocument(userId, scope, path)
-  const { file, content, error, conflict, loading, saving, persisted, revision } = document
+  const { document, dirty, load, save, refresh, rebase, edit } = useEditorDocument(userId, scope, path)
+  const { file, content, error, conflict, disk, loading, saving, persisted, revision } = document
+  /** Draft shown against the version on disk; meaningless once nothing differs. */
+  const [comparing, setComparing] = useState(false)
   const extension = languageFromPath(path)
   const isImage = extension in VIEWABLE_IMAGE_TYPES
   const isDocument = extension in VIEWABLE_DOCUMENT_TYPES
@@ -262,6 +265,33 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   useEffect(() => {
     if (!rawView) void load()
   }, [rawView, load])
+  useEffect(() => {
+    if (!dirty) setComparing(false)
+  }, [dirty])
+
+  /**
+   * Follow the file on disk while it is displayed: agents write it during turns, and a tab kept
+   * open used to show the old text until another tab was opened. Watching its directory is enough
+   * (writes and renames both show there), and the explorer shares the same watches.
+   */
+  const directory = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+  useEffect(() => {
+    if (rawView) return
+    const unwatch = wsClient.watchTree(scope, directory)
+    const unlisten = wsClient.onTreeChanged((changed, changedPath) => {
+      if (changed === scope && changedPath === directory) void refresh()
+    })
+    // Events missed while hidden or disconnected: check on return.
+    const onVisible = () => {
+      if (window.document.visibilityState === 'visible') void refresh()
+    }
+    window.document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      unwatch()
+      unlisten()
+      window.document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [scope, directory, rawView, refresh])
   // From the version on disk rather than the draft, and only when it changes: scanning a large
   // file on every keystroke would cost more than the editor itself.
   const baseContent = file?.content
@@ -305,11 +335,17 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
       {file.lossy ? <div role="note" className="shrink-0 border-b border-line bg-sunken px-3 py-2 text-xs text-ink-soft">{t('editor.lossy')}</div> : null}
       {conflict ? <div role="alert" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-caution/40 bg-caution/12 px-3 py-2 text-xs text-ink-soft">
         <p className="w-full">{t('editor.conflict.message')}</p>
+        {disk ? <Button variant="primary" size="sm" icon={<FileDiff size={13} />} disabled={loading || saving} onClick={() => {
+          rebase()
+          setComparing(true)
+        }}>{t('editor.conflict.compare')}</Button> : null}
         <Button variant="secondary" size="sm" disabled={loading || saving} onClick={discard}>{t('editor.conflict.reload')}</Button>
         <Button variant="secondary" size="sm" disabled={loading || saving} onClick={() => {
           if (confirm(t('editor.conflict.overwriteConfirm', { path }))) void save(true)
         }}>{t('editor.conflict.overwrite')}</Button>
       </div> : null}
+
+      {comparing && !(isMarkdown && view === 'preview') ? <p role="note" className="shrink-0 border-b border-line bg-sunken px-3 py-2 text-xs text-ink-soft">{t('editor.compare.hint')}</p> : null}
 
       {isMarkdown && view === 'preview' ? (
         <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 py-3">
@@ -322,7 +358,6 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         <div className="min-h-0 min-w-0 flex-1">
           <CodeEditor
             ref={editor}
-            key={revision}
             sessionKey={JSON.stringify([userId, scope, path])}
             revision={revision}
             onPosition={(line, column) => setPosition({ line, column })}
@@ -330,6 +365,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
             path={file.path}
             lineBreak={lineBreak}
             readOnly={file.lossy === true}
+            original={comparing ? file.content : null}
             onChange={(value) => { edit(value); pinTab(scope, path) }}
             onSave={() => { if (!conflict) void save() }}
           />
@@ -349,6 +385,8 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         {dirty ? <p>{t(persisted === 'device' ? 'editor.drafts.kept' : persisted === 'tab' ? 'editor.drafts.tab' : 'editor.drafts.memory')}</p> : null}
         <div className="flex flex-wrap items-center justify-end gap-1">
           {isMarkdown && view === 'preview' ? null : <IconButton size="sm" label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></IconButton>}
+          {dirty && !conflict && !(isMarkdown && view === 'preview') ? <IconButton size="sm" label={t(comparing ? 'editor.compare.hide' : 'editor.compare')} aria-pressed={comparing}
+            className={comparing ? 'bg-accent-wash text-ink' : undefined} onClick={() => setComparing(!comparing)}><FileDiff size={14} /></IconButton> : null}
           {isMarkdown ? <Button size="sm" variant="ghost" icon={view === 'preview' ? <Code2 size={13} /> : <Eye size={13} />}
             onClick={() => setMarkdownView(view === 'preview' ? 'source' : 'preview')}>
             {t(view === 'preview' ? 'editor.markdown.source' : 'editor.markdown.preview')}

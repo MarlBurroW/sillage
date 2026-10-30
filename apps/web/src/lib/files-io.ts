@@ -13,6 +13,13 @@ export function readFile(scope: WorkspaceScope, path: string): Promise<FileConte
   )
 }
 
+/** Fingerprint only: cheap enough to ask each time the file's directory changes. */
+export function readFingerprint(scope: WorkspaceScope, path: string): Promise<{ fingerprint: string }> {
+  return api.get<{ fingerprint: string }>(
+    `${workspaceApiBase(scope)}/file/fingerprint?path=${encodeURIComponent(path)}`,
+  )
+}
+
 /** Return the new fingerprint. `fingerprint: null` deliberately overwrites. */
 export function writeFile(
   scope: WorkspaceScope,

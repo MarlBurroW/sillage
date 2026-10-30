@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { FileContentDto } from '@sillage/protocol'
 import { ApiRequestError } from './api'
-import { readFile, writeFile } from './files-io'
+import { readFile, readFingerprint, writeFile } from './files-io'
 import { translate } from './i18n'
 
 interface Document {
@@ -10,9 +10,11 @@ interface Document {
   loading: boolean
   saving: boolean
   conflict: boolean
+  /** Version found on disk during a conflict, which the draft can be compared with. */
+  disk: FileContentDto | null
   error: { kind: 'read' | 'write'; message: string } | null
   persisted: Persistence
-  /** Only rereads replacing text should remount CodeMirror. */
+  /** Bumped when a reread replaces the text, which the editor then applies in place. */
   revision: number
 }
 
@@ -24,7 +26,7 @@ interface Document {
  */
 export type Persistence = 'device' | 'tab' | 'memory'
 
-const EMPTY: Document = { file: null, content: '', loading: false, saving: false, conflict: false, error: null, persisted: 'device', revision: 0 }
+const EMPTY: Document = { file: null, content: '', loading: false, saving: false, conflict: false, disk: null, error: null, persisted: 'device', revision: 0 }
 const PREFIX = 'sillage.fileDraft:'
 /**
  * Characters drafts may take in localStorage. The origin's quota, about five million, also holds
@@ -135,9 +137,10 @@ async function load(key: string, scope: string, path: string, discard: boolean) 
     // after it was triggered.
     const replace = current.content === before.content && (discard || !dirty(current))
     if (replace || current.content === file.content) {
-      update(key, { file, content: file.content, conflict: false, revision: current.revision + (current.content !== file.content ? 1 : 0) })
+      update(key, { file, content: file.content, conflict: false, disk: null, revision: current.revision + (current.content !== file.content ? 1 : 0) })
     } else {
-      update(key, { conflict: current.file?.fingerprint !== file.fingerprint })
+      const changed = current.file?.fingerprint !== file.fingerprint
+      update(key, { conflict: changed, disk: changed ? file : null })
     }
   } catch (error) {
     update(key, { error: { kind: 'read', message: error instanceof Error ? error.message : translate('editor.error.read') } })
@@ -148,15 +151,43 @@ async function save(key: string, scope: string, path: string, force: boolean) {
   const before = read(key)
   if (!before.file || !dirty(before) || before.saving || before.loading) return
   update(key, { saving: true, error: null })
+  let stale = false
   try {
     const { fingerprint } = await writeFile(scope, path, before.content, force ? null : before.file.fingerprint)
     // Advance the saved version while retaining current input. Slow replies may arrive after tab
     // changes or new keystrokes.
-    update(key, { file: { ...before.file, content: before.content, fingerprint }, conflict: false })
+    update(key, { file: { ...before.file, content: before.content, fingerprint }, conflict: false, disk: null })
   } catch (error) {
-    if (error instanceof ApiRequestError && error.code === 'stale_write') update(key, { conflict: true })
+    stale = error instanceof ApiRequestError && error.code === 'stale_write'
+    if (stale) update(key, { conflict: true })
     else update(key, { error: { kind: 'write', message: error instanceof Error ? error.message : translate('editor.error.write') } })
   } finally { update(key, { saving: false }) }
+  // Fetch what is on disk now, so the draft can be compared with it.
+  if (stale) await load(key, scope, path, false)
+}
+
+/**
+ * Reread only if the file changed: called whenever its directory changes, which an agent's turn
+ * does many times. A clean document takes the new text; a draft gets its conflict at once rather
+ * than at the next save.
+ */
+async function refresh(key: string, scope: string, path: string) {
+  const before = read(key)
+  if (!before.file || before.loading || before.saving) return
+  const latest = await readFingerprint(scope, path).then(({ fingerprint }) => fingerprint, () => null)
+  const current = read(key)
+  if (latest !== null && (latest === current.file?.fingerprint || latest === current.disk?.fingerprint)) return
+  // Failures included: rereading reports a deleted file the usual way, draft kept.
+  await load(key, scope, path, false)
+}
+
+/**
+ * Take the version on disk as the base of the draft, ending the conflict: the comparison then
+ * shows the draft against it, and saving checks against it.
+ */
+function rebase(key: string) {
+  const { disk } = read(key)
+  if (disk) update(key, { file: disk, disk: null, conflict: false })
 }
 
 export function useEditorDocument(userId: string, scope: string, path: string) {
@@ -164,11 +195,14 @@ export function useEditorDocument(userId: string, scope: string, path: string) {
   const document = useSyncExternalStore(subscribe, () => read(key), () => EMPTY)
   const loadDocument = useCallback((discard = false) => load(key, scope, path, discard), [key, scope, path])
   const saveDocument = useCallback((force = false) => save(key, scope, path, force), [key, scope, path])
+  const refreshDocument = useCallback(() => refresh(key, scope, path), [key, scope, path])
   return {
     document,
     dirty: dirty(document),
     load: loadDocument,
     save: saveDocument,
+    refresh: refreshDocument,
+    rebase: () => rebase(key),
     edit: (content: string) => update(key, { content }),
   }
 }
