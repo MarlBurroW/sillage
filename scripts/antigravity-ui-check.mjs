@@ -51,7 +51,8 @@ try {
   await copyFile(join(serverDir, 'test/fixtures/antigravity-agent.mjs'), binary)
   await chmod(binary, 0o700)
   const config = join(data, 'config.toml')
-  await writeFile(config, ['claude', 'codex', 'opencode', 'grok'].map((agent) => `[agents.${agent}]\nenabled = false\n`).join('') + `[agents.antigravity]\nbinary = "${binary}"\n`)
+  // Claude stays enabled: the server now refuses handoffs to a disabled CLI, and the transfer below only creates a conversation.
+  await writeFile(config, ['codex', 'opencode', 'grok'].map((agent) => `[agents.${agent}]\nenabled = false\n`).join('') + `[agents.antigravity]\nbinary = "${binary}"\n`)
   browser = await chromium.launch({ chromiumSandbox: true })
   const errors = []
   for (const profile of ['server', 'desktop']) {
