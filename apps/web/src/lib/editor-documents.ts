@@ -11,24 +11,89 @@ interface Document {
   saving: boolean
   conflict: boolean
   error: { kind: 'read' | 'write'; message: string } | null
-  persisted: boolean
+  persisted: Persistence
   /** Only rereads replacing text should remount CodeMirror. */
   revision: number
 }
 
-const EMPTY: Document = { file: null, content: '', loading: false, saving: false, conflict: false, error: null, persisted: true, revision: 0 }
+/**
+ * Where a draft survives. `device` (localStorage) outlives closing the tab or the desktop app:
+ * drafts used to live in sessionStorage and vanished with the tab, without warning. `tab`
+ * (sessionStorage) survives only a reload, for drafts too large for the device budget below.
+ * `memory` lasts as long as the page.
+ */
+export type Persistence = 'device' | 'tab' | 'memory'
+
+const EMPTY: Document = { file: null, content: '', loading: false, saving: false, conflict: false, error: null, persisted: 'device', revision: 0 }
 const PREFIX = 'sillage.fileDraft:'
+/**
+ * Characters drafts may take in localStorage. The origin's quota, about five million, also holds
+ * every display preference, and those writes are not guarded: a large draft must not fill it.
+ */
+const DEVICE_BUDGET = 2_000_000
 const documents = new Map<string, Document>()
 const listeners = new Set<() => void>()
 const recovered = new Set<string>()
 const dirty = (document: Document) => document.file !== null && document.content !== document.file.content
 const keyOf = (userId: string, scope: string, path: string) => PREFIX + JSON.stringify([userId, scope, path])
 
+/** Storage may be disabled, where even reading `localStorage` throws: drafts then stay in memory. */
+function attempt<T>(run: () => T): T | undefined {
+  try {
+    return run()
+  } catch {
+    return undefined
+  }
+}
+
+function storedKeys(): string[] {
+  const keys = [...(attempt(() => Object.keys(localStorage)) ?? []), ...(attempt(() => Object.keys(sessionStorage)) ?? [])]
+  return [...new Set(keys.filter((key) => key.startsWith(PREFIX)))]
+}
+
+/** Size of each draft on the device, measured once rather than reread on every keystroke. */
+let deviceSizes: Map<string, number> | null = null
+
+function deviceDrafts(): Map<string, number> {
+  deviceSizes ??= new Map(
+    (attempt(() => Object.keys(localStorage)) ?? [])
+      .filter((key) => key.startsWith(PREFIX))
+      .map((key) => [key, attempt(() => localStorage.getItem(key)?.length) ?? 0]),
+  )
+  return deviceSizes
+}
+
+function unstore(key: string) {
+  attempt(() => localStorage.removeItem(key))
+  attempt(() => sessionStorage.removeItem(key))
+  deviceDrafts().delete(key)
+}
+
+function persist(key: string, document: Document): Persistence {
+  if (!dirty(document) && !document.saving) {
+    unstore(key)
+    return 'device'
+  }
+  // Retain the starting version too: restoring must detect agent writes made while the editor was closed.
+  const value = JSON.stringify({ file: document.file, content: document.content })
+  const sizes = deviceDrafts()
+  let others = 0
+  for (const [stored, size] of sizes) if (stored !== key) others += size
+  if (others + value.length <= DEVICE_BUDGET && attempt(() => { localStorage.setItem(key, value); return true })) {
+    sizes.set(key, value.length)
+    attempt(() => sessionStorage.removeItem(key))
+    return 'device'
+  }
+  // An older, smaller copy left on the device would come back after closing in place of this one.
+  unstore(key)
+  return attempt(() => { sessionStorage.setItem(key, value); return true }) ? 'tab' : 'memory'
+}
+
 function read(key: string): Document {
   if (!documents.has(key)) {
     let document = EMPTY
     try {
-      const stored = JSON.parse(sessionStorage.getItem(key) ?? 'null')
+      const stored = JSON.parse(attempt(() => localStorage.getItem(key)) ?? attempt(() => sessionStorage.getItem(key)) ?? 'null')
       if (typeof stored?.content === 'string' && typeof stored.file?.content === 'string' &&
         typeof stored.file?.fingerprint === 'string' && typeof stored.file?.path === 'string' &&
         typeof stored.file?.extension === 'string') document = { ...EMPTY, file: stored.file, content: stored.content }
@@ -40,12 +105,7 @@ function read(key: string): Document {
 
 function update(key: string, patch: Partial<Document>) {
   const document = { ...read(key), ...patch }
-  try {
-    // Retain the starting version too: restoring must detect agent writes made while the editor was closed.
-    if (dirty(document) || document.saving) sessionStorage.setItem(key, JSON.stringify({ file: document.file, content: document.content }))
-    else sessionStorage.removeItem(key)
-    document.persisted = true
-  } catch { document.persisted = false }
+  document.persisted = persist(key, document)
   documents.set(key, document)
   for (const notify of listeners) notify()
 }
@@ -56,8 +116,9 @@ function subscribe(notify: () => void) {
 }
 
 // Only after actual storage failure: closing would lose the only draft copy still held in memory.
+// Not for drafts kept in the tab: the desktop app cancels closing silently instead of asking.
 window.addEventListener('beforeunload', (event) => {
-  if ([...documents.values()].some((document) => dirty(document) && !document.persisted)) {
+  if ([...documents.values()].some((document) => dirty(document) && document.persisted === 'memory')) {
     event.preventDefault()
     event.returnValue = ''
   }
@@ -117,9 +178,7 @@ export function useEditorDraftPaths(userId: string, scope: string): string[] {
   const prefix = PREFIX + JSON.stringify([userId, scope]).slice(0, -1) + ','
   if (!recovered.has(prefix)) {
     recovered.add(prefix)
-    try {
-      for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) read(key)
-    } catch { /* In-memory drafts remain available. */ }
+    for (const key of storedKeys()) if (key.startsWith(prefix)) read(key)
   }
   const paths = useSyncExternalStore(subscribe, () => JSON.stringify(
     [...documents].filter(([key, document]) => key.startsWith(prefix) && (dirty(document) || document.saving))
@@ -161,4 +220,19 @@ export function hasDraft(scope: string, path: string): boolean {
     const document = read(entry.key)
     return entry.path === path && (dirty(document) || document.saving)
   })
+}
+
+/**
+ * Signing out removes the account's drafts from this device: they hold file contents the next
+ * person on this browser must not find.
+ */
+export function forgetDrafts(userId: string): void {
+  const prefix = PREFIX + JSON.stringify([userId]).slice(0, -1) + ','
+  for (const key of new Set([...storedKeys(), ...documents.keys()])) {
+    if (!key.startsWith(prefix)) continue
+    unstore(key)
+    documents.delete(key)
+  }
+  for (const scope of recovered) if (scope.startsWith(prefix)) recovered.delete(scope)
+  for (const notify of listeners) notify()
 }

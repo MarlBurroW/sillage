@@ -96,16 +96,20 @@ export function resolveConversationCwd(db: Db, conversation: Pick<ConversationRo
  */
 export function resolveInside(root: string, relativePath: string): string {
   const absolute = resolve(root, relativePath)
-  const inside = relative(root, absolute)
-  if (inside.startsWith('..') || isAbsolute(inside)) {
-    throw new HttpError(
-      400,
-      'path_outside_workspace',
-      'Path {path} is outside the working directory.',
-      { path: relativePath },
-    )
-  }
+  if (escapes(root, absolute)) throw outsideWorkspace(relativePath)
   return absolute
+}
+
+function escapes(root: string, absolute: string): boolean {
+  const inside = relative(root, absolute)
+  return inside.startsWith('..') || isAbsolute(inside)
+}
+
+/** Names the requested path, never a symlink target: the refusal must not reveal where a link leads. */
+function outsideWorkspace(relativePath: string): HttpError {
+  return new HttpError(400, 'path_outside_workspace', 'Path {path} is outside the working directory.', {
+    path: relativePath,
+  })
 }
 
 /** Like `resolveInside`, but also returns the name for `@` mentions. */
@@ -147,7 +151,7 @@ export async function createEntry(
   const relativePath = parent ? `${parent}/${name}` : name
   refuseGitInternals(relativePath)
 
-  const absolute = resolveInside(root, relativePath)
+  const absolute = await resolveEntryInside(root, relativePath)
   if (await exists(absolute)) {
     throw new HttpError(409, 'entry_exists', '{name} already exists.', { name })
   }
@@ -187,7 +191,7 @@ export async function writeUpload(
 ): Promise<void> {
   refuseGitInternals(relativePath)
 
-  const absolute = resolveInside(root, relativePath)
+  const absolute = await resolveEntryInside(root, relativePath)
   await mkdir(dirname(absolute), { recursive: true })
 
   // Uses a different code from attachments: the two limits differ in both
@@ -238,8 +242,7 @@ export async function moveEntry(root: string, from: string, to: string): Promise
   refuseGitInternals(from)
   refuseGitInternals(to)
 
-  const source = resolveInside(root, from)
-  const destination = resolveInside(root, to)
+  const [source, destination] = await Promise.all([resolveEntryInside(root, from), resolveEntryInside(root, to)])
   if (source === destination) return
 
   // Moving a directory into itself would destroy its contents: `rename` rejects
@@ -274,8 +277,47 @@ export async function resolveRealInside(root: string, relativePath: string): Pro
   const absolute = resolveInside(root, relativePath)
   const resolved = await Promise.all([realpath(root), realpath(absolute)]).catch(() => null)
   if (!resolved) throw notFound('entry_not_found', 'Entry not found.')
-  resolveInside(resolved[0], resolved[1])
+  if (escapes(resolved[0], resolved[1])) throw outsideWorkspace(relativePath)
   return absolute
+}
+
+/**
+ * Like `resolveRealInside`, for operations on the entry itself rather than what it leads to:
+ * creating, renaming, deleting. Checks the real path of the directory holding it, which may not
+ * exist yet: through a symlinked directory, `link/new.txt` would otherwise be created, moved or
+ * deleted wherever `link` points. The entry may itself be a symlink: the operation then applies
+ * to the link, never to its target.
+ */
+export async function resolveEntryInside(root: string, relativePath: string): Promise<string> {
+  const absolute = resolveInside(root, relativePath)
+  if (absolute === resolve(root)) return absolute
+
+  const resolved = await Promise.all([realpath(root), realAncestor(dirname(absolute))]).catch(() => null)
+  if (!resolved) throw notFound('entry_not_found', 'Entry not found.')
+  if (escapes(resolved[0], resolved[1])) throw outsideWorkspace(relativePath)
+  return absolute
+}
+
+/**
+ * Destination of a content write, which follows a symlink in last position: the link must lead
+ * inside the workspace, and a dangling link is refused because writing would create its target.
+ */
+export async function resolveWritableInside(root: string, relativePath: string): Promise<string> {
+  const absolute = await resolveEntryInside(root, relativePath)
+  const entry = await lstat(absolute).catch(() => null)
+  if (entry?.isSymbolicLink()) await resolveRealInside(root, relativePath)
+  return absolute
+}
+
+/** Real path of the closest existing ancestor, the path itself included. */
+async function realAncestor(absolute: string): Promise<string> {
+  for (let current = absolute; ; current = dirname(current)) {
+    try {
+      return await realpath(current)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || dirname(current) === current) throw err
+    }
+  }
 }
 
 /** Suggested name at the nth collision: `nom copy.ext`, then `nom copy 2.ext`… */
@@ -304,7 +346,13 @@ export async function copyEntry(root: string, from: string, toParent: string): P
   refuseGitInternals(toParent)
 
   const source = await resolveRealInside(root, from)
-  const parent = resolveInside(root, toParent)
+  // The copy lands wherever the parent really is.
+  const parent = await resolveRealInside(root, toParent).catch((err: unknown) => {
+    if (err instanceof HttpError && err.code === 'entry_not_found') {
+      throw notFound('directory_not_found', 'Directory {path} does not exist.', { path: toParent })
+    }
+    throw err
+  })
   if (parent === source || parent.startsWith(`${source}/`)) {
     throw new HttpError(400, 'copy_into_self', 'A folder cannot be copied into itself.')
   }
@@ -351,7 +399,7 @@ export async function copyEntry(root: string, from: string, toParent: string): P
 export async function deleteEntry(root: string, relativePath: string): Promise<void> {
   refuseGitInternals(relativePath)
 
-  const absolute = resolveInside(root, relativePath)
+  const absolute = await resolveEntryInside(root, relativePath)
   if (absolute === resolve(root)) {
     throw new HttpError(400, 'delete_root', 'The working directory cannot be deleted.')
   }
@@ -494,6 +542,9 @@ export async function listDirectory(root: string, relativePath: string): Promise
       reason: err instanceof Error ? err.message : String(err),
     })
   }
+  // A symlinked directory is listed only if it leads back inside: otherwise expanding it would
+  // browse wherever it points.
+  await resolveRealInside(root, relativePath)
 
   const listed: TreeEntryDto[] = entries
     // `.git` stores git data rather than project content: opening it makes no

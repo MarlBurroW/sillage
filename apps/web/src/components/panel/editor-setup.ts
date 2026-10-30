@@ -251,3 +251,27 @@ export async function loadLanguage(path: string): Promise<LanguageSupport | null
   const loader = LOADERS[extensionOfPath(path)]
   return loader ? loader() : null
 }
+
+/**
+ * Line break a text mostly uses. CodeMirror splits lines on any break but joins them with `\n`,
+ * so without this a CRLF file came back entirely rewritten in LF on the first save. A file mixing
+ * breaks keeps its majority one.
+ */
+export function lineBreakOf(text: string): '\n' | '\r\n' | '\r' {
+  let crlf = 0
+  let lf = 0
+  let cr = 0
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index)
+    if (code === 10) lf += 1
+    else if (code === 13) {
+      if (text.charCodeAt(index + 1) === 10) {
+        crlf += 1
+        index += 1
+      } else cr += 1
+    }
+  }
+  if (crlf > lf && crlf >= cr) return '\r\n'
+  if (cr > lf && cr > crlf) return '\r'
+  return '\n'
+}

@@ -17,7 +17,7 @@ import {
 } from '@codemirror/language'
 import { useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
 import { translate } from '../../lib/i18n'
-import { editorHighlight, editorTheme, loadLanguage } from './editor-setup'
+import { editorHighlight, editorTheme, lineBreakOf, loadLanguage } from './editor-setup'
 
 export interface CodeEditorHandle {
   find: () => void
@@ -70,6 +70,7 @@ export function CodeEditor({
   revision,
   onPosition,
   readOnly = false,
+  lineBreak,
   ref,
 }: {
   initial: string
@@ -81,6 +82,12 @@ export function CodeEditor({
   onPosition: (line: number, column: number) => void
   /** Read-only users can browse and search text. */
   readOnly?: boolean
+  /**
+   * Line break written back in `onChange`, the file's own. Defaults to the one `initial` mostly
+   * uses; callers holding the version on disk pass it so a draft that lost every line break still
+   * saves with the file's.
+   */
+  lineBreak?: string
   ref?: Ref<CodeEditorHandle>
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -108,6 +115,8 @@ export function CodeEditor({
     if (!parent) return
 
     const language = new Compartment()
+    const separator = lineBreak ?? lineBreakOf(content.current)
+    const text = (state: EditorState) => state.doc.sliceString(0, state.doc.length, separator)
 
     const position = (state: EditorState) => {
       const head = state.selection.main.head
@@ -149,12 +158,12 @@ export function CodeEditor({
           ...searchKeymap,
         ]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) handlers.current.onChange(update.state.doc.toString())
+          if (update.docChanged) handlers.current.onChange(text(update.state))
           if (update.docChanged || update.selectionSet) position(update.state)
         }),
       ]
     const cached = sessions.get(sessionKey)
-    const reusable = cached?.revision === revision && cached.state.doc.toString() === content.current
+    const reusable = cached?.revision === revision && text(cached.state) === content.current
     // Reconnect callbacks to the current component without clearing historyField.
     const state = reusable
       ? cached.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state
@@ -179,7 +188,7 @@ export function CodeEditor({
       current.current = null
       editor.destroy()
     }
-  }, [path, sessionKey, revision, readOnly])
+  }, [path, sessionKey, revision, readOnly, lineBreak])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }

@@ -6,6 +6,13 @@ const run = promisify(execFile)
 
 const GIT_TIMEOUT_MS = 5000
 
+/**
+ * For `git status` run on our behalf: by default it refreshes the index stat cache, which takes
+ * `index.lock` and makes an agent's concurrent `git add` or `git commit` fail. The explorer runs
+ * it each time a watched directory changes, so precisely while agents write and commit.
+ */
+const NO_OPTIONAL_LOCKS = { GIT_OPTIONAL_LOCKS: '0' }
+
 async function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   const { stdout } = await run('git', args, {
     cwd,
@@ -29,7 +36,7 @@ export async function readGitStatus(cwd: string): Promise<GitStatus | null> {
 
     const [branch, porcelain] = await Promise.all([
       git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']),
-      git(cwd, ['status', '--porcelain']),
+      git(cwd, ['status', '--porcelain'], NO_OPTIONAL_LOCKS),
     ])
 
     return { branch: branch.trim(), isDirty: porcelain.trim().length > 0 }
@@ -230,13 +237,11 @@ export async function readFileStates(cwd: string): Promise<Map<string, FileState
   try {
     const inside = (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim()
     if (inside !== 'true') return null
-    raw = await git(cwd, [
-      'status',
-      '--porcelain',
-      '-z',
-      '--untracked-files=all',
-      '--ignored=matching',
-    ])
+    raw = await git(
+      cwd,
+      ['status', '--porcelain', '-z', '--untracked-files=all', '--ignored=matching'],
+      NO_OPTIONAL_LOCKS,
+    )
   } catch {
     return null
   }

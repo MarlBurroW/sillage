@@ -140,7 +140,7 @@ export async function checkEditor({ page, context, base, project }) {
   await panel.getByText('Stockage indisponible : brouillon gardé en mémoire jusqu’à la fermeture de la page.', { exact: true }).waitFor()
   await page.evaluate(() => { Storage.prototype.setItem = window.uiOriginalSetItem; delete window.uiOriginalSetItem })
   await code.fill(draftB)
-  await panel.getByText('Brouillon conservé dans cet onglet, pas encore enregistré sur le disque.', { exact: true }).waitFor()
+  await panel.getByText('Brouillon conservé sur cet appareil, pas encore enregistré sur le disque.', { exact: true }).waitFor()
   await code.fill(draftC)
   await waitClean()
 

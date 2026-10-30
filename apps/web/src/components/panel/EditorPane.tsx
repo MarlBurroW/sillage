@@ -1,7 +1,7 @@
 import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
 import { Check, Code2, Download, Eye, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import {
   OPENABLE_MODEL_EXTENSIONS,
   VIEWABLE_DOCUMENT_TYPES,
@@ -28,6 +28,7 @@ import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
 import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
+import { lineBreakOf } from './editor-setup'
 import { MediaView } from './MediaView'
 
 /** Lazy-load the viewer because three exceeds the rest of the app's size. */
@@ -261,6 +262,10 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   useEffect(() => {
     if (!rawView) void load()
   }, [rawView, load])
+  // From the version on disk rather than the draft, and only when it changes: scanning a large
+  // file on every keystroke would cost more than the editor itself.
+  const baseContent = file?.content
+  const lineBreak = useMemo(() => (baseContent === undefined ? undefined : lineBreakOf(baseContent)), [baseContent])
 
   const discard = () => {
     if (dirty && !confirm(t('editor.discard.confirm', { path }))) return
@@ -297,6 +302,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         <Banner>{error.message} {dirty ? t('editor.error.kept') : ''}</Banner>
         <Button variant="ghost" size="sm" disabled={loading || saving} onClick={() => void (error.kind === 'read' ? load() : save())}>{t('editor.retry')}</Button>
       </div> : null}
+      {file.lossy ? <div role="note" className="shrink-0 border-b border-line bg-sunken px-3 py-2 text-xs text-ink-soft">{t('editor.lossy')}</div> : null}
       {conflict ? <div role="alert" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-caution/40 bg-caution/12 px-3 py-2 text-xs text-ink-soft">
         <p className="w-full">{t('editor.conflict.message')}</p>
         <Button variant="secondary" size="sm" disabled={loading || saving} onClick={discard}>{t('editor.conflict.reload')}</Button>
@@ -322,6 +328,8 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
             onPosition={(line, column) => setPosition({ line, column })}
             initial={content}
             path={file.path}
+            lineBreak={lineBreak}
+            readOnly={file.lossy === true}
             onChange={(value) => { edit(value); pinTab(scope, path) }}
             onSave={() => { if (!conflict) void save() }}
           />
@@ -338,7 +346,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
             {t(saving ? 'editor.saving' : loading ? 'editor.loading' : dirty ? 'editor.tab.unsaved' : 'editor.saved')}
           </span>
         </div>
-        {dirty ? <p>{t(persisted ? 'editor.drafts.kept' : 'editor.drafts.memory')}</p> : null}
+        {dirty ? <p>{t(persisted === 'device' ? 'editor.drafts.kept' : persisted === 'tab' ? 'editor.drafts.tab' : 'editor.drafts.memory')}</p> : null}
         <div className="flex flex-wrap items-center justify-end gap-1">
           {isMarkdown && view === 'preview' ? null : <IconButton size="sm" label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></IconButton>}
           {isMarkdown ? <Button size="sm" variant="ghost" icon={view === 'preview' ? <Code2 size={13} /> : <Eye size={13} />}

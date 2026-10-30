@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CurrentUser } from '@sillage/protocol'
 import { ApiRequestError, api } from './api'
+import { forgetDrafts } from './editor-documents'
 
 export const ME_KEY = ['auth', 'me']
 
@@ -35,6 +36,8 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => api.post<void>('/api/auth/logout'),
     onSuccess: () => {
+      const user = queryClient.getQueryData<CurrentUser | null>(ME_KEY)
+      if (user) forgetDrafts(user.id)
       /*
        * Set logged-out state on the still-live session query. `queryClient.clear()` would remove it
        * rather than reset it, leaving App's observer attached to a vanished entry with its last

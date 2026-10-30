@@ -1239,6 +1239,12 @@ export interface FileContentDto {
   fingerprint: string
   /** Lowercase extension used by the UI to choose syntax highlighting. */
   extension: string
+  /**
+   * The bytes are not valid UTF-8 (Latin-1, Windows-1252…): `content` replaced what it could not
+   * decode, so saving it would rewrite those bytes. The editor shows it read-only. Optional because
+   * drafts kept in browser storage predate it.
+   */
+  lossy?: boolean
 }
 
 export const fileWriteBodySchema = z.object({

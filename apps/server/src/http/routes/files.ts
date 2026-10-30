@@ -1,3 +1,4 @@
+import { isUtf8 } from 'node:buffer'
 import { constants, createReadStream } from 'node:fs'
 import { open, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
@@ -13,7 +14,7 @@ import {
   filesExistBodySchema,
   type FileContentDto,
 } from '@sillage/protocol'
-import { resolveInside } from '../../workspace.js'
+import { resolveRealInside, resolveWritableInside } from '../../workspace.js'
 import { workspaceImagePath } from '../../workspace-images.js'
 import { attachmentHeader } from '../attachment-header.js'
 import type { AppContext } from '../context.js'
@@ -27,6 +28,13 @@ const SNIFF_BYTES = 8192
 function extensionOf(path: string): string {
   return extname(path).replace('.', '').toLowerCase()
 }
+
+/**
+ * Body limit for saving a file. JSON escaping inflates content: quotes, backslashes and line
+ * breaks take two bytes, control characters six. With the server default, which equals the
+ * editable maximum, a file could open and then never save.
+ */
+const WRITE_BODY_LIMIT = 6 * MAX_EDITABLE_BYTES + 64 * 1024
 
 /** Disk file fingerprint. Size and modification time avoid hashing content: the filesystem supplies both without rereading the file, and distinct writes produce different pairs. */
 function fingerprint(size: number, mtimeMs: number): string {
@@ -69,7 +77,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { id } = request.params as { id: string }
       const { path } = filePathQuerySchema.parse(request.query)
 
-      const absolute = resolveInside(workspaceOf(id, user.id), path)
+      const absolute = await resolveRealInside(workspaceOf(id, user.id), path)
 
       const info = await stat(absolute).catch(() => null)
       if (!info?.isFile()) throw new HttpError(404, 'not_a_file', 'This path is not a file.')
@@ -95,6 +103,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         content: buffer.toString('utf8'),
         fingerprint: fingerprint(info.size, info.mtimeMs),
         extension: extensionOf(path),
+        lossy: !isUtf8(buffer),
       }
     })
 
@@ -107,13 +116,13 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const workspace = workspaceOf(id, user.id)
       const checked = await Promise.all(
         paths.map(async (path) => {
-          // `resolveInside` rejects paths outside the workspace: `../` inside messages must
+          // Paths outside the workspace are rejected, through `../` or a symlink: messages must
           // not reveal whether external files exist.
           let absolute
           try {
             absolute = VIEWABLE_IMAGE_TYPES[extensionOf(path)]
               ? await imagePath(id, user.id, path)
-              : resolveInside(workspace, path)
+              : await resolveRealInside(workspace, path)
           } catch {
             return null
           }
@@ -141,7 +150,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const absolute = imageType
         ? await imagePath(id, user.id, path)
-        : resolveInside(workspaceOf(id, user.id), path)
+        : await resolveRealInside(workspaceOf(id, user.id), path)
       const info = await stat(absolute).catch(() => null)
       if (!info?.isFile()) throw notFound('file_not_found', 'File not found.')
 
@@ -181,13 +190,12 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const user = requireUser(request)
       const { id } = request.params as { id: string }
       const { path } = filePathQuerySchema.parse(request.query)
-      const workspace = workspaceOf(id, user.id)
-      const candidate = resolveInside(workspace, path)
-      const resolved = await Promise.all([realpath(workspace), realpath(candidate)]).catch(() => null)
-      if (!resolved) throw notFound('file_not_found', 'File not found.')
-
-      // Check real targets too: symlinks must not grant access outside the workspace.
-      const absolute = resolveInside(resolved[0], resolved[1])
+      // Check real targets too: symlinks must not grant access outside the workspace. Then open
+      // the real path, so the file read is the one checked.
+      const checked = await resolveRealInside(workspaceOf(id, user.id), path)
+      const absolute = await realpath(checked).catch(() => {
+        throw notFound('file_not_found', 'File not found.')
+      })
       // Named pipes must be rejectable without waiting for a writer to open them.
       const file = await open(absolute, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW).catch(() => null)
       if (!file) throw notFound('file_not_found', 'File not found.')
@@ -206,12 +214,12 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         .send(file.createReadStream())
     })
 
-    app.put(`${base}/file`, async (request) => {
+    app.put(`${base}/file`, { bodyLimit: WRITE_BODY_LIMIT }, async (request) => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
       const body = fileWriteBodySchema.parse(request.body)
 
-      const absolute = resolveInside(workspaceOf(id, user.id), body.path)
+      const absolute = await resolveWritableInside(workspaceOf(id, user.id), body.path)
 
       const info = await stat(absolute).catch(() => null)
       if (info && !info.isFile()) {
