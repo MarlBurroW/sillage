@@ -75,6 +75,12 @@ try {
   const fixture = join(project.workspace_path, 'aa-explorer')
   await mkdir(join(fixture, 'inner'), { recursive: true })
   for (const name of ['a.txt', 'b.txt', 'c.txt', 'd.md']) await writeFile(join(fixture, name), `${name}\n`)
+  // Editor files apart, so they stay out of the ranges selected above.
+  const editorFixture = join(project.workspace_path, 'ab-editor')
+  await mkdir(editorFixture)
+  await writeFile(join(editorFixture, 'crlf.txt'), 'one\r\ntwo\r\nthree\r\n')
+  await writeFile(join(editorFixture, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
+  await writeFile(join(editorFixture, 'draft.txt'), 'draft base\n')
 
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -84,9 +90,14 @@ try {
   browser = await chromium.launch()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block', acceptDownloads: true })
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base })
+  // No CLI runs here: without a catalog, the composer's model list fails with a console error.
+  await context.route('**/api/agents/*/models*', (route) => route.fulfill({ json: { models: [], modes: [], account: null, fetchedAt: Date.now() } }))
   await context.addInitScript(() => {
     localStorage.setItem('sillage.locale', 'fr')
     localStorage.setItem('sillage.panelOpen', '1')
+    // Wide enough for the tree to stay beside the editor: narrower, opening a file closes it.
+    localStorage.setItem('sillage.sheetWidth', '1000')
+    localStorage.setItem('sillage.panelDockedWidth', '1000')
   })
   assert.ok((await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })).ok())
 
@@ -195,6 +206,68 @@ try {
   await delay(200)
   await page.screenshot({ path: '/tmp/sillage-explorer-desktop.png' })
 
+  // Empty space below the entries has its own menu, aimed at the root. A row's right-click
+  // still opens only the row's menu.
+  await row('').click({ button: 'right' })
+  assert.equal(await page.getByRole('menu').count(), 1)
+  await page.keyboard.press('Escape')
+  const background = panel.locator('[data-tree-background]')
+  await background.click({ button: 'right' })
+  assert.equal(await page.getByRole('menu').count(), 1)
+  await delay(150)
+  await page.screenshot({ path: '/tmp/sillage-explorer-background-menu.png' })
+  await page.getByRole('menuitem', { name: 'Nouveau fichier à la racine' }).click()
+  await panel.getByRole('textbox', { name: 'Nom' }).fill('zz-root.txt')
+  await page.keyboard.press('Enter')
+  await until(() => exists(join(project.workspace_path, 'zz-root.txt')), 'Background menu did not create the file at root')
+  await background.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Nouveau dossier à la racine' }).click()
+  await panel.getByRole('textbox', { name: 'Nom' }).fill('zz-dir')
+  await page.keyboard.press('Enter')
+  await until(() => exists(join(project.workspace_path, 'zz-dir')), 'Background menu did not create the folder at root')
+
+  // Editor: saving keeps CRLF line breaks, new lines included.
+  const editorRow = (path) => panel.locator(`[data-tree-path="ab-editor${path ? `/${path}` : ''}"]`)
+  const editorOf = (path) => panel.locator(`[data-editor-file="ab-editor/${path}"]`)
+  await editorRow('').click()
+  await editorRow('crlf.txt').dblclick()
+  await editorOf('crlf.txt').locator('.cm-content').click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.type('four')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+s')
+  await until(async () => (await readFile(join(editorFixture, 'crlf.txt'), 'utf8')).includes('four'), 'CRLF file was not saved')
+  assert.equal(await readFile(join(editorFixture, 'crlf.txt'), 'utf8'), 'one\r\ntwo\r\nthree\r\nfour\r\n')
+
+  // A file that is not UTF-8 opens read-only: saving would replace its bytes.
+  await editorRow('latin1.txt').dblclick()
+  await editorOf('latin1.txt').getByRole('note').waitFor()
+  await editorOf('latin1.txt').locator('.cm-content').click()
+  await page.keyboard.type('Y')
+  await page.keyboard.press('ControlOrMeta+s')
+  await delay(300)
+  assert.equal(await editorOf('latin1.txt').locator('.cm-content').textContent(), 'caf\ufffd')
+  assert.deepEqual([...await readFile(join(editorFixture, 'latin1.txt'))], [0x63, 0x61, 0x66, 0xe9, 0x0a])
+
+  // A draft outlives closing the page and comes back in a new one.
+  await editorRow('draft.txt').dblclick()
+  await editorOf('draft.txt').locator('.cm-content').click()
+  await page.keyboard.press('ControlOrMeta+Home')
+  await page.keyboard.type('unsaved ')
+  await editorOf('draft.txt').getByText('Brouillon conservé sur cet appareil').waitFor()
+  await page.close()
+  const reopened = await context.newPage()
+  reopened.on('pageerror', (error) => errors.push(error.message))
+  await reopened.goto(`${base}/p/${project.id}/c/${conversation.id}`)
+  const reopenedPanel = reopened.locator('[data-panel="workspace"]')
+  await reopenedPanel.getByRole('button', { name: 'ab-editor/draft.txt' }).click()
+  await until(
+    async () => (await reopenedPanel.locator('[data-editor-file="ab-editor/draft.txt"] .cm-content').textContent().catch(() => '')) === 'unsaved draft base',
+    'Draft did not survive closing the page',
+  )
+  assert.equal(await readFile(join(editorFixture, 'draft.txt'), 'utf8'), 'draft base\n')
+  await reopened.close()
+
   // Touch: “Select” opens selection mode, where tapping selects.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await phone.addInitScript(() => {
@@ -218,8 +291,20 @@ try {
   await mobilePanel.getByRole('toolbar').getByRole('button', { name: 'Tout désélectionner' }).tap()
   await mobilePanel.getByRole('toolbar').waitFor({ state: 'detached' })
 
+  // A long press on the empty space opens the root menu, alone.
+  const mobileBackground = mobilePanel.locator('[data-tree-background]')
+  await mobileBackground.scrollIntoViewIfNeeded()
+  const box = await mobileBackground.boundingBox()
+  await mobileBackground.dispatchEvent('pointerdown', { pointerType: 'touch', isPrimary: true, clientX: box.x + 40, clientY: box.y + 10 })
+  await mobile.getByRole('menuitem', { name: 'Nouveau fichier à la racine' }).waitFor()
+  assert.equal(await mobile.getByRole('menu').count(), 1)
+  await mobileBackground.dispatchEvent('pointerup', { pointerType: 'touch', isPrimary: true })
+  await delay(150)
+  await mobile.screenshot({ path: '/tmp/sillage-explorer-mobile-background.png' })
+  await mobile.keyboard.press('Escape')
+
   assert.deepEqual(errors, [])
-  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche et mode sélection au doigt.')
+  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche, menu de l’espace vide, CRLF, lecture seule hors UTF-8, brouillon durable et mode sélection au doigt.')
 } finally {
   await browser?.close()
   for (const child of children.reverse()) {

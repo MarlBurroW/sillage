@@ -542,18 +542,33 @@ export function FileTree({
        */}
       <div
         ref={list}
-        className="flex-1 pb-4"
+        className="flex flex-1 flex-col"
         onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
-        // Clicking empty space below rows clears selection, like a desktop.
-        onClick={(event) => {
-          if (event.target === event.currentTarget) clearSelection(scope)
-        }}
       >
         {searching ? (
           <SearchResults scope={scope} query={query} actions={actions} />
         ) : (
           <Level path="" depth={0} expanded actions={actions} />
         )}
+        {/*
+         * Empty space below the entries, with its own menu like a desktop explorer: creating at the
+         * root used to require clearing the selection so header buttons would target it. Kept
+         * outside the rows rather than around them: a menu wrapping rows would also start on a
+         * long press of a row, opening both menus. Clicking it clears selection.
+         */}
+        <ContextMenu
+          trigger={<div data-tree-background className="min-h-10 flex-1" onClick={() => clearSelection(scope)} />}
+        >
+          <RootMenuItems
+            actions={actions}
+            onCreate={(kind) => {
+              // Search results replace the tree, where the name input appears.
+              setQuery('')
+              setDraft({ mode: 'create', parent: '', kind })
+            }}
+            onRefresh={refresh}
+          />
+        </ContextMenu>
       </div>
 
       <UploadQueue scope={scope} />
@@ -1369,6 +1384,74 @@ function EntryMenuItems({
   const view = getTreeView(actions.scope)
   const targets = targetsOf(view, entry.path, entry.isDirectory)
   const list = targets.length > 1 ? selectionActions(targets, actions) : entryActions(entry, actions, view)
+  return <ActionItems list={list} variant={variant} />
+}
+
+/** Menu of the empty space below the entries: everything there targets the root. */
+function RootMenuItems({
+  actions,
+  onCreate,
+  onRefresh,
+}: {
+  actions: Actions
+  onCreate: (kind: 'file' | 'directory') => void
+  onRefresh: () => void
+}) {
+  const { scope } = actions
+  const list: EntryAction[] = [
+    {
+      key: 'new-file',
+      group: 'create',
+      icon: <FilePlus2 size={14} />,
+      label: translate('filetree.root.newFile'),
+      run: () => onCreate('file'),
+    },
+    {
+      key: 'new-dir',
+      group: 'create',
+      icon: <FolderPlus size={14} />,
+      label: translate('filetree.root.newFolder'),
+      run: () => onCreate('directory'),
+    },
+    {
+      key: 'upload',
+      group: 'create',
+      icon: <Upload size={14} />,
+      label: translate('filetree.root.upload'),
+      run: () => actions.onPickFiles(''),
+    },
+    // No shortcut hint: keyboard shortcuts act on a focused row, not on this space.
+    ...(getTreeView(scope).clipboard
+      ? [
+          {
+            key: 'paste',
+            group: 'clipboard',
+            icon: <ClipboardPaste size={14} />,
+            label: translate('filetree.entry.paste'),
+            run: () => actions.onPaste(''),
+          },
+        ]
+      : []),
+    {
+      key: 'collapse',
+      group: 'view',
+      icon: <ChevronsDownUp size={14} />,
+      label: translate('filetree.header.collapse'),
+      run: () => collapseAll(scope),
+    },
+    {
+      key: 'refresh',
+      group: 'view',
+      icon: <RefreshCw size={14} />,
+      label: translate('filetree.header.refresh'),
+      run: onRefresh,
+    },
+  ]
+  return <ActionItems list={list} variant="context" />
+}
+
+/** Action data in either menu primitive, with separators between groups. */
+function ActionItems({ list, variant }: { list: EntryAction[]; variant: 'context' | 'dropdown' }) {
   const Item = variant === 'context' ? ContextMenuItem : MenuItem
   const Separator = variant === 'context' ? ContextMenuSeparator : MenuSeparator
 
