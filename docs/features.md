@@ -83,8 +83,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
   every tree git knows, including those created from a shell, compared with the
   default branch: uncommitted work, commits to merge, merged, or folder missing, with
   the sessions working there. The sidebar shows each conversation's branch and state.
-  Cleaning up a tree is one action that first says what would be lost; once a tree
-  is merged and clean, Sillage proposes the cleanup as a decision.
+  Cleaning up a tree is one action that first says what would be lost.
   **Clean up all** removes every merged or missing tree in one confirmation: untick
   the ones to keep; trees where a session is working are left out, and each is
   reassessed on the server before removal. A merged branch
@@ -171,6 +170,9 @@ The periodic cleanup removes expired, revoked and orphaned files.
   than a summary, with references it can read back through the Sillage MCP server.
   [How the handoff is built](cli-handoff.md).
 - **MCP servers** declared once and handed to the agents that should get them.
+  A server that was down when the session started can be reconnected from the MCP
+  panel without restarting the session; Claude Code also retries failed servers at
+  the start of each turn.
 - **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, with global and
   project skills managed from the interface, with visible progress while searching,
   installing or updating. [Skill library](skill-library.md).

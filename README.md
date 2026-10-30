@@ -128,7 +128,8 @@ changes from a turn.
 Tag cards to sort the board, and attach a conversation to its card from the
 sidebar, the conversation header or an agent. A merged worktree that still holds
 stray files is shown apart from work in progress, with the files named, so you can
-keep them or clean up.
+keep them or clean up. Clean up every finished worktree in one confirmation, and let
+agents remove the trees they created once the work is merged.
 
 Link an earlier conversation by typing `@@` in your message, or copy its reference
 to share with another agent. References in replies open the original conversation.
