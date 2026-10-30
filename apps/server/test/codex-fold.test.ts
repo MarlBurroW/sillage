@@ -60,3 +60,19 @@ test('plans et diffs se mettent à jour sans doublon, les sorties restent visibl
   const final = fold([...events, { type: 'tool.completed', toolCallId: 'shell', output: 'Final output', durationMs: 10, isError: false }])
   assert.ok(final.items.some((item) => item.kind === 'tool' && item.output === 'Final output'))
 })
+
+test('des sous-agents qui survivent à un tour échoué ne le rouvrent pas', () => {
+  // Journal observé : le modèle principal sature, Codex clôt le tour, ses agents continuent seuls.
+  const agent = 'codex-agent-repas'
+  const events: SillageEvent[] = [
+    { type: 'turn.started' },
+    { type: 'tool.started', toolCallId: agent, name: 'Agent', input: { description: '/root/piece_repas' }, parentToolCallId: null },
+    { type: 'error', code: 'server_overloaded', message: 'Selected model is at capacity.', recoverable: true },
+    { type: 'turn.completed', stopReason: 'failed', costUsd: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+    { type: 'tool.started', toolCallId: 'sub-shell', name: 'Bash', input: { command: 'ls' }, parentToolCallId: agent },
+    { type: 'message.delta', messageId: 'sub-message', text: 'Salle à manger livrée.', parentToolCallId: agent },
+  ]
+  assert.equal(fold(events).turnRunning, false)
+  // Le fil principal, lui, prouve toujours un tour repris sans `turn.started`.
+  assert.equal(fold([...events, { type: 'message.delta', messageId: 'main', text: 'Je reprends.', parentToolCallId: null }]).turnRunning, true)
+})

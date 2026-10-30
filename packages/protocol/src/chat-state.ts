@@ -643,8 +643,11 @@ export function applyEvent(
   // when Sillage sends a message, whereas `turn.completed` is emitted for every CLI `result`.
   // Session restarts therefore leave orphan completions, making the thread appear idle while the
   // agent works, with no Stop button or activity indicator. Incoming text or a starting tool proves
-  // activity; `turn.completed` will close it either way.
-  if (event.type === 'message.delta' || event.type === 'tool.started') {
+  // activity; `turn.completed` will close it either way. Only the main thread counts: subagents
+  // outlive the turn that spawned them (background tasks, or a Codex turn failing while its agents
+  // keep going), and their output reopened a turn no completion would ever close, leaving a Stop
+  // button that stopped nothing and a steer the server rejected.
+  if ((event.type === 'message.delta' || event.type === 'tool.started') && event.parentToolCallId == null) {
     state.turnRunning = true
   }
 
