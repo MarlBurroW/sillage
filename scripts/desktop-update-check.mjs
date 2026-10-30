@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, symlink, unlink } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { _electron as electron } from 'playwright'
@@ -124,6 +124,9 @@ let app
 let page
 let profileLink
 let launchAttempted = false
+/** Stand-in for a CLI the server left running under the bundled Node (Windows). */
+let leftover = null
+let leftoverExited = false
 
 try {
   if (process.platform === 'win32') {
@@ -176,6 +179,17 @@ try {
   const install = page.getByRole('button', { name: /Redémarrer et mettre à jour|Restart and update/ })
   await install.waitFor()
   await page.screenshot({ path: join(shots, 'about-ready.png'), fullPage: true })
+  if (process.platform === 'win32') {
+    // NSIS refuses to replace files a process still holds and asks the user to close it:
+    // the app must stop what still runs from its directory before handing over.
+    const node = join(dirname(executable), 'resources', 'node', 'node.exe')
+    leftover = spawn(node, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', windowsHide: true })
+    leftover.on('exit', () => {
+      leftoverExited = true
+    })
+    leftover.unref()
+    console.log(`processus résiduel lancé depuis le dossier d'installation (${leftover.pid})`)
+  }
   await install.click()
   await page.getByRole('dialog').getByRole('button', { name: /Redémarrer et mettre à jour|Restart and update/ }).click()
 
@@ -188,6 +202,10 @@ try {
   app = null
   page = null
   console.log('app fermée pour la mise à jour')
+  if (leftover) {
+    await waitFor('processus résiduel arrêté par l’app', () => leftoverExited, 30_000)
+    console.log('processus résiduel arrêté avant l’installation')
+  }
 
   await waitFor(`app installée en ${target}`, () => installedVersion() === target, 300_000)
   console.log(`app installée en ${target}`)
@@ -217,7 +235,7 @@ try {
 } finally {
   await app?.close().catch(() => {})
   server.close()
-  for (const pid of launchAttempted ? appProcesses() : []) {
+  for (const pid of [...(launchAttempted ? appProcesses() : []), ...(leftover && !leftoverExited ? [leftover.pid] : [])]) {
     try {
       process.kill(pid)
     } catch {

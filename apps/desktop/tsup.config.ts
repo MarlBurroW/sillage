@@ -8,6 +8,8 @@ export default defineConfig({
   target: 'node22',
   platform: 'node',
   outDir: 'dist',
+  // The startup page shown while the server boots.
+  publicDir: 'public',
   clean: true,
   external: ['electron'],
   outExtension: () => ({ js: '.cjs' }),

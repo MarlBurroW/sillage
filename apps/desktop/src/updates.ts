@@ -4,14 +4,20 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { BrowserWindow, app, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { AppImageUpdater, DebUpdater, NsisUpdater, type BaseUpdater, type Logger } from 'electron-updater'
 import type { DesktopUpdateState, DesktopUpdateUnsupportedReason } from '@sillage/protocol'
+import { releaseInstallDir } from './install-dir'
 import { UPDATE_CHANNELS } from './ipc'
 import { MacBundleUpdater, bundleIsReplaceable } from './mac-updater'
+import { text } from './texts'
 
 /** Let the server and window start before contacting GitHub. */
 const FIRST_CHECK_DELAY_MS = 10_000
 /** Desktop apps can stay open for days, so check again periodically. */
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 const LOG_ROTATE_BYTES = 1024 * 1024
+/** Leftover CLIs die on taskkill; this mostly covers PowerShell listing them. */
+const RELEASE_TIMEOUT_MS = 15_000
+/** After quitting for an update, exit even if a page refuses to unload. */
+const QUIT_GRACE_MS = 5_000
 
 export interface UpdateOptions {
   userData: string
@@ -23,6 +29,14 @@ export interface UpdateOptions {
   restartServer(): Promise<void>
 }
 
+export interface DesktopUpdates {
+  /**
+   * Called once the server has stopped on quit: an update installing on quit runs the same
+   * installer, which needs the installation directory free of leftover processes.
+   */
+  prepareQuit(): Promise<void>
+}
+
 /**
  * Update the entire desktop app from GitHub releases (electron-builder writes the
  * app-update.yml and latest*.yml metadata). Check on launch and every four hours,
@@ -31,10 +45,11 @@ export interface UpdateOptions {
  * because Squirrel.Mac rejects ad hoc signatures. Logs go beside the server log.
  * SILLAGE_DESKTOP_UPDATE_FEED overrides GitHub for the end-to-end check.
  */
-export function setupUpdates(options: UpdateOptions): void {
+export function setupUpdates(options: UpdateOptions): DesktopUpdates {
   const resultFile = join(options.userData, 'update-result')
   const created = createUpdater(resultFile)
   const updater = typeof created === 'string' ? null : created
+  const log = fileLogger(join(options.logDir, 'updater.log'))
   let state: DesktopUpdateState = updater
     ? (previousInstall(resultFile) ?? { status: 'idle', checkedAt: null })
     : { status: 'unsupported', reason: created as DesktopUpdateUnsupportedReason }
@@ -51,12 +66,29 @@ export function setupUpdates(options: UpdateOptions): void {
     await updater.checkForUpdates().catch(() => undefined)
   }
 
+  const installDir = () => dirname(app.getPath('exe'))
+
   const install = async () => {
     if (!updater || state.status !== 'ready') return
-    publish({ status: 'installing', version: state.version })
+    const { version } = state
+    publish({ status: 'installing', version })
     const appImage = updater instanceof AppImageUpdater ? process.env.APPIMAGE : undefined
-    // NSIS kills processes in the install directory shortly after starting; stop the server first.
-    if (process.platform === 'win32') await options.stopServer()
+    if (process.platform === 'win32') {
+      // NSIS kills processes in the install directory shortly after starting; stop the server first.
+      await options.stopServer()
+      // Then nothing may still run from the directory: NSIS would ask the user to close it,
+      // and cancelling there leaves a half-replaced installation. Better to report it here.
+      const survivors = await releaseInstallDir(installDir(), log, RELEASE_TIMEOUT_MS).catch((err: Error) => {
+        log.error(err)
+        return []
+      })
+      if (survivors.length > 0) {
+        const processes = survivors.map((found) => `${found.name} (${found.pid})`).join(', ')
+        publish({ status: 'error', message: text('stillRunning', { processes }), version, macPermission: false })
+        await options.restartServer()
+        return
+      }
+    }
     // Windows installs visibly: the silent installer leaves the user with a closed app, a
     // Start menu shortcut to a removed executable and no sign that anything is happening
     // until the app relaunches on its own. When updating, NSIS never prompts, only shows progress.
@@ -69,6 +101,19 @@ export function setupUpdates(options: UpdateOptions): void {
     }
     if (appImage) app.relaunch({ execPath: appImage, args: process.argv.slice(1) })
     app.quit()
+    // The installer waits for this process, then asks the user to close it: a page refusing
+    // to unload must not keep it alive.
+    setTimeout(() => app.exit(0), QUIT_GRACE_MS).unref()
+  }
+
+  const prepareQuit = async () => {
+    if (!updater || process.platform !== 'win32' || state.status !== 'ready' || !updater.autoInstallOnAppQuit) return
+    const survivors = await releaseInstallDir(installDir(), log, RELEASE_TIMEOUT_MS).catch((err: Error) => {
+      log.error(err)
+      return []
+    })
+    // The silent installer then gives up on its own; the update is offered again at next launch.
+    if (survivors.length > 0) log.warn('installation on quit will be refused by the installer')
   }
 
   const guarded =
@@ -81,8 +126,8 @@ export function setupUpdates(options: UpdateOptions): void {
   ipcMain.handle(UPDATE_CHANNELS.check, guarded(check))
   ipcMain.handle(UPDATE_CHANNELS.install, guarded(install))
 
-  if (!updater) return
-  updater.logger = fileLogger(join(options.logDir, 'updater.log'))
+  if (!updater) return { prepareQuit }
+  updater.logger = log
   // The .deb requires administrator permission; ask only on explicit installation, never on quit.
   updater.autoInstallOnAppQuit = !(updater instanceof DebUpdater)
   const feed = process.env.SILLAGE_DESKTOP_UPDATE_FEED
@@ -115,6 +160,7 @@ export function setupUpdates(options: UpdateOptions): void {
 
   setTimeout(() => void check(), FIRST_CHECK_DELAY_MS)
   setInterval(() => void check(), CHECK_INTERVAL_MS)
+  return { prepareQuit }
 }
 
 function createUpdater(resultFile: string): BaseUpdater | DesktopUpdateUnsupportedReason {

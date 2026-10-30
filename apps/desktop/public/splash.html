@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Startup page: shown while bundled Node boots the server, before the interface
+         can be loaded. Same background as the window and the interface's first paint.
+         The main process passes the localized title as ?title=. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <style>
+      /* Favicon colours: the interface's own theme is not known before it loads. */
+      :root { --background: #f7f7fb; --text: #5b5f78; --mark: #535cda; }
+      @media (prefers-color-scheme: dark) { :root { --background: #0b0d1c; --text: #a9adc4; --mark: #8f9bff; } }
+      html, body { height: 100%; margin: 0; background: var(--background); color: var(--text); overflow: hidden; }
+      body { display: flex; align-items: center; justify-content: center; font: 14px system-ui, sans-serif; user-select: none; }
+      /* Keeps the frameless window draggable, like the interface's title bar. */
+      .bar { position: fixed; inset: 0 0 auto 0; height: 36px; -webkit-app-region: drag; }
+      .mark { width: 72px; height: 72px; fill: var(--mark); animation: breathe 1.6s ease-in-out infinite; }
+      .stack { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+      @keyframes breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { .mark { animation: none; } }
+    </style>
+  </head>
+  <body>
+    <div class="bar"></div>
+    <div class="stack">
+      <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+        <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z" />
+        <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z" />
+        <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z" />
+      </svg>
+      <p id="title"></p>
+    </div>
+    <script>
+      document.getElementById('title').textContent = new URLSearchParams(location.search).get('title') || 'Sillage'
+    </script>
+  </body>
+</html>

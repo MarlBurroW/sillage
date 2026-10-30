@@ -7,7 +7,7 @@ import { stablePort } from './port'
 import { startServer, type RunningServer } from './server'
 import { loginShellEnv, pathKey } from './shell-env'
 import { text } from './texts'
-import { setupUpdates } from './updates'
+import { setupUpdates, type DesktopUpdates } from './updates'
 
 /**
  * Desktop application's main process.
@@ -24,7 +24,16 @@ const SESSION_COOKIE = 'sillage_session'
 /** App background prevents a white flash before the first render. */
 const BACKGROUND = '#0b0d1c'
 
+/** Where to get a fresh package when this installation no longer starts. */
+const DOWNLOAD_URL =
+  process.platform === 'win32'
+    ? 'https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe'
+    : process.platform === 'darwin'
+      ? 'https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg'
+      : 'https://github.com/MarlBurroW/sillage/releases/latest'
+
 let diagnostics: DiagnosticLog | null = null
+let updates: DesktopUpdates | null = null
 let server: RunningServer | null = null
 let origin = ''
 let quitting = false
@@ -67,6 +76,9 @@ if (!app.requestSingleInstanceLock()) {
 async function boot(): Promise<void> {
   setupWindowChrome(isAppUrl)
   diagnostics = setupDiagnostics({ logDir: dirname(logFile), serverPid: () => server?.pid, origin: () => origin, isAppUrl })
+  // Show the window at once: Node, the server and its first page take seconds on
+  // Windows, during which a launch with nothing on screen looks ignored.
+  const win = openWindow()
   const locale = app.getSystemLocale().replace('-', '_')
   const env = await loginShellEnv(node, locale.includes('_') ? `${locale}.UTF-8` : 'en_US.UTF-8')
   // Bundled Node/npm are fallbacks: user-maintained ones take precedence, but
@@ -77,7 +89,7 @@ async function boot(): Promise<void> {
   launchSettings = { env, port }
 
   await launch(launchSettings)
-  setupUpdates({
+  updates = setupUpdates({
     userData,
     logDir: dirname(logFile),
     isAppUrl,
@@ -86,7 +98,8 @@ async function boot(): Promise<void> {
       if (launchSettings) await relaunchServer(launchSettings)
     },
   })
-  openWindow()
+  if (win.isDestroyed()) openWindow()
+  else void win.loadURL(origin)
 }
 
 async function launch({ env, port }: { env: NodeJS.ProcessEnv; port: number }): Promise<void> {
@@ -152,7 +165,8 @@ async function stopServer(): Promise<void> {
   await running?.stop()
 }
 
-function openWindow(): void {
+/** Open on the interface, or on the startup page until the server announces itself. */
+function openWindow(): BrowserWindow {
   const win = new BrowserWindow({
     ...windowChromeOptions(),
     width: 1440,
@@ -172,7 +186,9 @@ function openWindow(): void {
   })
   win.setMenuBarVisibility(false)
   win.once('ready-to-show', () => win.show())
-  void win.loadURL(origin)
+  if (origin) void win.loadURL(origin)
+  else void win.loadFile(join(__dirname, 'splash.html'), { query: { title: text('starting') } })
+  return win
 }
 
 // Keep interface links in app windows; everything else opens in the system browser.
@@ -219,19 +235,38 @@ app.on('activate', () => {
 })
 
 // Quitting stops the server as its service would: clean up active sessions and
-// close the database instead of leaving orphaned CLIs.
+// close the database instead of leaving orphaned CLIs. Then an update installing
+// on quit gets the installation directory it needs.
+let quitPrepared = false
 app.on('before-quit', (event) => {
-  if (!server) return
-  event.preventDefault()
+  if (quitPrepared) return
+  quitPrepared = true
   quitting = true
+  event.preventDefault()
   const running = server
   server = null
-  void running.stop().finally(() => app.quit())
+  void (running?.stop() ?? Promise.resolve())
+    .then(() => updates?.prepareQuit())
+    .catch(() => undefined)
+    .finally(() => app.quit())
 })
 
 function fatal(err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err)
-  dialog.showErrorBox(text('startFailed'), `${message}\n\n${text('seeLog', { log: logFile })}`)
+  // Closing the startup window stops the server, which must not read as a failure.
+  if (quitting) return
   quitting = true
-  void (server?.stop() ?? Promise.resolve()).finally(() => app.exit(1))
+  const message = err instanceof Error ? err.message : String(err)
+  const response = dialog.showMessageBoxSync({
+    type: 'error',
+    title: text('startFailed'),
+    message: text('startFailed'),
+    detail: `${message}\n\n${text('seeLog', { log: logFile })}\n\n${text('startFailedReinstall')}`,
+    buttons: [text('download'), text('quit')],
+    defaultId: 1,
+    cancelId: 1,
+  })
+  void (response === 0 ? shell.openExternal(DOWNLOAD_URL) : Promise.resolve())
+    .catch(() => undefined)
+    .then(() => server?.stop())
+    .finally(() => app.exit(1))
 }

@@ -2,8 +2,9 @@
 
 Sillage Desktop is the edition for your workstation: an app for macOS (Apple Silicon),
 Windows (x64) and Linux (x64 and arm64). It bundles the server of the release and its own Node,
-starts them when you open it, and shows the interface in its own window. There is no
-server to set up, no account to create and no password.
+starts them when you open it, and shows the interface in its own window: the window
+opens at once on a startup page while the server boots. There is no server to set up,
+no account to create and no password.
 
 It is the simplest way to try Sillage, or to use it on the machine where you code.
 To follow your agents from a phone or another computer and leave them working,
@@ -115,7 +116,14 @@ install it right away, click **Restart and update** there: Sillage closes, insta
 new version and reopens. Running conversations are interrupted and resume with the next
 message. Your data stays where it is.
 
-- **Windows:** the installer runs silently, for your user, as on the first install.
+- **Windows:** Sillage closes, a small installer window shows the progress, then
+  Sillage reopens. Before handing over, the app stops anything still running from its
+  own folder, such as a CLI or MCP server its server started under the bundled Node:
+  the installer cannot replace files they hold and would ask you to close them, and
+  cancelling there leaves a half-replaced installation. If something cannot be
+  stopped, About names it and the update waits for another try. Should Sillage still
+  fail to start after an update, its error dialog offers to download the installer
+  again: running it replaces the installation and keeps your data.
 - **macOS:** Sillage replaces its own app in the Applications folder. Run from the disk
   image, or from a folder where macOS isolates it, it cannot, and About says so. Should
   macOS refuse the replacement, About tells you to allow Sillage under System Settings >
