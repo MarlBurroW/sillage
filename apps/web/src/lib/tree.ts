@@ -33,6 +33,10 @@ export function useTreeLevel(scope: WorkspaceScope, path: string, enabled: boole
 /**
  * Reread levels the server reports changed on disk. Subscribe once for the explorer instead of once
  * per expanded directory: cache keys already handle that partitioning.
+ *
+ * Ancestors are reread too: each row's Git color comes from its parent's listing, so a file
+ * modified in `a/b` left `a` and `a/b` uncolored until the turn ended. The server serves these
+ * concurrent requests with a single `git status`.
  */
 export function useTreeSync(scope: WorkspaceScope): void {
   const queryClient = useQueryClient()
@@ -40,7 +44,10 @@ export function useTreeSync(scope: WorkspaceScope): void {
     () =>
       wsClient.onTreeChanged((changed, path) => {
         if (changed !== scope) return
-        void queryClient.invalidateQueries({ queryKey: ['tree', scope, path] })
+        const parts = path ? path.split('/') : []
+        for (let depth = parts.length; depth >= 0; depth -= 1) {
+          void queryClient.invalidateQueries({ queryKey: ['tree', scope, parts.slice(0, depth).join('/')], exact: true })
+        }
       }),
     [queryClient, scope],
   )

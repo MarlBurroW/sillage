@@ -231,8 +231,25 @@ export async function writeLocalCredentialHelpers(cwd: string, helpers: string[]
   }
 }
 
+/**
+ * Statuses being read, per directory. When a file changes, the explorer reloads its directory
+ * and every ancestor so their colors follow, and a turn's end reloads every open level: these
+ * concurrent requests share one `git status` instead of starting one each. Joining a run already
+ * underway is safe as long as it lasts less than the watcher's debounce (250 ms): the change
+ * behind any later request happened before that run started.
+ */
+const pendingStates = new Map<string, Promise<Map<string, FileState> | null>>()
+
+export function readFileStates(cwd: string): Promise<Map<string, FileState> | null> {
+  const pending = pendingStates.get(cwd)
+  if (pending) return pending
+  const started = readFileStatesNow(cwd).finally(() => pendingStates.delete(cwd))
+  pendingStates.set(cwd, started)
+  return started
+}
+
 /** All repository file statuses in one call. Reduce `--porcelain` codes to tree-display states: distinguishing simultaneous index and working-tree changes adds nothing to file lists. Per-file calls would be costly in large directories, and explorers expand one level at a time. `-z` preserves filenames containing spaces or quotes. Null outside repositories because projects may target arbitrary directories. */
-export async function readFileStates(cwd: string): Promise<Map<string, FileState> | null> {
+async function readFileStatesNow(cwd: string): Promise<Map<string, FileState> | null> {
   let raw: string
   try {
     const inside = (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim()

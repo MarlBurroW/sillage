@@ -29,3 +29,18 @@ test('status reads leave the index untouched', async (t) => {
   assert.equal((await readGitStatus(repo))?.isDirty, false)
   assert.equal((await stat(index)).mtimeMs, before)
 })
+
+// The explorer reloads a changed directory together with its ancestors: one status serves them.
+test('concurrent status reads share one run', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'sillage-git-shared-'))
+  t.after(() => rm(repo, { recursive: true, force: true }))
+  execFileSync('git', ['init', '-q'], { cwd: repo })
+  await writeFile(join(repo, 'new.txt'), 'x\n')
+
+  const first = readFileStates(repo)
+  assert.equal(readFileStates(repo), first)
+  assert.equal((await first)?.get('new.txt'), 'untracked')
+  // Settled runs are not reused: the next change must be seen.
+  await writeFile(join(repo, 'later.txt'), 'y\n')
+  assert.equal((await readFileStates(repo))?.get('later.txt'), 'untracked')
+})
