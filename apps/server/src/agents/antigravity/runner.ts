@@ -1,6 +1,6 @@
 import { antigravitySkills } from './skills.js'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -24,7 +24,32 @@ import { antigravityArgs } from './launch.js'
 import { configOption, optionsOf } from './catalog.js'
 import { describeAntigravityTool } from './tools.js'
 
-interface ToolTrack { update: Record<string, unknown>; input: string; output: string; diffs: AcpDiff[] }
+interface ToolTrack { update: Record<string, unknown>; input: string; output: string; diffs: AcpDiff[]; settle: NodeJS.Timeout | null }
+/** Frame closed during the current turn: Google may re-announce or re-close it. */
+interface ClosedTool { update: Record<string, unknown>; isError: boolean }
+
+/** Mirrored file reads stay bounded like the agent's own view. */
+const MIRRORED_READ_MAX_BYTES = 512 * 1024
+
+function outputOf(update: Record<string, unknown>): string {
+  const combined = fields(update.rawOutput).combinedOutput
+  return typeof update.rawOutput === 'string' ? update.rawOutput : typeof combined === 'string' ? combined : contentText(update.content)
+}
+
+/** The content a view_file showed the model, read again from disk; null when unreadable. Antigravity's line bounds are 1-based and inclusive. */
+function mirrorRead(raw: unknown): string | null {
+  const input = fields(raw)
+  if (typeof input.file_path !== 'string') return null
+  try {
+    if (!statSync(input.file_path).isFile()) return null
+    let text = readFileSync(input.file_path, 'utf8')
+    const start = Number(input.offset), end = Number(input.end_line)
+    if (Number.isFinite(start) || Number.isFinite(end)) {
+      text = text.split('\n').slice(Number.isFinite(start) && start > 0 ? start - 1 : 0, Number.isFinite(end) && end > 0 ? end : undefined).join('\n')
+    }
+    return text.length > MIRRORED_READ_MAX_BYTES ? `${text.slice(0, MIRRORED_READ_MAX_BYTES)}\n… (truncated)` : text
+  } catch { return null }
+}
 
 /** Standard ACP with Google's system-prompt and tool metadata extensions. */
 export class AntigravityRunner implements AgentRunner {
@@ -35,6 +60,9 @@ export class AntigravityRunner implements AgentRunner {
   private readonly interactions: PendingInteractions
   private readonly durations = new ToolDurations()
   private readonly tools = new Map<string, ToolTrack>()
+  private readonly closed = new Map<string, ClosedTool>()
+  /** Grace before a still-open view_file is shown from disk; tests shorten it. */
+  static readSettleMs = 3_000
   private early: [string, unknown][] | null = []
   private open: { id: string; kind: 'text' | 'thinking'; text: string } | null = null
   private active = false
@@ -212,30 +240,51 @@ export class AntigravityRunner implements AgentRunner {
     const id = String(update.toolCallId)
     if (id.startsWith('interaction_')) return
     let track = this.tools.get(id)
-    const merged = { ...track?.update, ...update }
+    const earlier = track ? null : this.closed.get(id) ?? null
+    if (earlier && (update.status === 'completed' || update.status === 'failed')) { this.recloseTool(id, earlier, update); return }
+    const merged = { ...(track?.update ?? earlier?.update), ...update }
     const described = describeAntigravityTool(merged)
     const input = JSON.stringify([described.input, described.title])
     if (!track) {
-      track = { update: merged, input, output: '', diffs: [] }
+      track = { update: merged, input, output: '', diffs: [], settle: null }
       this.tools.set(id, track)
       this.durations.start(id)
-      this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, parentToolCallId: null }, raw)
+      // When one parallel step is denied by its hook, Google closes every open frame as
+      // failed, then the SDK re-announces those still running under the same id. Keep
+      // the row the user already has instead of appending a duplicate.
+      if (earlier) { this.closed.delete(id); this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, input: described.input, title: described.title }, raw) }
+      else this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, parentToolCallId: null }, raw)
     } else if (input !== track.input) {
       this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, input: described.input, title: described.title }, raw)
       track.input = input
     }
     track.update = merged
+    if (track.settle) { clearTimeout(track.settle); track.settle = null }
     const diffs = diffsOf(update.content)
     if (diffs.length) track.diffs = diffs
-    const combined = fields(update.rawOutput).combinedOutput
-    const output = typeof update.rawOutput === 'string' ? update.rawOutput : typeof combined === 'string' ? combined : contentText(update.content)
+    const output = outputOf(update)
     if (output && output.startsWith(track.output) && output.length > track.output.length) {
       this.ctx.emit({ type: 'tool.output_delta', toolCallId: id, chunk: output.slice(track.output.length) })
       track.output = output
     }
-    if (update.status !== 'completed' && update.status !== 'failed') return
+    if (update.status !== 'completed' && update.status !== 'failed') {
+      // Google closes view_file frames late (with the next planner step, or only at the
+      // end of the turn for subagents) and never relays the content. The file is local:
+      // show it after a short grace period rather than spinning for the whole turn.
+      if (described.name === 'Read') { track.settle = setTimeout(() => this.settleRead(id), AntigravityRunner.readSettleMs); track.settle.unref() }
+      return
+    }
+    for (const item of Array.isArray(update.content) ? update.content : []) {
+      const content = fields(fields(item).content)
+      if (content.type === 'image') this.richContent(content)
+    }
     const isError = update.status === 'failed'
-    const mcp = fields(fields(merged._meta).mcp)
+    const mirrored = !isError && !output && !track.output && described.name === 'Read' ? mirrorRead(described.input) : null
+    this.completeTool(id, track, isError, output || update.rawOutput || track.output || mirrored || '', { update: merged, diffs: track.diffs })
+  }
+
+  private completeTool(id: string, track: ToolTrack, isError: boolean, output: unknown, raw: unknown): void {
+    const mcp = fields(fields(track.update._meta).mcp)
     if (!isError && typeof mcp.server === 'string' && typeof mcp.tool === 'string') {
       let server = this.mcp.find((entry) => entry.name === mcp.server)
       if (!server) { server = { name: mcp.server, state: 'connected', tools: [], error: null, external: true }; this.mcp.push(server) }
@@ -243,14 +292,39 @@ export class AntigravityRunner implements AgentRunner {
       if (!server.tools.includes(mcp.tool)) server.tools.push(mcp.tool)
       this.ctx.emit({ type: 'mcp.updated', servers: structuredClone(this.mcp) })
     }
-    this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: output || update.rawOutput || track.output, isError, durationMs: this.durations.stop(id) }, { update: merged, diffs: track.diffs })
+    this.ctx.emit({ type: 'tool.completed', toolCallId: id, output, isError, durationMs: this.durations.stop(id) }, raw)
     if (!isError) for (const diff of track.diffs) this.ctx.emit({ type: 'file.edited', toolCallId: id, path: toWorkspacePath(this.ctx.cwd, diff.path), action: diff.oldText === null ? 'created' : 'modified' })
-    for (const item of Array.isArray(update.content) ? update.content : []) {
-      const content = fields(fields(item).content)
-      if (content.type === 'image') this.richContent(content)
+    if (isError && typeof output === 'string' && output.includes('connecting to sandbox server')) {
+      this.notice('antigravity_sandbox_unavailable', process.platform === 'linux'
+        ? 'Antigravity\'s command sandbox could not start: tool calls fail with "connecting to sandbox server". Ubuntu restricts unprivileged user namespaces; grant `userns` to localharness_external with an AppArmor profile (see docs/antigravity-integration.md).'
+        : 'Antigravity\'s command sandbox could not start: tool calls fail with "connecting to sandbox server".', { output }, 'warning')
     }
+    if (track.settle) clearTimeout(track.settle)
     this.tools.delete(id)
+    this.closed.set(id, { update: track.update, isError })
     if (this.background.delete(id)) this.publishBackground()
+  }
+
+  /** A frame Sillage already closed comes back with a terminal status: only new facts change the row. */
+  private recloseTool(id: string, earlier: ClosedTool, update: Record<string, unknown>): void {
+    const output = outputOf(update)
+    // The end-of-turn sweep repeats bare statuses for frames settled locally, and
+    // marks every open frame failed after a cancellation: neither says anything new.
+    if (!output) return
+    const isError = update.status === 'failed'
+    const merged = { ...earlier.update, ...update }
+    this.closed.set(id, { update: merged, isError })
+    this.ctx.emit({ type: 'tool.completed', toolCallId: id, output, isError, durationMs: 0 }, { update: merged, diffs: [] })
+  }
+
+  private settleRead(id: string): void {
+    const track = this.tools.get(id)
+    if (!track) return
+    track.settle = null
+    const mirrored = mirrorRead(describeAntigravityTool(track.update).input)
+    // Unreadable here: the agent's own failure report will close the frame.
+    if (mirrored === null) return
+    this.completeTool(id, track, false, mirrored, { update: track.update, mirrored: true })
   }
 
   private publishBackground(): void {
@@ -347,14 +421,18 @@ export class AntigravityRunner implements AgentRunner {
     this.clearWatchdog()
     this.closeText()
     for (const [id, tool] of this.tools) {
+      if (tool.settle) { clearTimeout(tool.settle); tool.settle = null }
       if ((this.client && this.background.has(id)) || (response.stopReason === 'end_turn' && !this.replaying && tool.update.kind === 'execute' && tool.update.status === 'in_progress')) {
         this.background.set(id, String(tool.update.title ?? id))
         continue
       }
-      this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution interrupted', isError: true, durationMs: this.durations.stop(id) })
+      // A clean end means the read happened; only its closing notification is missing.
+      const mirrored = response.stopReason === 'end_turn' && describeAntigravityTool(tool.update).name === 'Read' ? mirrorRead(describeAntigravityTool(tool.update).input) : null
+      this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: mirrored ?? 'Tool execution interrupted', isError: mirrored === null, durationMs: this.durations.stop(id) })
       this.tools.delete(id)
       this.background.delete(id)
     }
+    this.closed.clear()
     this.publishBackground()
     this.interactions.expireAll()
     const usage = fields(response.usage)
@@ -393,6 +471,7 @@ export class AntigravityRunner implements AgentRunner {
   async stopBackgroundTask(): Promise<boolean> { return false }
   async stop(): Promise<void> {
     this.clearWatchdog()
+    for (const tool of this.tools.values()) if (tool.settle) { clearTimeout(tool.settle); tool.settle = null }
     this.interactions.expireAll()
     const client = this.client; this.client = null
     await client?.closeAndWait()
@@ -402,9 +481,9 @@ export class AntigravityRunner implements AgentRunner {
     const root = this.ctx.processEnv?.SILLAGE_ANTIGRAVITY_SESSION_ROOT
     if (root && this.home && this.sessionId) await persistAntigravityArtifacts(this.home, root, this.sessionId)
   }
-  private notice(code: string, message: string, details: unknown): void {
+  private notice(code: string, message: string, details: unknown, level: 'info' | 'warning' = 'info'): void {
     if (this.noticed.has(code)) return
     this.noticed.add(code)
-    this.ctx.emit({ type: 'agent.notice', code, message, level: 'info', details }, details)
+    this.ctx.emit({ type: 'agent.notice', code, message, level, details }, details)
   }
 }

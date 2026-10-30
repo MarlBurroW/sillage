@@ -816,7 +816,7 @@ export class SessionManager {
 
   private buildContext(conversation: ConversationRow): RunnerContext {
     const memoryDirOrNull = (agent: ConversationRow['agent'], dir: string | null, sillageMcp: boolean) =>
-      agent !== 'claude' && dir ? memoryAppendixForCodex(dir, sillageMcp) : null
+      agent !== 'claude' && dir ? memoryAppendixForCodex(dir, sillageMcp, 'project', true, agent !== 'antigravity') : null
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
@@ -919,7 +919,7 @@ export class SessionManager {
           // Claude loads its memory index itself; Codex and opencode have only
           // the information supplied explicitly. Nothing in native mode.
           conversation.projectId === null
-            ? `${memoryAppendixForCodex(memoryDir()!, sillageMcp, 'personal', conversation.agent !== 'claude') ?? ''}\n\nRetain durable preferences and decisions automatically, keep notes concise, and mention meaningful memory updates to the user. Memory belongs to this account and is shared across personal discussions. Never copy it into projects automatically.`
+            ? `${memoryAppendixForCodex(memoryDir()!, sillageMcp, 'personal', conversation.agent !== 'claude', conversation.agent !== 'antigravity') ?? ''}\n\nRetain durable preferences and decisions automatically, keep notes concise, and mention meaningful memory updates to the user. Memory belongs to this account and is shared across personal discussions. Never copy it into projects automatically.`
             : memoryDirOrNull(conversation.agent, memoryDir(), sillageMcp),
           this.config.mcp.sillageServer && current.sillageMcp && conversation.projectId
             ? projectOverview(this.db, {

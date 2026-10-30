@@ -101,6 +101,7 @@ export function noticeText(item: NoticeItem): string {
   if (item.code === 'antigravity_account_signed_out') return translate('antigravity.logout.notice')
   if (item.code === 'portable_fork') return translate('antigravity.fork.notice')
   if (item.code === 'additional_directories_unsupported') return translate('antigravity.directories.notice')
+  if (item.code === 'antigravity_sandbox_unavailable') return translate('antigravity.sandbox.notice')
   const value = item.translation
   if (!value) return item.text
   if (value.key === 'compaction') return describeCompaction(value.pre, value.post)

@@ -76,6 +76,49 @@ settings and instructions. Controls reflect Google's actual protocol capabilitie
 - API-key login does not validate the key. Its card says **Configured**; Google
   validates it on the first model request, whose errors appear in the thread.
 
+## Tool stream quirks observed in 1.4.3
+
+Verified on marldev on 30 October 2026 with a real Google account (see the probe
+recipe in project memory, `antigravity-tools-diagnosis`):
+
+- `view_file` frames (ids `call_N`) are closed late and without content: with the
+  next planner step for the main agent, only at the end of the turn for subagents,
+  never after a cancellation (the sweep marks them failed). Sillage mirrors the file
+  from disk after `AntigravityRunner.readSettleMs` and when a bare `completed`
+  arrives, and ignores later bare closings of a frame it already settled.
+- When one step of a parallel batch is denied by Google's pre-tool hook (for example
+  a read outside the workspace), every open frame receives a `failed` update with
+  that error, then the SDK re-announces the frames still running under the same ids.
+  Sillage reuses the existing row instead of appending a duplicate.
+- Google's file viewer refuses paths outside the workspace, the session home,
+  skills and `/tmp`. The memory appendix therefore points Antigravity sessions to
+  `read_memory` rather than to the memory directory.
+
+## Linux host: user namespaces
+
+Antigravity's Go harness (`localharness_external`) sandboxes commands by creating an
+unprivileged user namespace. Ubuntu 23.10+ confines such processes in the
+`unprivileged_userns` AppArmor profile, which denies `net_admin`; the sandbox server
+dies and every command and file read fails with
+`connecting to sandbox server: connection reset by peer`. Sillage shows the notice
+`antigravity_sandbox_unavailable` once per session. The fix mirrors the Playwright
+profile, in `/etc/apparmor.d/sillage-antigravity`:
+
+```
+abi <abi/4.0>,
+include <tunables/global>
+
+profile sillage-antigravity-harness /home/*/.local/share/sillage/agents/antigravity/*/localharness_external flags=(unconfined) {
+  userns,
+  include if exists <local/sillage-antigravity-harness>
+}
+```
+
+Load it with `sudo apparmor_parser -r /etc/apparmor.d/sillage-antigravity`. Running
+sessions keep their old harness process until their next restart. What makes the
+harness start its sandbox is not known: a single background command or subagent
+does not; the incident involved four subagents and a background task.
+
 ## Verification
 
 On Linux with Google's checksum-verified **Antigravity ACP 1.4.3**:

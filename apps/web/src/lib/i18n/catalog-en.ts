@@ -2725,6 +2725,7 @@ export const en = {
   'antigravity.logout.notice': 'The Google account is signed out. Choose a connected account to continue.',
   'antigravity.modelAdjusted.notice': 'The saved model or thinking level is unavailable for this account. Antigravity selected an available default, shown in the composer.',
   'antigravity.directories.notice': 'Antigravity 1.4.3 ignores additional workspace directories. Its native file tools remain scoped to the project.',
+  'antigravity.sandbox.notice': 'Antigravity’s command sandbox could not start: commands and file reads failed with “connecting to sandbox server”. On Ubuntu, unprivileged user namespaces are restricted: grant userns to localharness_external with an AppArmor profile, as described in docs/antigravity-integration.md.',
   'plan.progress.title': 'Work plan',
   'plan.progress.pending': 'Pending',
   'plan.progress.in_progress': 'In progress',

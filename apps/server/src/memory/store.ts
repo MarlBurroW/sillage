@@ -89,7 +89,7 @@ export async function deleteMemoryFile(dir: string, file: string): Promise<void>
 }
 
 /** Memory supplied to Codex at session start: index and note read/write instructions. Claude loads its own index and needs none. Null without both an index and a write mechanism. */
-export function memoryAppendixForCodex(dir: string, sillageMcp: boolean, scope: 'project' | 'personal' = 'project', includeIndex = true): string | null {
+export function memoryAppendixForCodex(dir: string, sillageMcp: boolean, scope: 'project' | 'personal' = 'project', includeIndex = true, nativeFileAccess = true): string | null {
   let index = ''
   try {
     if (includeIndex) index = readFileSync(join(dir, MEMORY_INDEX_FILE), 'utf8').trim()
@@ -102,7 +102,8 @@ export function memoryAppendixForCodex(dir: string, sillageMcp: boolean, scope: 
   }
 
   const parts = [
-    `# ${scope === 'personal' ? 'Personal' : 'Project'} memory\n\nNotes left by previous sessions across CLIs. They are in \`${dir}\`, one file per note: use \`cat\` to read those relevant to your task. Notes can become outdated; verify them before relying on them.`,
+    // Antigravity's file viewer refuses paths outside its workspace and denies the whole parallel batch with them.
+    `# ${scope === 'personal' ? 'Personal' : 'Project'} memory\n\nNotes left by previous sessions across CLIs. They are in \`${dir}\`, one file per note: ${nativeFileAccess ? 'use `cat`' : sillageMcp ? 'your file viewer cannot open that directory, so use the `sillage` server\'s `read_memory` tool' : 'your file viewer cannot open that directory, so use `cat` in a shell command'} to read those relevant to your task. Notes can become outdated; verify them before relying on them.`,
     ...(includeIndex ? [index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'Memory is empty.'] : []),
   ]
   if (sillageMcp) {

@@ -179,6 +179,65 @@ test('Background command output arrives after the turn without a false interrupt
   assert.deepEqual(f.events.filter((event) => event.type === 'background.updated').at(-1)?.tasks, [])
 })
 
+test('A frame failed by the hook broadcast and re-announced keeps one row that ends successfully', async (t) => {
+  const f = await fixture(t)
+  const start = { sessionUpdate: 'tool_call', toolCallId: 'ls', title: 'ls', kind: 'execute', status: 'in_progress', rawInput: { command_line: 'ls', working_dir: f.root } }
+  await f.turn([
+    { update: start },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'ls', status: 'failed', rawOutput: 'Access to path "/elsewhere/MEMORY.md" is denied.' } },
+    { update: start },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'ls', status: 'completed', rawOutput: { commandLine: 'ls', exitCode: 0, combinedOutput: 'a.txt' } } },
+    // The end-of-turn sweep repeats a bare status for a frame already closed.
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'ls', status: 'completed' } },
+  ])
+  assert.equal(f.events.filter((event) => event.type === 'tool.started').length, 1)
+  assert.deepEqual(f.events.filter((event) => event.type === 'tool.completed').map((event) => [event.isError, event.output]), [[true, 'Access to path "/elsewhere/MEMORY.md" is denied.'], [false, 'a.txt']])
+  const state = emptyChatState()
+  f.events.forEach((event, index) => applyEvent(state, index + 1, Date.now(), event))
+  const rows = state.items.filter((item) => item.kind === 'tool' && item.id === 'ls')
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0]!.kind === 'tool' ? rows[0]!.status : null, 'done')
+})
+
+test('Unclosed file reads are shown from disk and late bare closings add nothing', async (t) => {
+  const f = await fixture(t)
+  await writeFile(join(f.root, 'notes.txt'), 'one\ntwo\nthree\nfour\n')
+  const previous = AntigravityRunner.readSettleMs
+  AntigravityRunner.readSettleMs = 30
+  t.after(() => { AntigravityRunner.readSettleMs = previous })
+  await f.turn([
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'call_1', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'notes.txt'), StartLine: 2, EndLine: 3 } } },
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'call_2', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'missing.txt') } } },
+    { wait: 120 },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call_1', status: 'completed' } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call_2', status: 'failed', rawOutput: 'file not found' } },
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'call_3', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'notes.txt') } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call_3', status: 'completed' } },
+  ])
+  const completed = f.events.filter((event) => event.type === 'tool.completed')
+  assert.deepEqual(completed.map((event) => [event.toolCallId, event.isError, event.output]), [
+    ['call_1', false, 'two\nthree'],
+    ['call_2', true, 'file not found'],
+    ['call_3', false, 'one\ntwo\nthree\nfour\n'],
+  ])
+  assert.equal(f.events.filter((event) => event.type === 'tool.started').length, 3)
+})
+
+test('A dead command sandbox is explained once', async (t) => {
+  const f = await fixture(t)
+  const error = 'error executing cascade step: CORTEX_STEP_TYPE_RUN_COMMAND: connecting to sandbox server: read unix @ -> @: recvmsg: connection reset by peer'
+  await f.turn([
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'ls', kind: 'execute', status: 'in_progress', rawInput: { command_line: 'ls', working_dir: f.root } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'a', status: 'failed', rawOutput: error } },
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'b', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'a.txt') } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'b', status: 'failed', rawOutput: error } },
+  ])
+  const notices = f.events.filter((event) => event.type === 'agent.notice' && event.code === 'antigravity_sandbox_unavailable')
+  assert.equal(notices.length, 1)
+  assert.equal(notices[0]!.type === 'agent.notice' ? notices[0]!.level : null, 'warning')
+  assert.equal(f.events.filter((event) => event.type === 'tool.completed' && event.isError).length, 2)
+})
+
 test('Attachments stay session-scoped and native logout updates managed account state', async (t) => {
   let loggedOut = false
   const f = await fixture(t, { accountSignedOut: async () => { loggedOut = true } })

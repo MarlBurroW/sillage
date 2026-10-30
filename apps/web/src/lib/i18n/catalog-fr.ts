@@ -2717,6 +2717,7 @@ export const fr: Catalog = {
   'antigravity.logout.notice': 'Le compte Google est déconnecté. Choisis un compte connecté pour continuer.',
   'antigravity.modelAdjusted.notice': 'Le modèle ou le niveau de réflexion enregistré n’est pas disponible pour ce compte. Antigravity a choisi une valeur disponible, affichée dans le composer.',
   'antigravity.directories.notice': 'Antigravity 1.4.3 ignore les dossiers de travail supplémentaires. Ses outils de fichiers restent limités au projet.',
+  'antigravity.sandbox.notice': 'Le bac à sable de commandes d’Antigravity n’a pas pu démarrer : commandes et lectures ont échoué avec « connecting to sandbox server ». Sous Ubuntu, les namespaces utilisateur non privilégiés sont restreints : accorde userns à localharness_external par un profil AppArmor, voir docs/antigravity-integration.md.',
   'plan.progress.title': 'Plan de travail',
   'plan.progress.pending': 'À faire',
   'plan.progress.in_progress': 'En cours',
