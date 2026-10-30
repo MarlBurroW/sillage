@@ -173,9 +173,15 @@ try {
       const back = await context.request.post(base + `/api/conversations/${other.id}/handoff`, { data: { agent: 'antigravity', config: agentConfig } })
       // A continuation with no own messages has no transferable journal yet.
       assert.equal(back.status(), 400)
-      const rpc = (await readFile(join(data, 'rpc.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)
+      // Sending answers before the CLI boots: wait for the fork's own session/new.
+      const forkStarted = (rpc) => rpc.some((entry) => entry.method === 'session/new' && entry.params._meta?.antigravity?.systemPrompt?.append.includes('Native Antigravity response'))
+      let rpc = []
+      for (let attempt = 0; attempt < 100 && !forkStarted(rpc); attempt++) {
+        await delay(100)
+        rpc = (await readFile(join(data, 'rpc.jsonl'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)
+      }
       assert.equal(rpc.some((entry) => entry.method === 'session/fork'), false)
-      assert.ok(rpc.some((entry) => entry.method === 'session/new' && entry.params._meta?.antigravity?.systemPrompt?.append.includes('Native Antigravity response')))
+      assert.ok(forkStarted(rpc), 'The fork must start a native session carrying the inherited history')
       await page.setViewportSize({ width: 390, height: 844 })
       await page.goto(base + `/p/${project.id}/c/${conversation.id}`)
       await page.getByText('Future native response', { exact: true }).first().waitFor()
