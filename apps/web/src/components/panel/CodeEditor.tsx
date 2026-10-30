@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { Compartment, EditorState, StateEffect, Text, Transaction } from '@codemirror/state'
+import { Compartment, EditorState, StateEffect, Text, Transaction, type TransactionSpec } from '@codemirror/state'
 import { gotoLine, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import {
   EditorView,
@@ -42,25 +42,35 @@ const MAX_SESSIONS = 40
 const FLASH_MS = 1600
 
 /**
- * Brings the editor to `next` with the smallest change, outside undo history and without
- * reporting typing. Rebuilding the state instead sent the reader back to the top of the file at
- * every agent write.
+ * The smallest change bringing `state` to `next`, outside undo history, not reported as typing,
+ * with its lines flashed; null when nothing differs. Rebuilding the state instead sent the reader
+ * back to the top of the file at every agent write.
  */
-function syncText(editor: EditorView, next: string): void {
+function externalUpdate(state: EditorState, next: string): (TransactionSpec & { effects: StateEffect<unknown>[] }) | null {
   // CodeMirror splits on any line break and joins with \n.
   const target = next.replace(/\r\n?/g, '\n')
-  const before = editor.state.doc.toString()
-  if (before === target) return
+  const before = state.doc.toString()
+  if (before === target) return null
   const change = smallestChange(before, target)
-  editor.dispatch({
+  return {
     changes: change,
     annotations: [externalChange.of(true), Transaction.addToHistory.of(false)],
-    effects: flashLines.of({ from: change.from, to: change.from + change.insert.length }),
-  })
+    effects: [flashLines.of({ from: change.from, to: change.from + change.insert.length })],
+  }
+}
+
+function clearFlashLater(editor: EditorView): void {
   setTimeout(() => {
     // Destroyed views keep their state but no longer belong to the page.
     if (editor.dom.isConnected) editor.dispatch({ effects: flashLines.of(null) })
   }, FLASH_MS)
+}
+
+function syncText(editor: EditorView, next: string): void {
+  const update = externalUpdate(editor.state, next)
+  if (!update) return
+  editor.dispatch(update)
+  clearFlashLater(editor)
 }
 
 /** Chunk buttons of the comparison, labeled for its meaning here: the other side is the disk. */
@@ -167,7 +177,9 @@ export function CodeEditor({
   /** The comparison module loads on first use: most sessions never compare anything. */
   const showComparison = (editor: EditorView, compartment: Compartment, text: string | null) => {
     if (text === null) {
-      editor.dispatch({ effects: compartment.reconfigure([]) })
+      // Nothing to remove: an empty transaction here would cancel the scroll position restored on mount.
+      const shown = compartment.get(editor.state)
+      if (!Array.isArray(shown) || shown.length > 0) editor.dispatch({ effects: compartment.reconfigure([]) })
       return
     }
     void import('@codemirror/merge').then(({ unifiedMergeView }) => {
@@ -239,17 +251,34 @@ export function CodeEditor({
         }),
       ]
     const cached = sessions.get(sessionKey)
-    // Reconnect callbacks to the current component without clearing historyField.
-    const state = cached
-      ? cached.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state
-      : EditorState.create({ doc: content.current, extensions })
+    let state: EditorState
+    let scrollTo: ReturnType<EditorView['scrollSnapshot']> | undefined
+    let flashed = false
+    if (!cached) state = EditorState.create({ doc: content.current, extensions })
+    else {
+      // Reconnect callbacks to the current component without clearing historyField. Text reread
+      // while this file was not displayed, typically an agent's write, is applied in the same
+      // step, before the view exists: a transaction after mounting would cancel the scroll
+      // position restored here.
+      const update = externalUpdate(cached.state, content.current)
+      const transaction = cached.state.update({
+        ...update,
+        effects: [StateEffect.reconfigure.of(extensions), ...(update?.effects ?? [])],
+      })
+      state = transaction.state
+      scrollTo = cached.scroll.map(transaction.changes)
+      flashed = update !== null
+    }
 
-    const editor = new EditorView({ state, parent, scrollTo: cached?.scroll })
+    const editor = new EditorView({ state, parent, scrollTo })
     current.current = editor
+    // The restored position applies at the view's first measure. Unmounted before that (React's
+    // strict mode remounts at once; a prop may change right after opening), a new snapshot would
+    // record the top of the file and lose the position for good: keep the one being restored.
+    let measured = false
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => { measured = true }))
     merge.current = comparison
-    // Text reread while this file was not displayed, typically an agent's write: applied in place
-    // so returning to the file keeps its scroll position and shows what changed.
-    syncText(editor, content.current)
+    if (flashed) clearFlashLater(editor)
     position(editor.state)
     if (comparedWith.current !== null) showComparison(editor, comparison, comparedWith.current)
 
@@ -262,8 +291,12 @@ export function CodeEditor({
 
     return () => {
       cancelled = true
+      cancelAnimationFrame(frame)
       sessions.delete(sessionKey)
-      sessions.set(sessionKey, { state: editor.state, scroll: editor.scrollSnapshot() })
+      sessions.set(sessionKey, {
+        state: editor.state,
+        scroll: !measured && scrollTo ? scrollTo : editor.scrollSnapshot(),
+      })
       if (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value!)
       current.current = null
       merge.current = null

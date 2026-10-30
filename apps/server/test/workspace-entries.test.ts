@@ -262,6 +262,9 @@ test('the fingerprint route follows writes without sending the content', async (
   const second = await app.inject({ method: 'GET', url: '/api/projects/p/file/fingerprint?path=notes.md' })
   assert.notEqual(second.json().fingerprint, first.json().fingerprint)
 
+  // A deleted file is an answer, not an error.
   const missing = await app.inject({ method: 'GET', url: '/api/projects/p/file/fingerprint?path=gone.md' })
-  assert.equal(missing.statusCode, 404)
+  assert.deepEqual(missing.json(), { fingerprint: null })
+  const outside = await app.inject({ method: 'GET', url: '/api/projects/p/file/fingerprint?path=../x' })
+  assert.equal(outside.statusCode, 400)
 })

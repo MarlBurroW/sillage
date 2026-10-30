@@ -17,7 +17,8 @@ export async function checkEditor({ page, context, base, project }) {
   const save = panel.getByRole('button', { name: 'Enregistrer', exact: true })
   const waitText = (text) => page.waitForFunction((text) => document.querySelector('[data-panel="workspace"] .cm-content')?.textContent.includes(text), text)
   const waitClean = () => panel.getByRole('status').filter({ hasText: 'À jour' }).waitFor()
-  const treeFile = (path) => panel.getByRole('button', { name: path, exact: true }).first()
+  // Tree rows are treeitems named with their Git letter: their path attribute is stable.
+  const treeFile = (path) => panel.locator(`[data-tree-path="${path}"]`).first()
 
   await treeFile('package.json').click()
   await code.fill(draftA)
@@ -85,8 +86,8 @@ export async function checkEditor({ page, context, base, project }) {
   await code.fill(draftC)
   let disk = await read()
   assert.ok((await context.request.put(endpoint, { data: { path: 'package.json', content: external, fingerprint: disk.fingerprint } })).ok())
-  await save.click()
-  const conflict = panel.getByRole('alert').filter({ hasText: 'Le fichier a changé sur le disque.' })
+  // The open file watches the disk: the conflict shows without trying to save.
+  const conflict = panel.getByRole('alert').filter({ hasText: 'Le fichier a changé sur le disque' })
   await conflict.waitFor()
   await waitText('"uiCheck": "c"')
   page.once('dialog', dialog => dialog.dismiss())
@@ -101,7 +102,6 @@ export async function checkEditor({ page, context, base, project }) {
   await code.fill(draftC)
   disk = await read()
   assert.ok((await context.request.put(endpoint, { data: { path: 'package.json', content: makeContent('external-again'), fingerprint: disk.fingerprint } })).ok())
-  await save.click()
   await conflict.waitFor()
   page.once('dialog', dialog => dialog.accept())
   await panel.getByRole('button', { name: 'Remplacer par mon brouillon', exact: true }).click()

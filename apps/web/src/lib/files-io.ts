@@ -13,9 +13,9 @@ export function readFile(scope: WorkspaceScope, path: string): Promise<FileConte
   )
 }
 
-/** Fingerprint only: cheap enough to ask each time the file's directory changes. */
-export function readFingerprint(scope: WorkspaceScope, path: string): Promise<{ fingerprint: string }> {
-  return api.get<{ fingerprint: string }>(
+/** Fingerprint only: cheap enough to ask each time the file's directory changes. Null when the file is gone. */
+export function readFingerprint(scope: WorkspaceScope, path: string): Promise<{ fingerprint: string | null }> {
+  return api.get<{ fingerprint: string | null }>(
     `${workspaceApiBase(scope)}/file/fingerprint?path=${encodeURIComponent(path)}`,
   )
 }

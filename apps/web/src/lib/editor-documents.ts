@@ -174,10 +174,16 @@ async function save(key: string, scope: string, path: string, force: boolean) {
 async function refresh(key: string, scope: string, path: string) {
   const before = read(key)
   if (!before.file || before.loading || before.saving) return
-  const latest = await readFingerprint(scope, path).then(({ fingerprint }) => fingerprint, () => null)
+  // Unreachable server: the next change or return to the page tries again.
+  const latest = await readFingerprint(scope, path).then(({ fingerprint }) => fingerprint, () => undefined)
+  if (latest === undefined) return
   const current = read(key)
-  if (latest !== null && (latest === current.file?.fingerprint || latest === current.disk?.fingerprint)) return
-  // Failures included: rereading reports a deleted file the usual way, draft kept.
+  if (latest === null) {
+    // Deleted on disk: say so and keep the text, a draft included; it comes back with the file.
+    if (!current.error) update(key, { error: { kind: 'read', message: translate('editor.missing') } })
+    return
+  }
+  if (!current.error && (latest === current.file?.fingerprint || latest === current.disk?.fingerprint)) return
   await load(key, scope, path, false)
 }
 
