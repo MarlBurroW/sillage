@@ -6,9 +6,11 @@ import type { FastifyInstance } from 'fastify'
 import { conversations, projects, worktreeKeptFiles, worktrees, type ProjectRow, type WorktreeRow } from '@sillage/db'
 import {
   createWorktreeBodySchema,
+  worktreeBulkCleanupBodySchema,
   worktreeCleanupBodySchema,
   worktreeKeepBodySchema,
   type WorktreeCleanupPlanDto,
+  type WorktreeBulkCleanupResultDto,
   type WorktreeCleanupResultDto,
   type WorktreeDto,
   type WorktreeStatusListDto,
@@ -103,6 +105,16 @@ export function registerWorktreeRoutes(
     const result = await cleanup.run(project, body)
     if (!result) throw notFound('worktree_not_found', 'Worktree not found.')
     return result
+  })
+
+  /** Cleans up several trees with nothing left to lose; the client sends long selections in slices. */
+  app.post('/api/projects/:id/worktrees/cleanup/bulk', async (request): Promise<WorktreeBulkCleanupResultDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = worktreeBulkCleanupBodySchema.parse(request.body)
+    const project = loadProject(id, user.id)
+    if (project.ownerId !== user.id) throw forbidden('worktree_delete_forbidden', 'Only the project owner can clean a worktree.')
+    return cleanup.runMany(project, body)
   })
 
   /** Keeps the files left in a merged tree, exactly those the user saw: a fingerprint computed since then means something changed, and keeping it would hide work never reviewed. */

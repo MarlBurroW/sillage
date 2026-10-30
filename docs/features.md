@@ -84,7 +84,10 @@ The periodic cleanup removes expired, revoked and orphaned files.
   default branch: uncommitted work, commits to merge, merged, or folder missing, with
   the sessions working there. The sidebar shows each conversation's branch and state.
   Cleaning up a tree is one action that first says what would be lost; once a tree
-  is merged and clean, Sillage proposes the cleanup as a decision. A merged branch
+  is merged and clean, Sillage proposes the cleanup as a decision.
+  **Clean up all** removes every merged or missing tree in one confirmation: untick
+  the ones to keep; trees where a session is working are left out, and each is
+  reassessed on the server before removal. A merged branch
   whose tree still holds files (a capture, a demo script) is shown as *leftovers*
   rather than uncommitted, with the files named; keep them and the tree counts as
   merged until they change. Agents create, list and remove worktrees through

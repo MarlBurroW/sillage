@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { MAX_BULK_CLEANUP_PATHS } from '@sillage/protocol'
 import type {
   ConversationDto,
+  WorktreeBulkCleanupItemDto,
+  WorktreeBulkCleanupResultDto,
   WorktreeCleanupPlanDto,
   WorktreeCleanupResultDto,
   WorktreeDto,
@@ -147,4 +150,51 @@ export function useCleanWorktree(projectId: string) {
       void queryClient.invalidateQueries({ queryKey: ['services'] })
     },
   })
+}
+
+/** Trees a bulk cleanup may remove: nothing left that the base lacks, or the folder already gone. */
+export function isBulkCleanable(tree: WorktreeStatusDto): boolean {
+  return tree.state === 'merged' || tree.state === 'missing'
+}
+
+/**
+ * Cleans many trees in slices so the caller can show progress. Each slice is reassessed by the
+ * server when it arrives; skipped and failed trees come back in the results rather than as errors.
+ * A request that fails outright stops the run and keeps the results gathered so far.
+ */
+export function useBulkCleanWorktrees(projectId: string) {
+  const queryClient = useQueryClient()
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [items, setItems] = useState<WorktreeBulkCleanupItemDto[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = useCallback(
+    async (paths: string[], options: { deleteBranch: boolean; archiveSessions: boolean; stopServices: boolean }) => {
+      const gathered: WorktreeBulkCleanupItemDto[] = []
+      setError(null)
+      setItems(null)
+      setProgress({ done: 0, total: paths.length })
+      try {
+        for (let start = 0; start < paths.length; start += MAX_BULK_CLEANUP_PATHS) {
+          const slice = paths.slice(start, start + MAX_BULK_CLEANUP_PATHS)
+          const result = await api.post<WorktreeBulkCleanupResultDto>(`/api/projects/${projectId}/worktrees/cleanup/bulk`, { paths: slice, ...options })
+          gathered.push(...result.items)
+          setProgress({ done: start + slice.length, total: paths.length })
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setItems(gathered)
+        setProgress(null)
+        void queryClient.invalidateQueries({ queryKey: worktreesKey(projectId) })
+        void queryClient.invalidateQueries({ queryKey: statusKey(projectId) })
+        void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+        void queryClient.invalidateQueries({ queryKey: ['branches'] })
+        void queryClient.invalidateQueries({ queryKey: ['services'] })
+      }
+    },
+    [projectId, queryClient],
+  )
+
+  return { run, progress, items, error }
 }

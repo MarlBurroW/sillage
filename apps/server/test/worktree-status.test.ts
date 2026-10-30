@@ -544,3 +544,72 @@ test('fusionné avec des restes : distinct du non commité, gardé tant que les 
   assert.equal(clean.state, 'merged')
   assert.equal(clean.kept, 0)
 })
+
+test('nettoyage groupé : fusionnés et introuvables partent, le reste est laissé avec sa raison', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-bulk-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+
+  const tree = (branch: string, id: string) => {
+    const path = addTree(repo, trees, branch)
+    db.insert(worktrees).values({ id, projectId: 'project', name: branch, path, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
+    return path
+  }
+  const done = tree('feat/done', 'wt-done')
+  const busy = tree('feat/busy', 'wt-busy')
+  const wip = tree('feat/wip', 'wt-wip')
+  write(wip, 'draft.ts', 'wip\n')
+  const gone = tree('feat/gone', 'wt-gone')
+  rmSync(gone, { recursive: true, force: true })
+
+  const conversation = (id: string, worktreeId: string | null, status: 'idle' | 'running') => ({
+    id, projectId: 'project', userId: 'owner', title: id, agent: 'claude' as const, config: '{}', status, worktreeId, createdAt: 1, updatedAt: 1,
+  })
+  db.insert(conversations).values([
+    conversation('lived', 'wt-done', 'idle'),
+    conversation('working', 'wt-busy', 'running'),
+    // A running supervisor at the root that wrote in the merged tree: neither blocks nor gets archived.
+    conversation('supervisor', null, 'running'),
+  ]).run()
+  db.insert(conversationPaths).values({ conversationId: 'supervisor', path: join(done, 'src/app.ts'), lastTs: 2 }).run()
+
+  const status = new WorktreeStatusService(db, new EventLog(db))
+  const terminals = { underCwd: () => [] as string[], close: () => undefined } as unknown as TerminalManager
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => undefined)
+  // A list seen before the user acts: the tree gains work afterwards and must survive.
+  await status.get(projectRow)
+  const late = tree('feat/late', 'wt-late')
+  await status.current(projectRow)
+  write(late, 'new.ts', 'new\n')
+
+  const { items } = await cleanup.runMany(projectRow, {
+    paths: [done, busy, wip, gone, late, join(trees, 'nowhere')],
+    deleteBranch: true, archiveSessions: true, stopServices: false,
+  })
+  const outcome = Object.fromEntries(items.map((item) => [item.name, item.outcome === 'skipped' ? `skipped:${item.reason}` : item.outcome]))
+  assert.deepEqual(outcome, {
+    'feat/done': 'removed',
+    'feat/busy': 'skipped:busy',
+    'feat/wip': 'skipped:changed',
+    'feat/gone': 'removed',
+    'feat/late': 'skipped:changed',
+    [join(trees, 'nowhere')]: 'skipped:not_found',
+  })
+  const removed = items.find((item) => item.name === 'feat/done')
+  assert.ok(removed?.outcome === 'removed' && removed.branchDeleted && removed.archived === 1)
+
+  assert.ok(!existsSync(done) && existsSync(busy) && existsSync(wip) && existsSync(late))
+  assert.equal(git(repo, 'branch', '--list', 'feat/done'), '')
+  assert.deepEqual((await listWorktrees(repo)).map((entry) => entry.path).sort(), [repo, busy, wip, late].sort())
+  for (const id of ['wt-done', 'wt-gone']) assert.ok(db.select().from(worktrees).where(sqlEq(worktrees.id, id)).get()?.removedAt)
+  assert.ok(db.select().from(conversations).where(sqlEq(conversations.id, 'lived')).get()?.archivedAt)
+  assert.equal(db.select().from(conversations).where(sqlEq(conversations.id, 'supervisor')).get()?.archivedAt, null)
+  assert.equal(db.select().from(conversations).where(sqlEq(conversations.id, 'working')).get()?.archivedAt, null)
+  assert.deepEqual((await status.get(projectRow)).worktrees.map((entry) => entry.name).sort(), ['feat/busy', 'feat/late', 'feat/wip'])
+})

@@ -1,7 +1,13 @@
 import { rm, stat } from 'node:fs/promises'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { cards, conversations, worktreeKeptFiles, worktrees, type Db, type ProjectRow } from '@sillage/db'
-import type { WorktreeCleanupPlanDto, WorktreeCleanupResultDto, WorktreeStatusDto } from '@sillage/protocol'
+import type {
+  WorktreeBulkCleanupItemDto,
+  WorktreeBulkCleanupResultDto,
+  WorktreeCleanupPlanDto,
+  WorktreeCleanupResultDto,
+  WorktreeStatusDto,
+} from '@sillage/protocol'
 import { GitError, removeWorktree } from '../git.js'
 import { deleteBranch } from '../git-workflow.js'
 import { controlServiceApp, scanServiceApps, serviceAppsAvailable } from '../services/apps.js'
@@ -80,6 +86,72 @@ export class WorktreeCleanup {
     const tree = await this.locate(project, options.path)
     if (!tree) return null
     const base = (await this.status.get(project)).base
+    const result = await this.remove(project, tree, base, options)
+    this.status.forget(project.id)
+    return result
+  }
+
+  /**
+   * Removes every listed tree that still has nothing to lose. One fresh assessment serves the
+   * whole request, taken when it arrives rather than when the user opened the confirmation: a
+   * tree that gained work since then, or where a session is now working, is skipped and reported.
+   * Busy means a session whose working directory is the tree; sessions that merely wrote there
+   * (a long-lived supervisor at the root, typically) neither block nor get archived.
+   */
+  async runMany(
+    project: ProjectRow,
+    options: { paths: string[]; deleteBranch: boolean; archiveSessions: boolean; stopServices: boolean },
+  ): Promise<WorktreeBulkCleanupResultDto> {
+    this.status.invalidate(project.id)
+    const list = await this.status.current(project)
+    const byPath = new Map(list.worktrees.map((tree) => [tree.path, tree]))
+    const items: WorktreeBulkCleanupItemDto[] = []
+
+    for (const path of new Set(options.paths)) {
+      const tree = byPath.get(path)
+      if (!tree) {
+        items.push({ path, name: path, outcome: 'skipped', reason: 'not_found', state: null })
+        continue
+      }
+      if (tree.state !== 'merged' && tree.state !== 'missing') {
+        items.push({ path, name: tree.name, outcome: 'skipped', reason: 'changed', state: tree.state })
+        continue
+      }
+      const living = tree.conversations.filter((entry) => entry.link === 'worktree').map((entry) => entry.id)
+      const rows = living.length
+        ? this.db
+            .select({ id: conversations.id, status: conversations.status })
+            .from(conversations)
+            .where(and(inArray(conversations.id, living), isNull(conversations.archivedAt)))
+            .all()
+        : []
+      if (rows.some((row) => row.status === 'running' || row.status === 'awaiting_input')) {
+        items.push({ path, name: tree.name, outcome: 'skipped', reason: 'busy', state: tree.state })
+        continue
+      }
+      try {
+        const result = await this.remove(project, tree, list.base, {
+          deleteBranch: options.deleteBranch,
+          archiveSessions: options.archiveSessions ? rows.map((row) => row.id) : [],
+          stopServices: options.stopServices,
+        })
+        items.push({ path, name: tree.name, outcome: 'removed', ...result })
+      } catch (err) {
+        items.push({ path, name: tree.name, outcome: 'failed', message: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    // Once for the request: forgetting after each tree would reassess the whole project per removal.
+    this.status.forget(project.id)
+    return { items }
+  }
+
+  private async remove(
+    project: ProjectRow,
+    tree: WorktreeStatusDto,
+    base: string | null,
+    options: { deleteBranch: boolean; archiveSessions: boolean | string[]; stopServices: boolean },
+  ): Promise<WorktreeCleanupResultDto> {
     const result: WorktreeCleanupResultDto = { removed: false, branchDeleted: false, archived: 0, stopped: 0 }
 
     // Stop running processes first: servers whose directories disappear underneath them
@@ -133,7 +205,6 @@ export class WorktreeCleanup {
       .delete(worktreeKeptFiles)
       .where(and(eq(worktreeKeptFiles.projectId, project.id), eq(worktreeKeptFiles.path, tree.path)))
       .run()
-    this.status.forget(project.id)
     return result
   }
 

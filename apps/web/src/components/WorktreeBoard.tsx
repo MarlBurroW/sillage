@@ -6,6 +6,7 @@ import type { ConversationDto, WorktreeStatusDto } from '@sillage/protocol'
 import { AgentIcon } from './AgentIcon'
 import { SignalDot } from './chat/Signals'
 import { Badge, Button, Card, CardBody, CardHeader, cx } from './ui'
+import { WorktreeBulkCleanupDialog } from './WorktreeBulkCleanupDialog'
 import { WorktreeCleanupDialog } from './WorktreeCleanupDialog'
 import { WorktreeLeftoversDialog } from './WorktreeLeftoversDialog'
 import { WorktreeStateMark, WORKTREE_STATE_TONE } from './WorktreeTag'
@@ -14,7 +15,7 @@ import { useLiveStatus } from '../lib/conversation-status'
 import { relativeDate } from '../lib/dates'
 import { translate, useTranslate } from '../lib/i18n'
 import { buildSidebarSignals, presentSignal } from '../lib/signals'
-import { useForgetKeptFiles, useWorktreeStatuses } from '../lib/worktrees'
+import { isBulkCleanable, useForgetKeptFiles, useWorktreeStatuses } from '../lib/worktrees'
 
 /**
  * Project worktrees known to Git or Sillage, their default-branch relationship, metrics, sessions,
@@ -26,10 +27,12 @@ export function WorktreeBoard({ projectId, isRepository, showEmpty = false }: { 
   const { data } = useWorktreeStatuses(isRepository ? projectId : undefined)
   const { data: conversations } = useConversations(isRepository ? projectId : undefined)
   const byId = useMemo(() => new Map((conversations ?? []).map((c) => [c.id, c])), [conversations])
+  const [bulk, setBulk] = useState(false)
 
   if (!isRepository || !data || (data.worktrees.length === 0 && !showEmpty)) return null
 
   const base = data.base
+  const cleanable = data.worktrees.filter(isBulkCleanable).length
   return (
     <Card>
       <div id="worktrees" className="scroll-mt-4" />
@@ -37,7 +40,18 @@ export function WorktreeBoard({ projectId, isRepository, showEmpty = false }: { 
         title={t('worktrees.board.title')}
         description={base ? t('worktrees.board.description', { base }) : t('worktrees.board.descriptionNoBase')}
         icon={<FolderGit2 size={16} />}
+        actions={
+          // Two or more: a single tree keeps its own detailed confirmation.
+          cleanable > 1 ? (
+            <Button variant="ghost" size="sm" icon={<BrushCleaning size={15} />} title={t('worktrees.bulk.actionHint')} onClick={() => setBulk(true)}>
+              {t('worktrees.bulk.action', { count: cleanable })}
+            </Button>
+          ) : null
+        }
       />
+      {bulk ? (
+        <WorktreeBulkCleanupDialog projectId={projectId} trees={data.worktrees} base={base} byId={byId} onClose={() => setBulk(false)} />
+      ) : null}
       <CardBody className="flex flex-col gap-1">
         {!data.fresh ? <p className="text-xs text-ink-faint">{t('worktrees.board.refreshing')}</p> : null}
         {data.worktrees.length === 0 ? <p className="py-2 text-sm text-ink-faint">{t('project.worktrees.empty')}</p> : null}

@@ -659,6 +659,33 @@ export interface WorktreeCleanupResultDto {
   stopped: number
 }
 
+/** Most trees one bulk request removes: the client sends long selections in slices to show progress. */
+export const MAX_BULK_CLEANUP_PATHS = 10
+
+/**
+ * Bulk cleanup of trees with nothing left to lose. Only merged or missing trees are removed; the
+ * server reassesses them when the request arrives rather than trusting the list the user saw.
+ */
+export const worktreeBulkCleanupBodySchema = z.object({
+  paths: z.array(z.string().min(1)).min(1).max(MAX_BULK_CLEANUP_PATHS),
+  deleteBranch: z.boolean().default(true),
+  /** Archives sessions whose working directory was the tree, never sessions that merely wrote there. */
+  archiveSessions: z.boolean().default(true),
+  stopServices: z.boolean().default(true),
+})
+
+/** Why a selected tree was left in place: it no longer exists, it now holds work, or a session is working in it. */
+export type WorktreeBulkSkipReason = 'not_found' | 'changed' | 'busy'
+
+export type WorktreeBulkCleanupItemDto =
+  | ({ path: string; name: string; outcome: 'removed' } & WorktreeCleanupResultDto)
+  | { path: string; name: string; outcome: 'skipped'; reason: WorktreeBulkSkipReason; state: WorktreeState | null }
+  | { path: string; name: string; outcome: 'failed'; message: string }
+
+export interface WorktreeBulkCleanupResultDto {
+  items: WorktreeBulkCleanupItemDto[]
+}
+
 export interface DiffFileDto {
   path: string
   added: number

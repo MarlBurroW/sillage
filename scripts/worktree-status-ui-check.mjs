@@ -339,6 +339,55 @@ try {
   assert.deepEqual(errors, [])
   console.log('OK : confirmation sur un arbre non commité.')
 
+  // Bulk cleanup: two fresh trees from the shell join the missing one. The status cache keeps
+  // its list for up to thirty seconds, so reload until the button counts all three.
+  const bulkA = join(data, 'external', 'nimbus-bulk-a')
+  const bulkB = join(data, 'external', 'nimbus-bulk-b')
+  git(repoRoot, 'worktree', 'add', '-b', 'bulk/a', bulkA, 'main')
+  git(repoRoot, 'worktree', 'add', '-b', 'bulk/b', bulkB, 'main')
+  const bulkButton = (target) => target.getByRole('button', { name: 'Tout nettoyer (3)', exact: true })
+  for (let attempt = 0; ; attempt++) {
+    // Same URL with a hash does not navigate: reload so the list is fetched again.
+    await page.goto(`${base}/p/${project.id}#worktrees`)
+    if (attempt > 0) await page.reload()
+    await page.getByRole('heading', { name: 'Chantiers' }).waitFor()
+    if (await bulkButton(page).waitFor({ timeout: 3000 }).then(() => true, () => false)) break
+    assert.ok(attempt < 15, 'Le bouton Tout nettoyer compte les trois arbres')
+  }
+  const bulkDialog = (target) => target.getByRole('dialog', { name: 'Nettoyer les arbres terminés' })
+  const bulkPhone = await session({ width: 390, height: 844 }, true)
+  await bulkPhone.page.goto(`${base}/p/${project.id}#worktrees`)
+  await bulkButton(bulkPhone.page).click()
+  await bulkDialog(bulkPhone.page).getByRole('checkbox', { name: /bulk\/b/ }).waitFor()
+  const phoneBox = await bulkDialog(bulkPhone.page).boundingBox()
+  assert.ok(phoneBox && phoneBox.width >= 389 && phoneBox.x <= 1, 'La fenêtre groupée occupe tout l’écran au téléphone')
+  assert.ok(await bulkPhone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+  await bulkDialog(bulkPhone.page).getByRole('button', { name: 'Nettoyer 3 arbres', exact: true }).waitFor()
+  await bulkPhone.page.screenshot({ path: join(shots, 'bulk-cleanup-phone.png') })
+  await bulkDialog(bulkPhone.page).getByRole('button', { name: 'Annuler', exact: true }).click()
+  assert.ok(existsSync(bulkA) && existsSync(bulkB), 'Annuler ne nettoie rien')
+  assert.deepEqual(bulkPhone.errors, [])
+
+  await bulkButton(page).click()
+  const desktopBulk = bulkDialog(page)
+  assert.equal(await desktopBulk.getByRole('checkbox').count(), 3)
+  await desktopBulk.getByText('Supprimer 3 branches', { exact: true }).waitFor()
+  await desktopBulk.getByRole('checkbox', { name: /bulk\/b/ }).uncheck()
+  await desktopBulk.getByText('2 arbres sélectionnés', { exact: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'bulk-cleanup-desktop.png') })
+  await desktopBulk.getByRole('button', { name: 'Nettoyer 2 arbres', exact: true }).click()
+  await desktopBulk.getByText('2 arbres nettoyés.', { exact: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'bulk-cleanup-done.png') })
+  await desktopBulk.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await desktopBulk.waitFor({ state: 'hidden' })
+  assert.ok(!existsSync(bulkA) && existsSync(bulkB), 'Seul l’arbre coché est retiré')
+  assert.equal(git(repoRoot, 'branch', '--list', 'bulk/a'), '')
+  assert.ok(!git(repoRoot, 'worktree', 'list').includes('nimbus-gone'), 'L’introuvable a quitté git')
+  await page.locator('span.font-mono', { hasText: 'feat/gone' }).waitFor({ state: 'detached' })
+  assert.equal(await bulkButton(page).count(), 0)
+  assert.deepEqual(errors, [])
+  console.log('OK : nettoyage groupé, sélection respectée, plein écran au téléphone.')
+
   // Phone: row stays readable, view does not overflow.
   const phone = await session({ width: 390, height: 844 }, true)
   await phone.page.goto(`${base}/p/${project.id}/board`)
