@@ -65,6 +65,11 @@ export function locale(): Locale {
   return current
 }
 
+/** A count written the active language's way: “1 500” in French, “1,500” in English. */
+export function formatCount(count: number): string {
+  return new Intl.NumberFormat(current).format(count)
+}
+
 /**
  * Load the selected catalog before the first render. Rendering first would briefly flash English
  * while downloading. Failure (offline without precache, missing chunk after deployment) does not

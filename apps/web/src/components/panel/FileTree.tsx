@@ -25,7 +25,9 @@ import {
 } from 'lucide-react'
 import {
   Fragment,
+  memo,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type DragEvent,
@@ -39,7 +41,7 @@ import { formatBytes } from '../../lib/attachments'
 import { copyText } from '../../lib/clipboard'
 import { referenceInComposer } from '../../lib/composer-ref'
 import { hasDraft, moveDocuments } from '../../lib/editor-documents'
-import { closeTab, moveTabs, openTab, useEditorTabs } from '../../lib/editor-tabs'
+import { closeTab, moveTabs, openTab, useEditorTabs, useIsActiveTab } from '../../lib/editor-tabs'
 import {
   parentOf,
   siblingPath,
@@ -51,7 +53,8 @@ import {
 } from '../../lib/entries'
 import { fileIconUrl } from '../../lib/file-icons'
 import { downloadArchive, downloadFile } from '../../lib/files-io'
-import { translate, useTranslate } from '../../lib/i18n'
+import { formatCount, translate, useTranslate } from '../../lib/i18n'
+import { useDebounced } from '../../lib/search'
 import { useFileSearch, useRefreshTree, useTreeLevel } from '../../lib/tree'
 import {
   clearSelection,
@@ -66,10 +69,12 @@ import {
   selectOnly,
   setExpanded,
   setTreeClipboard,
+  setTreeDraft,
   startSelecting,
   toggleSelected,
   topLevelPaths,
   useTreeView,
+  type TreeDraft,
   type TreeView,
 } from '../../lib/tree-view'
 import {
@@ -86,9 +91,6 @@ import {
   ContextMenu,
   ContextMenuItem,
   ContextMenuSeparator,
-  Menu,
-  MenuItem,
-  MenuSeparator,
   cx,
 } from '../ui'
 
@@ -124,11 +126,6 @@ function deleteHint(): string {
 function copyModifier(event: { altKey: boolean; ctrlKey: boolean }): boolean {
   return IS_MAC ? event.altKey : event.ctrlKey
 }
-
-/** Active tree input: entry creation or rename. */
-type Draft =
-  | { mode: 'create'; parent: string; kind: 'file' | 'directory' }
-  | { mode: 'rename'; path: string; name: string }
 
 /** Targeted entry path and directory flag. */
 type Picked = readonly [path: string, isDirectory: boolean]
@@ -172,10 +169,11 @@ export function FileTree({
   const t = useTranslate()
   const queryClient = useQueryClient()
   const { active: activePath, paths: openPaths } = useEditorTabs(scope)
-  const [draft, setDraft] = useState<Draft | null>(null)
   const [query, setQuery] = useState('')
   /** Entries proposed for irreversible deletion. */
   const [pendingDelete, setPendingDelete] = useState<Picked[] | null>(null)
+  /** Row the tree's menu opens for, or null for the empty space (the root). */
+  const [menuEntry, setMenuEntry] = useState<TreeEntryDto | null>(null)
   /** Feedback for actions with no other visible result: copying to clipboard or failures in bulk operations. */
   const [notice, setNotice] = useState<{ tone: 'info' | 'critical'; text: string } | null>(null)
   const create = useCreateEntry(scope)
@@ -204,6 +202,9 @@ export function FileTree({
     revealPath(scope, activePath)
     selectOnly(scope, activePath, false)
   }, [scope, activePath])
+
+  // A name input left open would come back with the column, unfocused.
+  useEffect(() => () => setTreeDraft(scope, null), [scope])
 
   useEffect(() => {
     if (notice?.tone !== 'info') return
@@ -297,14 +298,11 @@ export function FileTree({
     )
   }
 
-  const actions: Actions = {
-    scope,
-    activePath,
-    draft,
-    setDraft,
+  const latest = useRef<Callbacks | null>(null)
+  latest.current = {
     open,
     onCreate: (parent, name, kind) => {
-      setDraft(null)
+      setTreeDraft(scope, null)
       create.mutate(
         { parent, name, kind },
         {
@@ -317,7 +315,7 @@ export function FileTree({
       )
     },
     onRename: (path, name) => {
-      setDraft(null)
+      setTreeDraft(scope, null)
       const to = siblingPath(path, name)
       if (name !== nameOf(path)) {
         rename.mutate({ from: path, to }, { onSuccess: () => moved(path, to) })
@@ -367,12 +365,35 @@ export function FileTree({
       void filesFromDrop(transfer).then((files) => enqueueUploads(scope, parent, files))
     },
     onPickFiles: openPicker,
-    rows: () => Array.from(list.current?.querySelectorAll<HTMLElement>('[data-tree-path]') ?? []),
   }
+
+  /**
+   * Rows are memoized and all receive `actions`: its identity must survive renders of the tree
+   * (an opened tab, a notice, a drag over the column), or each click redrew every row, about half
+   * a second with a thousand of them. Methods forward to the latest render's callbacks.
+   */
+  const actions = useMemo<Actions>(() => {
+    const current = () => latest.current as Callbacks
+    return {
+      scope,
+      setDraft: (draft) => setTreeDraft(scope, draft),
+      open: (path, preview) => current().open(path, preview),
+      onCreate: (parent, name, kind) => current().onCreate(parent, name, kind),
+      onRename: (path, name) => current().onRename(path, name),
+      onTransfer: (entries, toParent, mode) => current().onTransfer(entries, toParent, mode),
+      onDelete: (entries) => current().onDelete(entries),
+      onClipboard: (mode, entries) => current().onClipboard(mode, entries),
+      onPaste: (toParent) => current().onPaste(toParent),
+      onCopyPaths: (paths, absolute) => current().onCopyPaths(paths, absolute),
+      onDrop: (parent, transfer) => current().onDrop(parent, transfer),
+      onPickFiles: (parent) => current().onPickFiles(parent),
+      rows: () => Array.from(list.current?.querySelectorAll<HTMLElement>('[data-tree-path]') ?? []),
+    }
+  }, [scope])
 
   const startDraft = (kind: 'file' | 'directory') => {
     if (target) setExpanded(scope, target, true)
-    setDraft({ mode: 'create', parent: target, kind })
+    setTreeDraft(scope, { mode: 'create', parent: target, kind })
   }
 
   const searching = query.trim().length >= 2
@@ -540,36 +561,52 @@ export function FileTree({
        * Search replaces rather than filters the tree: opening/closing directories around matches
        * would lose context, and clearing must restore expanded levels unchanged.
        */}
-      <div
-        ref={list}
-        className="flex flex-1 flex-col"
-        onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
+      {/*
+       * One menu for the whole tree, for the row under the pointer. A menu per row (plus the …
+       * dropdown and its tooltip) took about half a second to mount for a thousand rows. The row
+       * is read from the event before the menu opens: right-click, long press, the context-menu
+       * key, or a row's … button, which opens it in place.
+       */}
+      <ContextMenu
+        trigger={
+          <div
+            ref={list}
+            className="flex flex-1 flex-col"
+            onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
+            onContextMenu={(event) => setMenuEntry(entryAt(event.target))}
+            // A long press opens the menu later, from this event: note its row now.
+            onPointerDown={(event) => {
+              if (event.pointerType !== 'mouse') setMenuEntry(entryAt(event.target))
+            }}
+          >
+            {searching ? (
+              <SearchResults scope={scope} query={query} actions={actions} />
+            ) : (
+              <Level path="" depth={0} expanded actions={actions} />
+            )}
+            {/*
+             * Empty space below the entries: its menu aims at the root, like a desktop explorer.
+             * Creating there used to require clearing the selection so header buttons would target
+             * it. Clicking it clears selection.
+             */}
+            <div data-tree-background className="min-h-10 flex-1" onClick={() => clearSelection(scope)} />
+          </div>
+        }
       >
-        {searching ? (
-          <SearchResults scope={scope} query={query} actions={actions} />
+        {menuEntry ? (
+          <EntryMenuItems entry={menuEntry} actions={actions} />
         ) : (
-          <Level path="" depth={0} expanded actions={actions} />
-        )}
-        {/*
-         * Empty space below the entries, with its own menu like a desktop explorer: creating at the
-         * root used to require clearing the selection so header buttons would target it. Kept
-         * outside the rows rather than around them: a menu wrapping rows would also start on a
-         * long press of a row, opening both menus. Clicking it clears selection.
-         */}
-        <ContextMenu
-          trigger={<div data-tree-background className="min-h-10 flex-1" onClick={() => clearSelection(scope)} />}
-        >
           <RootMenuItems
             actions={actions}
             onCreate={(kind) => {
               // Search results replace the tree, where the name input appears.
               setQuery('')
-              setDraft({ mode: 'create', parent: '', kind })
+              setTreeDraft(scope, { mode: 'create', parent: '', kind })
             }}
             onRefresh={refresh}
           />
-        </ContextMenu>
-      </div>
+        )}
+      </ContextMenu>
 
       <UploadQueue scope={scope} />
 
@@ -776,6 +813,22 @@ function selectFromClick(event: MouseEvent, entry: TreeEntryDto, actions: Action
   return false
 }
 
+/** Entry of the row holding `target`, read from its attributes: the shared menu has no row component. */
+function entryAt(target: EventTarget): TreeEntryDto | null {
+  if (!(target instanceof Element)) return null
+  const item =
+    target.closest('[data-tree-entry]')?.querySelector<HTMLElement>('[data-tree-path]') ??
+    target.closest<HTMLElement>('[data-tree-path]')
+  if (!item) return null
+  return { name: item.dataset.treeName ?? '', path: item.dataset.treePath ?? '', isDirectory: item.dataset.treeDir === '1' }
+}
+
+/** Opens the tree's menu below a row's … button, as a right-click there would. */
+function openMenuAt(button: HTMLElement): void {
+  const box = button.getBoundingClientRect()
+  button.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left, clientY: box.bottom }))
+}
+
 /** Entries dragged from the tree, or null for other drag kinds. */
 function readDragged(event: DragEvent): Picked[] | null {
   const raw = event.dataTransfer.getData(DRAG_TYPE)
@@ -954,7 +1007,9 @@ function SearchResults({
   actions: Actions
 }) {
   const t = useTranslate()
-  const { data, isPending, error } = useFileSearch(scope, query)
+  // One search per pause in typing rather than per letter.
+  const settled = useDebounced(query, 150)
+  const { data, isPending, error } = useFileSearch(scope, settled, { keepPrevious: true })
 
   if (error) {
     return (
@@ -1035,9 +1090,7 @@ function RootAction({
  */
 interface Actions {
   scope: string
-  activePath: string | null
-  draft: Draft | null
-  setDraft: (draft: Draft | null) => void
+  setDraft: (draft: TreeDraft | null) => void
   /** Open a file; previews yield their tab to the next file, see openTab. */
   open: (path: string, preview?: boolean) => void
   onCreate: (parent: string, name: string, kind: 'file' | 'directory') => void
@@ -1057,7 +1110,10 @@ interface Actions {
   rows: () => HTMLElement[]
 }
 
-function Level({
+/** What changes from one render of the tree to the next, behind the stable `Actions`. */
+type Callbacks = Omit<Actions, 'scope' | 'setDraft' | 'rows'>
+
+const Level = memo(function Level({
   path,
   depth,
   expanded,
@@ -1070,8 +1126,10 @@ function Level({
 }) {
   const t = useTranslate()
   const { data, isPending, error } = useTreeLevel(actions.scope, path, expanded)
-  const draft = actions.draft
-  const creatingHere = draft?.mode === 'create' && draft.parent === path
+  const creating = useTreeView(actions.scope, (view) =>
+    view.draft?.mode === 'create' && view.draft.parent === path ? view.draft.kind : null,
+  )
+  const creatingHere = creating !== null
 
   if (!expanded) return null
 
@@ -1105,9 +1163,9 @@ function Level({
         <li role="none">
           <NameInput
             depth={depth}
-            icon={fileIconUrl(draft.kind === 'directory' ? 'folder' : 'file', draft.kind === 'directory')}
+            icon={fileIconUrl(creating === 'directory' ? 'folder' : 'file', creating === 'directory')}
             initial=""
-            onCommit={(name) => actions.onCreate(path, name, draft.kind)}
+            onCommit={(name) => actions.onCreate(path, name, creating)}
             onCancel={() => actions.setDraft(null)}
           />
         </li>
@@ -1126,9 +1184,20 @@ function Level({
       {data.entries.map((entry) => (
         <Entry key={entry.path} entry={entry} depth={depth} actions={actions} />
       ))}
+
+      {/* The server lists a bounded number of entries per level: say so, rather than let the rest look absent. */}
+      {data.total > data.entries.length ? (
+        <li
+          role="none"
+          className="px-2 py-1 text-xs text-ink-faint"
+          style={{ paddingLeft: depth * INDENT_PX + 8 }}
+        >
+          {t('filetree.truncated', { shown: formatCount(data.entries.length), total: formatCount(data.total) })}
+        </li>
+      ) : null}
     </ul>
   )
-}
+})
 
 /** Entry action rendered in both menus. */
 interface EntryAction {
@@ -1372,19 +1441,11 @@ function selectionActions(targets: Picked[], actions: Actions): EntryAction[] {
 }
 
 /** Contents of both row menus, read when Radix mounts on opening so selection and clipboard are current. */
-function EntryMenuItems({
-  entry,
-  actions,
-  variant,
-}: {
-  entry: TreeEntryDto
-  actions: Actions
-  variant: 'context' | 'dropdown'
-}) {
+function EntryMenuItems({ entry, actions }: { entry: TreeEntryDto; actions: Actions }) {
   const view = getTreeView(actions.scope)
   const targets = targetsOf(view, entry.path, entry.isDirectory)
   const list = targets.length > 1 ? selectionActions(targets, actions) : entryActions(entry, actions, view)
-  return <ActionItems list={list} variant={variant} />
+  return <ActionItems list={list} />
 }
 
 /** Menu of the empty space below the entries: everything there targets the root. */
@@ -1447,13 +1508,13 @@ function RootMenuItems({
       run: onRefresh,
     },
   ]
-  return <ActionItems list={list} variant="context" />
+  return <ActionItems list={list} />
 }
 
-/** Action data in either menu primitive, with separators between groups. */
-function ActionItems({ list, variant }: { list: EntryAction[]; variant: 'context' | 'dropdown' }) {
-  const Item = variant === 'context' ? ContextMenuItem : MenuItem
-  const Separator = variant === 'context' ? ContextMenuSeparator : MenuSeparator
+/** Action data as menu items, with separators between groups. */
+function ActionItems({ list }: { list: EntryAction[] }) {
+  const Item = ContextMenuItem
+  const Separator = ContextMenuSeparator
 
   return (
     <>
@@ -1477,7 +1538,7 @@ function rowTone(selected: boolean, active: boolean): string {
 }
 
 /** Search-result row: no chevron, drag-and-drop, or indentation because it represents no tree level. */
-function EntryRow({
+const EntryRow = memo(function EntryRow({
   entry,
   actions,
   children,
@@ -1487,47 +1548,41 @@ function EntryRow({
   children: ReactNode
 }) {
   const selected = useTreeView(actions.scope, (view) => view.selection.has(entry.path))
-  const active = actions.activePath === entry.path
+  const active = useIsActiveTab(actions.scope, entry.path)
 
   return (
-    <ContextMenu
-      trigger={
-        <button
-          type="button"
-          role="treeitem"
-          aria-selected={selected}
-          aria-current={active ? true : undefined}
-          data-tree-path={entry.path}
-          data-tree-name={entry.name}
-          onMouseDown={(event) => {
-            // Shift-click extends selection; prevent browser text selection too.
-            if (event.shiftKey) event.preventDefault()
-          }}
-          onClick={(event) => {
-            if (!selectFromClick(event, entry, actions)) actions.open(entry.path, true)
-          }}
-          onDoubleClick={(event) => {
-            if (event.shiftKey || event.metaKey || event.ctrlKey) return
-            actions.open(entry.path)
-          }}
-          className={cx(
-            'flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left select-none',
-            // Inset the global focus ring or the column would clip it.
-            'transition-colors focus-visible:-outline-offset-2',
-            rowTone(selected, active),
-          )}
-        >
-          <img src={fileIconUrl(entry.name, false)} alt="" aria-hidden className="size-4 shrink-0" />
-          {children}
-        </button>
-      }
+    <button
+      type="button"
+      role="treeitem"
+      aria-selected={selected}
+      aria-current={active ? true : undefined}
+      data-tree-path={entry.path}
+      data-tree-name={entry.name}
+      onMouseDown={(event) => {
+        // Shift-click extends selection; prevent browser text selection too.
+        if (event.shiftKey) event.preventDefault()
+      }}
+      onClick={(event) => {
+        if (!selectFromClick(event, entry, actions)) actions.open(entry.path, true)
+      }}
+      onDoubleClick={(event) => {
+        if (event.shiftKey || event.metaKey || event.ctrlKey) return
+        actions.open(entry.path)
+      }}
+      className={cx(
+        'flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left select-none',
+        // Inset the global focus ring or the column would clip it.
+        'transition-colors focus-visible:-outline-offset-2',
+        rowTone(selected, active),
+      )}
     >
-      <EntryMenuItems entry={entry} actions={actions} variant="context" />
-    </ContextMenu>
+      <img src={fileIconUrl(entry.name, false)} alt="" aria-hidden className="size-4 shrink-0" />
+      {children}
+    </button>
   )
-}
+})
 
-function Entry({
+const Entry = memo(function Entry({
   entry,
   depth,
   actions,
@@ -1545,17 +1600,17 @@ function Entry({
     (view) => view.clipboard?.mode === 'cut' && view.clipboard.entries.has(entry.path),
   )
   const [dropping, setDropping] = useState(false)
-  const active = actions.activePath === entry.path
+  const active = useIsActiveTab(scope, entry.path)
+  const renaming = useTreeView(scope, (view) => view.draft?.mode === 'rename' && view.draft.path === entry.path)
   const button = useRef<HTMLButtonElement>(null)
   const state = entry.state ? STATES[entry.state] : null
-  const draft = actions.draft
 
   // Reveal the editor's current file: tabs or thread links may open files far outside the scrolled viewport.
   useEffect(() => {
     if (active) button.current?.scrollIntoView({ block: 'nearest' })
   }, [active])
 
-  if (draft?.mode === 'rename' && draft.path === entry.path) {
+  if (renaming) {
     return (
       <li role="none">
         <NameInput
@@ -1593,136 +1648,126 @@ function Entry({
 
   return (
     <li role="none">
-      <ContextMenu
-        trigger={
-          <div
-            className={cx(
-              'group/entry flex items-center transition-colors',
-              dropping ? 'bg-accent-wash' : rowTone(selected, active),
-              cut && 'opacity-50',
-            )}
-            draggable
-            onDragStart={(event) => {
-              // Drag the entire selection when the grabbed row belongs to it.
-              const dragged = targetsOf(getTreeView(scope), entry.path, entry.isDirectory)
-              event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(dragged))
-              event.dataTransfer.effectAllowed = 'copyMove'
-              if (dragged.length > 1) {
-                setDragBadge(event, translate('filetree.drag.count', { count: dragged.length }))
-              }
-            }}
-            onDragOver={(event) => {
-              const external = carriesExternalFiles(event.dataTransfer)
-              // Without preventDefault browsers silently reject drops.
-              if (!external && !event.dataTransfer.types.includes(DRAG_TYPE)) return
-              event.preventDefault()
-              event.dataTransfer.dropEffect = external || copyModifier(event) ? 'copy' : 'move'
-              setDropping(true)
-            }}
-            onDragLeave={() => setDropping(false)}
-            onDrop={onDrop}
-          >
-            <button
-              ref={button}
-              type="button"
-              role="treeitem"
-              aria-level={depth + 1}
-              aria-selected={selected}
-              aria-expanded={entry.isDirectory ? open : undefined}
-              aria-current={active ? true : undefined}
-              data-tree-path={entry.path}
-              data-tree-dir={entry.isDirectory ? '1' : undefined}
-              data-tree-name={entry.name}
-              onMouseDown={(event) => {
-                // Shift-click extends selection; prevent browser text selection too.
-                if (event.shiftKey) event.preventDefault()
-              }}
-              /*
-               * Single-click expands directories or opens files, the expected gestures. The tree
-               * remains beside the editor, so opening does not abandon browsing. Single-click
-               * creates a preview replaced by subsequent files, avoiding tab accumulation;
-               * double-click keeps it permanently. Ctrl or Shift clicks only select.
-               */
-              onClick={(event) => {
-                if (selectFromClick(event, entry, actions)) return
-                if (entry.isDirectory) setExpanded(scope, entry.path, !open)
-                else actions.open(entry.path, true)
-              }}
-              onDoubleClick={(event) => {
-                if (entry.isDirectory || event.shiftKey || event.metaKey || event.ctrlKey) return
-                if (getTreeView(scope).selecting) return
-                actions.open(entry.path)
-              }}
-              className={cx(
-                'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem] select-none',
-                // Inset the global focus ring or the column would clip it.
-                'focus-visible:-outline-offset-2',
-                entry.state === 'ignored' ? 'text-ink-faint/60' : 'text-ink-soft',
-              )}
-              style={{ paddingLeft: depth * INDENT_PX + 6 }}
-            >
-              {entry.isDirectory ? (
-                <ChevronRight
-                  size={12}
-                  className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
-                />
-              ) : (
-                <span className="w-3 shrink-0" />
-              )}
-
-              {/* Empty alt because icons repeat adjacent filenames. */}
-              <img
-                src={fileIconUrl(entry.name, entry.isDirectory, open)}
-                alt=""
-                aria-hidden
-                className="size-4 shrink-0"
-              />
-
-              <span className={cx('min-w-0 flex-1 truncate', state && state.tone)}>
-                {entry.name}
-              </span>
-
-              {state?.letter ? (
-                <span className={cx('shrink-0 font-mono text-[0.625rem]', state.tone)}>
-                  {state.letter}
-                </span>
-              ) : null}
-            </button>
-
-            {/* Keep menu triggers visible while open or they vanish when pointers leave rows for the menu. */}
-            <div
-              className={cx(
-                'shrink-0 pr-1 opacity-0 transition-opacity',
-                'group-hover/entry:opacity-100 has-[[data-state=open]]:opacity-100',
-                'focus-within:opacity-100 pointer-coarse:opacity-100',
-              )}
-            >
-              <Menu
-                trigger={
-                  <TooltipButton
-                    type="button"
-                    aria-label={t('filetree.entry.actions', { name: entry.name })}
-                    className="flex size-11 md:size-7 pointer-coarse:size-11 items-center justify-center rounded text-ink-faint hover:text-ink"
-                  >
-                    <MoreHorizontal size={14} />
-                  </TooltipButton>
-                }
-              >
-                <EntryMenuItems entry={entry} actions={actions} variant="dropdown" />
-              </Menu>
-            </div>
-          </div>
-        }
+      <div
+        data-tree-entry
+        className={cx(
+          'group/entry flex items-center transition-colors',
+          dropping ? 'bg-accent-wash' : rowTone(selected, active),
+          cut && 'opacity-50',
+        )}
+        draggable
+        onDragStart={(event) => {
+          // Drag the entire selection when the grabbed row belongs to it.
+          const dragged = targetsOf(getTreeView(scope), entry.path, entry.isDirectory)
+          event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(dragged))
+          event.dataTransfer.effectAllowed = 'copyMove'
+          if (dragged.length > 1) {
+            setDragBadge(event, translate('filetree.drag.count', { count: dragged.length }))
+          }
+        }}
+        onDragOver={(event) => {
+          const external = carriesExternalFiles(event.dataTransfer)
+          // Without preventDefault browsers silently reject drops.
+          if (!external && !event.dataTransfer.types.includes(DRAG_TYPE)) return
+          event.preventDefault()
+          event.dataTransfer.dropEffect = external || copyModifier(event) ? 'copy' : 'move'
+          setDropping(true)
+        }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={onDrop}
       >
-        <EntryMenuItems entry={entry} actions={actions} variant="context" />
-      </ContextMenu>
+        <button
+          ref={button}
+          type="button"
+          role="treeitem"
+          aria-level={depth + 1}
+          aria-selected={selected}
+          aria-expanded={entry.isDirectory ? open : undefined}
+          aria-current={active ? true : undefined}
+          data-tree-path={entry.path}
+          data-tree-dir={entry.isDirectory ? '1' : undefined}
+          data-tree-name={entry.name}
+          onMouseDown={(event) => {
+            // Shift-click extends selection; prevent browser text selection too.
+            if (event.shiftKey) event.preventDefault()
+          }}
+          /*
+           * Single-click expands directories or opens files, the expected gestures. The tree
+           * remains beside the editor, so opening does not abandon browsing. Single-click
+           * creates a preview replaced by subsequent files, avoiding tab accumulation;
+           * double-click keeps it permanently. Ctrl or Shift clicks only select.
+           */
+          onClick={(event) => {
+            if (selectFromClick(event, entry, actions)) return
+            if (entry.isDirectory) setExpanded(scope, entry.path, !open)
+            else actions.open(entry.path, true)
+          }}
+          onDoubleClick={(event) => {
+            if (entry.isDirectory || event.shiftKey || event.metaKey || event.ctrlKey) return
+            if (getTreeView(scope).selecting) return
+            actions.open(entry.path)
+          }}
+          className={cx(
+            'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem] select-none',
+            // Inset the global focus ring or the column would clip it.
+            'focus-visible:-outline-offset-2',
+            entry.state === 'ignored' ? 'text-ink-faint/60' : 'text-ink-soft',
+          )}
+          style={{ paddingLeft: depth * INDENT_PX + 6 }}
+        >
+          {entry.isDirectory ? (
+            <ChevronRight
+              size={12}
+              className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
+            />
+          ) : (
+            <span className="w-3 shrink-0" />
+          )}
+
+          {/* Empty alt because icons repeat adjacent filenames. */}
+          <img
+            src={fileIconUrl(entry.name, entry.isDirectory, open)}
+            alt=""
+            aria-hidden
+            className="size-4 shrink-0"
+          />
+
+          <span className={cx('min-w-0 flex-1 truncate', state && state.tone)}>
+            {entry.name}
+          </span>
+
+          {state?.letter ? (
+            <span className={cx('shrink-0 font-mono text-[0.625rem]', state.tone)}>
+              {state.letter}
+            </span>
+          ) : null}
+        </button>
+
+        <div
+          className={cx(
+            'shrink-0 pr-1 opacity-0 transition-opacity',
+            'group-hover/entry:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100',
+          )}
+        >
+          {/* No tooltip: one per row cost as much to mount as the rows themselves. The label suffices. */}
+          <button
+            type="button"
+            aria-label={t('filetree.entry.actions', { name: entry.name })}
+            aria-haspopup="menu"
+            onClick={(event) => openMenuAt(event.currentTarget)}
+            className="flex size-11 md:size-7 pointer-coarse:size-11 items-center justify-center rounded text-ink-faint hover:text-ink"
+          >
+            <MoreHorizontal size={14} />
+          </button>
+        </div>
+      </div>
 
       {entry.isDirectory ? (
         <Level path={entry.path} depth={depth + 1} expanded={open} actions={actions} />
       ) : null}
     </li>
   )
-}
+})
 
 /**
  * Name input for creation and rename. Select the basename without extension because renaming
@@ -1760,6 +1805,8 @@ function NameInput({
           const dot = initial.lastIndexOf('.')
           event.currentTarget.setSelectionRange(0, dot > 0 ? dot : initial.length)
         }}
+        // The text field's own menu (paste…), not the tree's.
+        onContextMenu={(event) => event.stopPropagation()}
         onBlur={() => {
           const name = value.trim()
           if (name && name !== initial) onCommit(name)

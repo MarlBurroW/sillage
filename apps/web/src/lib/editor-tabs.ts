@@ -41,6 +41,18 @@ export function useEditorTabs(conversationId: string): Tabs {
 }
 
 /**
+ * Whether `path` is the active tab. Rows of the explorer each read this rather than the whole tab
+ * list, so opening a file redraws two rows instead of all of them.
+ */
+export function useIsActiveTab(conversationId: string, path: string): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => byConversation.get(conversationId)?.active === path,
+    () => false,
+  )
+}
+
+/**
  * Open a file or activate its existing tab. `preview` means a browsing open from a tree
  * single-click; explicit opens retain their place.
  */

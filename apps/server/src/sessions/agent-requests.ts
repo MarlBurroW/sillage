@@ -3,7 +3,7 @@ import { resolveAgentTags, setCardTags, TagRefusal, type TagAuthor } from '../bo
 import { personalMemoryDir, writePersonalMemory } from '../memory/personal.js'
 import { createProject } from '../projects/create.js'
 import { deleteProject } from '../projects/delete.js'
-import { searchEntries } from '../workspace.js'
+import { searchTree } from '../search/search-files.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { memoryFileSchema, writeMemoryFileBodySchema, conversationPath } from '@sillage/protocol'
@@ -265,7 +265,7 @@ export class AgentRequests {
         const accessible = this.ctx.db.select().from(projects).all().filter(project => (project.ownerId === userId || project.visibility === 'shared') && (!request.projectId || project.id === request.projectId))
         const results = []
         for (const project of accessible.slice(0, 30)) {
-          const found = await searchEntries(project.workspacePath, query)
+          const found = await searchTree(project.workspacePath, query)
           results.push({ project: project.name, directory: project.workspacePath, ...found })
         }
         this.settle(request.id, JSON.stringify({ results, truncated: accessible.length > 30, hint: 'These are accessible Sillage project folders. Use native CLI file tools to search elsewhere as requested and permitted.' }), false)

@@ -415,6 +415,9 @@ export async function deleteEntry(root: string, relativePath: string): Promise<v
   }
 }
 
+/** Accents in French order, and numbers by value: `file2` before `file10`. */
+const ENTRY_ORDER = new Intl.Collator('fr', { numeric: true })
+
 /**
  * One level of the tree, directories first then files, each sorted by name.
  *
@@ -422,115 +425,10 @@ export async function deleteEntry(root: string, relativePath: string): Promise<v
  * the root would make the explorer loop, and following it would bypass the
  * workspace boundary.
  */
-/**
- * Directories excluded from search.
- *
- * They remain visible in the explorer, where expanding them is deliberate;
- * traversing them to find a file is different: `node_modules` alone outweighs
- * the rest of the repository, and its results are never what we are looking for.
- */
-const SEARCH_SKIP = new Set([
-  '.git',
-  'node_modules',
-  'dist',
-  'build',
-  'out',
-  'target',
-  'vendor',
-  '.next',
-  '.nuxt',
-  '.venv',
-  '__pycache__',
-  '.pnpm-store',
-  'coverage',
-])
-
-/** Beyond this limit the list is unreadable and traversal costs more than it yields. */
-const SEARCH_MAX_RESULTS = 80
-const SEARCH_MAX_VISITED = 30_000
-
-/**
- * Searches for a file by name throughout the working directory.
- *
- * Uses case- and accent-insensitive substring matching rather than fuzzy matching:
- * in a project tree, fuzzy matching mostly adds noise, and users almost always
- * enter an exact part of the name. Name matches precede path matches, and shorter
- * matches precede longer ones because `panel.ts` is a likelier target than
- * `panel-transition-helpers.ts`.
- *
- * Traversal is bounded in both breadth and depth: a working directory can be
- * anything, including a network mount.
- */
-export async function searchEntries(
+export async function listDirectory(
   root: string,
-  query: string,
-): Promise<{ entries: TreeEntryDto[]; truncated: boolean }> {
-  const needle = fold(query)
-  const found: TreeEntryDto[] = []
-  const queue: string[] = ['']
-  let visited = 0
-  let truncated = false
-
-  while (queue.length > 0) {
-    const relative = queue.shift() as string
-
-    let entries
-    try {
-      entries = await readdir(resolveInside(root, relative), { withFileTypes: true })
-    } catch {
-      // An unreadable directory (permissions, broken link) does not stop the search:
-      // it is simply skipped.
-      continue
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() && !entry.isFile()) continue
-
-      visited += 1
-      if (visited > SEARCH_MAX_VISITED) {
-        truncated = true
-        return { entries: rank(found, needle), truncated }
-      }
-
-      const path = relative ? `${relative}/${entry.name}` : entry.name
-
-      if (entry.isDirectory()) {
-        if (!SEARCH_SKIP.has(entry.name)) queue.push(path)
-        continue
-      }
-
-      if (!fold(path).includes(needle)) continue
-
-      found.push({ name: entry.name, path, isDirectory: false })
-      if (found.length >= SEARCH_MAX_RESULTS) {
-        truncated = true
-        return { entries: rank(found, needle), truncated }
-      }
-    }
-  }
-
-  return { entries: rank(found, needle), truncated }
-}
-
-/** Removes case and accents: searching for 'recu' must find 'reçu'. */
-function fold(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-}
-
-function rank(entries: TreeEntryDto[], needle: string): TreeEntryDto[] {
-  return entries.sort((a, b) => {
-    const inNameA = fold(a.name).includes(needle)
-    const inNameB = fold(b.name).includes(needle)
-    if (inNameA !== inNameB) return inNameA ? -1 : 1
-    if (a.path.length !== b.path.length) return a.path.length - b.path.length
-    return a.path.localeCompare(b.path, 'fr')
-  })
-}
-
-export async function listDirectory(root: string, relativePath: string): Promise<TreeEntryDto[]> {
+  relativePath: string,
+): Promise<{ entries: TreeEntryDto[]; total: number }> {
   const absolute = resolveInside(root, relativePath)
 
   let entries
@@ -552,15 +450,16 @@ export async function listDirectory(root: string, relativePath: string): Promise
     // remain visible because `.gitignore` is ordinary project content.
     .filter((entry) => entry.name !== '.git')
     .filter((entry) => entry.isDirectory() || entry.isFile())
-    .slice(0, MAX_ENTRIES)
     .map((entry) => ({
       name: entry.name,
       path: relativePath ? `${relativePath}/${entry.name}` : entry.name,
       isDirectory: entry.isDirectory(),
     }))
+    .sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+      return ENTRY_ORDER.compare(a.name, b.name)
+    })
 
-  return listed.sort((a, b) => {
-    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
-    return a.name.localeCompare(b.name, 'fr')
-  })
+  // Sorted before cutting: cut first, the entries kept depended on the order the disk returned.
+  return { entries: listed.slice(0, MAX_ENTRIES), total: listed.length }
 }

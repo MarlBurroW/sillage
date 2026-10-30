@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
 import type { TreeListingDto, TreeSearchDto } from '@sillage/protocol'
 import { api } from './api'
@@ -55,12 +55,16 @@ export function useTreeSync(scope: WorkspaceScope): void {
 
 /**
  * Search filenames across the working directory. Separate query from the level-paginated tree
- * because search requires traversal. Disabled below two characters, where matches discriminate
- * poorly and traversal costs most.
+ * because search needs the whole listing. Disabled below two characters, where matches
+ * discriminate poorly.
+ *
+ * `keepPrevious` keeps the last results while the next arrive, instead of flashing a loading line
+ * at each keystroke. Not for quick open: Enter there would open a result of the previous query.
  */
-export function useFileSearch(scope: WorkspaceScope, query: string) {
+export function useFileSearch(scope: WorkspaceScope, query: string, { keepPrevious = false } = {}) {
   const trimmed = query.trim()
   return useQuery({
+    placeholderData: keepPrevious ? keepPreviousData : undefined,
     queryKey: ['tree-search', scope, trimmed],
     queryFn: () =>
       api.get<TreeSearchDto>(

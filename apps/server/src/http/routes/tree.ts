@@ -14,13 +14,13 @@ import {
   type TreeSearchDto,
 } from '@sillage/protocol'
 import { readFileStates } from '../../git.js'
+import { forgetListings, searchTree } from '../../search/search-files.js'
 import {
   copyEntry,
   createEntry,
   deleteEntry,
   listDirectory,
   moveEntry,
-  searchEntries,
   writeUpload,
 } from '../../workspace.js'
 import { collectArchive, streamArchive } from '../../workspace-archive.js'
@@ -60,9 +60,9 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { path } = treeQuerySchema.parse(request.query)
 
       const cwd = cwdOf(ctx.db, id, user.id)
-      const [entries, states] = await Promise.all([listDirectory(cwd, path), readFileStates(cwd)])
+      const [{ entries, total }, states] = await Promise.all([listDirectory(cwd, path), readFileStates(cwd)])
 
-      if (!states) return { path, entries, versioned: false, root: cwd }
+      if (!states) return { path, entries, versioned: false, root: cwd, total }
 
       const directoryStates = new Map<string, Exclude<FileState, 'ignored'>>()
       for (const [file, state] of states) {
@@ -90,13 +90,14 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
         }),
         versioned: true,
         root: cwd,
+        total,
       }
     })
 
     /**
-     * Searches filenames throughout the working directory.
+     * Searches filenames throughout the working directory, ranked like the palette.
      *
-     * Separate from the level-paginated tree: searching needs traversal, and
+     * Separate from the level-paginated tree: searching needs the whole listing, and
      * client-driven traversal would require one request per directory. Excludes
      * git status because results only serve to navigate to files.
      */
@@ -106,7 +107,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { q } = treeSearchQuerySchema.parse(request.query)
 
       const cwd = cwdOf(ctx.db, id, user.id)
-      return searchEntries(cwd, q)
+      return searchTree(cwd, q)
     })
 
     /**
@@ -124,6 +125,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const cwd = cwdOf(ctx.db, id, user.id)
       const path = await createEntry(cwd, body.parent, body.name, body.kind)
+      forgetListings(cwd)
       return reply.status(201).send({ path })
     })
 
@@ -150,6 +152,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       // `truncated` becomes readable only after consuming the stream: the writer checks
       // it afterward to distinguish size overflows from disk failures.
       await writeUpload(cwd, path, part.file, () => part.file.truncated)
+      forgetListings(cwd)
       return reply.status(201).send({ path })
     })
 
@@ -160,6 +163,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const cwd = cwdOf(ctx.db, id, user.id)
       await moveEntry(cwd, body.from, body.to)
+      forgetListings(cwd)
       return reply.status(204).send()
     })
 
@@ -171,6 +175,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const cwd = cwdOf(ctx.db, id, user.id)
       const path = await copyEntry(cwd, body.from, body.toParent)
+      forgetListings(cwd)
       return reply.status(201).send({ path })
     })
 
@@ -202,6 +207,7 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const cwd = cwdOf(ctx.db, id, user.id)
       await deleteEntry(cwd, body.path)
+      forgetListings(cwd)
       return reply.status(204).send()
     })
   }

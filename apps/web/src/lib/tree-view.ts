@@ -1,6 +1,11 @@
 import { useSyncExternalStore } from 'react'
 import type { WorkspaceScope } from './workspace-scope'
 
+/** Name being typed in the tree: a new entry inside `parent`, or a rename. */
+export type TreeDraft =
+  | { mode: 'create'; parent: string; kind: 'file' | 'directory' }
+  | { mode: 'rename'; path: string; name: string }
+
 /**
  * Explorer state retained between displays: expanded directories, selection, and copied or cut
  * entries. Stored outside React per scope: the column unmounts when closed and search temporarily
@@ -18,6 +23,11 @@ export interface TreeView {
   selecting: boolean
   /** Copied or cut entries with their types, like selection. */
   clipboard: { mode: 'copy' | 'cut'; entries: ReadonlyMap<string, boolean> } | null
+  /**
+   * Name input shown in the tree. Kept here rather than in the explorer's state so that only the
+   * row showing it redraws: passing it down through every row redrew them all.
+   */
+  draft: TreeDraft | null
 }
 
 const EMPTY: TreeView = {
@@ -26,6 +36,7 @@ const EMPTY: TreeView = {
   anchor: null,
   selecting: false,
   clipboard: null,
+  draft: null,
 }
 
 const views = new Map<WorkspaceScope, TreeView>()
@@ -145,6 +156,13 @@ export function startSelecting(scope: WorkspaceScope, path: string, isDirectory:
     anchor: path,
     selecting: true,
   }))
+}
+
+// Name input
+
+export function setTreeDraft(scope: WorkspaceScope, draft: TreeDraft | null): void {
+  if (getTreeView(scope).draft === draft) return
+  update(scope, () => ({ draft }))
 }
 
 // Clipboard

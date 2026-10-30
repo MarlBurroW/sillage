@@ -1040,6 +1040,11 @@ export interface TreeListingDto {
    * must return a shell-usable path.
    */
   root: string
+  /**
+   * Entries in the directory. Above `entries.length`, the listing was cut at its limit and the
+   * explorer says so: the missing ones remain reachable through search.
+   */
+  total: number
 }
 
 export const treeSearchQuerySchema = z.object({
@@ -1049,8 +1054,8 @@ export const treeSearchQuerySchema = z.object({
 export interface TreeSearchDto {
   entries: TreeEntryDto[]
   /**
-   * True when traversal stopped before seeing everything; otherwise searches in large
-   * repositories would show “no results” when matches simply lay further on.
+   * More files matched than returned, or the directory held more files than are searched: the
+   * list says so rather than pass for complete.
    */
   truncated: boolean
 }

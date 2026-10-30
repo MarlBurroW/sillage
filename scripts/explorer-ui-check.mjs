@@ -90,6 +90,13 @@ try {
   const git = (...args) => execFileSync('git', ['-c', 'user.name=check', '-c', 'user.email=check@example.com', ...args], { cwd: project.workspace_path })
   git('add', 'ac-tracked')
   git('commit', '-qm', 'Track the explorer check fixture')
+  // Search fixtures: a file found by its initials, and an ignored one the explorer still offers.
+  await writeFile(join(editorFixture, 'forecast-cache.ts'), 'export {}\n')
+  await writeFile(join(editorFixture, '.env.local'), 'TOKEN=x\n')
+  await writeFile(join(project.workspace_path, '.git/info/exclude'), '.env.local\n', { flag: 'a' })
+  // A level beyond the server's limit of 1000 entries.
+  await mkdir(join(project.workspace_path, 'ad-many'))
+  for (let index = 1; index <= 1003; index += 1) await writeFile(join(project.workspace_path, 'ad-many', `f${index}`), '')
 
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -114,6 +121,8 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  // Browsers log failed requests without their URL: keep it, or a failure says nothing useful.
+  page.on('response', (response) => { if (response.status() >= 400) errors.push(`${response.status()} ${response.request().method()} ${response.url().replace(base, '')}`) })
   await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
   const panel = page.locator('[data-panel="workspace"]')
   const row = (path) => panel.locator(`[data-tree-path="aa-explorer${path ? `/${path}` : ''}"]`)
@@ -207,6 +216,28 @@ try {
   await panel.getByRole('button', { name: 'Replier tous les dossiers' }).click()
   assert.equal(await row('').getAttribute('aria-expanded'), 'false')
 
+  // Search ranks like the palette (initials of the filename) and offers ignored loose files.
+  await panel.getByRole('searchbox').fill('fcache')
+  await panel.locator('[data-tree-path="ab-editor/forecast-cache.ts"]').waitFor()
+  await panel.getByRole('searchbox').fill('env.local')
+  await panel.locator('[data-tree-path="ab-editor/.env.local"]').waitFor()
+  await panel.getByRole('searchbox').fill('')
+
+  // A level cut at the server's limit says so, after sorting numbers by value.
+  const manyRow = (path) => panel.locator(`[data-tree-path="ad-many${path ? `/${path}` : ''}"]`)
+  await manyRow('').click()
+  await panel.getByText('Seuls les 1 000 premiers éléments sur 1 003 sont affichés', { exact: false }).waitFor()
+  assert.deepEqual(
+    await panel.locator('[data-tree-path^="ad-many/"]').evaluateAll((rows) => rows.slice(0, 3).map((row) => row.dataset.treeName)),
+    ['f1', 'f2', 'f3'],
+  )
+  // A row's … opens the tree's single menu for that row.
+  await panel.getByRole('button', { name: 'Actions de f2', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Renommer' }).waitFor()
+  assert.equal(await page.getByRole('menu').count(), 1)
+  await page.keyboard.press('Escape')
+  await manyRow('').click()
+
   // Typing a name prefix navigates to it.
   await row('').click()
   await page.keyboard.press('ArrowRight')
@@ -293,6 +324,13 @@ try {
   await editorOf('live.txt').getByRole('button', { name: 'Enregistrer', exact: true }).click()
   const merged = lines(12, (number) => (number === 1 ? 'mine line 1' : number === 10 ? 'line 10 from the agent' : null))
   await until(async () => (await readFile(join(editorFixture, 'live.txt'), 'utf8')) === merged, 'The comparison did not save the merged text')
+
+  // An open file deleted on disk says so and keeps its text; it recovers when the file returns.
+  const gone = editorOf('live.txt').getByText('Ce fichier n’existe plus sur le disque.')
+  await rm(join(editorFixture, 'live.txt'))
+  await gone.waitFor()
+  await writeFile(join(editorFixture, 'live.txt'), merged)
+  await gone.waitFor({ state: 'detached' })
 
   // A file changed deep in the tree colors its ancestors too.
   const trackedRow = (path) => panel.locator(`[data-tree-path="ac-tracked${path ? `/${path}` : ''}"]`)
@@ -381,7 +419,7 @@ try {
   await mobile.screenshot({ path: '/tmp/sillage-editor-compare-mobile.png' })
 
   assert.deepEqual(errors, [])
-  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche, menu de l’espace vide, CRLF, lecture seule hors UTF-8, fichier ouvert qui suit le disque, conflit annoncé et comparaison, couleurs des dossiers parents, brouillon durable et mode sélection au doigt.')
+  console.log('OK : sélection multiple, clavier, copier/couper/coller, glisser, suppression groupée, zip, recherche floue avec fichiers ignorés, dossier tronqué, menu unique de l’arbre et de l’espace vide, CRLF, lecture seule hors UTF-8, fichier ouvert qui suit le disque, conflit annoncé et comparaison, couleurs des dossiers parents, brouillon durable et mode sélection au doigt.')
 } finally {
   await browser?.close()
   for (const child of children.reverse()) {
