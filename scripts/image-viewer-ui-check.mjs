@@ -164,6 +164,20 @@ try {
     await page.getByRole('button', { name: 'markdown.png', exact: true }).click()
     await dialog.getByRole('heading', { name: 'markdown.png' }).waitFor()
     await page.keyboard.press('Escape')
+    // Desktop draws its title bar above every layer: the viewer must start below it.
+    await page.evaluate(() => {
+      document.documentElement.dataset.desktopChrome = ''
+      document.body.append(Object.assign(document.createElement('div'), { className: 'desktop-titlebar' }))
+    })
+    await page.getByRole('button', { name: 'markdown.png', exact: true }).click()
+    await dialog.getByRole('heading', { name: 'markdown.png' }).waitFor()
+    const close = dialog.getByRole('button', { name: 'Fermer', exact: true })
+    // Electron's drag region swallows clicks whatever the DOM says, so compare geometry.
+    assert.ok(await close.evaluate((button) => button.getBoundingClientRect().top >= document.querySelector('.desktop-titlebar').getBoundingClientRect().bottom), 'close button under the desktop title bar')
+    assert.ok(await dialog.evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight))
+    await close.click()
+    await dialog.waitFor({ state: 'hidden' })
+    await page.evaluate(() => { delete document.documentElement.dataset.desktopChrome; document.querySelector('.desktop-titlebar').remove() })
     assert.deepEqual(errors, [])
     await context.close()
   }

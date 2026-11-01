@@ -33,7 +33,8 @@ export function ImageViewer({ images, initialIndex, onClose }: { images: ViewerI
   return <Dialog.Root open onOpenChange={(open) => { if (!open) onClose() }}>
     <Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/90" />
-      <Dialog.Content onCloseAutoFocus={(event) => { event.preventDefault(); if (opener instanceof HTMLElement) opener.focus() }} aria-describedby={undefined} className="fixed inset-0 z-[81] flex h-dvh flex-col bg-surface text-ink outline-none" onKeyDown={(event) => {
+      {/* Desktop window chrome stays above every layer: start below it so the close button remains reachable. */}
+      <Dialog.Content onCloseAutoFocus={(event) => { event.preventDefault(); if (opener instanceof HTMLElement) opener.focus() }} aria-describedby={undefined} className="fixed inset-0 top-[var(--sg-window-bar,0px)] z-[81] flex flex-col bg-surface text-ink outline-none" onKeyDown={(event) => {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
           event.preventDefault()
           setIndex((value) => (value + (event.key === 'ArrowLeft' ? images.length - 1 : 1)) % images.length)

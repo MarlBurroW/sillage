@@ -96,7 +96,7 @@ export default function ExportDialog({ source, onClose }: { source: Conversation
       <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
       <Dialog.Content onPointerDownOutside={event => event.preventDefault()} onEscapeKeyDown={event => {
         if (expanded) { event.preventDefault(); setExpanded(false) }
-      }} className="surface fixed inset-0 z-50 flex min-h-0 flex-col overflow-clip border-line shadow-pop sm:inset-5 sm:rounded-lg sm:border lg:inset-x-[max(1.25rem,calc((100vw-1200px)/2))]" aria-describedby="export-description">
+      }} className="surface fixed inset-0 top-[var(--sg-window-bar,0px)] z-50 flex min-h-0 flex-col overflow-clip border-line shadow-pop sm:inset-5 sm:top-[calc(1.25rem+var(--sg-window-bar,0px))] sm:rounded-lg sm:border lg:inset-x-[max(1.25rem,calc((100vw-1200px)/2))]" aria-describedby="export-description">
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
           <div>
             <Dialog.Title className="flex items-center gap-2 text-base font-semibold"><Share2 size={19} className="text-accent" /><span>{t('export.title')}</span></Dialog.Title>
