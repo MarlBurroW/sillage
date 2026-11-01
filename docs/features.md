@@ -63,9 +63,12 @@ The periodic cleanup removes expired, revoked and orphaned files.
   and terminals, beside the conversation that changed them. Stage changes, commit,
   manage branches and remotes, or copy and move several files at once. The commit
   history draws its branches and merges as a graph, over the current branch or all
-  of them, with a diff inspector for each commit. Images that agents read or
-  produce open in a viewer with zoom, rotation, copy and download. Markdown images
-  also resolve in worktrees linked after the conversation started.
+  of them, with a diff inspector for each commit. The file tree stays fast in large
+  workspaces, searches file names and contents, and shows symlinks; open files follow
+  what agents write to disk and compare an unsaved draft with the disk version.
+  Images that agents read or produce open in a viewer with zoom, rotation, copy and
+  download. Markdown images also resolve in worktrees linked after the conversation
+  started. Audio and video attachments play in the conversation and on the board.
 - **What each turn changed, and a way back.** With turn checkpoints enabled on a
   project, Sillage captures the workspace before and after every turn in hidden git
   refs. Each turn lists the files it changed, opens them as a diff, and can be
