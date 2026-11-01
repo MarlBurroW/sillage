@@ -37,9 +37,9 @@ async function harness(t: TestContext) {
   const response = await app.inject({ method: 'POST', url: '/api/projects/project/cards', payload: { title: 'Ticket' } })
   assert.equal(response.statusCode, 201, response.body)
   const card = response.json()
-  const upload = (content = Buffer.from('Brief pour les agents'), user = 'owner', id = card.id) => app.inject({
+  const upload = (content = Buffer.from('Brief pour les agents'), user = 'owner', id = card.id, file = { name: 'brief.md', type: 'text/markdown' }) => app.inject({
     method: 'POST', url: `/api/cards/${id}/attachments`, headers: { 'x-user': user, 'content-type': 'multipart/form-data; boundary=FILE' },
-    payload: Buffer.concat([Buffer.from('--FILE\r\nContent-Disposition: form-data; name="file"; filename="brief.md"\r\nContent-Type: text/markdown\r\n\r\n'), content, Buffer.from('\r\n--FILE--\r\n')]),
+    payload: Buffer.concat([Buffer.from(`--FILE\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\nContent-Type: ${file.type}\r\n\r\n`), content, Buffer.from('\r\n--FILE--\r\n')]),
   })
   return { app, db, dbPath, store, card, upload }
 }
@@ -99,4 +99,26 @@ test('ticket files: empty/oversized uploads rejected; cascaded project deletion 
   assert.equal(db.select().from(cards).all().length, 0)
   assert.equal(store.get(file.id)?.cardId, null)
   assert.equal(await store.purgeOrphans(), 1)
+})
+
+test('media attachments play in place: inline disposition and byte ranges for seeking', async (t) => {
+  const { app, upload } = await harness(t)
+  const response = await upload(Buffer.from('0123456789'), 'owner', undefined, { name: 'demo.mp4', type: 'video/mp4' })
+  assert.equal(response.statusCode, 201, response.body)
+  const url = `/api/attachments/${response.json().id}`
+  const whole = await app.inject(url)
+  assert.equal(whole.statusCode, 200)
+  assert.match(whole.headers['content-disposition'] as string, /^inline;/)
+  assert.equal(whole.headers['accept-ranges'], 'bytes')
+  assert.equal(whole.body, '0123456789')
+  const slice = await app.inject({ url, headers: { range: 'bytes=2-4' } })
+  assert.equal(slice.statusCode, 206)
+  assert.equal(slice.headers['content-range'], 'bytes 2-4/10')
+  assert.equal(slice.body, '234')
+  const tail = await app.inject({ url, headers: { range: 'bytes=-3' } })
+  assert.equal(tail.statusCode, 206)
+  assert.equal(tail.body, '789')
+  assert.equal((await app.inject({ url, headers: { range: 'bytes=10-' } })).statusCode, 416)
+  const document = await upload()
+  assert.match((await app.inject(`/api/attachments/${document.json().id}`)).headers['content-disposition'] as string, /^attachment;/)
 })

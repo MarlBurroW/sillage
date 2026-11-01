@@ -43,6 +43,7 @@ async function mount(page) {
     const { AttachmentTray } = await import('/src/components/chat/AttachmentTray.tsx')
     const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
     const { ImageGallery } = await import('/src/components/chat/ImageViewer.tsx')
+    const { MessageBubble } = await import('/src/components/chat/MessageBubble.tsx')
     const { readableView } = await import('/src/components/tools/registry.tsx')
     const canvas = document.createElement('canvas')
     canvas.width = 1600; canvas.height = 1000
@@ -64,6 +65,11 @@ async function mount(page) {
     createRoot(root).render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(MemoryRouter, null, React.createElement('main', null,
       React.createElement(PendingAttachments),
       React.createElement(Markdown, { text: `![markdown.png](${src})` }),
+      React.createElement(TooltipProvider, null, React.createElement(MessageBubble, { message: { kind: 'message', id: 'm1', role: 'user', ts: Date.now(), seq: 1, streamingText: '', streamingThinking: '', parentToolCallId: null, blocks: [
+        { type: 'text', text: 'Regarde cette capture.' },
+        { type: 'file', name: 'capture.webm', mimeType: 'video/webm', sizeBytes: 4096, url: '/api/attachments/video-one' },
+        { type: 'file', name: 'notes.pdf', mimeType: 'application/pdf', sizeBytes: 512, url: '/api/attachments/doc-one' },
+      ] } })),
       React.createElement(ImageGallery, { images: [{ src, alt: 'generation.png' }, { src: canvas.toDataURL('image/jpeg'), alt: 'photo.jpg' }] }),
       readableView({ name: 'Read', input: { file_path: 'read.png' }, status: 'completed', output: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: src.split(',')[1] } }] }),
       readableView({ name: 'mcp_image', input: {}, status: 'completed', output: { content: [{ type: 'image', mimeType: 'image/png', data: src.split(',')[1] }] } })
@@ -87,6 +93,12 @@ try {
     await page.route(`${origin}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
     await page.route('**/api/attachments/pending-*', (route) => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64') }))
     await mount(page)
+    // A sent video plays in place and keeps its download link; other files only link.
+    const player = page.locator('video[title="capture.webm"]')
+    await player.waitFor()
+    assert.ok(await player.evaluate((el) => el.controls && el.src.endsWith('/api/attachments/video-one')))
+    assert.equal(await page.getByRole('link', { name: /capture\.webm/ }).count(), 1)
+    assert.equal(await page.locator('video, audio').count(), 1)
     // Attachment remains in draft during preview without submitting form.
     const pending = page.getByRole('button', { name: 'Agrandir l’image : avant-envoi.png', exact: true })
     await pending.focus()
@@ -181,7 +193,7 @@ try {
     assert.deepEqual(errors, [])
     await context.close()
   }
-  console.log('OK : galerie, outils Read/MCP, zoom, rotation, taille réelle, copie PNG/JPEG, téléchargement, clavier et focus ; ordinateur et téléphone.')
+  console.log('OK : galerie, vidéo jointe, outils Read/MCP, zoom, rotation, taille réelle, copie PNG/JPEG, téléchargement, clavier et focus ; ordinateur et téléphone.')
 } finally {
   await browser?.close()
   vite.kill('SIGTERM')

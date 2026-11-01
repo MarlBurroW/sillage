@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, FileText, Paperclip, Plus, Trash2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@sillage/protocol'
+import { isAudioType, isPlayableMediaType, MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@sillage/protocol'
 import { api } from '../../lib/api'
 import { formatBytes, uploadAttachment } from '../../lib/attachments'
 import { useTranslate } from '../../lib/i18n'
@@ -52,7 +52,10 @@ export function CardAttachments({ cardId, projectId }: { cardId: string; project
         onDrop={(event) => { event.preventDefault(); setOver(false); add(Array.from(event.dataTransfer.files)) }}
         className={cx('rounded-xl border border-dashed p-3 transition-colors', over ? 'border-accent bg-accent-wash' : 'border-line')}>
         {files.data?.length ? <ul className="flex flex-col gap-2">
-          {files.data.map((file) => <li key={file.id} className="flex items-center gap-3 rounded-lg border border-line bg-sunken p-2">
+          {files.data.map((file) => <li key={file.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-sunken p-2">
+            {isPlayableMediaType(file.mimeType) ? (isAudioType(file.mimeType)
+              ? <audio controls preload="metadata" src={`/api/attachments/${file.id}`} className="w-full" title={file.filename} />
+              : <video controls preload="metadata" src={`/api/attachments/${file.id}`} className="max-h-64 w-full rounded-md bg-black" title={file.filename} />) : null}
             <a href={`/api/attachments/${file.id}`} target="_blank" rel="noreferrer" className="flex min-w-0 flex-1 items-center gap-3 text-sm hover:text-accent">
               {file.inlineImage ? <img src={`/api/attachments/${file.id}`} alt="" className="size-12 shrink-0 rounded-md object-cover" /> : <FileText size={24} className="mx-3 shrink-0 text-ink-faint" />}
               <span className="min-w-0"><span className="block truncate">{file.filename}</span><span className="block text-xs text-ink-faint">{formatBytes(file.sizeBytes)}</span></span>

@@ -1227,6 +1227,11 @@ export function isAudioType(type: string): boolean {
   return type.startsWith('audio/')
 }
 
+/** Audio or video the browser can play with its native controls. */
+export function isPlayableMediaType(type: string): boolean {
+  return type.startsWith('audio/') || type.startsWith('video/')
+}
+
 /**
  * 3D models rendered in the browser by a WebGL viewer.
  *

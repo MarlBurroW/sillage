@@ -17,6 +17,7 @@ import {
 import { resolveRealInside, resolveWritableInside } from '../../workspace.js'
 import { workspaceImagePath } from '../../workspace-images.js'
 import { attachmentHeader } from '../attachment-header.js'
+import { parseRange } from '../range.js'
 import type { AppContext } from '../context.js'
 import { HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -39,25 +40,6 @@ const WRITE_BODY_LIMIT = 6 * MAX_EDITABLE_BYTES + 64 * 1024
 /** Disk file fingerprint. Size and modification time avoid hashing content: the filesystem supplies both without rereading the file, and distinct writes produce different pairs. */
 function fingerprint(size: number, mtimeMs: number): string {
   return `${size}:${Math.round(mtimeMs)}`
-}
-
-/** Parses single-range `Range` headers: `bytes=start-end`, `bytes=start-` or `bytes=-suffix`. Ignore multiple ranges: browsers do not use them for media playback, and supporting them requires multipart bodies. */
-function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
-  if (!header) return null
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
-  if (!match || (match[1] === '' && match[2] === '')) return null
-  let start: number
-  let end: number
-  if (match[1] === '') {
-    const suffix = Number(match[2])
-    start = Math.max(0, size - suffix)
-    end = size - 1
-  } else {
-    start = Number(match[1])
-    end = match[2] === '' ? size - 1 : Math.min(Number(match[2]), size - 1)
-  }
-  if (start >= size || start > end) return 'unsatisfiable'
-  return { start, end }
 }
 
 /** Workspace file reads and writes for the panel editor. Invariant I2 does not apply: files are live disk state rather than events. Nothing here is journaled. */

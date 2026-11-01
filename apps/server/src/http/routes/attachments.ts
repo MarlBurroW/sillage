@@ -8,10 +8,11 @@ import type { FastifyInstance } from 'fastify'
 import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@sillage/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
+import { parseRange } from '../range.js'
 import { requireUser } from '../require-user.js'
 
-/** Browser-displayable types served unchanged. */
-const INLINE_DISPOSITION = /^image\/|^text\/plain$|^application\/pdf$/
+/** Browser-displayable types served unchanged; audio and video play in the conversation. */
+const INLINE_DISPOSITION = /^image\/|^audio\/|^video\/|^text\/plain$|^application\/pdf$/
 
 export function registerAttachmentRoutes(app: FastifyInstance, store: AttachmentStore, ctx: AppContext): void {
   app.post('/api/attachments', async (request, reply) => {
@@ -61,16 +62,28 @@ export function registerAttachmentRoutes(app: FastifyInstance, store: Attachment
     if (!info) throw notFound('attachment_file_missing', 'The file is gone from disk.')
 
     const disposition = INLINE_DISPOSITION.test(row.mimeType) ? 'inline' : 'attachment'
-    return reply
+    reply
       .type(row.mimeType)
-      .header('content-length', info.size)
+      .header('accept-ranges', 'bytes')
       .header(
         'content-disposition',
         `${disposition}; filename*=UTF-8''${encodeURIComponent(row.filename)}`,
       )
       .header('x-content-type-options', 'nosniff')
       .header('cache-control', row.cardId ? 'private, no-store' : 'private, max-age=31536000, immutable')
-      .send(createReadStream(row.storagePath))
+    // Players seek through byte ranges; without them a video restarts from the top on every scrub.
+    const range = parseRange(request.headers.range, info.size)
+    if (range === 'unsatisfiable') {
+      return reply.code(416).header('content-range', `bytes */${info.size}`).send()
+    }
+    if (range) {
+      return reply
+        .code(206)
+        .header('content-range', `bytes ${range.start}-${range.end}/${info.size}`)
+        .header('content-length', range.end - range.start + 1)
+        .send(createReadStream(row.storagePath, { start: range.start, end: range.end }))
+    }
+    return reply.header('content-length', info.size).send(createReadStream(row.storagePath))
   })
 
   app.delete('/api/attachments/:id', async (request, reply) => {

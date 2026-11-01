@@ -3,7 +3,7 @@ import { TooltipButton } from '../ui/Tooltip'
 import { MoreHorizontal, Brain, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
 import { memo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@sillage/protocol'
+import { isAudioType, isPlayableMediaType, parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@sillage/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'
@@ -225,7 +225,7 @@ function PeerMessage({
   )
 }
 
-/** Message attachments: display images and download links for others, omitting agent-facing disk paths. */
+/** Message attachments: display images, play audio and video, link the rest, omitting agent-facing disk paths. */
 function Attachments({
   images,
   files,
@@ -245,20 +245,26 @@ function Attachments({
       ) : null}
 
       {files.map((file) => (
-        <a
-          key={file.url}
-          href={file.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cx(
-            'flex items-center gap-2 rounded-md border border-line bg-surface-high',
-            'px-2.5 py-1.5 text-xs text-ink-soft transition-colors hover:text-ink',
-          )}
-        >
-          <FileText size={14} className="shrink-0 text-ink-faint" />
-          <span className="min-w-0 flex-1 truncate">{file.name}</span>
-          <span className="shrink-0 text-ink-faint">{formatBytes(file.sizeBytes)}</span>
-        </a>
+        <div key={file.url} className="flex flex-col gap-1">
+          {isPlayableMediaType(file.mimeType) ? (
+            isAudioType(file.mimeType)
+              ? <audio controls preload="metadata" src={file.url} className="w-full max-w-xl" title={file.name} />
+              : <video controls preload="metadata" src={file.url} className="max-h-80 max-w-full rounded-md bg-black" title={file.name} />
+          ) : null}
+          <a
+            href={file.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cx(
+              'flex items-center gap-2 rounded-md border border-line bg-surface-high',
+              'px-2.5 py-1.5 text-xs text-ink-soft transition-colors hover:text-ink',
+            )}
+          >
+            <FileText size={14} className="shrink-0 text-ink-faint" />
+            <span className="min-w-0 flex-1 truncate">{file.name}</span>
+            <span className="shrink-0 text-ink-faint">{formatBytes(file.sizeBytes)}</span>
+          </a>
+        </div>
       ))}
     </div>
   )
