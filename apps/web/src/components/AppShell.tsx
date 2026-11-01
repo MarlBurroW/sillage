@@ -92,6 +92,7 @@ import { SidebarActivity } from './SidebarActivity'
 import { Toaster } from './Toaster'
 import { DecisionDialog } from './decisions/DecisionDialog'
 import { SidebarDecisions } from './decisions/SidebarDecisions'
+import { SidebarBenchmarks } from './SidebarBenchmarks'
 import { useDecisionsLive } from '../lib/decisions'
 import { SidebarSchedules } from './SidebarSchedules'
 import { useSchedules } from '../lib/schedules'
@@ -438,7 +439,7 @@ function Sidebar({
   const { data: schedules } = useSchedules()
   // Exclude scheduled runs from activity: autonomous tasks are not followed sessions and their own
   // section already reports state.
-  const attended = useMemo(() => conversations?.filter((entry) => !entry.scheduleId), [conversations])
+  const attended = useMemo(() => conversations?.filter((entry) => !entry.scheduleId && !entry.benchmarkId), [conversations])
   // One mutation for both favorite appearances. Keep errors visible even if optimistic removal
   // hides the favorite row.
   const toggleFavorite = useToggleFavorite()
@@ -542,6 +543,7 @@ function Sidebar({
             {!favorites.length && <li className="px-3 py-3 text-xs text-ink-faint">{t('shell.favorites.empty')}</li>}
           </ul></div>}
           <PersonalDiscussions conversations={conversations ?? []} toggleFavorite={toggleFavorite} onNavigate={onNavigate} />
+          <SidebarBenchmarks onNavigate={onNavigate} />
           <div className="sidebar-project-switcher">
         <ProjectSwitcher onNavigate={onNavigate} key={user?.id ?? ''} userId={user?.id ?? ''} projects={projects ?? []} selected={selectedProject}
           nameEditor={editingProject && selectedProject ? <RenameInput value={selectedProject.name} onCancel={() => setEditingProject(false)} onCommit={(draft) => {
@@ -926,7 +928,7 @@ function PersonalDiscussions({ conversations, toggleFavorite, onNavigate }: { co
   const route = useMatch('/discussions/*')
   const [expanded, setExpanded] = useState(false)
   const [archives, setArchives] = useState(false)
-  const personal = conversations.filter(entry => entry.projectId === null)
+  const personal = conversations.filter(entry => entry.projectId === null && !entry.benchmarkId)
   const shown = personal.filter(entry => archives || entry.archivedAt === null)
   const open = Boolean(route) || expanded
   const recent = personal.find(entry => entry.archivedAt === null)

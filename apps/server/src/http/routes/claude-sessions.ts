@@ -152,6 +152,7 @@ export function registerClaudeSessionRoutes(
       createdByTokenId: null,
       originLabel: null,
       scheduleId: null,
+      benchmarkId: null,
       config: JSON.stringify(config),
       status: 'idle',
       backgroundCount: 0,

@@ -504,6 +504,8 @@ export interface ConversationDto {
    * uses it to group the thread under its task rather than in the main list.
    */
   scheduleId: string | null
+  /** Benchmark whose run this is, or null. Same grouping role as `scheduleId`, among discussions. */
+  benchmarkId: string | null
 }
 
 export interface JournalPageDto {

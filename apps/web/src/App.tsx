@@ -1,5 +1,8 @@
 import { DiscussionFilesPage } from './routes/DiscussionFilesPage'
 import { PersonalMemoryPage } from './routes/PersonalMemoryPage'
+import { BenchmarksPage } from './routes/BenchmarksPage'
+import { NewBenchmarkPage } from './routes/NewBenchmarkPage'
+import { BenchmarkPage } from './routes/BenchmarkPage'
 import { NewsSettingsPage } from './routes/NewsSettingsPage'
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
@@ -118,6 +121,9 @@ export function App() {
           <Route path="/discussions/files" element={<DiscussionFilesPage />} />
           <Route path="/discussions/memory" element={<PersonalMemoryPage />} />
           <Route path="/discussions/:conversationId" element={<ConversationPage key="personal" />} />
+          <Route path="/benchmarks" element={<BenchmarksPage />} />
+          <Route path="/benchmarks/new" element={<NewBenchmarkPage />} />
+          <Route path="/benchmarks/:id" element={<BenchmarkPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />

@@ -29,6 +29,8 @@ import { registerApiTokenRoutes } from './routes/api-tokens.js'
 import { registerV1Routes } from './v1/index.js'
 import type { Scheduler } from '../scheduler/scheduler.js'
 import type { TaskScheduler } from '../scheduler/task-scheduler.js'
+import type { BenchmarkRunner } from '../benchmarks/runner.js'
+import { registerBenchmarkRoutes } from './routes/benchmarks.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerActionRoutes } from './routes/actions.js'
 import { HOOKS_PREFIX, registerAutomationRoutes } from './routes/automations.js'
@@ -145,6 +147,7 @@ export async function buildApp(
   decisions: DecisionService,
   worktreeStatus: WorktreeStatusService,
   worktreeCleanup: WorktreeCleanup,
+  benchmarkRunner: BenchmarkRunner,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -301,6 +304,7 @@ export async function buildApp(
   registerPaletteRoutes(app, ctx, skillLibrary)
   registerSettingsRoutes(app, ctx, scheduler)
   registerScheduleRoutes(app, ctx, sessions, registry, tasks, automations)
+  registerBenchmarkRoutes(app, ctx, benchmarkRunner)
   registerAutomationRoutes(app, ctx, automations)
   registerActionRoutes(app, ctx, sessions, actions)
   registerSttRoutes(app, ctx, secrets)

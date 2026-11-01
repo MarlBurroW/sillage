@@ -671,6 +671,67 @@ export const personalMemoryChanges = sqliteTable('personal_memory_changes', {
   createdAt: timestamp('created_at').notNull(),
 }, (t) => [index('idx_personal_memory_changes_user').on(t.userId, t.createdAt)])
 
+/**
+ * A model benchmark: one prompt run by several CLI configurations in fresh personal sessions, to
+ * compare how they behave rather than what they build in a project.
+ *
+ * Outside projects on purpose: the question is how a model or effort level performs, not who
+ * implements a feature best. Variants are frozen as JSON at creation so that a later catalog or
+ * default change cannot alter what ran.
+ */
+export const benchmarks = sqliteTable(
+  'benchmarks',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id),
+    name: text('name').notNull(),
+    prompt: text('prompt').notNull(),
+    /** JSON BenchmarkVariant[]: resolved agent configurations, each with a stable id and label. */
+    variants: text('variants').notNull(),
+    /** Runs per variant. One run says little about a nondeterministic model. */
+    repetitions: integer('repetitions').notNull().default(1),
+    /** `sequential` keeps latencies comparable; `parallel` finishes sooner at the cost of contention. */
+    concurrency: text('concurrency').$type<'sequential' | 'parallel'>().notNull().default('sequential'),
+    /** Runs still working beyond this are terminated: a wandering agent must not block the queue. */
+    maxDurationMinutes: integer('max_duration_minutes').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [index('idx_benchmarks_user').on(t.userId, t.createdAt)],
+)
+
+/**
+ * One measured session of a benchmark variant. Pending rows exist from creation so progress can
+ * be counted before launch; `metrics` is folded from the journal once, when the run settles.
+ */
+export const benchmarkRuns = sqliteTable(
+  'benchmark_runs',
+  {
+    id: text('id').primaryKey(),
+    benchmarkId: text('benchmark_id')
+      .notNull()
+      .references(() => benchmarks.id, { onDelete: 'cascade' }),
+    variantId: text('variant_id').notNull(),
+    /** 1-based index among the variant's repetitions. */
+    repetition: integer('repetition').notNull(),
+    /** No foreign key: the thread may be deleted while the measurement stays. */
+    conversationId: text('conversation_id'),
+    status: text('status')
+      .$type<'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'cancelled'>()
+      .notNull(),
+    startedAt: timestamp('started_at'),
+    finishedAt: timestamp('finished_at'),
+    /** What prevented or interrupted the run, written for direct display. */
+    error: text('error'),
+    /** JSON BenchmarkRunMetrics, frozen when the run settles; NULL until then. */
+    metrics: text('metrics'),
+  },
+  (t) => [
+    index('idx_benchmark_runs_benchmark').on(t.benchmarkId, t.variantId, t.repetition),
+    index('idx_benchmark_runs_open').on(t.status),
+  ],
+)
+
 export const conversations = sqliteTable(
   'conversations',
   {
@@ -749,6 +810,15 @@ export const conversations = sqliteTable(
      * again.
      */
     scheduleId: text('schedule_id'),
+    /**
+     * Benchmark whose run opened this conversation, if any.
+     *
+     * Same role as `scheduleId` for personal conversations: runs are grouped under their
+     * benchmark instead of appearing among discussions, and they skip personal memory so one
+     * variant cannot feed the next. No cascade: the benchmark deletion route removes its runs'
+     * conversations itself, together with their journals.
+     */
+    benchmarkId: text('benchmark_id'),
     /** JSON AgentConfig. */
     config: text('config').notNull(),
     status: text('status')
@@ -824,6 +894,7 @@ export const conversations = sqliteTable(
     index('idx_conversations_project').on(t.projectId, t.position),
     index('idx_conversations_user').on(t.userId),
     index('idx_conversations_schedule').on(t.scheduleId),
+    index('idx_conversations_benchmark').on(t.benchmarkId),
   ],
 )
 
@@ -1699,6 +1770,8 @@ export type InstructionsRow = typeof instructions.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
+export type BenchmarkRow = typeof benchmarks.$inferSelect
+export type BenchmarkRunRow = typeof benchmarkRuns.$inferSelect
 export type AutomationWebhookRow = typeof automationWebhooks.$inferSelect
 export type AutomationDeliveryRow = typeof automationDeliveries.$inferSelect
 export type ProjectActionRow = typeof projectActions.$inferSelect
