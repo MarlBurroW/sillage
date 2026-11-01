@@ -7,8 +7,7 @@ import { SkillDiscovery } from '../components/skills/SkillDiscovery'
 import { SkillUpdates } from '../components/skills/SkillUpdates'
 import { SkillList } from '../components/skills/SkillList'
 import { SkillSourcesSection } from '../components/skills/SkillSourcesSection'
-import { SkillTabs } from '../components/skills/SkillTabs'
-import { Banner, EmptyState, Field } from '../components/ui'
+import { Banner, EmptyState, Field, Tabs } from '../components/ui'
 import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useSkillLibrary } from '../lib/skill-library'
@@ -39,7 +38,7 @@ export function SkillLibrarySettingsPage() {
     </div>
     {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
     {isAdmin ? null : <Banner>{t('skills.readonly')}</Banner>}
-    <SkillTabs label={t('skills.section.title')} tabs={TABS.map((value) => ({ value, label: t(`skills.tabs.${value}`) }))}
+    <Tabs label={t('skills.section.title')} tabs={TABS.map((value) => ({ value, label: t(`skills.tabs.${value}`) }))}
       value={tab} onChange={setTab}>
       {tab === 'installed' ? <div className="flex flex-col gap-4">
         <Field label={t('skills.installed.filter')} icon={<Search size={15} />} value={filter} onChange={(event) => setFilter(event.target.value)} />
@@ -51,6 +50,6 @@ export function SkillLibrarySettingsPage() {
       {tab === 'discover' ? <SkillDiscovery scope="global" projectId={null} /> : null}
       {tab === 'sources' ? <SkillSourcesSection isAdmin={isAdmin} /> : null}
       {tab === 'updates' ? isLoading ? <SkillLoading label={t('skills.loading.library')} rows={3} /> : error ? <Banner>{error.message}</Banner> : <SkillUpdates skills={skills} showEmpty /> : null}
-    </SkillTabs>
+    </Tabs>
   </div>
 }

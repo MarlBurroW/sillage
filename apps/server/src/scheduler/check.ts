@@ -48,16 +48,51 @@ export function verdictOf(exitCode: number | null, timedOut: boolean): ScheduleC
 
 /** Runs checks and returns verdicts without throwing: missing scripts, timeouts and absent shells become historical `error` verdicts. Trials (`trigger: 'test'`) use copied state directories so recording latest versions cannot suppress subsequent real runs. */
 export async function runCheck(script: string, context: CheckContext): Promise<ScheduleCheckResultDto> {
+  await mkdir(context.stateDir, { recursive: true })
+  let trialState: string | null = null
+  try {
+    let stateDir = context.stateDir
+    if (context.trigger === 'test') {
+      trialState = await mkdtemp(join(tmpdir(), 'sillage-check-state-'))
+      stateDir = join(trialState, 'state')
+      await cp(context.stateDir, stateDir, { recursive: true })
+    }
+    const result = await runScript(script, {
+      cwd: context.cwd,
+      description: context.taskName,
+      timeoutMs: context.timeoutMs,
+      env: {
+        SILLAGE_TASK_ID: context.taskId,
+        SILLAGE_TASK_NAME: context.taskName,
+        SILLAGE_PROJECT_ID: context.projectId,
+        SILLAGE_PROJECT_DIR: context.cwd,
+        SILLAGE_STATE_DIR: stateDir,
+        SILLAGE_FIRED_AT: new Date(context.firedAt).toISOString(),
+        SILLAGE_TRIGGER: context.trigger,
+        SILLAGE_PREVIOUS_RUN_AT: context.previous ? new Date(context.previous.startedAt).toISOString() : '',
+        SILLAGE_PREVIOUS_RUN_STATUS: context.previous?.status ?? '',
+      },
+    })
+    return { verdict: verdictOf(result.exitCode, result.timedOut), ...result }
+  } finally {
+    if (trialState) await rm(trialState, { recursive: true, force: true })
+  }
+}
+
+export type ScriptResult = Omit<ScheduleCheckResultDto, 'verdict'>
+
+/**
+ * Runs a stored script with a timeout, outside the daemon's cgroup when possible. Shared by
+ * scheduled checks and benchmark checks, which differ only in their environment and in how they
+ * read the exit code. Never throws: a missing shell becomes a result without exit code.
+ */
+export async function runScript(
+  script: string,
+  options: { cwd: string; env: Record<string, string>; timeoutMs: number; description: string },
+): Promise<ScriptResult> {
   const started = Date.now()
   const workdir = await mkdtemp(join(tmpdir(), 'sillage-check-'))
   try {
-    await mkdir(context.stateDir, { recursive: true })
-    let stateDir = context.stateDir
-    if (context.trigger === 'test') {
-      stateDir = join(workdir, 'state')
-      await cp(context.stateDir, stateDir, { recursive: true })
-    }
-
     const file = join(workdir, 'check')
     await writeFile(file, script, { mode: 0o700 })
     await chmod(file, 0o700)
@@ -67,28 +102,16 @@ export async function runCheck(script: string, context: CheckContext): Promise<S
       command = checkCommand(script, file)
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      return { verdict: verdictOf(null, false), exitCode: null, timedOut: false, stdout: '', stderr: reason, durationMs: Date.now() - started }
+      return { exitCode: null, timedOut: false, stdout: '', stderr: reason, durationMs: Date.now() - started }
     }
-
-    const env = agentProcessEnv({
-      SILLAGE_TASK_ID: context.taskId,
-      SILLAGE_TASK_NAME: context.taskName,
-      SILLAGE_PROJECT_ID: context.projectId,
-      SILLAGE_PROJECT_DIR: context.cwd,
-      SILLAGE_STATE_DIR: stateDir,
-      SILLAGE_FIRED_AT: new Date(context.firedAt).toISOString(),
-      SILLAGE_TRIGGER: context.trigger,
-      SILLAGE_PREVIOUS_RUN_AT: context.previous ? new Date(context.previous.startedAt).toISOString() : '',
-      SILLAGE_PREVIOUS_RUN_STATUS: context.previous?.status ?? '',
-    })
 
     // Run outside daemon cgroups when systemd supports it: runaway script memory
     // must not freeze Sillage, which shares limits with sessions.
     const argv = (await serviceAppsAvailable())
-      ? ['systemd-run', '--user', '--scope', '--quiet', '--collect', `--description=Sillage check: ${context.taskName}`, '--', ...command]
+      ? ['systemd-run', '--user', '--scope', '--quiet', '--collect', `--description=Sillage check: ${options.description}`, '--', ...command]
       : command
 
-    return await execute(argv, context.cwd, env, context.timeoutMs, started)
+    return await execute(argv, options.cwd, agentProcessEnv(options.env), options.timeoutMs, started)
   } finally {
     await rm(workdir, { recursive: true, force: true })
   }
@@ -100,7 +123,7 @@ function execute(
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
   started: number,
-): Promise<ScheduleCheckResultDto> {
+): Promise<ScriptResult> {
   return new Promise((resolve) => {
     let stdout = ''
     let stderr = ''
@@ -113,7 +136,6 @@ function execute(
       clearTimeout(killer)
       const errorText = `${stderr}${extraError}`
       resolve({
-        verdict: verdictOf(exitCode, timedOut),
         exitCode: timedOut ? null : exitCode,
         timedOut,
         stdout: clip(stdout, MAX_CHECK_OUTPUT_CHARS),

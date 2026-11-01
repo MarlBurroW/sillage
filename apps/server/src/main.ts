@@ -21,6 +21,7 @@ import { DecisionService } from './decisions/service.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
 import { TaskScheduler } from './scheduler/task-scheduler.js'
+import { BenchmarkRunner } from './benchmarks/runner.js'
 import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
@@ -111,6 +112,8 @@ async function main(): Promise<void> {
   const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions, log, worktreeStatus, attachments, terminals, worktreeCleanup)
   // User- or agent-scheduled tasks executed in fresh sessions.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
+  // Model benchmarks: fresh personal sessions measured from their journals.
+  const benchmarkRunner = new BenchmarkRunner({ db, config }, sessions, registry, log, attachments)
 
   // Otherwise uploads never sent would accumulate indefinitely.
   const orphans = await attachments.purgeOrphans()
@@ -149,6 +152,7 @@ async function main(): Promise<void> {
     decisions,
     worktreeStatus,
     worktreeCleanup,
+    benchmarkRunner,
   )
   push.setLogger(app.log)
   automations.setLogger(app.log)
@@ -170,6 +174,7 @@ async function main(): Promise<void> {
   // Also after `recoverInterrupted`: restart-interrupted runs must show
   // 'interrupted' instead of 'running' until their maximum duration.
   tasks.start(app.log)
+  benchmarkRunner.start(app.log)
   board.start(app.log)
   decisions.start(app.log)
 

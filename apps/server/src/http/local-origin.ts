@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { BENCHMARK_PREVIEW_PREFIX } from '@sillage/protocol'
 import { HttpError } from './errors.js'
 
 /**
@@ -22,7 +23,10 @@ export function registerLocalOriginGuard(app: FastifyInstance): void {
       throw new HttpError(403, 'forbidden_host', 'This instance only answers on its local address.')
     }
     const origin = request.headers.origin
-    if (origin !== undefined && origin !== `http://${host}`) {
+    // A benchmark preview is a sandboxed document: its module scripts and fetches announce the
+    // opaque origin `null`. Those reads stay confined to the run's files by its token.
+    const preview = origin === 'null' && request.method === 'GET' && request.url.startsWith(BENCHMARK_PREVIEW_PREFIX)
+    if (origin !== undefined && origin !== `http://${host}` && !preview) {
       throw new HttpError(403, 'forbidden_origin', 'This instance only answers the Sillage window.')
     }
   })

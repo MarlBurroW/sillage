@@ -43,6 +43,7 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { createConversation } from '../../conversations/create.js'
+import { deleteConversation } from '../../conversations/delete.js'
 import { readUserSettings } from '../../settings/user-settings.js'
 import {
   buildHandoff,
@@ -56,7 +57,6 @@ import { assertWorktreeBelongs } from '../v1/access.js'
 import { advanceCardOnLaunch, assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
-import { dropConversation } from '../../search/search-index.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
@@ -105,6 +105,7 @@ export function conversationToDto(
       ? { tokenId: row.createdByTokenId, label: row.originLabel }
       : null,
     scheduleId: row.scheduleId,
+    benchmarkId: row.benchmarkId,
   }
 }
 
@@ -443,6 +444,7 @@ export function registerConversationRoutes(
       createdByTokenId: null,
       originLabel: null,
       scheduleId: null,
+      benchmarkId: null,
       status: 'idle',
       // The journal is copied immediately afterward and sets the real counter.
       lastSeq: 0,
@@ -772,14 +774,7 @@ export function registerConversationRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     await loadWritable(id, user.id)
-    await sessions.terminate(id)
-    // Remove git snapshots first while the row still identifies the repository.
-    await sessions.dropCheckpoints(id)
-    // Remove files first: database cascades only delete rows.
-    await attachments.removeForConversations([id])
-    // The search index is a virtual table, unreachable by cascades.
-    dropConversation(ctx.db, id)
-    ctx.db.delete(conversations).where(eq(conversations.id, id)).run()
+    await deleteConversation(ctx.db, sessions, attachments, id)
     return reply.status(204).send()
   })
 

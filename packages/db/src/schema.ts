@@ -671,6 +671,115 @@ export const personalMemoryChanges = sqliteTable('personal_memory_changes', {
   createdAt: timestamp('created_at').notNull(),
 }, (t) => [index('idx_personal_memory_changes_user').on(t.userId, t.createdAt)])
 
+/**
+ * A model benchmark: one prompt run by several CLI configurations in fresh personal sessions, to
+ * compare how they behave rather than what they build in a project.
+ *
+ * Outside projects on purpose: the question is how a model or effort level performs, not who
+ * implements a feature best. Variants are frozen as JSON at creation so that a later catalog or
+ * default change cannot alter what ran.
+ */
+export const benchmarks = sqliteTable(
+  'benchmarks',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id),
+    name: text('name').notNull(),
+    prompt: text('prompt').notNull(),
+    /** JSON BenchmarkVariant[]: resolved agent configurations, each with a stable id and label. */
+    variants: text('variants').notNull(),
+    /** Runs per variant. One run says little about a nondeterministic model. */
+    repetitions: integer('repetitions').notNull().default(1),
+    /** `sequential` keeps latencies comparable; `parallel` finishes sooner at the cost of contention. */
+    concurrency: text('concurrency').$type<'sequential' | 'parallel'>().notNull().default('sequential'),
+    /** Runs still working beyond this are terminated: a wandering agent must not block the queue. */
+    maxDurationMinutes: integer('max_duration_minutes').notNull(),
+    /**
+     * JSON BenchmarkInput[]: files every run receives as attachments of its first message, copied
+     * under the benchmark's data directory at creation. Each run then gets its own attachment
+     * rows, exactly as if the user had sent the files in a discussion.
+     */
+    inputs: text('inputs').notNull().default('[]'),
+    /**
+     * Script run in each settled run's folder; exit code zero means the run passed. NULL for no
+     * check. Stored as content for the same reason as scheduled checks: what ran is what was
+     * written. No approval step, unlike scheduled checks: only the account's own interface writes
+     * benchmarks, never an agent.
+     */
+    checkScript: text('check_script'),
+    checkTimeoutSeconds: integer('check_timeout_seconds').notNull().default(120),
+    /**
+     * First benchmark of the series this one reruns; NULL for an original. Points at the root
+     * rather than the parent so a series is one query, and reruns of reruns still line up with
+     * the benchmark they all repeat. No foreign key: deleting the original keeps its reruns.
+     */
+    seriesId: text('series_id'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [index('idx_benchmarks_user').on(t.userId, t.createdAt), index('idx_benchmarks_series').on(t.seriesId)],
+)
+
+/**
+ * One measured session of a benchmark variant. Pending rows exist from creation so progress can
+ * be counted before launch; `metrics` is folded from the journal once, when the run settles.
+ */
+export const benchmarkRuns = sqliteTable(
+  'benchmark_runs',
+  {
+    id: text('id').primaryKey(),
+    benchmarkId: text('benchmark_id')
+      .notNull()
+      .references(() => benchmarks.id, { onDelete: 'cascade' }),
+    variantId: text('variant_id').notNull(),
+    /** 1-based index among the variant's repetitions. */
+    repetition: integer('repetition').notNull(),
+    /** No foreign key: the thread may be deleted while the measurement stays. */
+    conversationId: text('conversation_id'),
+    /**
+     * `checking`: the session settled and the benchmark's script is running in its folder. Reset
+     * to `running` at startup so the next sweep settles the run again and reruns the script.
+     */
+    status: text('status')
+      .$type<'pending' | 'running' | 'checking' | 'succeeded' | 'failed' | 'timed_out' | 'cancelled'>()
+      .notNull(),
+    startedAt: timestamp('started_at'),
+    finishedAt: timestamp('finished_at'),
+    /** What prevented or interrupted the run, written for direct display. */
+    error: text('error'),
+    /** CLI version resolved at launch: a rerun months later must say which release answered. */
+    cliVersion: text('cli_version'),
+    /** JSON BenchmarkRunMetrics, frozen when the run settles; NULL until then. */
+    metrics: text('metrics'),
+    /**
+     * Last assistant text, truncated and copied at settlement. Duplicated from the journal so text
+     * benchmarks compare answers without opening every thread, and survive their deletion.
+     */
+    response: text('response'),
+    /** JSON BenchmarkCheckResult; NULL when the benchmark has no script or it did not run. */
+    check: text('check'),
+    /** JSON BenchmarkDeliverable[]: files found in the run folder at settlement. */
+    files: text('files'),
+    /**
+     * Unguessable capability for the sandboxed preview route. Pages an agent built load their own
+     * scripts and styles from a document with an opaque origin, which carries no session cookie:
+     * the token, not the session, authorizes those reads.
+     */
+    previewToken: text('preview_token'),
+    /**
+     * Human rating from 1 to 5, given in the outputs view, usually blind. Kept per run rather
+     * than per variant: repetitions of one configuration can differ, and the spread is the point.
+     */
+    rating: integer('rating'),
+    ratingNote: text('rating_note'),
+    ratedAt: timestamp('rated_at'),
+  },
+  (t) => [
+    index('idx_benchmark_runs_benchmark').on(t.benchmarkId, t.variantId, t.repetition),
+    index('idx_benchmark_runs_open').on(t.status),
+  ],
+)
+
 export const conversations = sqliteTable(
   'conversations',
   {
@@ -749,6 +858,15 @@ export const conversations = sqliteTable(
      * again.
      */
     scheduleId: text('schedule_id'),
+    /**
+     * Benchmark whose run opened this conversation, if any.
+     *
+     * Same role as `scheduleId` for personal conversations: runs are grouped under their
+     * benchmark instead of appearing among discussions, and they skip personal memory so one
+     * variant cannot feed the next. No cascade: the benchmark deletion route removes its runs'
+     * conversations itself, together with their journals.
+     */
+    benchmarkId: text('benchmark_id'),
     /** JSON AgentConfig. */
     config: text('config').notNull(),
     status: text('status')
@@ -824,6 +942,7 @@ export const conversations = sqliteTable(
     index('idx_conversations_project').on(t.projectId, t.position),
     index('idx_conversations_user').on(t.userId),
     index('idx_conversations_schedule').on(t.scheduleId),
+    index('idx_conversations_benchmark').on(t.benchmarkId),
   ],
 )
 
@@ -1699,6 +1818,8 @@ export type InstructionsRow = typeof instructions.$inferSelect
 export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
+export type BenchmarkRow = typeof benchmarks.$inferSelect
+export type BenchmarkRunRow = typeof benchmarkRuns.$inferSelect
 export type AutomationWebhookRow = typeof automationWebhooks.$inferSelect
 export type AutomationDeliveryRow = typeof automationDeliveries.$inferSelect
 export type ProjectActionRow = typeof projectActions.$inferSelect

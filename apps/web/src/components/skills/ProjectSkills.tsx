@@ -4,10 +4,9 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
 import { useLocalSkills, useSkillLibrary } from '../../lib/skill-library'
-import { Badge, Banner, Card, CardBody, CardHeader } from '../ui'
+import { Badge, Banner, Card, CardBody, CardHeader, Tabs } from '../ui'
 import { AddSkillMenu } from './AddSkillMenu'
 import { SkillUpdates } from './SkillUpdates'
-import { SkillTabs } from './SkillTabs'
 import { SkillDiscovery } from './SkillDiscovery'
 import { SkillList, originLabel } from './SkillList'
 
@@ -36,7 +35,7 @@ export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwn
       />
       <CardBody className="flex flex-col gap-4">
         {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
-        <SkillTabs label={t('skills.project.title')} value={tab} onChange={setTab} tabs={[
+        <Tabs label={t('skills.project.title')} value={tab} onChange={setTab} tabs={[
           { value: 'installed', label: t('skills.tabs.installed') },
           { value: 'discover', label: t('skills.tabs.discover') },
           { value: 'updates', label: t('skills.tabs.updates') },
@@ -73,7 +72,7 @@ export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwn
             </ul>
           </section>
         ) : null}
-        </SkillTabs>
+        </Tabs>
       </CardBody>
     </Card>
   )

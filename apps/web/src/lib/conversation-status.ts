@@ -164,8 +164,9 @@ export function useStatusFeed(): void {
           const known = queryClient.getQueryData<ConversationDto[]>(['conversations', 'all'])
           if (known && !known.some((entry) => entry.id === conversationId)) {
             void queryClient.invalidateQueries({ queryKey: ['conversations'] })
-            // An unknown thread may be a scheduled run that just started.
+            // An unknown thread may be a scheduled or benchmark run that just started.
             void queryClient.invalidateQueries({ queryKey: ['schedules'] })
+            void queryClient.invalidateQueries({ queryKey: ['benchmarks'] })
           }
         }
         const metricsChanged = !sameMetrics(metrics.get(conversationId), pushed)

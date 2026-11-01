@@ -37,6 +37,8 @@ export interface CreateConversationInput {
   origin: { tokenId: string; label: string } | null
   /** Scheduled task whose run this conversation represents; absent otherwise. */
   scheduleId?: string
+  /** Benchmark whose run this conversation measures; absent otherwise. Personal only. */
+  benchmarkId?: string
   /** Context handed off from another conversation when continuing in another CLI. Write alongside the row so the first CLI start can find it. */
   handoff?: {
     fromConversationId: string
@@ -69,6 +71,7 @@ export async function createConversation(
 
   const title = input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text)
   let workspaceId: string | null = null
+  if (input.benchmarkId && input.projectId !== null) throw new Error('Benchmark runs are personal conversations.')
   if (input.projectId === null) {
     if (input.worktreeId || input.cardId) throw new Error('Personal discussions cannot target a project worktree or card.')
     if (input.workspaceId) workspaceId = personalWorkspace(db, input.workspaceId, input.userId).id
@@ -93,6 +96,7 @@ export async function createConversation(
     createdByTokenId: input.origin?.tokenId ?? null,
     originLabel: input.origin?.label ?? null,
     scheduleId: input.scheduleId ?? null,
+    benchmarkId: input.benchmarkId ?? null,
     config: JSON.stringify(input.config),
     status: 'idle',
     backgroundCount: 0,

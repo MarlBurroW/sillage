@@ -836,6 +836,9 @@ export class SessionManager {
     // without import, moving directories would erase learning. Null in native
     // mode: each CLI retains its own memory and Sillage injects nothing.
     const memoryDir = () => {
+      // Benchmark runs share nothing: a variant that read what the previous one wrote would
+      // not be measured on the same prompt.
+      if (conversation.benchmarkId) return null
       if (conversation.projectId === null) return personalMemoryDir(this.config.paths.memory, conversation.userId)
       const project = instructions()
       if (project?.memoryMode === 'native') return null
@@ -907,6 +910,9 @@ export class SessionManager {
           .from(conversationHandoffs)
           .where(eq(conversationHandoffs.conversationId, conversationId))
           .get()
+        // A benchmark run gets the prompt and nothing else: platform descriptions and memory
+        // would add context one variant might use and another ignore.
+        if (conversation.benchmarkId) return handoff?.text ?? null
         const parts = [
           handoff?.text ?? null,
           conversation.projectId === null ? `This is a personal Sillage discussion with its own persistent working directory. Keep new work and files here unless the user chooses another location. No project owns this discussion: never borrow Sandbox or another unrelated project just because a tool requires one. Model discovery with list_models needs no project. When an idea becomes a project or needs delegated project sessions, use continue_in_project to create a dedicated project with a self-contained brief (goal, decisions, relevant files, uncertainties and next steps) and explicitly selected files. If the user wants the work to continue now, supply prompt to start that linked session; otherwise its brief remains visible while it waits. Reuse the returned session with message_session rather than creating another continuation. The original files remain here, including large media. You may inspect, steer, interrupt and resume this account's project sessions using read_session, steer_session, interrupt_session and message_session. Use existing projects only when the user targets them. Use native file tools elsewhere only as requested and permitted by the CLI. Cite sessions as session:<id>.` : null,
@@ -945,7 +951,7 @@ export class SessionManager {
 
       emit: (event: SillageEvent, raw?: unknown) => {
         this.log.append(conversationId, event, raw, adapter.rawFormat)
-        if (event.type === 'turn.completed' && conversation.projectId === null) {
+        if (event.type === 'turn.completed' && conversation.projectId === null && !conversation.benchmarkId) {
           void readPersonalMemory(this.db, personalMemoryDir(this.config.paths.memory, conversation.userId), conversation.userId, conversationId).catch(err => console.warn('Personal memory refresh failed', err))
         }
         void this.notifyIfAway(conversationId, event)

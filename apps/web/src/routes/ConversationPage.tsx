@@ -1,5 +1,5 @@
 import { CreateProjectDialog } from '../components/chat/CreateProjectDialog'
-import { conversationPath } from '@sillage/protocol'
+import { benchmarkPath, conversationPath } from '@sillage/protocol'
 import { recordPerformance } from '../lib/performance-diagnostics'
 import { useConcentration } from '../lib/concentration'
 import { ConcentrationButton } from '../components/chat/ConcentrationButton'
@@ -10,6 +10,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowDown,
   ArrowRightLeft,
+  FlaskConical,
   Info,
   X,
   FileText,
@@ -997,7 +998,13 @@ export function ConversationPage() {
                   <span className="min-w-0 truncate">{conversation.card.title}</span>
                 </button>
               ) : null}
-              </> : <span>{t('discussions.personal')}</span>}
+              </> : conversation.benchmarkId ? (
+                // A run belongs to its benchmark: lead back to the table rather than to Discussions.
+                <Link to={benchmarkPath(conversation.benchmarkId)} className="flex min-w-0 items-center gap-1 text-ink-soft hover:text-ink">
+                  <FlaskConical size={12} className="shrink-0" />
+                  <span>{t('benchmark.runOf')}</span>
+                </Link>
+              ) : <span>{t('discussions.personal')}</span>}
             </div>
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
 
