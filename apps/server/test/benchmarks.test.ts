@@ -12,6 +12,11 @@ import type { BenchmarkRunner } from '../src/benchmarks/runner.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerBenchmarkRoutes } from '../src/http/routes/benchmarks.js'
 import { runScript } from '../src/scheduler/check.js'
+import { fileURLToPath } from 'node:url'
+import { existsSync, readFileSync } from 'node:fs'
+import { benchmarkRuns, benchmarks as benchmarkTable, openDatabase, runMigrations, users } from '@sillage/db'
+import { BenchmarkRunner, benchmarkInputDir } from '../src/benchmarks/runner.js'
+import type { AppContext } from '../src/http/context.js'
 
 /** Journal entries at the given millisecond offsets, in order. */
 function journal(steps: [number, SillageEvent][]): JournalEntry[] {
@@ -187,4 +192,55 @@ test('benchmark metrics: time waiting for a human is measured apart, open reques
   ]))
   assert.equal(metrics.waitingMs, 5000 + 2500)
   assert.equal(metrics.durationMs, null)
+})
+
+test('benchmark rerun: same configuration and files, in the original series; ratings stay per run', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-bench-db-'))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  t.after(() => { sqlite.close(); rmSync(dir, { recursive: true, force: true }) })
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values([{ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', isAdmin: false, createdAt: 1 }]).run()
+
+  const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
+  const sessions = { assertCliEnabled: () => undefined }
+  const runner = new BenchmarkRunner(ctx, sessions as never, {} as never, {} as never, {} as never)
+  // No sweep: this test reads rows, it launches nothing.
+  runner.kick = () => undefined
+
+  const variants = [{ id: 'v1', label: 'fast', config: { agent: 'claude', model: 'default', effort: 'low', permissionMode: 'bypassPermissions' } }]
+  db.insert(benchmarkTable).values({
+    id: 'original', userId: 'owner', name: 'Parser', prompt: 'Write it', variants: JSON.stringify(variants),
+    repetitions: 2, concurrency: 'sequential', maxDurationMinutes: 5,
+    inputs: JSON.stringify([{ storedAs: '1-brief.txt', filename: 'brief.txt', mimeType: 'text/plain', sizeBytes: 5 }]),
+    checkScript: 'true', checkTimeoutSeconds: 30, seriesId: null, createdAt: 1, updatedAt: 1,
+  }).run()
+  mkdirSync(benchmarkInputDir(dir, 'original'), { recursive: true })
+  writeFileSync(join(benchmarkInputDir(dir, 'original'), '1-brief.txt'), 'hello')
+
+  const first = await runner.rerun('original', 'owner')
+  assert.equal(first.seriesId, 'original')
+  assert.equal(first.prompt, 'Write it')
+  assert.equal(first.checkScript, 'true')
+  assert.equal(first.variants, JSON.stringify(variants))
+  assert.equal(readFileSync(join(benchmarkInputDir(dir, first.id), '1-brief.txt'), 'utf8'), 'hello')
+  // A rerun of a rerun still points at the original: one series, not a chain.
+  const second = await runner.rerun(first.id, 'owner')
+  assert.equal(second.seriesId, 'original')
+  const runs = db.select().from(benchmarkRuns).all().filter((run) => run.benchmarkId === second.id)
+  assert.deepEqual(runs.map((run) => [run.variantId, run.repetition, run.status]).sort(), [['v1', 1, 'pending'], ['v1', 2, 'pending']])
+  await assert.rejects(runner.rerun('original', 'stranger'), /not found/i)
+
+  runner.rate(second.id, runs[0]!.id, 4, 'clean output')
+  const [listed] = runner.list('owner').filter((entry) => entry.id === second.id)
+  const rated = listed!.runs.find((run) => run.id === runs[0]!.id)!
+  assert.equal(rated.rating, 4)
+  assert.equal(rated.ratingNote, 'clean output')
+  runner.rate(second.id, runs[0]!.id, null, 'ignored')
+  assert.equal(runner.list('owner').find((entry) => entry.id === second.id)!.runs.find((run) => run.id === runs[0]!.id)!.ratingNote, null)
+  // A run of another benchmark cannot be rated through this one.
+  assert.throws(() => runner.rate(first.id, runs[0]!.id, 3, null), /not found/i)
+
+  await runner.delete(second.id)
+  assert.equal(existsSync(join(dir, 'benchmarks', second.id)), false)
+  assert.equal(runner.list('owner').some((entry) => entry.id === 'original'), true)
 })

@@ -1,5 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { variantAgent, variantEffort, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkRunMetrics, type CreateBenchmarkBody } from '@sillage/protocol'
+import { useCallback, useMemo, useState } from 'react'
+import {
+  MAX_BENCHMARK_RATING,
+  benchmarkSeriesRoot,
+  variantAgent,
+  variantEffort,
+  type BenchmarkDto,
+  type BenchmarkRunDto,
+  type CreateBenchmarkBody,
+  type RateBenchmarkRunBody,
+} from '@sillage/protocol'
 import { api } from './api'
 import { toCsv } from './download'
 import type { MessageKey } from './i18n'
@@ -61,6 +71,101 @@ export function useDeleteBenchmark() {
   })
 }
 
+/** Repeats a benchmark as it was; the copy joins the original's series. */
+export function useRerunBenchmark() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (id: string) => api.post<BenchmarkDto>(`/api/benchmarks/${id}/rerun`),
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * Ratings apply to the cached list before the server answers: a blind pass rates several runs in
+ * a row, and stars must not lag. Only the rated run is patched, from the click and then from the
+ * reply: replacing the whole benchmark would let an earlier, slower reply erase a later rating.
+ */
+export function useRateBenchmarkRun(benchmarkId: string) {
+  const queryClient = useQueryClient()
+  const patch = (runId: string, change: Partial<BenchmarkRunDto>) =>
+    queryClient.setQueryData<BenchmarkDto[]>(BENCHMARKS_KEY, (list) => list?.map((entry) => (entry.id !== benchmarkId ? entry : {
+      ...entry,
+      runs: entry.runs.map((run) => (run.id === runId ? { ...run, ...change } : run)),
+    })))
+  return useMutation({
+    mutationFn: ({ runId, ...body }: RateBenchmarkRunBody & { runId: string }) =>
+      api.put<BenchmarkDto>(`/api/benchmarks/${benchmarkId}/runs/${runId}/rating`, body),
+    onMutate: ({ runId, rating, note }) => patch(runId, { rating, ratingNote: rating === null ? null : (note ?? null) }),
+    onSuccess: (updated, { runId }) => {
+      const run = updated.runs.find((entry) => entry.id === runId)
+      if (run) patch(runId, { rating: run.rating, ratingNote: run.ratingNote })
+    },
+    onError: () => void queryClient.invalidateQueries({ queryKey: BENCHMARKS_KEY }),
+  })
+}
+
+/** Benchmarks of one series, oldest first: the original, then its reruns. */
+export function benchmarkSeries(all: BenchmarkDto[], benchmark: BenchmarkDto): BenchmarkDto[] {
+  const root = benchmarkSeriesRoot(benchmark)
+  return all.filter((entry) => benchmarkSeriesRoot(entry) === root).sort((a, b) => a.createdAt - b.createdAt)
+}
+
+/**
+ * Blind review of one benchmark: variants shuffled and named by letter until revealed. Kept in
+ * local storage so a reload mid-review keeps the same letters, which a rating may refer to. The
+ * shuffle is per device: ratings are what the server keeps, never the mapping.
+ */
+interface BlindState {
+  seed: number
+  revealed: boolean
+}
+
+const blindKey = (benchmarkId: string) => `sillage.benchmark.blind.${benchmarkId}`
+
+function readBlind(benchmarkId: string): BlindState | null {
+  try {
+    const raw = localStorage.getItem(blindKey(benchmarkId))
+    return raw ? (JSON.parse(raw) as BlindState) : null
+  } catch {
+    return null
+  }
+}
+
+/** Deterministic shuffle: the same seed always gives the same order. */
+function shuffled<T>(items: T[], seed: number): T[] {
+  const copy = [...items]
+  let state = seed || 1
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    state = (state * 1103515245 + 12345) % 2147483648
+    const other = state % (index + 1)
+    ;[copy[index], copy[other]] = [copy[other]!, copy[index]!]
+  }
+  return copy
+}
+
+export function useBlindReview(benchmarkId: string, variantIds: string[]) {
+  const [state, setState] = useState<BlindState | null>(() => readBlind(benchmarkId))
+  const write = useCallback((next: BlindState | null) => {
+    setState(next)
+    if (next) localStorage.setItem(blindKey(benchmarkId), JSON.stringify(next))
+    else localStorage.removeItem(blindKey(benchmarkId))
+  }, [benchmarkId])
+  const active = state !== null && !state.revealed
+  const order = useMemo(() => (state ? shuffled(variantIds, state.seed) : variantIds), [state, variantIds])
+  return {
+    /** Variant names and settings are hidden. */
+    active,
+    /** A blind pass happened and was revealed: letters stay shown next to the names. */
+    revealed: state?.revealed === true,
+    /** Variant ids in display order while blind or revealed, original order otherwise. */
+    order,
+    letterOf: (variantId: string) => (state ? String.fromCharCode(65 + order.indexOf(variantId)) : null),
+    start: () => write({ seed: Math.floor(Math.random() * 2147483647) + 1, revealed: false }),
+    reveal: () => state && write({ ...state, revealed: true }),
+    reset: () => write(null),
+  }
+}
+
 /** One-word benchmark activity for rows and badges. */
 export type BenchmarkState = 'running' | 'done' | 'failed' | 'cancelled'
 
@@ -97,6 +202,7 @@ export const RUN_STATUS_LABELS: Record<BenchmarkRunDto['status'], MessageKey> = 
 
 /** Measurements shown as table columns, in reading order. Each reads one number from the metrics. */
 export type MetricKey =
+  | 'rating'
   | 'durationMs'
   | 'waitingMs'
   | 'firstTextMs'
@@ -113,6 +219,7 @@ export type MetricKey =
   | 'contextTokens'
 
 export const METRIC_KEYS: MetricKey[] = [
+  'rating',
   'durationMs',
   'waitingMs',
   'firstTextMs',
@@ -130,6 +237,7 @@ export const METRIC_KEYS: MetricKey[] = [
 ]
 
 export const METRIC_LABELS: Record<MetricKey, MessageKey> = {
+  rating: 'benchmark.metric.rating',
   durationMs: 'benchmark.metric.duration',
   waitingMs: 'benchmark.metric.waiting',
   firstTextMs: 'benchmark.metric.firstText',
@@ -146,10 +254,11 @@ export const METRIC_LABELS: Record<MetricKey, MessageKey> = {
   contextTokens: 'benchmark.metric.context',
 }
 
-export function metricValue(metrics: BenchmarkRunMetrics | null, key: MetricKey): number | null {
-  if (!metrics) return null
+export function metricValue(run: BenchmarkRunDto, key: MetricKey): number | null {
+  if (key === 'rating') return run.rating
+  if (!run.metrics) return null
   // Measurements folded before a field existed read as unreported rather than undefined.
-  return metrics[key] ?? null
+  return run.metrics[key] ?? null
 }
 
 /**
@@ -158,13 +267,16 @@ export function metricValue(metrics: BenchmarkRunMetrics | null, key: MetricKey)
  */
 export function visibleMetricKeys(benchmark: BenchmarkDto): MetricKey[] {
   const waited = benchmark.runs.some((run) => (run.metrics?.waitingMs ?? 0) > 0)
-  return METRIC_KEYS.filter((key) => key !== 'waitingMs' || waited)
+  const rated = benchmark.runs.some((run) => run.rating !== null)
+  return METRIC_KEYS.filter((key) => (key !== 'waitingMs' || waited) && (key !== 'rating' || rated))
 }
 
 /** Human formatting per unit. Null stays a dash: an unreported value must not read as zero. */
 export function formatMetric(key: MetricKey, value: number | null, locale: string): string {
   if (value === null) return '—'
   switch (key) {
+    case 'rating':
+      return `${value.toLocaleString(locale, { maximumFractionDigits: 1 })}/${MAX_BENCHMARK_RATING}`
     case 'durationMs':
     case 'waitingMs':
     case 'firstTextMs':
@@ -223,7 +335,7 @@ export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; conte
     'benchmark', 'variant', 'agent', 'model', 'effort', 'announced_model', 'cli_version', 'repetition', 'status',
     'check_passed', 'check_exit_code', 'duration_ms', 'waiting_ms', 'first_text_ms', 'input_tokens', 'output_tokens',
     'cache_read_tokens', 'cache_creation_tokens', 'cost_usd', 'tool_calls', 'tool_errors', 'tool_duration_ms',
-    'assistant_messages', 'output_chars', 'context_tokens', 'error',
+    'assistant_messages', 'output_chars', 'context_tokens', 'rating', 'rating_note', 'error',
   ]
   const cell = (value: number | string | boolean | null | undefined) => (value === null || value === undefined ? '' : String(value))
   const rows = benchmark.runs.map((run) => {
@@ -234,7 +346,7 @@ export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; conte
       variant ? variantEffort(variant.config) : '', m?.model, run.cliVersion, run.repetition, run.status,
       run.check ? run.check.passed : null, run.check?.exitCode, m?.durationMs, m?.waitingMs, m?.firstTextMs, m?.inputTokens,
       m?.outputTokens, m?.cacheReadTokens, m?.cacheCreationTokens, m?.costUsd, m?.toolCalls, m?.toolErrors,
-      m?.toolDurationMs, m?.assistantMessages, m?.outputChars, m?.contextTokens, run.error,
+      m?.toolDurationMs, m?.assistantMessages, m?.outputChars, m?.contextTokens, run.rating, run.ratingNote, run.error,
     ].map(cell)
   })
   return { filename: `${exportStem(benchmark)}.csv`, content: toCsv([header, ...rows]) }

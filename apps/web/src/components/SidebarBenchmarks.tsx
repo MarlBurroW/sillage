@@ -1,4 +1,4 @@
-import { FlaskConical, Plus } from 'lucide-react'
+import { FlaskConical, Plus, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { benchmarkPath } from '@sillage/protocol'
@@ -60,7 +60,7 @@ export function SidebarBenchmarks({ onNavigate }: { onNavigate: () => void }) {
                 <NavLink
                   to={benchmarkPath(benchmark.id)}
                   onClick={onNavigate}
-                  title={`${benchmark.name} · ${t(BENCHMARK_STATE_LABELS[state])}`}
+                  title={`${benchmark.name}${benchmark.seriesId ? ` · ${t('benchmark.rerunBadge')}` : ''} · ${t(BENCHMARK_STATE_LABELS[state])}`}
                   className={({ isActive }) => cx(
                     'flex min-h-11 items-center gap-2 rounded-md px-2 text-[0.8125rem] text-ink-soft transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11',
                     isActive && 'bg-surface-high text-ink',
@@ -69,6 +69,8 @@ export function SidebarBenchmarks({ onNavigate }: { onNavigate: () => void }) {
                   <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', STATE_DOTS[state])} />
                   <span className="sr-only">{t(BENCHMARK_STATE_LABELS[state])}</span>
                   <span className="min-w-0 flex-1 truncate">{benchmark.name}</span>
+                  {/* Reruns keep their original's name: the icon tells them apart. */}
+                  {benchmark.seriesId ? <RotateCcw size={11} className="shrink-0 text-ink-faint" aria-label={t('benchmark.rerunBadge')} /> : null}
                   <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">{progress.done}/{progress.total}</span>
                 </NavLink>
               </li>

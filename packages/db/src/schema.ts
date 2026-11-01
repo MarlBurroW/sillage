@@ -708,10 +708,16 @@ export const benchmarks = sqliteTable(
      */
     checkScript: text('check_script'),
     checkTimeoutSeconds: integer('check_timeout_seconds').notNull().default(120),
+    /**
+     * First benchmark of the series this one reruns; NULL for an original. Points at the root
+     * rather than the parent so a series is one query, and reruns of reruns still line up with
+     * the benchmark they all repeat. No foreign key: deleting the original keeps its reruns.
+     */
+    seriesId: text('series_id'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
-  (t) => [index('idx_benchmarks_user').on(t.userId, t.createdAt)],
+  (t) => [index('idx_benchmarks_user').on(t.userId, t.createdAt), index('idx_benchmarks_series').on(t.seriesId)],
 )
 
 /**
@@ -760,6 +766,13 @@ export const benchmarkRuns = sqliteTable(
      * the token, not the session, authorizes those reads.
      */
     previewToken: text('preview_token'),
+    /**
+     * Human rating from 1 to 5, given in the outputs view, usually blind. Kept per run rather
+     * than per variant: repetitions of one configuration can differ, and the spread is the point.
+     */
+    rating: integer('rating'),
+    ratingNote: text('rating_note'),
+    ratedAt: timestamp('rated_at'),
   },
   (t) => [
     index('idx_benchmark_runs_benchmark').on(t.benchmarkId, t.variantId, t.repetition),

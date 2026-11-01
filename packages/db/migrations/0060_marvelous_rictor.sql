@@ -14,6 +14,9 @@ CREATE TABLE `benchmark_runs` (
 	`check` text,
 	`files` text,
 	`preview_token` text,
+	`rating` integer,
+	`rating_note` text,
+	`rated_at` integer,
 	FOREIGN KEY (`benchmark_id`) REFERENCES `benchmarks`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
@@ -31,11 +34,13 @@ CREATE TABLE `benchmarks` (
 	`inputs` text DEFAULT '[]' NOT NULL,
 	`check_script` text,
 	`check_timeout_seconds` integer DEFAULT 120 NOT NULL,
+	`series_id` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE INDEX `idx_benchmarks_user` ON `benchmarks` (`user_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `idx_benchmarks_series` ON `benchmarks` (`series_id`);--> statement-breakpoint
 ALTER TABLE `conversations` ADD `benchmark_id` text;--> statement-breakpoint
 CREATE INDEX `idx_conversations_benchmark` ON `conversations` (`benchmark_id`);

@@ -218,6 +218,44 @@ try {
   assert.equal(await frames.count(), 2)
   await outputs.frameLocator('iframe[title="index.html"]').first().locator('h1').getByText('HIBOU').waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-outputs-desktop.png') })
+
+  // Blind review: shuffled letters, no CLI icon, measures hidden until revealed.
+  await page.getByRole('button', { name: 'Évaluer à l’aveugle', exact: true }).click()
+  const blindView = page.locator('[data-benchmark-blind]')
+  await blindView.waitFor()
+  assert.equal(await page.locator('[data-benchmark-results]').count(), 0, 'measures are hidden while blind')
+  assert.equal(await page.getByRole('tab', { name: 'Mesures', exact: true }).count(), 0)
+  const headings = blindView.locator('[data-output-column]')
+  assert.deepEqual(await headings.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-output-column'))), ['Variante A', 'Variante B'])
+  assert.equal(await headings.locator('svg').count(), 0, 'no CLI icon gives a variant away')
+  await blindView.getByRole('radiogroup', { name: 'Note de Variante A', exact: true }).getByRole('radio', { name: '5 sur 5', exact: true }).click()
+  await blindView.getByRole('radiogroup', { name: 'Note de Variante B', exact: true }).getByRole('radio', { name: '2 sur 5', exact: true }).click()
+  await blindView.getByRole('textbox', { name: 'Commentaire sur cette note', exact: true }).first().fill('Titre net')
+  await blindView.getByRole('textbox', { name: 'Commentaire sur cette note', exact: true }).first().blur()
+  const rated = await until('ratings saved', (entry) => entry.runs.every((run) => run.rating !== null) && entry.runs.some((run) => run.ratingNote === 'Titre net'), 15_000)
+  assert.deepEqual(rated.runs.map((run) => run.rating).sort(), [2, 5])
+  // The page shows both, whatever order the replies came back in.
+  await blindView.locator('[data-benchmark-rating="5"]').waitFor()
+  await blindView.locator('[data-benchmark-rating="2"]').waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-blind-desktop.png') })
+  await page.getByRole('button', { name: 'Révéler les variantes', exact: true }).click()
+  await page.getByRole('tab', { name: 'Productions', exact: true }).waitFor()
+  const revealed = await page.locator('[data-output-column]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-output-column')))
+  assert.ok(revealed.every((name) => /^[AB] · default · (medium|low)$/.test(name ?? '')), JSON.stringify(revealed))
+
+  // Ratings join the measures, as a column of their own.
+  await page.getByRole('tab', { name: 'Mesures', exact: true }).click()
+  await table.getByRole('columnheader', { name: 'Note', exact: true }).waitFor()
+  await table.getByText('5/5', { exact: true }).waitFor()
+
+  // Chart: one bar per variant at its median, with a tooltip on focus.
+  await page.getByRole('tab', { name: 'Graphique', exact: true }).click()
+  const chart = page.locator('[data-benchmark-chart]')
+  await chart.getByRole('heading', { name: 'Durée', exact: true }).waitFor()
+  assert.equal(await chart.locator('[data-chart-row]').count(), 2)
+  await chart.locator('[data-chart-row]').first().focus()
+  await chart.getByRole('tooltip').waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-chart-desktop.png') })
   await page.getByRole('tab', { name: 'Mesures', exact: true }).click()
 
   // The run opens as an ordinary conversation, headed back to its benchmark.
@@ -245,14 +283,48 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-form-mobile.png') })
 
-  // --- Deletion removes the runs' conversations -----------------------------------
+  // --- Rerun: same benchmark again, compared in History ---------------------------
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${base}/benchmarks/${benchmark.id}`)
-  await page.getByRole('button', { name: 'Supprimer le benchmark', exact: true }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await page.getByRole('button', { name: 'Relancer', exact: true }).click()
+  await page.waitForURL((url) => url.pathname.startsWith('/benchmarks/') && !url.pathname.endsWith(benchmark.id))
+  const rerunId = new URL(page.url()).pathname.split('/').pop()
+  const all = async () => api('/api/benchmarks')
+  let copy = (await all()).find((entry) => entry.id === rerunId)
+  assert.equal(copy.seriesId, benchmark.id)
+  assert.equal(copy.prompt, benchmark.prompt)
+  assert.deepEqual(copy.inputs.map((input) => input.filename), ['consigne.txt'])
+  for (let i = 0; i < 400; i += 1) {
+    copy = (await all()).find((entry) => entry.id === rerunId)
+    if (copy.runs.every((run) => !['pending', 'running', 'checking'].includes(run.status))) break
+    await delay(1000)
+  }
+  assert.ok(copy.runs.every((run) => run.status === 'succeeded' && run.check?.passed), JSON.stringify(copy.runs.map((run) => [run.status, run.error])))
+  await page.getByRole('tab', { name: 'Historique (2)', exact: true }).click()
+  const history = page.locator('[data-benchmark-series]')
+  await history.waitFor()
+  assert.equal(await history.locator('thead th').count(), 3)
+  // The page polls every few seconds: wait for it to catch up with the settled API.
+  await history.locator('[data-series-cell]').filter({ hasText: 'en cours' }).first().waitFor({ state: 'detached', timeout: 20_000 })
+  await history.getByText('v2.1', { exact: false }).first().waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-history-desktop.png') })
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'history scrolls inside its frame')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-history-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${base}/benchmarks`)
+  await page.locator(`[data-benchmark="Effort faible contre moyen"]`).getByText('Relance', { exact: true }).waitFor()
+
+  // --- Deletion removes the runs' conversations -----------------------------------
+  for (const target of [rerunId, benchmark.id]) {
+    await page.goto(`${base}/benchmarks/${target}`)
+    await page.getByRole('button', { name: 'Supprimer le benchmark', exact: true }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
+    await page.waitForURL((url) => url.pathname === '/benchmarks')
+  }
   await page.getByText('Aucun benchmark', { exact: true }).first().waitFor()
   const remaining = await api('/api/conversations')
-  assert.equal(remaining.some((entry) => entry.benchmarkId === benchmark.id), false)
+  assert.equal(remaining.some((entry) => entry.benchmarkId === benchmark.id || entry.benchmarkId === rerunId), false)
 
   assert.deepEqual(errors, [])
   console.log(`benchmark-ui-check: ok (captures dans ${shots})`)

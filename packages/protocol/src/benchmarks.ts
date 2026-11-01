@@ -193,6 +193,9 @@ export interface BenchmarkRunDto {
   files: BenchmarkDeliverable[]
   /** Null before launch. */
   previewToken: string | null
+  /** Human rating from 1 to 5; null until rated. */
+  rating: number | null
+  ratingNote: string | null
 }
 
 export interface BenchmarkDto {
@@ -206,6 +209,8 @@ export interface BenchmarkDto {
   inputs: { filename: string; mimeType: string; sizeBytes: number }[]
   checkScript: string | null
   checkTimeoutSeconds: number
+  /** Original this benchmark reruns; null for an original. */
+  seriesId: string | null
   createdAt: number
   updatedAt: number
   runs: BenchmarkRunDto[]
@@ -238,4 +243,20 @@ export function variantAgent(variant: { config: AgentConfig }): AgentKind {
 
 export function benchmarkPath(id: string): string {
   return `/benchmarks/${id}`
+}
+
+export const MIN_BENCHMARK_RATING = 1
+export const MAX_BENCHMARK_RATING = 5
+export const MAX_BENCHMARK_RATING_NOTE_CHARS = 2000
+
+/** `rating: null` clears it: a blind pass can be redone. */
+export const rateBenchmarkRunBodySchema = z.object({
+  rating: z.number().int().min(MIN_BENCHMARK_RATING).max(MAX_BENCHMARK_RATING).nullable(),
+  note: z.string().trim().max(MAX_BENCHMARK_RATING_NOTE_CHARS).nullable().default(null),
+})
+export type RateBenchmarkRunBody = z.input<typeof rateBenchmarkRunBodySchema>
+
+/** Root of the series a benchmark belongs to: itself for an original. */
+export function benchmarkSeriesRoot(benchmark: { id: string; seriesId: string | null }): string {
+  return benchmark.seriesId ?? benchmark.id
 }

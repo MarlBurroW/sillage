@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { BENCHMARK_PREVIEW_PREFIX, createBenchmarkBodySchema, type BenchmarkDto } from '@sillage/protocol'
+import { BENCHMARK_PREVIEW_PREFIX, createBenchmarkBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto } from '@sillage/protocol'
 import { PREVIEW_POLICY, previewType } from '../../benchmarks/deliverables.js'
 import { benchmarksToDto, type BenchmarkRunner } from '../../benchmarks/runner.js'
 import { resolveRealInside } from '../../workspace.js'
@@ -36,6 +36,21 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     const row = runner.load((request.params as { id: string }).id, user.id)
     await runner.cancel(row.id)
     return benchmarksToDto(ctx.db, [runner.load(row.id, user.id)])[0]!
+  })
+
+  app.post('/api/benchmarks/:id/rerun', async (request, reply) => {
+    const user = requireUser(request)
+    const row = await runner.rerun((request.params as { id: string }).id, user.id)
+    return reply.status(201).send(benchmarksToDto(ctx.db, [row])[0])
+  })
+
+  app.put('/api/benchmarks/:id/runs/:runId/rating', async (request): Promise<BenchmarkDto> => {
+    const user = requireUser(request)
+    const { id, runId } = request.params as { id: string; runId: string }
+    const row = runner.load(id, user.id)
+    const body = rateBenchmarkRunBodySchema.parse(request.body)
+    runner.rate(row.id, runId, body.rating, body.note)
+    return benchmarksToDto(ctx.db, [row])[0]!
   })
 
   app.delete('/api/benchmarks/:id', async (request, reply) => {

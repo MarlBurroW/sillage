@@ -1,10 +1,12 @@
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, ExternalLink, FileText, FlaskConical, Square, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Square, Trash2, X } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
+import { benchmarkPath, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
+import { BenchmarkChart } from '../components/benchmark/BenchmarkChart'
 import { DeliverablesGrid } from '../components/benchmark/DeliverablesGrid'
+import { SeriesComparison } from '../components/benchmark/SeriesComparison'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, Tabs, cx } from '../components/ui'
 import {
   BENCHMARK_STATE_LABELS,
@@ -13,6 +15,7 @@ import {
   RUN_STATUS_LABELS,
   benchmarkCsv,
   benchmarkJson,
+  benchmarkSeries,
   benchmarkProgress,
   benchmarkState,
   formatMetric,
@@ -22,8 +25,10 @@ import {
   spread,
   visibleMetricKeys,
   useBenchmarks,
+  useBlindReview,
   useCancelBenchmark,
   useDeleteBenchmark,
+  useRerunBenchmark,
   type MetricKey,
 } from '../lib/benchmarks'
 import { modelsAccount } from '../lib/agents'
@@ -45,6 +50,8 @@ const RUN_DOTS: Record<BenchmarkRunDto['status'], string> = {
   cancelled: 'bg-line-strong',
 }
 
+type Tab = 'measures' | 'chart' | 'outputs' | 'history'
+
 interface Sort {
   key: MetricKey
   direction: 'asc' | 'desc'
@@ -65,8 +72,12 @@ export function BenchmarkPage() {
   const remove = useDeleteBenchmark()
   const [confirming, setConfirming] = useState(false)
   const [sort, setSort] = useState<Sort | null>(null)
-  const [tab, setTab] = useState<'measures' | 'outputs'>('measures')
+  const [tab, setTab] = useState<Tab>('measures')
   const benchmark = benchmarks?.find((entry) => entry.id === id)
+  const rerun = useRerunBenchmark()
+  const variantIds = useMemo(() => benchmark?.variants.map((variant) => variant.id) ?? [], [benchmark])
+  const blind = useBlindReview(id ?? '', variantIds)
+  const series = useMemo(() => (benchmark && benchmarks ? benchmarkSeries(benchmarks, benchmark) : []), [benchmark, benchmarks])
 
   const blocks = useMemo(() => (benchmark ? variantBlocks(benchmark, sort) : []), [benchmark, sort])
   const metricKeys = useMemo(() => (benchmark ? visibleMetricKeys(benchmark) : METRIC_KEYS), [benchmark])
@@ -86,7 +97,26 @@ export function BenchmarkPage() {
 
   const state = benchmarkState(benchmark)
   const progress = benchmarkProgress(benchmark)
-  const error = cancel.error ?? remove.error
+  const error = cancel.error ?? remove.error ?? rerun.error
+  // A variant's heading: its letter while blind, the letter beside the name once revealed.
+  const nameOf = (variantId: string) => {
+    const variant = benchmark.variants.find((entry) => entry.id === variantId)
+    const letter = blind.letterOf(variantId)
+    if (blind.active) {
+      const text = t('benchmark.blind.variant', { letter: letter ?? '?' })
+      return { label: text, text }
+    }
+    const text = letter ? `${letter} · ${variant?.label ?? variantId}` : (variant?.label ?? variantId)
+    return { label: text, text }
+  }
+  const tabs: { value: Tab; label: string }[] = [
+    { value: 'measures', label: t('benchmark.tab.measures') },
+    { value: 'chart', label: t('benchmark.tab.chart') },
+    { value: 'outputs', label: t('benchmark.tab.outputs') },
+    // History only exists once the benchmark has been rerun.
+    ...(series.length > 1 ? [{ value: 'history' as const, label: t('benchmark.tab.history', { count: series.length }) }] : []),
+  ]
+  const shown: Tab = tabs.some((entry) => entry.value === tab) ? tab : 'measures'
   const lang = locale()
 
   const toggleSort = (key: MetricKey) =>
@@ -109,6 +139,18 @@ export function BenchmarkPage() {
         {state === 'running' ? (
           <Button size="sm" variant="secondary" icon={<Square size={14} />} busy={cancel.isPending} onClick={() => cancel.mutate(benchmark.id)}>
             {t('benchmark.cancel')}
+          </Button>
+        ) : null}
+        {state !== 'running' ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<RotateCcw size={14} />}
+            busy={rerun.isPending}
+            onClick={() => rerun.mutate(benchmark.id, { onSuccess: (created) => navigate(benchmarkPath(created.id)) })}
+            title={t('benchmark.rerun.hint')}
+          >
+            {t('benchmark.rerun')}
           </Button>
         ) : null}
         <Menu trigger={<IconButton label={t('benchmark.export')}><Download size={16} /></IconButton>}>
@@ -149,13 +191,44 @@ export function BenchmarkPage() {
             </details>
           ) : null}
 
-          <Tabs
-            label={t('benchmark.title')}
-            value={tab}
-            onChange={setTab}
-            tabs={[{ value: 'measures', label: t('benchmark.tab.measures') }, { value: 'outputs', label: t('benchmark.tab.outputs') }]}
-          >
-          {tab === 'outputs' ? <DeliverablesGrid benchmark={benchmark} /> : <>
+          {blind.active ? (
+            // Blind review shows outputs only: measures, costs and CLI names would give variants away.
+            <section className="flex flex-col gap-4" data-benchmark-blind>
+              <Banner tone="info">{t('benchmark.blind.active')}</Banner>
+              <div>
+                <Button size="sm" icon={<Eye size={14} />} onClick={() => blind.reveal()}>{t('benchmark.blind.reveal')}</Button>
+              </div>
+              <DeliverablesGrid benchmark={benchmark} order={blind.order} nameOf={nameOf} blind />
+            </section>
+          ) : (
+          <Tabs label={t('benchmark.title')} value={shown} onChange={setTab} tabs={tabs}>
+          {shown === 'outputs' ? <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="secondary" icon={<EyeOff size={14} />} onClick={() => blind.start()}>
+                {t(blind.revealed ? 'benchmark.blind.restart' : 'benchmark.blind.start')}
+              </Button>
+              {blind.revealed ? <Button size="sm" variant="ghost" onClick={() => blind.reset()}>{t('benchmark.blind.forget')}</Button> : null}
+              <span className="text-xs text-ink-faint">{t('benchmark.blind.hint')}</span>
+            </div>
+            <DeliverablesGrid benchmark={benchmark} order={blind.order} nameOf={nameOf} blind={false} />
+          </div> : shown === 'chart' ? (
+            <BenchmarkChart
+              metrics={metricKeys}
+              rows={blind.order.flatMap((variantId) => {
+                const variant = benchmark.variants.find((entry) => entry.id === variantId)
+                if (!variant) return []
+                const name = nameOf(variantId)
+                return [{
+                  id: variantId,
+                  text: name.text,
+                  label: <span className="inline-flex min-w-0 items-center gap-1.5"><AgentIcon agent={variantAgent(variant)} size={13} /><span className="truncate">{name.label}</span></span>,
+                  runs: benchmark.runs.filter((run) => run.variantId === variantId),
+                }]
+              })}
+            />
+          ) : shown === 'history' ? (
+            <SeriesComparison series={series} current={benchmark.id} />
+          ) : <>
 
           <div className="overflow-x-auto rounded-lg border border-line" data-benchmark-results>
             <table className="w-full min-w-max border-collapse text-sm">
@@ -182,7 +255,7 @@ export function BenchmarkPage() {
                         <span className="inline-flex items-center gap-2">
                           <AgentIcon agent={variantAgent(variant)} size={14} />
                           <span className="text-ink-faint">{AGENT_LABELS[variantAgent(variant)]}</span>
-                          <span>{variant.label}</span>
+                          <span>{nameOf(variant.id).label}</span>
                           {/* An alias such as “default” names no generation: show what the CLI announced. */}
                           {announcedModel(runs, variant) ? <span className="text-xs text-ink-faint">· {announcedModel(runs, variant)}</span> : null}
                           {modelsAccount(variant.config) ? <span className="text-xs text-ink-faint">· {t('benchmark.table.account')}</span> : null}
@@ -225,7 +298,7 @@ export function BenchmarkPage() {
                         ) : null}
                         {metricKeys.map((key) => (
                           <td key={key} className="px-3 py-1.5 text-right tabular-nums whitespace-nowrap" title={key === 'toolCalls' ? toolBreakdown(run) : undefined}>
-                            {formatMetric(key, metricValue(run.metrics, key), lang)}
+                            {formatMetric(key, metricValue(run, key), lang)}
                           </td>
                         ))}
                       </tr>
@@ -258,6 +331,7 @@ export function BenchmarkPage() {
           <p className="mt-3 text-xs text-ink-faint">{t('benchmark.table.legend')}</p>
           </>}
           </Tabs>
+          )}
         </div>
       </div>
 
@@ -344,7 +418,7 @@ function variantBlocks(benchmark: BenchmarkDto, sort: Sort | null): VariantBlock
     const medians: VariantBlock['medians'] = {}
     const spreads: VariantBlock['spreads'] = {}
     for (const key of METRIC_KEYS) {
-      const values = runs.map((run) => metricValue(run.metrics, key))
+      const values = runs.map((run) => metricValue(run, key))
       medians[key] = median(values)
       spreads[key] = spread(values)
     }

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6b51af54-7f2c-46cc-a575-ac565c4646de",
+  "id": "704987e2-8d94-48a0-84fe-ff581fb4541a",
   "prevId": "3c337b22-d04a-465c-9d30-0ff9bd75e8b7",
   "tables": {
     "agent_requests": {
@@ -1103,6 +1103,27 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "rating": {
+          "name": "rating",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rating_note": {
+          "name": "rating_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rated_at": {
+          "name": "rated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -1226,6 +1247,13 @@
           "autoincrement": false,
           "default": 120
         },
+        "series_id": {
+          "name": "series_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -1247,6 +1275,13 @@
           "columns": [
             "user_id",
             "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_benchmarks_series": {
+          "name": "idx_benchmarks_series",
+          "columns": [
+            "series_id"
           ],
           "isUnique": false
         }

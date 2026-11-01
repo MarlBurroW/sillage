@@ -65,6 +65,7 @@ export function BenchmarksPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="flex items-center gap-1">{agents.map((agent) => <AgentIcon key={agent} agent={agent} size={16} />)}</span>
                         <h2 className="min-w-0 flex-1 font-medium break-words">{benchmark.name}</h2>
+                        {benchmark.seriesId ? <Badge>{t('benchmark.rerunBadge')}</Badge> : null}
                         <Badge tone={BENCHMARK_STATE_TONES[state]}>{t(BENCHMARK_STATE_LABELS[state])}</Badge>
                       </div>
                       <p className="line-clamp-2 text-xs text-ink-soft">{benchmark.prompt}</p>

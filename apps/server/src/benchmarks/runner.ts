@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
@@ -16,6 +16,7 @@ import {
 import {
   MAX_PARALLEL_BENCHMARK_RUNS,
   benchmarkInputsSchema,
+  benchmarkSeriesRoot,
   benchmarkVariantsSchema,
   defaultVariantLabel,
   variantEffort,
@@ -83,6 +84,8 @@ export function runToDto(row: BenchmarkRunRow): BenchmarkRunDto {
     check: row.check ? (JSON.parse(row.check) as BenchmarkCheckResult) : null,
     files: row.files ? (JSON.parse(row.files) as BenchmarkDeliverable[]) : [],
     previewToken: row.previewToken,
+    rating: row.rating,
+    ratingNote: row.ratingNote,
   }
 }
 
@@ -105,6 +108,7 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[]): BenchmarkDto[] {
     inputs: readInputs(row.inputs).map(({ filename, mimeType, sizeBytes }) => ({ filename, mimeType, sizeBytes })),
     checkScript: row.checkScript,
     checkTimeoutSeconds: row.checkTimeoutSeconds,
+    seriesId: row.seriesId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     runs: runs.filter((run) => run.benchmarkId === row.id).map(runToDto),
@@ -208,14 +212,44 @@ export class BenchmarkRunner {
       inputs: JSON.stringify(inputs),
       checkScript: body.checkScript,
       checkTimeoutSeconds: body.checkTimeoutSeconds,
+      seriesId: null,
       createdAt: now,
       updatedAt: now,
     }
+    await this.insert(row, variants)
+    for (const upload of uploads) await this.attachments.remove(upload.id)
+    this.kick()
+    return row
+  }
+
+  /**
+   * Repeats a benchmark as it was: same prompt, files, script and frozen configurations. Only
+   * what changed outside Sillage differs, the CLI release or the model behind an alias, which is
+   * exactly what a rerun is for. The copy joins the original's series for side-by-side reading.
+   */
+  async rerun(benchmarkId: string, userId: string): Promise<BenchmarkRow> {
+    const source = this.load(benchmarkId, userId)
+    const variants = readVariants(source.variants)
+    for (const variant of variants) this.sessions.assertCliEnabled(variant.config.agent)
+    const id = randomUUID()
+    const inputs = readInputs(source.inputs)
+    if (inputs.length > 0) {
+      await cp(benchmarkInputDir(this.ctx.config.paths.data, source.id), benchmarkInputDir(this.ctx.config.paths.data, id), { recursive: true })
+    }
+    const now = Date.now()
+    const row: BenchmarkRow = { ...source, id, seriesId: benchmarkSeriesRoot(source), createdAt: now, updatedAt: now }
+    await this.insert(row, variants)
+    this.kick()
+    return row
+  }
+
+  /** Writes a benchmark with one pending run per variant and repetition; removes its files if that fails. */
+  private async insert(row: BenchmarkRow, variants: BenchmarkVariant[]): Promise<void> {
     try {
       writeTransaction(this.ctx.db, (tx) => {
         tx.insert(benchmarks).values(row).run()
         for (const variant of variants) {
-          for (let repetition = 1; repetition <= body.repetitions; repetition += 1) {
+          for (let repetition = 1; repetition <= row.repetitions; repetition += 1) {
             tx.insert(benchmarkRuns)
               .values({
                 id: randomUUID(),
@@ -233,18 +267,29 @@ export class BenchmarkRunner {
                 check: null,
                 files: null,
                 previewToken: null,
+                rating: null,
+                ratingNote: null,
+                ratedAt: null,
               })
               .run()
           }
         }
       })
     } catch (err) {
-      await rm(join(this.ctx.config.paths.data, 'benchmarks', id), { recursive: true, force: true })
+      await rm(join(this.ctx.config.paths.data, 'benchmarks', row.id), { recursive: true, force: true })
       throw err
     }
-    for (const upload of uploads) await this.attachments.remove(upload.id)
-    this.kick()
-    return row
+  }
+
+  /** Records a human rating. Allowed before settlement too: a page can be judged while the check runs. */
+  rate(benchmarkId: string, runId: string, rating: number | null, note: string | null): void {
+    const result = this.ctx.db
+      .update(benchmarkRuns)
+      .set({ rating, ratingNote: rating === null ? null : note, ratedAt: rating === null ? null : Date.now() })
+      .where(and(eq(benchmarkRuns.id, runId), eq(benchmarkRuns.benchmarkId, benchmarkId)))
+      .run()
+    if (result.changes === 0) throw notFound('benchmark_run_not_found', 'Benchmark run not found.')
+    this.touch(benchmarkId, Date.now())
   }
 
   /** Pending runs never start; running ones are terminated and still measured, since a partial run says something. */

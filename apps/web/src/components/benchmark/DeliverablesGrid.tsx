@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Download, ExternalLink } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import {
   benchmarkPreviewUrl,
   variantAgent,
@@ -14,6 +14,7 @@ import { isOpenRun } from '../../lib/benchmarks'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { Markdown } from '../chat/Markdown'
+import { RatingInput } from './RatingInput'
 import { Select, cx } from '../ui'
 
 /** Rows people compare first: what renders, then what plays, then what reads. */
@@ -27,16 +28,30 @@ const TEXT_PREVIEW_BYTES = 64 * 1024
  * one per file path any run wrote. The same path in two columns is the same deliverable, so a
  * page, an image or a clip sits next to its counterparts. Repetitions are shown one at a time.
  */
-export function DeliverablesGrid({ benchmark }: { benchmark: BenchmarkDto }) {
+export function DeliverablesGrid({
+  benchmark,
+  order,
+  nameOf,
+  blind,
+}: {
+  benchmark: BenchmarkDto
+  /** Variant ids in column order: shuffled during a blind review. */
+  order: string[]
+  /** Column heading for a variant: its letter while blind, its name otherwise. */
+  nameOf: (variantId: string) => { label: ReactNode; text: string }
+  /** Hides CLI icons, which would give the variant away. */
+  blind: boolean
+}) {
   const t = useTranslate()
   const [repetition, setRepetition] = useState(1)
 
   const columns = useMemo(
-    () => benchmark.variants.map((variant) => ({
-      variant,
-      run: benchmark.runs.find((run) => run.variantId === variant.id && run.repetition === repetition) ?? null,
-    })),
-    [benchmark, repetition],
+    () => order.flatMap((variantId) => {
+      const variant = benchmark.variants.find((entry) => entry.id === variantId)
+      if (!variant) return []
+      return [{ variant, run: benchmark.runs.find((run) => run.variantId === variant.id && run.repetition === repetition) ?? null }]
+    }),
+    [benchmark, order, repetition],
   )
 
   const paths = useMemo(() => {
@@ -66,9 +81,9 @@ export function DeliverablesGrid({ benchmark }: { benchmark: BenchmarkDto }) {
           style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(min(85vw, 22rem), 1fr))` }}
         >
           {columns.map(({ variant, run }) => (
-            <div key={variant.id} className="flex snap-start items-center gap-2 border-b border-line pb-2 text-sm font-medium">
-              <AgentIcon agent={variantAgent(variant)} size={14} />
-              <span className="min-w-0 truncate">{variant.label}</span>
+            <div key={variant.id} className="flex snap-start items-center gap-2 border-b border-line pb-2 text-sm font-medium" data-output-column={nameOf(variant.id).text}>
+              {blind ? null : <AgentIcon agent={variantAgent(variant)} size={14} />}
+              <span className="min-w-0 truncate">{nameOf(variant.id).label}</span>
               {run && isOpenRun(run) ? <span className="text-xs font-normal text-ink-faint">{t('benchmark.outputs.pending')}</span> : null}
             </div>
           ))}
@@ -78,6 +93,17 @@ export function DeliverablesGrid({ benchmark }: { benchmark: BenchmarkDto }) {
             <Cell key={variant.id}>
               {run?.response ? (
                 <div className="max-h-96 overflow-y-auto text-sm"><Markdown text={run.response} /></div>
+              ) : (
+                <Missing />
+              )}
+            </Cell>
+          ))}
+
+          <RowLabel>{t('benchmark.rating.title')}</RowLabel>
+          {columns.map(({ variant, run }) => (
+            <Cell key={variant.id}>
+              {run && !isOpenRun(run) ? (
+                <RatingInput benchmarkId={benchmark.id} run={run} label={t('benchmark.rating.of', { name: nameOf(variant.id).text })} />
               ) : (
                 <Missing />
               )}
