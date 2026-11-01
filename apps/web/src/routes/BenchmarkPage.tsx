@@ -1,26 +1,35 @@
-import { ArrowDown, ArrowLeft, ArrowUp, ExternalLink, FlaskConical, Square, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, ExternalLink, FileText, FlaskConical, Square, Trash2, X } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '../components/ui'
+import { DeliverablesGrid } from '../components/benchmark/DeliverablesGrid'
+import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, Tabs, cx } from '../components/ui'
 import {
   BENCHMARK_STATE_LABELS,
   METRIC_KEYS,
   METRIC_LABELS,
   RUN_STATUS_LABELS,
+  benchmarkCsv,
+  benchmarkJson,
   benchmarkProgress,
   benchmarkState,
   formatMetric,
   median,
   metricValue,
+  passRate,
+  spread,
+  visibleMetricKeys,
   useBenchmarks,
   useCancelBenchmark,
   useDeleteBenchmark,
   type MetricKey,
 } from '../lib/benchmarks'
 import { modelsAccount } from '../lib/agents'
+import { formatBytes } from '../lib/attachments'
+import { useLiveStatus } from '../lib/conversation-status'
+import { downloadText } from '../lib/download'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { useSidebarHidden } from '../lib/sidebar'
@@ -29,6 +38,7 @@ import { BENCHMARK_STATE_TONES } from './BenchmarksPage'
 const RUN_DOTS: Record<BenchmarkRunDto['status'], string> = {
   pending: 'bg-line-strong',
   running: 'bg-accent animate-pulse',
+  checking: 'bg-accent animate-pulse',
   succeeded: 'bg-positive',
   failed: 'bg-critical',
   timed_out: 'bg-caution',
@@ -55,9 +65,12 @@ export function BenchmarkPage() {
   const remove = useDeleteBenchmark()
   const [confirming, setConfirming] = useState(false)
   const [sort, setSort] = useState<Sort | null>(null)
+  const [tab, setTab] = useState<'measures' | 'outputs'>('measures')
   const benchmark = benchmarks?.find((entry) => entry.id === id)
 
   const blocks = useMemo(() => (benchmark ? variantBlocks(benchmark, sort) : []), [benchmark, sort])
+  const metricKeys = useMemo(() => (benchmark ? visibleMetricKeys(benchmark) : METRIC_KEYS), [benchmark])
+  const columnCount = 2 + (benchmark?.checkScript ? 1 : 0) + metricKeys.length
 
   if (isPending) return <p role="status" className="p-6 text-sm text-ink-faint">{t('schedule.loading')}</p>
   if (isError) return <div className="p-6"><Banner>{t('benchmark.loadError')}</Banner></div>
@@ -85,7 +98,8 @@ export function BenchmarkPage() {
         <MobileNavigationButton />
         <Link to="/benchmarks"><IconButton label={t('benchmark.back')}><ArrowLeft size={18} /></IconButton></Link>
         <FlaskConical size={19} className="shrink-0 text-ink-faint" />
-        <div className="min-w-0 flex-1">
+        {/* A floor on the title's width lets the actions wrap below it on a phone instead of crushing it. */}
+        <div className="min-w-[12rem] flex-1">
           <h1 className="truncate text-base font-semibold">{benchmark.name}</h1>
           <p className="truncate text-xs text-ink-faint">
             {t('benchmark.summary', { variants: benchmark.variants.length, done: progress.done, total: progress.total })} · {relativeDate(benchmark.createdAt)}
@@ -97,6 +111,14 @@ export function BenchmarkPage() {
             {t('benchmark.cancel')}
           </Button>
         ) : null}
+        <Menu trigger={<IconButton label={t('benchmark.export')}><Download size={16} /></IconButton>}>
+          <MenuItem icon={<FileText size={14} />} onSelect={() => { const file = benchmarkCsv(benchmark); downloadText(file.filename, file.content, 'text/csv') }}>
+            {t('benchmark.export.csv')}
+          </MenuItem>
+          <MenuItem icon={<FileText size={14} />} onSelect={() => { const file = benchmarkJson(benchmark); downloadText(file.filename, file.content, 'application/json') }}>
+            {t('benchmark.export.json')}
+          </MenuItem>
+        </Menu>
         <IconButton label={t('benchmark.delete')} onClick={() => setConfirming(true)}><Trash2 size={16} /></IconButton>
       </header>
 
@@ -113,7 +135,27 @@ export function BenchmarkPage() {
             <Fact label={t('benchmark.form.repetitions')}>{benchmark.repetitions}</Fact>
             <Fact label={t('benchmark.form.concurrency')}>{t(benchmark.concurrency === 'parallel' ? 'benchmark.form.concurrency.parallel' : 'benchmark.form.concurrency.sequential')}</Fact>
             <Fact label={t('schedule.form.maxDuration')}>{benchmark.maxDurationMinutes}</Fact>
+            {benchmark.inputs.length ? (
+              <Fact label={t('benchmark.form.inputs')}>
+                {benchmark.inputs.map((input) => `${input.filename} (${formatBytes(input.sizeBytes)})`).join(', ')}
+              </Fact>
+            ) : null}
           </dl>
+
+          {benchmark.checkScript ? (
+            <details className="rounded-lg border border-line">
+              <summary className="cursor-pointer px-4 py-2.5 text-sm text-ink-soft">{t('benchmark.form.check')}</summary>
+              <pre className="overflow-x-auto border-t border-line px-4 py-3 font-mono text-xs text-ink-soft">{benchmark.checkScript}</pre>
+            </details>
+          ) : null}
+
+          <Tabs
+            label={t('benchmark.title')}
+            value={tab}
+            onChange={setTab}
+            tabs={[{ value: 'measures', label: t('benchmark.tab.measures') }, { value: 'outputs', label: t('benchmark.tab.outputs') }]}
+          >
+          {tab === 'outputs' ? <DeliverablesGrid benchmark={benchmark} /> : <>
 
           <div className="overflow-x-auto rounded-lg border border-line" data-benchmark-results>
             <table className="w-full min-w-max border-collapse text-sm">
@@ -121,7 +163,8 @@ export function BenchmarkPage() {
                 <tr className="bg-surface-high text-left text-xs text-ink-faint">
                   <th scope="col" className="sticky left-0 z-10 bg-surface-high px-3 py-2 font-medium">{t('benchmark.table.run')}</th>
                   <th scope="col" className="px-3 py-2 font-medium">{t('benchmark.table.status')}</th>
-                  {METRIC_KEYS.map((key) => (
+                  {benchmark.checkScript ? <th scope="col" className="px-3 py-2 font-medium">{t('benchmark.table.check')}</th> : null}
+                  {metricKeys.map((key) => (
                     <th key={key} scope="col" className="px-3 py-2 font-medium whitespace-nowrap" aria-sort={sort?.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
                       <button type="button" className="inline-flex items-center gap-1 hover:text-ink" onClick={() => toggleSort(key)} title={t('benchmark.table.sortHint')}>
                         {t(METRIC_LABELS[key])}
@@ -132,10 +175,10 @@ export function BenchmarkPage() {
                 </tr>
               </thead>
               <tbody>
-                {blocks.map(({ variant, runs, medians }) => (
+                {blocks.map(({ variant, runs, medians, spreads, rate }) => (
                   <Fragment key={variant.id}>
                     <tr className="border-t border-line bg-sunken/60">
-                      <th scope="rowgroup" colSpan={2 + METRIC_KEYS.length} className="sticky left-0 px-3 py-2 text-left font-medium">
+                      <th scope="rowgroup" colSpan={columnCount} className="sticky left-0 px-3 py-2 text-left font-medium">
                         <span className="inline-flex items-center gap-2">
                           <AgentIcon agent={variantAgent(variant)} size={14} />
                           <span className="text-ink-faint">{AGENT_LABELS[variantAgent(variant)]}</span>
@@ -143,6 +186,12 @@ export function BenchmarkPage() {
                           {/* An alias such as “default” names no generation: show what the CLI announced. */}
                           {announcedModel(runs, variant) ? <span className="text-xs text-ink-faint">· {announcedModel(runs, variant)}</span> : null}
                           {modelsAccount(variant.config) ? <span className="text-xs text-ink-faint">· {t('benchmark.table.account')}</span> : null}
+                          {cliVersion(runs) ? <span className="text-xs text-ink-faint">· v{cliVersion(runs)}</span> : null}
+                          {rate && rate.checked > 0 ? (
+                            <Badge tone={rate.passed === rate.checked ? 'positive' : rate.passed === 0 ? 'critical' : 'caution'}>
+                              {t('benchmark.table.passRate', { passed: rate.passed, checked: rate.checked })}
+                            </Badge>
+                          ) : null}
                         </span>
                       </th>
                     </tr>
@@ -159,12 +208,22 @@ export function BenchmarkPage() {
                           )}
                         </td>
                         <td className="px-3 py-1.5 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5" title={run.error ?? undefined}>
-                            <span aria-hidden className={cx('size-1.5 rounded-full', RUN_DOTS[run.status])} />
-                            {t(RUN_STATUS_LABELS[run.status])}
-                          </span>
+                          <RunStatus run={run} />
                         </td>
-                        {METRIC_KEYS.map((key) => (
+                        {benchmark.checkScript ? (
+                          <td className="px-3 py-1.5 whitespace-nowrap" data-benchmark-check={run.check ? (run.check.passed ? 'passed' : 'failed') : 'none'}>
+                            {run.check ? (
+                              <span
+                                className={cx('inline-flex items-center gap-1', run.check.passed ? 'text-positive' : 'text-critical')}
+                                title={checkSummary(run)}
+                              >
+                                {run.check.passed ? <Check size={13} /> : <X size={13} />}
+                                {t(run.check.passed ? 'benchmark.check.passed' : run.check.timedOut ? 'benchmark.check.timedOut' : 'benchmark.check.failed', { code: run.check.exitCode ?? '?' })}
+                              </span>
+                            ) : <span className="text-ink-faint">—</span>}
+                          </td>
+                        ) : null}
+                        {metricKeys.map((key) => (
                           <td key={key} className="px-3 py-1.5 text-right tabular-nums whitespace-nowrap" title={key === 'toolCalls' ? toolBreakdown(run) : undefined}>
                             {formatMetric(key, metricValue(run.metrics, key), lang)}
                           </td>
@@ -175,11 +234,20 @@ export function BenchmarkPage() {
                       <tr className="border-t border-line/60 text-ink-soft" data-benchmark-median>
                         <td className="sticky left-0 bg-surface px-3 py-1.5 text-xs font-medium whitespace-nowrap">{t('benchmark.table.median')}</td>
                         <td />
-                        {METRIC_KEYS.map((key) => (
-                          <td key={key} className="px-3 py-1.5 text-right text-xs font-medium tabular-nums whitespace-nowrap">
-                            {formatMetric(key, medians[key] ?? null, lang)}
-                          </td>
-                        ))}
+                        {benchmark.checkScript ? <td /> : null}
+                        {metricKeys.map((key) => {
+                          const range = spreads[key]
+                          return (
+                            <td key={key} className="px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap">
+                              <span className="font-medium">{formatMetric(key, medians[key] ?? null, lang)}</span>
+                              {range ? (
+                                <span className="block text-[0.6875rem] text-ink-faint" title={t('benchmark.table.spread')}>
+                                  {formatMetric(key, range.min, lang)} – {formatMetric(key, range.max, lang)}
+                                </span>
+                              ) : null}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ) : null}
                   </Fragment>
@@ -187,7 +255,9 @@ export function BenchmarkPage() {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-ink-faint">{t('benchmark.table.legend')}</p>
+          <p className="mt-3 text-xs text-ink-faint">{t('benchmark.table.legend')}</p>
+          </>}
+          </Tabs>
         </div>
       </div>
 
@@ -206,6 +276,29 @@ export function BenchmarkPage() {
   )
 }
 
+/**
+ * Run state, plus the one live signal that needs the viewer: a session waiting for a permission
+ * or an answer. Unattended runs stall there, so the link leads straight to the request.
+ */
+function RunStatus({ run }: { run: BenchmarkRunDto }) {
+  const t = useTranslate()
+  const live = useLiveStatus(run.conversationId ?? '')
+  if (run.status === 'running' && live === 'awaiting_input' && run.conversationId) {
+    return (
+      <Link to={conversationPath({ id: run.conversationId, projectId: null })} className="inline-flex items-center gap-1.5 text-caution hover:underline" data-benchmark-waiting>
+        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-caution" />
+        {t('benchmark.run.awaitingInput')}
+      </Link>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5" title={run.error ?? undefined}>
+      <span aria-hidden className={cx('size-1.5 rounded-full', RUN_DOTS[run.status])} />
+      {t(RUN_STATUS_LABELS[run.status])}
+    </span>
+  )
+}
+
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-1.5">
@@ -221,6 +314,17 @@ function announcedModel(runs: BenchmarkRunDto[], variant: BenchmarkVariant): str
   return model && model !== variant.config.model ? model : null
 }
 
+/** CLI release shared by a variant's runs; the first one known when they differ. */
+function cliVersion(runs: BenchmarkRunDto[]): string | null {
+  return runs.map((run) => run.cliVersion).find((value) => value !== null) ?? null
+}
+
+/** First lines of what the script printed, to see why a run failed without opening it. */
+function checkSummary(run: BenchmarkRunDto): string | undefined {
+  const text = [run.check?.stdout, run.check?.stderr].filter(Boolean).join('\n').trim()
+  return text ? text.split('\n').slice(0, 8).join('\n') : undefined
+}
+
 function toolBreakdown(run: BenchmarkRunDto): string | undefined {
   const entries = Object.entries(run.metrics?.toolsByName ?? {}).sort((a, b) => b[1] - a[1])
   return entries.length ? entries.map(([name, count]) => `${name} ${count}`).join(' · ') : undefined
@@ -230,14 +334,21 @@ interface VariantBlock {
   variant: BenchmarkVariant
   runs: BenchmarkRunDto[]
   medians: Partial<Record<MetricKey, number | null>>
+  spreads: Partial<Record<MetricKey, { min: number; max: number } | null>>
+  rate: { passed: number; checked: number } | null
 }
 
 function variantBlocks(benchmark: BenchmarkDto, sort: Sort | null): VariantBlock[] {
   const blocks = benchmark.variants.map((variant): VariantBlock => {
     const runs = benchmark.runs.filter((run) => run.variantId === variant.id).sort((a, b) => a.repetition - b.repetition)
     const medians: VariantBlock['medians'] = {}
-    for (const key of METRIC_KEYS) medians[key] = median(runs.map((run) => metricValue(run.metrics, key)))
-    return { variant, runs, medians }
+    const spreads: VariantBlock['spreads'] = {}
+    for (const key of METRIC_KEYS) {
+      const values = runs.map((run) => metricValue(run.metrics, key))
+      medians[key] = median(values)
+      spreads[key] = spread(values)
+    }
+    return { variant, runs, medians, spreads, rate: passRate(benchmark, runs) }
   })
   if (!sort) return blocks
   // Unreported values sink to the bottom whatever the direction: they are not small, they are unknown.

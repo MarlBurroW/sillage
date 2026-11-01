@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { agentConfigSchema, type AgentConfig } from './agent-config.js'
+import { MAX_ATTACHMENTS_PER_MESSAGE, VIEWABLE_IMAGE_TYPES, VIEWABLE_MEDIA_TYPES, isAudioType } from './api.js'
 import type { AgentKind } from './events.js'
+import { MAX_CHECK_SCRIPT_CHARS, checkScriptSchema, checkTimeoutSchema, DEFAULT_CHECK_TIMEOUT_SECONDS } from './schedules.js'
 
 /**
  * Model benchmarks: one prompt sent to several CLI configurations in fresh personal sessions, each
@@ -29,7 +31,7 @@ export const MAX_PARALLEL_BENCHMARK_RUNS = 4
 export const benchmarkConcurrencySchema = z.enum(['sequential', 'parallel'])
 export type BenchmarkConcurrency = z.infer<typeof benchmarkConcurrencySchema>
 
-export const benchmarkRunStatusSchema = z.enum(['pending', 'running', 'succeeded', 'failed', 'timed_out', 'cancelled'])
+export const benchmarkRunStatusSchema = z.enum(['pending', 'running', 'checking', 'succeeded', 'failed', 'timed_out', 'cancelled'])
 export type BenchmarkRunStatus = z.infer<typeof benchmarkRunStatusSchema>
 
 /** A configuration to measure. The CLI is `config.agent`; the label defaults to model and effort. */
@@ -51,8 +53,79 @@ export const createBenchmarkBodySchema = z.object({
     .min(MIN_BENCHMARK_DURATION_MINUTES)
     .max(MAX_BENCHMARK_DURATION_MINUTES)
     .default(DEFAULT_BENCHMARK_DURATION_MINUTES),
+  /** Uploaded, unsent attachments: every run receives them with its first message. */
+  attachmentIds: z.array(z.string().uuid()).max(MAX_ATTACHMENTS_PER_MESSAGE).default([]),
+  /** Same contract as scheduled checks, minus the skip code: zero passes, anything else fails. */
+  checkScript: checkScriptSchema.default(null),
+  checkTimeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
 })
-export type CreateBenchmarkBody = z.infer<typeof createBenchmarkBodySchema>
+/** What a client sends: defaults may be omitted. */
+export type CreateBenchmarkBody = z.input<typeof createBenchmarkBodySchema>
+/** What the route hands the runner once parsed. */
+export type CreateBenchmarkData = z.infer<typeof createBenchmarkBodySchema>
+export { MAX_CHECK_SCRIPT_CHARS as MAX_BENCHMARK_CHECK_CHARS }
+
+/** A starting file, as frozen with the benchmark. */
+export const benchmarkInputSchema = z.object({
+  /** Stored file name under the benchmark's directory. */
+  storedAs: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number(),
+})
+export type BenchmarkInput = z.infer<typeof benchmarkInputSchema>
+export const benchmarkInputsSchema = z.array(benchmarkInputSchema)
+
+/** Verdict of the benchmark's script in one run's folder. */
+export interface BenchmarkCheckResult {
+  passed: boolean
+  /** Null when the script was killed at its timeout or could not start. */
+  exitCode: number | null
+  timedOut: boolean
+  stdout: string
+  stderr: string
+  durationMs: number
+}
+
+/**
+ * How the comparison view renders a produced file. Decided by extension from closed lists, like
+ * the panel: guessing from content could render an arbitrary binary as a page.
+ */
+export type BenchmarkDeliverableKind = 'page' | 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'other'
+
+export interface BenchmarkDeliverable {
+  /** Relative to the run folder, slash-separated. */
+  path: string
+  sizeBytes: number
+  kind: BenchmarkDeliverableKind
+}
+
+/** Extensions shown as text in the comparison, a few hundred lines at most. */
+const TEXT_EXTENSIONS = new Set([
+  'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'jsonl', 'yaml', 'yml', 'toml', 'xml', 'log',
+  'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'css', 'scss', 'py', 'rb', 'go', 'rs', 'java', 'kt',
+  'c', 'h', 'cpp', 'hpp', 'cs', 'swift', 'php', 'sh', 'bash', 'zsh', 'sql', 'lua', 'r', 'ini',
+  'srt', 'vtt',
+])
+
+export function deliverableKind(path: string): BenchmarkDeliverableKind {
+  const dot = path.lastIndexOf('.')
+  const extension = dot >= 0 ? path.slice(dot + 1).toLowerCase() : ''
+  if (extension === 'html' || extension === 'htm') return 'page'
+  if (VIEWABLE_IMAGE_TYPES[extension]) return 'image'
+  const media = VIEWABLE_MEDIA_TYPES[extension]
+  if (media) return isAudioType(media) ? 'audio' : 'video'
+  if (extension === 'pdf') return 'pdf'
+  if (TEXT_EXTENSIONS.has(extension)) return 'text'
+  return 'other'
+}
+
+/** Public, token-scoped prefix of the sandboxed preview route; also exempted by the auth hooks. */
+export const BENCHMARK_PREVIEW_PREFIX = '/api/benchmark-previews/'
+
+export function benchmarkPreviewUrl(token: string, path: string): string {
+  return `${BENCHMARK_PREVIEW_PREFIX}${token}/${path.split('/').map(encodeURIComponent).join('/')}`
+}
 
 /** Variant as frozen in the database: the configuration actually launched, defaults resolved. */
 export const benchmarkVariantSchema = z.object({
@@ -71,8 +144,13 @@ export const benchmarkVariantsSchema = z.array(benchmarkVariantSchema)
  * journal itself is the source.
  */
 export interface BenchmarkRunMetrics {
-  /** From the first user message to the last completed turn; null if the turn never completed. */
+  /**
+   * From the first user message to the last completed turn; null if the turn never completed.
+   * Wall time: it includes `waitingMs`, the time a request for permission or an answer stayed open.
+   */
   durationMs: number | null
+  /** Time spent waiting for a human: permissions, questions, plan reviews, MCP forms. */
+  waitingMs: number
   /** From the first user message to the first assistant text; null if none arrived. */
   firstTextMs: number | null
   inputTokens: number | null
@@ -107,7 +185,14 @@ export interface BenchmarkRunDto {
   startedAt: number | null
   finishedAt: number | null
   error: string | null
+  cliVersion: string | null
   metrics: BenchmarkRunMetrics | null
+  /** Last assistant text, truncated; null before settlement or when the agent wrote none. */
+  response: string | null
+  check: BenchmarkCheckResult | null
+  files: BenchmarkDeliverable[]
+  /** Null before launch. */
+  previewToken: string | null
 }
 
 export interface BenchmarkDto {
@@ -118,6 +203,9 @@ export interface BenchmarkDto {
   repetitions: number
   concurrency: BenchmarkConcurrency
   maxDurationMinutes: number
+  inputs: { filename: string; mimeType: string; sizeBytes: number }[]
+  checkScript: string | null
+  checkTimeoutSeconds: number
   createdAt: number
   updatedAt: number
   runs: BenchmarkRunDto[]

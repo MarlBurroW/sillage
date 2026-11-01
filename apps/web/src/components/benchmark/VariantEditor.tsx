@@ -6,8 +6,12 @@ import { useAgentSettings } from '../chat/agent-settings'
 import { GroupField } from '../schedule/GroupField'
 import { Banner, IconButton, Select } from '../ui'
 
-/** The settings a benchmark varies. Permissions, MCP and skills stay at their defaults so variants differ only by what is measured. */
-const VARIED_KEYS = new Set(['model', 'effort', 'account'])
+/**
+ * The settings a benchmark varies, plus permissions: runs are unattended, and a mode that asks
+ * blocks the run until someone answers in its conversation. MCP and skills stay at their defaults
+ * so variants differ only by what is measured.
+ */
+const VARIED_KEYS = new Set(['model', 'effort', 'account', 'permission', 'approval', 'sandbox'])
 
 /**
  * One row of the variant list: CLI, then the model, effort and account choices the composer offers
@@ -51,7 +55,7 @@ export function VariantEditor({
         </IconButton>
       </div>
       {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {varied.map((group) => (
           <GroupField key={group.key} group={group} />
         ))}

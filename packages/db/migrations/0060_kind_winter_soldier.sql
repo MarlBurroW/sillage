@@ -8,7 +8,12 @@ CREATE TABLE `benchmark_runs` (
 	`started_at` integer,
 	`finished_at` integer,
 	`error` text,
+	`cli_version` text,
 	`metrics` text,
+	`response` text,
+	`check` text,
+	`files` text,
+	`preview_token` text,
 	FOREIGN KEY (`benchmark_id`) REFERENCES `benchmarks`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
@@ -23,6 +28,9 @@ CREATE TABLE `benchmarks` (
 	`repetitions` integer DEFAULT 1 NOT NULL,
 	`concurrency` text DEFAULT 'sequential' NOT NULL,
 	`max_duration_minutes` integer NOT NULL,
+	`inputs` text DEFAULT '[]' NOT NULL,
+	`check_script` text,
+	`check_timeout_seconds` integer DEFAULT 120 NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action

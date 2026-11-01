@@ -1,8 +1,8 @@
 import { useId, type ReactNode } from 'react'
-import { cx } from '../ui'
+import { cx } from './cx'
 
-/** Keep one list per panel and make every section reachable without scrolling past another. */
-export function SkillTabs<T extends string>({ label, tabs, value, onChange, children }: {
+/** Sections of one panel, each reachable without scrolling past another. Arrow keys move between tabs. */
+export function Tabs<T extends string>({ label, tabs, value, onChange, children }: {
   label: string
   tabs: { value: T; label: string }[]
   value: T

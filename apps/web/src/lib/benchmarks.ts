@@ -1,12 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { BenchmarkDto, BenchmarkRunDto, BenchmarkRunMetrics, CreateBenchmarkBody } from '@sillage/protocol'
+import { variantAgent, variantEffort, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkRunMetrics, type CreateBenchmarkBody } from '@sillage/protocol'
 import { api } from './api'
+import { toCsv } from './download'
 import type { MessageKey } from './i18n'
 
 export const BENCHMARKS_KEY = ['benchmarks']
 
+/** Not settled yet: waiting, working, or under its check script. */
+export function isOpenRun(run: BenchmarkRunDto): boolean {
+  return run.status === 'pending' || run.status === 'running' || run.status === 'checking'
+}
+
 function hasOpenRuns(benchmarks: BenchmarkDto[] | undefined): boolean {
-  return benchmarks?.some((benchmark) => benchmark.runs.some((run) => run.status === 'pending' || run.status === 'running')) ?? false
+  return benchmarks?.some((benchmark) => benchmark.runs.some(isOpenRun)) ?? false
 }
 
 /**
@@ -67,7 +73,7 @@ export const BENCHMARK_STATE_LABELS: Record<BenchmarkState, MessageKey> = {
 
 export function benchmarkState(benchmark: BenchmarkDto): BenchmarkState {
   const runs = benchmark.runs
-  if (runs.some((run) => run.status === 'pending' || run.status === 'running')) return 'running'
+  if (runs.some(isOpenRun)) return 'running'
   if (runs.some((run) => run.status === 'cancelled')) return 'cancelled'
   if (runs.some((run) => run.status === 'failed' || run.status === 'timed_out')) return 'failed'
   return 'done'
@@ -75,13 +81,14 @@ export function benchmarkState(benchmark: BenchmarkDto): BenchmarkState {
 
 /** Settled runs over total, for progress labels. */
 export function benchmarkProgress(benchmark: BenchmarkDto): { done: number; total: number } {
-  const done = benchmark.runs.filter((run) => run.status !== 'pending' && run.status !== 'running').length
+  const done = benchmark.runs.filter((run) => !isOpenRun(run)).length
   return { done, total: benchmark.runs.length }
 }
 
 export const RUN_STATUS_LABELS: Record<BenchmarkRunDto['status'], MessageKey> = {
   pending: 'benchmark.run.pending',
   running: 'benchmark.run.running',
+  checking: 'benchmark.run.checking',
   succeeded: 'benchmark.run.succeeded',
   failed: 'benchmark.run.failed',
   timed_out: 'benchmark.run.timedOut',
@@ -91,6 +98,7 @@ export const RUN_STATUS_LABELS: Record<BenchmarkRunDto['status'], MessageKey> = 
 /** Measurements shown as table columns, in reading order. Each reads one number from the metrics. */
 export type MetricKey =
   | 'durationMs'
+  | 'waitingMs'
   | 'firstTextMs'
   | 'inputTokens'
   | 'outputTokens'
@@ -106,6 +114,7 @@ export type MetricKey =
 
 export const METRIC_KEYS: MetricKey[] = [
   'durationMs',
+  'waitingMs',
   'firstTextMs',
   'inputTokens',
   'outputTokens',
@@ -122,6 +131,7 @@ export const METRIC_KEYS: MetricKey[] = [
 
 export const METRIC_LABELS: Record<MetricKey, MessageKey> = {
   durationMs: 'benchmark.metric.duration',
+  waitingMs: 'benchmark.metric.waiting',
   firstTextMs: 'benchmark.metric.firstText',
   inputTokens: 'benchmark.metric.inputTokens',
   outputTokens: 'benchmark.metric.outputTokens',
@@ -138,7 +148,17 @@ export const METRIC_LABELS: Record<MetricKey, MessageKey> = {
 
 export function metricValue(metrics: BenchmarkRunMetrics | null, key: MetricKey): number | null {
   if (!metrics) return null
-  return metrics[key]
+  // Measurements folded before a field existed read as unreported rather than undefined.
+  return metrics[key] ?? null
+}
+
+/**
+ * Columns worth showing for this benchmark. Human waiting appears only when a run waited: in a
+ * clean benchmark it would be a column of zeros pushing the useful ones off screen.
+ */
+export function visibleMetricKeys(benchmark: BenchmarkDto): MetricKey[] {
+  const waited = benchmark.runs.some((run) => (run.metrics?.waitingMs ?? 0) > 0)
+  return METRIC_KEYS.filter((key) => key !== 'waitingMs' || waited)
 }
 
 /** Human formatting per unit. Null stays a dash: an unreported value must not read as zero. */
@@ -146,6 +166,7 @@ export function formatMetric(key: MetricKey, value: number | null, locale: strin
   if (value === null) return '—'
   switch (key) {
     case 'durationMs':
+    case 'waitingMs':
     case 'firstTextMs':
     case 'toolDurationMs':
       return formatDuration(value, locale)
@@ -171,4 +192,56 @@ export function median(values: (number | null)[]): number | null {
   if (known.length === 0) return null
   const middle = Math.floor(known.length / 2)
   return known.length % 2 === 1 ? known[middle]! : (known[middle - 1]! + known[middle]!) / 2
+}
+
+/** Smallest and largest reported values, for the spread under a median. Null below two values. */
+export function spread(values: (number | null)[]): { min: number; max: number } | null {
+  const known = values.filter((value): value is number => value !== null)
+  if (known.length < 2) return null
+  return { min: Math.min(...known), max: Math.max(...known) }
+}
+
+/** Runs whose script ran, and how many passed. Null when the benchmark has no script. */
+export function passRate(benchmark: BenchmarkDto, runs: BenchmarkRunDto[]): { passed: number; checked: number } | null {
+  if (!benchmark.checkScript) return null
+  const checked = runs.filter((run) => run.check !== null)
+  return { passed: checked.filter((run) => run.check?.passed).length, checked: checked.length }
+}
+
+/** File-system-safe stem for exports: the benchmark name, or its id when nothing survives. */
+function exportStem(benchmark: BenchmarkDto): string {
+  const stem = benchmark.name.normalize('NFKD').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
+  return stem || benchmark.id
+}
+
+/**
+ * One row per run with raw numbers, for a spreadsheet or a notebook. Units stay in column names
+ * (`_ms`, `_usd`) rather than in cells, and unreported values stay empty rather than zero.
+ */
+export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; content: string } {
+  const header = [
+    'benchmark', 'variant', 'agent', 'model', 'effort', 'announced_model', 'cli_version', 'repetition', 'status',
+    'check_passed', 'check_exit_code', 'duration_ms', 'waiting_ms', 'first_text_ms', 'input_tokens', 'output_tokens',
+    'cache_read_tokens', 'cache_creation_tokens', 'cost_usd', 'tool_calls', 'tool_errors', 'tool_duration_ms',
+    'assistant_messages', 'output_chars', 'context_tokens', 'error',
+  ]
+  const cell = (value: number | string | boolean | null | undefined) => (value === null || value === undefined ? '' : String(value))
+  const rows = benchmark.runs.map((run) => {
+    const variant = benchmark.variants.find((entry) => entry.id === run.variantId)
+    const m = run.metrics
+    return [
+      benchmark.name, variant?.label, variant ? variantAgent(variant) : '', variant?.config.model,
+      variant ? variantEffort(variant.config) : '', m?.model, run.cliVersion, run.repetition, run.status,
+      run.check ? run.check.passed : null, run.check?.exitCode, m?.durationMs, m?.waitingMs, m?.firstTextMs, m?.inputTokens,
+      m?.outputTokens, m?.cacheReadTokens, m?.cacheCreationTokens, m?.costUsd, m?.toolCalls, m?.toolErrors,
+      m?.toolDurationMs, m?.assistantMessages, m?.outputChars, m?.contextTokens, run.error,
+    ].map(cell)
+  })
+  return { filename: `${exportStem(benchmark)}.csv`, content: toCsv([header, ...rows]) }
+}
+
+/** Everything the page knows, minus the preview capabilities: an export may travel. */
+export function benchmarkJson(benchmark: BenchmarkDto): { filename: string; content: string } {
+  const runs = benchmark.runs.map(({ previewToken: _token, ...run }) => run)
+  return { filename: `${exportStem(benchmark)}.json`, content: JSON.stringify({ ...benchmark, runs }, null, 2) }
 }

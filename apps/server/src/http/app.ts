@@ -20,7 +20,7 @@ import type { SessionManager } from '../sessions/session-manager.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { registerTerminalHub } from '../ws/terminal-hub.js'
 import { registerWebSocketHub } from '../ws/hub.js'
-import { MAX_ATTACHMENT_BYTES } from '@sillage/protocol'
+import { BENCHMARK_PREVIEW_PREFIX, MAX_ATTACHMENT_BYTES } from '@sillage/protocol'
 import type { AppContext } from './context.js'
 import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
 import { registerLocalOriginGuard } from './local-origin.js'
@@ -204,6 +204,8 @@ export async function buildApp(
     if (PUBLIC_ROUTES.has(path) || path === '/api/auth/logout') return
     // Webhooks have neither sessions nor tokens: their signature authenticates them.
     if (path.startsWith(HOOKS_PREFIX)) return
+    // Benchmark previews run in an opaque origin without cookies: the run's token authorizes them.
+    if (path.startsWith(BENCHMARK_PREVIEW_PREFIX) && request.method === 'GET') return
 
     if (path.startsWith(API_V1_PREFIX)) {
       if (!request.apiToken) {

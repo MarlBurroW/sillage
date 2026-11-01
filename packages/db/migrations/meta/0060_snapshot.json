@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "39d3c2fc-e6b9-4c0b-b462-353a21be5506",
+  "id": "6b51af54-7f2c-46cc-a575-ac565c4646de",
   "prevId": "3c337b22-d04a-465c-9d30-0ff9bd75e8b7",
   "tables": {
     "agent_requests": {
@@ -1062,8 +1062,43 @@
           "notNull": false,
           "autoincrement": false
         },
+        "cli_version": {
+          "name": "cli_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "metrics": {
           "name": "metrics",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "response": {
+          "name": "response",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "check": {
+          "name": "check",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "files": {
+          "name": "files",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "preview_token": {
+          "name": "preview_token",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -1167,6 +1202,29 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "inputs": {
+          "name": "inputs",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "check_script": {
+          "name": "check_script",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "check_timeout_seconds": {
+          "name": "check_timeout_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 120
         },
         "created_at": {
           "name": "created_at",

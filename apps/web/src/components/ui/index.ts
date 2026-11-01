@@ -17,4 +17,5 @@ export {
 export { Popover } from './Popover'
 export { Select, type SelectOption } from './Select'
 export { Switch } from './Switch'
+export { Tabs } from './Tabs'
 export { Badge, Banner, EmptyState } from './feedback'

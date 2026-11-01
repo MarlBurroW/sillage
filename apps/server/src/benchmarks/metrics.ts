@@ -26,9 +26,29 @@ export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics 
   let outputChars = 0
   let contextTokens: number | null = null
   let model: string | null = null
+  // Requests waiting for a human, by id: their open time is not the model's.
+  const waiting = new Map<string, number>()
+  let waitingMs = 0
+  let lastTs: number | null = null
 
   for (const { ts, event } of entries) {
+    lastTs = ts
     switch (event.type) {
+      case 'permission.requested':
+      case 'question.requested':
+      case 'plan.review_requested':
+      case 'elicitation.requested':
+        waiting.set(event.requestId, ts)
+        break
+      case 'permission.resolved':
+      case 'question.resolved':
+      case 'plan.review_resolved':
+      case 'elicitation.resolved': {
+        const since = waiting.get(event.requestId)
+        if (since !== undefined) waitingMs += ts - since
+        waiting.delete(event.requestId)
+        break
+      }
       case 'message.started':
         // The user message opens the clock: the time before it is Sillage starting the CLI,
         // which the user also waits for but which does not belong to the model.
@@ -80,9 +100,13 @@ export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics 
     }
   }
 
+  // A request still open when the run was cut off waited until the journal's last word.
+  for (const since of waiting.values()) if (lastTs !== null) waitingMs += lastTs - since
+
   const elapsed = (end: number | null) => (startedAt !== null && end !== null && end >= startedAt ? end - startedAt : null)
   return {
     durationMs: elapsed(completedAt),
+    waitingMs,
     firstTextMs: elapsed(firstTextAt),
     inputTokens: usageReported ? inputTokens : null,
     outputTokens: usageReported ? outputTokens : null,
@@ -103,6 +127,14 @@ export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics 
 
 /** Event types the fold reads; everything else, tool output deltas above all, stays on disk. */
 const METRIC_EVENT_TYPES = [
+  'permission.requested',
+  'permission.resolved',
+  'question.requested',
+  'question.resolved',
+  'plan.review_requested',
+  'plan.review_resolved',
+  'elicitation.requested',
+  'elicitation.resolved',
   'session.started',
   'turn.started',
   'turn.completed',

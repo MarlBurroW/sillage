@@ -1,8 +1,13 @@
-import { ArrowLeft, FlaskConical, Plus } from 'lucide-react'
-import { useId, useState } from 'react'
+import { ArrowLeft, FlaskConical, Paperclip, Plus } from 'lucide-react'
+import { useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   DEFAULT_BENCHMARK_DURATION_MINUTES,
+  DEFAULT_CHECK_TIMEOUT_SECONDS,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_BENCHMARK_CHECK_CHARS,
+  MAX_CHECK_TIMEOUT_SECONDS,
+  MIN_CHECK_TIMEOUT_SECONDS,
   MAX_BENCHMARK_DURATION_MINUTES,
   MAX_BENCHMARK_NAME_CHARS,
   MAX_BENCHMARK_PROMPT_CHARS,
@@ -14,12 +19,15 @@ import {
   defaultConfigFor,
   type AgentConfig,
   type AgentKind,
+  type AttachmentDto,
   type BenchmarkConcurrency,
 } from '@sillage/protocol'
+import { AttachmentTray } from '../components/chat/AttachmentTray'
 import { VariantEditor } from '../components/benchmark/VariantEditor'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { Banner, Button, Field, IconButton, Select, cx } from '../components/ui'
 import { useAgentAvailability } from '../lib/agents'
+import { discardAttachment, uploadAttachment } from '../lib/attachments'
 import { useCreateBenchmark } from '../lib/benchmarks'
 import { useTranslate } from '../lib/i18n'
 import { useSidebarHidden } from '../lib/sidebar'
@@ -54,6 +62,34 @@ export function NewBenchmarkPage() {
   const [concurrency, setConcurrency] = useState<BenchmarkConcurrency>('sequential')
   const [maxDuration, setMaxDuration] = useState(String(DEFAULT_BENCHMARK_DURATION_MINUTES))
   const [nextKey, setNextKey] = useState(1)
+  const [inputs, setInputs] = useState<AttachmentDto[]>([])
+  const [uploading, setUploading] = useState(0)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const checkId = useId()
+  const [checkScript, setCheckScript] = useState('')
+  const [checkTimeout, setCheckTimeout] = useState(String(DEFAULT_CHECK_TIMEOUT_SECONDS))
+
+  // Same upload path as the composer: the server copies these for each run at creation.
+  const addFiles = async (files: FileList | null) => {
+    const picked = [...(files ?? [])].slice(0, MAX_ATTACHMENTS_PER_MESSAGE - inputs.length)
+    setUploadError(null)
+    setUploading((count) => count + picked.length)
+    for (const file of picked) {
+      try {
+        const uploaded = await uploadAttachment(file)
+        setInputs((current) => [...current, uploaded])
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setUploading((count) => count - 1)
+      }
+    }
+  }
+  const removeInput = (id: string) => {
+    setInputs((current) => current.filter((entry) => entry.id !== id))
+    void discardAttachment(id).catch(() => undefined)
+  }
 
   // Seed one variant once the CLI list is known, so the form never shows an empty list.
   if (variants.length === 0 && availability) {
@@ -73,7 +109,9 @@ export function NewBenchmarkPage() {
   const repsValid = Number.isInteger(reps) && reps >= 1 && reps <= MAX_BENCHMARK_REPETITIONS
   const duration = Number(maxDuration)
   const durationValid = Number.isInteger(duration) && duration >= MIN_BENCHMARK_DURATION_MINUTES && duration <= MAX_BENCHMARK_DURATION_MINUTES
-  const valid = Boolean(name.trim() && prompt.trim() && variants.length > 0 && repsValid && durationValid)
+  const timeout = Number(checkTimeout)
+  const timeoutValid = !checkScript.trim() || (Number.isInteger(timeout) && timeout >= MIN_CHECK_TIMEOUT_SECONDS && timeout <= MAX_CHECK_TIMEOUT_SECONDS)
+  const valid = Boolean(name.trim() && prompt.trim() && variants.length > 0 && repsValid && durationValid && timeoutValid && uploading === 0)
   const total = variants.length * (repsValid ? reps : 0)
 
   const submit = () => {
@@ -86,6 +124,9 @@ export function NewBenchmarkPage() {
         repetitions: reps,
         concurrency,
         maxDurationMinutes: duration,
+        attachmentIds: inputs.map((input) => input.id),
+        checkScript: checkScript.trim() ? checkScript : null,
+        ...(checkScript.trim() ? { checkTimeoutSeconds: timeout } : {}),
       },
       { onSuccess: (created) => navigate(benchmarkPath(created.id), { replace: true }) },
     )
@@ -127,9 +168,23 @@ export function NewBenchmarkPage() {
             <p className="text-xs text-ink-faint">{t('benchmark.form.promptHint')}</p>
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-ink-soft">{t('benchmark.form.inputs')}</span>
+            <AttachmentTray attachments={inputs} uploading={uploading} onRemove={removeInput} />
+            <div>
+              <input ref={fileInput} type="file" multiple hidden onChange={(event) => { void addFiles(event.target.files); event.target.value = '' }} />
+              <Button type="button" variant="secondary" size="sm" icon={<Paperclip size={15} />} disabled={inputs.length >= MAX_ATTACHMENTS_PER_MESSAGE} onClick={() => fileInput.current?.click()}>
+                {t('benchmark.form.addInput')}
+              </Button>
+            </div>
+            <p className="text-xs text-ink-faint">{t('benchmark.form.inputsHint', { max: MAX_ATTACHMENTS_PER_MESSAGE })}</p>
+            {uploadError ? <Banner>{uploadError}</Banner> : null}
+          </div>
+
           <fieldset className="flex flex-col gap-3">
             <legend className="text-sm font-medium text-ink-soft">{t('benchmark.form.variants')}</legend>
             <p className="text-xs text-ink-faint">{t('benchmark.form.variantsHint')}</p>
+            <Banner tone="caution">{t('benchmark.form.unattended')}</Banner>
             <ul className="flex flex-col gap-3">
               {variants.map((variant) => (
                 <VariantEditor
@@ -179,6 +234,38 @@ export function NewBenchmarkPage() {
               value={maxDuration}
               onChange={(event) => setMaxDuration(event.target.value)}
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={checkId} className="text-sm font-medium text-ink-soft">{t('benchmark.form.check')}</label>
+            <textarea
+              id={checkId}
+              rows={5}
+              spellCheck={false}
+              maxLength={MAX_BENCHMARK_CHECK_CHARS}
+              value={checkScript}
+              placeholder={t('benchmark.form.checkPlaceholder')}
+              onChange={(event) => setCheckScript(event.target.value)}
+              className="rounded-md border border-line bg-sunken px-3 py-2 font-mono text-xs text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
+            />
+            <details className="text-xs text-ink-faint">
+              <summary className="cursor-pointer py-1 text-ink-soft">{t('benchmark.form.checkContext')}</summary>
+              <p className="mt-1">{t('benchmark.form.checkHint')}</p>
+              <p className="mt-1 font-mono">SILLAGE_RUN_DIR SILLAGE_RESPONSE_FILE SILLAGE_RUN_STATUS SILLAGE_VARIANT SILLAGE_AGENT SILLAGE_MODEL SILLAGE_EFFORT SILLAGE_REPETITION</p>
+            </details>
+            {checkScript.trim() ? (
+              <div className="max-w-56">
+                <Field
+                  label={t('benchmark.form.checkTimeout')}
+                  type="number"
+                  min={MIN_CHECK_TIMEOUT_SECONDS}
+                  max={MAX_CHECK_TIMEOUT_SECONDS}
+                  error={timeoutValid ? undefined : t('benchmark.form.checkTimeoutInvalid', { min: MIN_CHECK_TIMEOUT_SECONDS, max: MAX_CHECK_TIMEOUT_SECONDS })}
+                  value={checkTimeout}
+                  onChange={(event) => setCheckTimeout(event.target.value)}
+                />
+              </div>
+            ) : null}
           </div>
 
           <Banner tone="info">{t('benchmark.form.isolation')}</Banner>

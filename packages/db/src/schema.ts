@@ -694,6 +694,20 @@ export const benchmarks = sqliteTable(
     concurrency: text('concurrency').$type<'sequential' | 'parallel'>().notNull().default('sequential'),
     /** Runs still working beyond this are terminated: a wandering agent must not block the queue. */
     maxDurationMinutes: integer('max_duration_minutes').notNull(),
+    /**
+     * JSON BenchmarkInput[]: files every run receives as attachments of its first message, copied
+     * under the benchmark's data directory at creation. Each run then gets its own attachment
+     * rows, exactly as if the user had sent the files in a discussion.
+     */
+    inputs: text('inputs').notNull().default('[]'),
+    /**
+     * Script run in each settled run's folder; exit code zero means the run passed. NULL for no
+     * check. Stored as content for the same reason as scheduled checks: what ran is what was
+     * written. No approval step, unlike scheduled checks: only the account's own interface writes
+     * benchmarks, never an agent.
+     */
+    checkScript: text('check_script'),
+    checkTimeoutSeconds: integer('check_timeout_seconds').notNull().default(120),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
@@ -716,15 +730,36 @@ export const benchmarkRuns = sqliteTable(
     repetition: integer('repetition').notNull(),
     /** No foreign key: the thread may be deleted while the measurement stays. */
     conversationId: text('conversation_id'),
+    /**
+     * `checking`: the session settled and the benchmark's script is running in its folder. Reset
+     * to `running` at startup so the next sweep settles the run again and reruns the script.
+     */
     status: text('status')
-      .$type<'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'cancelled'>()
+      .$type<'pending' | 'running' | 'checking' | 'succeeded' | 'failed' | 'timed_out' | 'cancelled'>()
       .notNull(),
     startedAt: timestamp('started_at'),
     finishedAt: timestamp('finished_at'),
     /** What prevented or interrupted the run, written for direct display. */
     error: text('error'),
+    /** CLI version resolved at launch: a rerun months later must say which release answered. */
+    cliVersion: text('cli_version'),
     /** JSON BenchmarkRunMetrics, frozen when the run settles; NULL until then. */
     metrics: text('metrics'),
+    /**
+     * Last assistant text, truncated and copied at settlement. Duplicated from the journal so text
+     * benchmarks compare answers without opening every thread, and survive their deletion.
+     */
+    response: text('response'),
+    /** JSON BenchmarkCheckResult; NULL when the benchmark has no script or it did not run. */
+    check: text('check'),
+    /** JSON BenchmarkDeliverable[]: files found in the run folder at settlement. */
+    files: text('files'),
+    /**
+     * Unguessable capability for the sandboxed preview route. Pages an agent built load their own
+     * scripts and styles from a document with an opaque origin, which carries no session cookie:
+     * the token, not the session, authorizes those reads.
+     */
+    previewToken: text('preview_token'),
   },
   (t) => [
     index('idx_benchmark_runs_benchmark').on(t.benchmarkId, t.variantId, t.repetition),

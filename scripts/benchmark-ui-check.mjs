@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,8 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Real components, API and Claude CLI in a temporary database: two trivial runs of the same
-// prompt, then their measurements in the table. Screenshots go to BENCHMARK_SHOTS or a
+// Real components, API and Claude CLI in a temporary database: two short runs of the same
+// prompt with a starting file and a check script, then their measurements, outputs and export. Screenshots go to BENCHMARK_SHOTS or a
 // temporary directory announced at completion.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
@@ -89,7 +89,11 @@ try {
 
   const page = await context.newPage()
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  // Playwright's `serviceWorkers: 'block'` patches navigator.serviceWorker in every frame, which
+  // throws inside the previews' opaque-origin sandbox. That is the harness, not the page.
+  page.on('pageerror', (error) => {
+    if (!/serviceWorker.*sandboxed/.test(error.message)) errors.push(error.message)
+  })
   await mkdir(shots, { recursive: true })
 
   // --- Empty state and sidebar section --------------------------------------------
@@ -104,11 +108,23 @@ try {
   await page.getByRole('link', { name: 'Nouveau benchmark', exact: true }).first().click()
   await page.getByRole('heading', { name: 'Nouveau benchmark', exact: true }).waitFor()
   await page.getByRole('textbox', { name: 'Nom', exact: true }).fill('Effort faible contre moyen')
-  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
+  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(
+    'Lis le fichier joint. Crée dans ton dossier de travail un fichier index.html contenant seulement un titre h1 avec le mot secret. Réponds ensuite seulement par le mot secret.',
+  )
+  // Starting file: uploaded like a composer attachment, then sent to every run.
+  const brief = join(data, 'consigne.txt')
+  await writeFile(brief, 'Le mot secret est HIBOU.\n')
+  await page.locator('input[type="file"]').setInputFiles(brief)
+  await page.getByText('consigne.txt', { exact: true }).waitFor()
+  await page.getByRole('textbox', { name: 'Script de vérification', exact: true }).fill('grep -q HIBOU index.html && grep -q HIBOU "$SILLAGE_RESPONSE_FILE"')
   const variants = page.locator('[data-benchmark-variant]')
   await variants.first().waitFor()
   // The model catalog comes from the real CLI: wait for the effort select before changing it.
   await variants.first().getByRole('combobox', { name: 'Effort de réflexion', exact: true }).waitFor({ timeout: 60_000 })
+  // Unattended runs: a mode that asks would stall on the first write. The second variant copies this one.
+  await page.getByText('Les runs tournent sans surveillance', { exact: false }).waitFor()
+  await variants.first().getByRole('combobox', { name: 'Permissions', exact: true }).click()
+  await page.getByRole('option', { name: /^Tout autoriser/ }).click()
   await page.getByRole('button', { name: 'Ajouter une variante', exact: true }).click()
   await variants.nth(1).getByRole('combobox', { name: 'Effort de réflexion', exact: true }).click()
   await page.getByRole('option', { name: /^Faible/ }).click()
@@ -124,6 +140,8 @@ try {
   assert.notEqual(benchmark.variants[0].config.effort, benchmark.variants[1].config.effort)
   // Resolved at creation: the frozen variant names the model that runs, not the CLI default sentinel.
   assert.ok(benchmark.variants[0].config.model, 'resolved model')
+  assert.deepEqual(benchmark.inputs.map((input) => input.filename), ['consigne.txt'])
+  assert.ok(benchmark.checkScript)
   await section.getByText('Effort faible contre moyen').waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-running-desktop.png') })
 
@@ -143,15 +161,31 @@ try {
   await discussions.locator('ul').waitFor()
   assert.equal(await nav.getByText(runThreads[0].title, { exact: true }).count(), 0, 'runs are not listed among discussions')
 
-  benchmark = await until('both runs settled', (entry) => entry.runs.every((run) => run.status !== 'pending' && run.status !== 'running'), 300_000)
+  // The first run's message carries the starting file as an attachment of its own.
+  const firstThread = await api(`/api/conversations/${runThreads[0].id}/events?after=0`)
+  const firstMessage = firstThread.entries.map((entry) => entry.event).find((event) => event.type === 'message.completed' && event.role === 'user')
+  assert.ok(JSON.stringify(firstMessage.blocks).includes('consigne.txt'), 'starting file attached')
+
+  benchmark = await until('both runs settled', (entry) => entry.runs.every((run) => !['pending', 'running', 'checking'].includes(run.status)), 400_000)
   for (const run of benchmark.runs) {
     assert.equal(run.status, 'succeeded', run.error ?? '')
     assert.ok(run.metrics, 'metrics folded')
     assert.ok(run.metrics.durationMs > 0, 'duration measured')
     assert.ok(run.metrics.outputTokens > 0, 'tokens reported')
-    assert.equal(run.metrics.toolCalls, 0)
+    assert.ok(run.metrics.toolCalls > 0, 'the page was written with a tool')
     assert.ok(run.metrics.model, 'model announced')
+    assert.match(run.cliVersion ?? '', /^\d+\.\d+\.\d+/)
+    assert.match(run.response ?? '', /HIBOU/)
+    assert.equal(run.check?.passed, true, JSON.stringify(run.check))
+    assert.ok(run.files.some((file) => file.path === 'index.html' && file.kind === 'page'), JSON.stringify(run.files))
+    assert.ok(run.previewToken)
   }
+
+  // The preview needs no session: an anonymous request gets the page with its sandbox policy.
+  const anonymous = await fetch(`${base}/api/benchmark-previews/${benchmark.runs[0].previewToken}/index.html`)
+  assert.equal(anonymous.status, 200)
+  assert.match(anonymous.headers.get('content-security-policy') ?? '', /^sandbox allow-scripts/)
+  assert.match(await anonymous.text(), /HIBOU/)
 
   // --- Table ----------------------------------------------------------------------
   await page.goto(`${base}/benchmarks/${benchmark.id}`)
@@ -159,7 +193,32 @@ try {
   await table.locator('[data-benchmark-run="succeeded"]').nth(1).waitFor()
   await table.getByRole('columnheader', { name: 'Durée', exact: true }).getByRole('button').click()
   await page.getByText('Terminé', { exact: true }).first().waitFor()
+  assert.equal(await table.locator('[data-benchmark-check="passed"]').count(), 2)
+  await table.getByText('1/1 réussis').first().waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-results-desktop.png') })
+
+  // Export: one CSV row per run with raw numbers.
+  const [csvDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    (async () => {
+      await page.getByRole('button', { name: 'Exporter les résultats', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Mesures en CSV', exact: true }).click()
+    })(),
+  ])
+  const csv = (await readFile(await csvDownload.path(), 'utf8')).split('\r\n')
+  assert.equal(csv.length, 3)
+  assert.match(csv[0], /^benchmark,variant,agent,model,effort,announced_model,cli_version,repetition,status,check_passed/)
+  assert.match(csv[1], /,succeeded,true,0,/)
+
+  // Outputs: the answer and the built page side by side, the page rendered in its sandbox.
+  await page.getByRole('tab', { name: 'Productions', exact: true }).click()
+  const outputs = page.locator('[data-benchmark-deliverables]')
+  await outputs.getByText('index.html', { exact: true }).waitFor()
+  const frames = outputs.locator('iframe[title="index.html"]')
+  assert.equal(await frames.count(), 2)
+  await outputs.frameLocator('iframe[title="index.html"]').first().locator('h1').getByText('HIBOU').waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-outputs-desktop.png') })
+  await page.getByRole('tab', { name: 'Mesures', exact: true }).click()
 
   // The run opens as an ordinary conversation, headed back to its benchmark.
   await table.getByRole('link', { name: /Run 1/ }).first().click()
@@ -176,6 +235,11 @@ try {
   await table.locator('[data-benchmark-run="succeeded"]').nth(1).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the table scrolls inside its frame')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-results-mobile.png') })
+  await page.getByRole('tab', { name: 'Productions', exact: true }).click()
+  await page.locator('[data-benchmark-deliverables]').frameLocator('iframe[title="index.html"]').first().locator('h1').getByText('HIBOU').waitFor()
+  assert.ok(await page.getByRole('heading', { name: 'Effort faible contre moyen', exact: true }).evaluate((node) => node.clientWidth > 150), 'the title keeps room on a phone')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'outputs scroll inside their frame')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-outputs-mobile.png') })
   await page.goto(`${base}/benchmarks/new`)
   await page.getByRole('textbox', { name: 'Prompt', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
