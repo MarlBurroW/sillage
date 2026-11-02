@@ -44,7 +44,8 @@ whichever matches the protocol. Requirements:
   - tool rendering, permission, question and plan;
   - import;
   - fork and its cutoff;
-  - handoff in both directions;
+  - handoff in both directions, with the received block read back (details in
+    [continuity.md](continuity.md));
   - logout.
 
 Two pitfalls from earlier checks:

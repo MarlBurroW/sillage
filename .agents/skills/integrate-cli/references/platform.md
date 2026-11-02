@@ -225,7 +225,8 @@ in the coverage doc, and keep the kind out of `ExtraAccountAgent`.
   - Grok: `_meta.rules`, on creation only;
   - Antigravity: `_meta.antigravity.systemPrompt.append`.
 
-  Note whether resume keeps it.
+  Note whether resume keeps it. The handoff block travels in the same channel, in first
+  position: see [continuity.md](continuity.md).
 - **Masking.** `maskedInstructionRoots()` lists the repositories whose `AGENTS.md` and
   `CLAUDE.md` must be hidden:
   - Claude: `claudeMdExcludes`;

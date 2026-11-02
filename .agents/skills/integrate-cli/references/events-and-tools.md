@@ -87,6 +87,9 @@ or lies without it.
 **Messages (required)**
 - `message.delta`, `message.completed`: blocks are appended under the same `messageId` and
   never replaced.
+- User messages are journaled by the platform: `SessionManager.announce` writes them and
+  opens the turn before the CLI starts. Runners must not echo them in `send`. They echo
+  only in `steer` and `importHistory`.
 - `thinking.delta`: streamed thinking text.
 - `thinking.progress` (C only, throttled every 100 tokens): shown as "Thinking · N tokens".
   **Emit it if the CLI hides its reasoning but reports a count**, otherwise the turn looks
@@ -236,30 +239,10 @@ Rules for the label:
    `settleRead`) rather than leaving the row spinning.
 5. Notifications can arrive before the session id is known. Buffer them, then replay them.
 
-## History: import, fork, handoff, checkpoints
+## History: resume, import, fork, handoff, checkpoints
 
-- **Import** (`cliSessions`):
-  - `importHistory` replays a native session into a new journal without a model request;
-  - Antigravity sets `replaying`, emits `session.started`, then turns each user chunk into
-    `endTurn`, a user `message.completed` and `turn.started`;
-  - permission requests are cancelled while replaying;
-  - Claude also resyncs turns made outside Sillage (`resyncSessions`,
-    `claude/transcript-sync.ts`).
-- **Fork.** `forkCut` reads native ids from `raw`, so keep them:
-  - Claude: the `uuid` of the top-level `message.completed`;
-  - Codex: `turn.id` on `turn.completed`;
-  - Grok: counts `turn.completed`, so an extra `turn.completed` shifts the cut;
-  - without a native fork, throw `ForkError` and use the portable fork. Its condition is
-    hardcoded in `http/routes/conversations.ts`; see touchpoints.
-- **Handoff** (`conversations/handoff.ts`, `docs/cli-handoff.md`):
-  - it reads only main-thread `message.completed`, `tool.started` and `tool.completed`;
-  - a turn counts as interrupted only if `stopReason` is exactly `'interrupted'` or
-    `'failed'`, so normalize native reasons (Antigravity `end_turn`→`completed`,
-    `cancelled`→`interrupted`);
-  - the handoff block arrives through `projectOverview()`;
-  - test both directions.
-- **Checkpoints** are server-side git snapshots and work for every CLI. They need
-  `turn.completed` or `session.ended` to close, and `file.edited` to attribute files.
+These are covered in [continuity.md](continuity.md). The journal is what other CLIs receive
+on a handoff, so the event obligations above also decide what a transfer carries.
 
 ## Tests to extend
 

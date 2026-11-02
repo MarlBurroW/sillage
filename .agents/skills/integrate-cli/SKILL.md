@@ -60,6 +60,7 @@ Copy this progress list into the conversation's plan and keep it updated:
 - [ ] 1. Declare the kind    → references/touchpoints.md §1    (typecheck lists forced tables)
 - [ ] 2. Adapter & runner    → references/events-and-tools.md
 - [ ] 3. Platform services   → references/platform.md
+- [ ] 3b. Continuity         → references/continuity.md        (resume, import, fork, handoff)
 - [ ] 4. Interface           → references/touchpoints.md §3
 - [ ] 5. Verify & document   → references/verification.md
 ```
@@ -178,10 +179,18 @@ The coverage doc gives every line one status, and silence is not a status:
 - `limitsAvailable: false` when it doesn't apply.
 - Live `rateLimit` in `usage.updated`.
 
-**M. History**
+**M. Continuity** (see [continuity](references/continuity.md))
+- Resume after a crash, an update or a settings restart, with the instruction channel
+  re-injected.
 - Import native sessions (`cliSessions`), and resync them.
 - Native or portable fork, with the native ids `forkCut` needs kept in `raw`.
-- Handoff in both directions.
+- Handoff in both directions:
+  - **CLI → Sillage**: a journal the handoff can read (main-thread text, subagents behind
+    `parentToolCallId`, real tool arguments at `tool.started`, normalized `stopReason`);
+  - **Sillage → CLI**: `projectOverview()` delivered on every start through the
+    instruction channel.
+
+  There is no per-CLI handoff interface to write.
 - Checkpoints closed on turn end and fed by `file.edited`.
 - `rawFormat` versioned.
 
