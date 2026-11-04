@@ -1,9 +1,11 @@
 import { useConcentration } from '../../lib/concentration'
+import { compactNoticeRows, type NoticeRow } from '../../lib/notice-rows'
+import { NoticeGroup } from './NoticeGroup'
 import { DiffCard } from './DiffCard'
 import { Fragment, type RefObject } from 'react'
 import { noticeText, type MessageItem, type TurnCheckpoint } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
-import { translate, translateError, useTranslate } from '../../lib/i18n'
+import { translate, translateError } from '../../lib/i18n'
 import { Banner, cx } from '../ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { MessageBubble } from './MessageBubble'
@@ -68,7 +70,6 @@ export function ChatThread({
   onShowChanges?: (checkpoint: TurnCheckpoint) => void
   onRestoreCheckpoint?: (checkpoint: TurnCheckpoint) => void
 }) {
-  const t = useTranslate()
   const concentration = useConcentration()
 
   // Place turn markers at their ends, before the next user message or after the final item.
@@ -90,7 +91,7 @@ export function ChatThread({
 
   return (
     <>
-      {rows.map((row) => {
+      {compactNoticeRows(rows).map((row) => {
         if (row.kind === 'item' && row.item.kind === 'message' && row.item.role === 'user' && !row.item.parentToolCallId) {
           const closing = strip(current)
           current = byOpener.get(row.item.id) ?? null
@@ -109,7 +110,8 @@ export function ChatThread({
     </>
   )
 
-  function renderRow(row: ChatRow) {
+  function renderRow(row: ChatRow | NoticeRow) {
+        if (row.kind === 'notice-group') return <NoticeGroup key={row.key} row={row} />
         if (row.kind === 'tool-group') {
           return <ToolCallGroup quiet={concentration} key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
         }
@@ -203,21 +205,6 @@ export function ChatThread({
           case 'diff':
             return <DiffCard key={item.id} item={item} conversationId={conversationId} />
           case 'notice':
-            if (item.level) {
-              return (
-                <Banner key={item.id} tone={item.level === 'warning' ? 'caution' : 'info'}>
-                  <span className="whitespace-pre-wrap break-words">{noticeText(item)}</span>
-                  {item.details != null ? (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer">{t('notice.details')}</summary>
-                      <pre className="mt-2 max-h-80 overflow-auto text-xs whitespace-pre-wrap break-words">
-                        {typeof item.details === 'string' ? item.details : JSON.stringify(item.details, null, 2)}
-                      </pre>
-                    </details>
-                  ) : null}
-                </Banner>
-              )
-            }
             return (
               <div key={item.id} className="flex items-center gap-3 py-1">
                 <span className="h-px flex-1 bg-line" />
