@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { mcpServers, type Db, type McpServerRow } from '@sillage/db'
 import {
   applySecrets,
@@ -23,6 +23,7 @@ export function rowToMcpServer(row: McpServerRow): McpServer {
     name: row.name,
     enabled: row.enabled,
     transport: mcpTransportSchema.parse(JSON.parse(row.transport)),
+    projectId: row.projectId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -58,16 +59,27 @@ function withSecrets(
   return { server: { ...server, transport: resolved }, missing: [...missing] }
 }
 
-/** Conversation servers delivered to CLIs. Silently ignore unknown IDs and disabled servers as normal states: deleting registry entries must not break referencing conversations. */
+/**
+ * Conversation servers delivered to CLIs: the selected instance-wide entries, then every enabled
+ * server of the conversation's project. Silently ignore unknown IDs, disabled servers and entries
+ * of other projects as normal states: deleting registry entries must not break referencing
+ * conversations, and a stale ID must never leak a project server elsewhere.
+ */
 export function resolveMcpServers(
   db: Db,
   store: SecretStore,
   ids: string[],
+  projectId: string | null = null,
 ): ResolvedMcpServers {
-  if (ids.length === 0) return { servers: [], failures: [] }
-
-  const rows = db.select().from(mcpServers).where(inArray(mcpServers.id, ids)).all()
-  const byId = new Map(rows.map((row) => [row.id, row]))
+  const selected = ids.length > 0
+    ? db.select().from(mcpServers).where(inArray(mcpServers.id, ids)).all().filter((row) => row.projectId === null || row.projectId === projectId)
+    : []
+  const byId = new Map(selected.map((row) => [row.id, row]))
+  // Project servers need no selection: alphabetical, after the user-ordered global list.
+  const ofProject = projectId
+    ? db.select().from(mcpServers).where(and(eq(mcpServers.projectId, projectId), eq(mcpServers.enabled, true))).orderBy(mcpServers.name).all().filter((row) => !byId.has(row.id))
+    : []
+  if (selected.length === 0 && ofProject.length === 0) return { servers: [], failures: [] }
 
   const servers: McpServer[] = []
   const failures: ResolvedMcpServers['failures'] = []
@@ -75,9 +87,9 @@ export function resolveMcpServers(
   // Order by configuration rather than database: duplicate tool names resolve
   // according to the order
   // chosen by the user.
-  for (const id of ids) {
-    const row = byId.get(id)
-    if (!row || !row.enabled) continue
+  const ordered = [...ids.map((id) => byId.get(id)).filter((row): row is McpServerRow => row !== undefined), ...ofProject]
+  for (const row of ordered) {
+    if (!row.enabled) continue
 
     const applied = withSecrets(rowToMcpServer(row), (name) => store.resolve(name))
     if (applied.missing.length > 0) {

@@ -86,6 +86,7 @@ import { advanceCardOnLaunch, createCard, updateCard } from '../http/routes/card
 import { linkCards, unlinkCards } from '../board/card-relations.js'
 import type { BoardSync } from '../board/board-sync.js'
 import { DecisionRefusal, type DecisionService } from '../decisions/service.js'
+import { McpInstallRefusal, proposeMcpInstall } from '../agents/mcp-install.js'
 import { createWorktree } from '../http/routes/worktrees.js'
 import { defaultBase } from '../worktrees/assess.js'
 import type { WorktreeCleanup } from '../worktrees/cleanup.js'
@@ -299,6 +300,18 @@ export class AgentRequests {
         // Decisions require autonomous session identities: without sessions, none.
         if (!conversation) throw new Refusal('This tool is only for autonomous sessions: there is no decision to request outside a session.')
         this.settle(request.id, await this.decide(request.kind, conversation, payload), false)
+      } else if (request.kind === 'install_mcp_server') {
+        // The proposal is posted in the requesting conversation, so a sessionless client has nowhere to show it.
+        if (!conversation || !this.log) throw new Refusal('This tool is only available from a Sillage session.')
+        try {
+          const proposal = proposeMcpInstall(this.ctx.db, this.log, conversation, payload)
+          this.settle(request.id, proposal.text, false)
+          // Appended outside a runner, so the usual emit path did not notify an absent user.
+          this.sessions.notifyRequest(conversation.id, proposal.event)
+        } catch (err) {
+          if (err instanceof McpInstallRefusal) throw new Refusal(err.message)
+          throw err
+        }
       } else if (request.kind === 'link_cards' || request.kind === 'unlink_cards') {
         if (!Number.isInteger(payload.number)) throw new Refusal('The card number is required.')
         const { target, kind } = createCardRelationBodySchema.parse(payload)

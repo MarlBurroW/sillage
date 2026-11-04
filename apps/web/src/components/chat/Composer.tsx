@@ -269,6 +269,7 @@ export function Composer({
     mcpInventory,
     disabled,
     probeModels,
+    projectId,
   })
 
   // Settings pinned beneath text for this conversation's CLI. Until account loading completes, use

@@ -47,6 +47,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
     id: BUILTIN_MCP_SERVER_ID,
     name: BUILTIN_MCP_SERVER_NAME,
     enabled: true,
+    projectId: null,
     transport: {
       type: 'stdio',
       // Use process.execPath rather than node: systemd has a minimal PATH and nothing

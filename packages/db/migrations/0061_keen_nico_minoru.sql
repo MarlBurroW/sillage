@@ -1,0 +1,1 @@
+ALTER TABLE `mcp_servers` ADD `project_id` text REFERENCES projects(id) ON DELETE cascade;

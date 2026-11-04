@@ -22,7 +22,7 @@ import { catalogModel, effortLabel, effortsFor, modelsAccount, supportsFastMode,
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
-import { useMcpServers } from '../../lib/mcp'
+import { serversForProject, useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
 import {
@@ -322,6 +322,8 @@ interface AgentSettingsParams {
   disabled?: boolean
   /** False skips the model probe: a draft whose CLI is disabled, missing or not yet known gets only a refusal back. */
   probeModels?: boolean
+  /** Scopes the registry to this project's servers plus instance-wide ones; null for personal discussions. */
+  projectId?: string | null
 }
 
 /** Stable reference: a default array literal would retrigger control rendering. */
@@ -334,6 +336,7 @@ export function useAgentSettings({
   mcpInventory = NO_INVENTORY,
   disabled = false,
   probeModels = true,
+  projectId = null,
 }: AgentSettingsParams): AgentSettings {
   const t = useTranslate()
   // Probe only the selected agent: each probe starts its corresponding server-side CLI. Codex and
@@ -588,7 +591,7 @@ export function useAgentSettings({
   // like Sillage MCP.
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
   const libraryOptionList = skillLibraryOptions(t)
-  const mcpServers = mcpRegistry?.servers ?? []
+  const mcpServers = useMemo(() => serversForProject(mcpRegistry?.servers ?? [], projectId), [mcpRegistry, projectId])
   // False until the query responds, like an instance without the server: appear when the registry
   // loads rather than briefly showing and disappearing under the pointer.
   const sillageAvailable = mcpRegistry?.sillageServer === true

@@ -54,7 +54,7 @@ test('un tour : texte en deltas, outil normalisé, sortie en flux, édition, con
 })
 
 test('lancement : session, modèle par défaut, inventaire MCP, commandes et corps du message', async (t) => {
-  const declared: McpServer = { id: 'a', name: 'declared', enabled: true, createdAt: 0, updatedAt: 0,
+  const declared: McpServer = { id: 'a', name: 'declared', enabled: true, projectId: null, createdAt: 0, updatedAt: 0,
     transport: { type: 'stdio', command: 'node', args: ['server.mjs'], env: { KEY: 'v' } } }
   const f = await runnerFixture(t, {
     config: { ...DEFAULT_OPENCODE_CONFIG, model: 'fixture/small', variant: 'high', primaryAgent: 'plan', additionalDirectories: ['/extra'] },

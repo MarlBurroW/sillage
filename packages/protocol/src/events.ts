@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { mcpInstallScopeSchema, mcpTransportSchema } from './mcp.js'
 import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.js'
 import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
@@ -462,6 +463,34 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
      * it; the shared schema need not know a CLI's permission modes.
      */
     followUpMode: z.string().nullable().default(null),
+    decidedBy: z.string().nullable(),
+  }),
+
+  /**
+   * An agent proposes a registry MCP server through the Sillage tool `install_mcp_server`.
+   * Non-blocking like a decision: the turn continues and the outcome returns as a message.
+   * Secrets travel only as `{{secret.NAME}}` references; the user types values in the form.
+   */
+  z.object({
+    type: z.literal('mcp_install.requested'),
+    requestId: z.string(),
+    name: z.string(),
+    transport: mcpTransportSchema,
+    /** One sentence from the agent on why the server helps, shown above the form. */
+    purpose: z.string().nullable().default(null),
+    scope: mcpInstallScopeSchema,
+    /** Where to obtain each referenced secret, keyed by secret name. */
+    secretHints: z.record(z.string()).default({}),
+  }),
+  z.object({
+    type: z.literal('mcp_install.resolved'),
+    requestId: z.string(),
+    decision: z.enum(['installed', 'declined', 'expired']),
+    /** Registry entry created on installation, null otherwise. */
+    serverId: z.string().nullable().default(null),
+    /** Final name and scope, which the user may have edited before confirming. */
+    name: z.string().nullable().default(null),
+    scope: mcpInstallScopeSchema.nullable().default(null),
     decidedBy: z.string().nullable(),
   }),
 

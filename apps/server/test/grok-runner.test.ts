@@ -136,9 +136,9 @@ test('un tour : réflexion, texte, outils normalisés, sortie en flux, édition,
 })
 
 test('lancement : isolation, MCP, modèle et effort posés à la création, commandes', async (t) => {
-  const declared: McpServer = { id: 'a', name: 'declared', enabled: true, createdAt: 0, updatedAt: 0,
+  const declared: McpServer = { id: 'a', name: 'declared', enabled: true, projectId: null, createdAt: 0, updatedAt: 0,
     transport: { type: 'stdio', command: 'node', args: ['server.mjs'], env: { KEY: 'v' } } }
-  const remote: McpServer = { id: 'b', name: 'remote', enabled: true, createdAt: 0, updatedAt: 0,
+  const remote: McpServer = { id: 'b', name: 'remote', enabled: true, projectId: null, createdAt: 0, updatedAt: 0,
     transport: { type: 'http', url: 'https://example.com/mcp', headers: { Authorization: 'Bearer x' } } }
   const f = await runnerFixture(t, {
     config: { ...DEFAULT_GROK_CONFIG, model: 'grok-fast', reasoningEffort: 'low', webSearch: false, additionalDirectories: ['/extra'] },

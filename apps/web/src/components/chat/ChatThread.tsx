@@ -8,6 +8,7 @@ import type { ChatRow } from '../../lib/tool-rows'
 import { translate, translateError } from '../../lib/i18n'
 import { Banner, cx } from '../ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
+import { McpInstallPrompt } from './McpInstallPrompt'
 import { MessageBubble } from './MessageBubble'
 import { PermissionPrompt } from './PermissionPrompt'
 import { PlanReview } from './PlanReview'
@@ -154,6 +155,15 @@ export function ChatThread({
                 key={item.id}
                 conversationId={conversationId}
                 permission={item}
+                canDecide={canDecide}
+              />
+            )
+          case 'mcp_install':
+            return (
+              <McpInstallPrompt
+                key={item.id}
+                conversationId={conversationId}
+                item={item}
                 canDecide={canDecide}
               />
             )

@@ -1,21 +1,24 @@
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { mcpServers } from '@sillage/db'
+import { conversations, mcpServers, projects } from '@sillage/db'
 import {
+  answerMcpInstallBodySchema,
   createMcpServerBodySchema,
   isReservedMcpServerName,
   updateMcpServerBodySchema,
   type McpServer,
   type McpServerListDto,
 } from '@sillage/protocol'
+import { answerMcpInstall, McpInstallRefusal, pendingMcpInstall, type McpInstallDeps } from '../../agents/mcp-install.js'
 import { rowToMcpServer } from '../../agents/mcp-registry.js'
 import type { AppContext } from '../context.js'
-import { conflict, notFound } from '../errors.js'
+import { badRequest, conflict, forbidden, notFound } from '../errors.js'
+import { visibilityFilter } from './projects.js'
 import { requireAdmin, requireUser } from '../require-user.js'
 
 /**
- * Instance-wide MCP server registry.
+ * MCP server registry: instance-wide entries plus entries scoped to one project.
  *
  * Only administrators may write: declaring an MCP server specifies a command
  * CLIs execute as the server's system user, granting execution rights rather
@@ -28,10 +31,20 @@ import { requireAdmin, requireUser } from '../require-user.js'
 export function registerMcpRoutes(
   app: FastifyInstance,
   ctx: AppContext,
-  serverChanged: (serverId: string) => void = () => {},
+  /** `formerProjectId`: the scope before the write, which a deletion or a move can no longer read back. */
+  serverChanged: (serverId: string, formerProjectId?: string | null) => void = () => {},
+  install?: Omit<McpInstallDeps, 'db'>,
 ): void {
-  const listAll = (): McpServer[] =>
-    ctx.db.select().from(mcpServers).orderBy(mcpServers.name).all().map(rowToMcpServer)
+  /** Global entries and those of projects the account can open; other projects' servers stay private to them. */
+  const listVisible = (userId: string): McpServer[] =>
+    ctx.db
+      .select({ server: mcpServers })
+      .from(mcpServers)
+      .leftJoin(projects, eq(projects.id, mcpServers.projectId))
+      .where(or(isNull(mcpServers.projectId), visibilityFilter(userId)))
+      .orderBy(mcpServers.name)
+      .all()
+      .map((row) => rowToMcpServer(row.server))
 
   /**
    * Names are CLI keys: duplicate names silently overwrite each other in the
@@ -55,6 +68,14 @@ export function registerMcpRoutes(
     }
   }
 
+  /** A scope must point at a real project: a typo would create a server nobody can see. */
+  const requireProject = (projectId: string | null): void => {
+    if (projectId === null) return
+    if (!ctx.db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).get()) {
+      throw notFound('project_not_found', 'Unknown project.')
+    }
+  }
+
   const requireServer = (params: unknown) => {
     const { id } = params as { id: string }
     const row = ctx.db.select().from(mcpServers).where(eq(mcpServers.id, id)).get()
@@ -63,14 +84,15 @@ export function registerMcpRoutes(
   }
 
   app.get('/api/mcp/servers', async (request): Promise<McpServerListDto> => {
-    requireUser(request)
-    return { servers: listAll(), sillageServer: ctx.config.mcp.sillageServer }
+    const user = requireUser(request)
+    return { servers: listVisible(user.id), sillageServer: ctx.config.mcp.sillageServer }
   })
 
   app.post('/api/mcp/servers', async (request, reply): Promise<McpServer> => {
     requireAdmin(request)
     const body = createMcpServerBodySchema.parse(request.body)
     requireFreeName(body.name)
+    requireProject(body.projectId)
 
     const now = Date.now()
     const row = {
@@ -78,10 +100,13 @@ export function registerMcpRoutes(
       name: body.name,
       enabled: body.enabled,
       transport: JSON.stringify(body.transport),
+      projectId: body.projectId,
       createdAt: now,
       updatedAt: now,
     }
     ctx.db.insert(mcpServers).values(row).run()
+    // A project server applies to its conversations without selection: open ones must learn of it.
+    if (row.projectId) serverChanged(row.id)
 
     reply.status(201)
     return rowToMcpServer(row)
@@ -92,16 +117,18 @@ export function registerMcpRoutes(
     const current = requireServer(request.params)
     const body = updateMcpServerBodySchema.parse(request.body)
     if (body.name !== undefined) requireFreeName(body.name, current.id)
+    if (body.projectId !== undefined) requireProject(body.projectId)
 
     const next = {
       ...current,
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
       ...(body.transport !== undefined ? { transport: JSON.stringify(body.transport) } : {}),
+      ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
       updatedAt: Date.now(),
     }
     ctx.db.update(mcpServers).set(next).where(eq(mcpServers.id, current.id)).run()
-    serverChanged(current.id)
+    serverChanged(current.id, current.projectId)
 
     return rowToMcpServer(next)
   })
@@ -115,7 +142,36 @@ export function registerMcpRoutes(
     requireAdmin(request)
     const current = requireServer(request.params)
     ctx.db.delete(mcpServers).where(eq(mcpServers.id, current.id)).run()
-    serverChanged(current.id)
+    serverChanged(current.id, current.projectId)
     reply.status(204)
+  })
+
+  if (!install) return
+
+  /**
+   * Answer to an agent's proposal. Declining is the owner's call; installing needs the same right
+   * as declaring a server by hand, and the typed secrets go to the store from here.
+   */
+  app.post('/api/conversations/:id/mcp-installs/:requestId', async (request): Promise<{ server: McpServer | null }> => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = answerMcpInstallBodySchema.parse(request.body)
+    if (body.decision === 'installed' && !user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
+
+    const conversation = ctx.db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, user.id))).get()
+    if (!conversation) throw notFound('conversation_not_found', 'Conversation not found.')
+    const pending = pendingMcpInstall(install.log, id)
+    if (!pending || pending.requestId !== requestId) {
+      throw notFound('mcp_install_not_found', 'This proposal is no longer waiting for an answer.')
+    }
+
+    try {
+      const server = await answerMcpInstall({ db: ctx.db, ...install }, conversation, pending, body, user.id)
+      if (server?.projectId) serverChanged(server.id)
+      return { server }
+    } catch (err) {
+      if (err instanceof McpInstallRefusal) throw badRequest('mcp_install_rejected', err.message)
+      throw err
+    }
   })
 }

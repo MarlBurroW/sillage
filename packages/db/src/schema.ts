@@ -620,6 +620,8 @@ export const agentRequests = sqliteTable(
         'webhook_launch',
         'request_decision',
         'withdraw_decision',
+        // Proposes a registry entry; the user confirms it in the conversation.
+        'install_mcp_server',
         'create_automation',
         // Operations on an existing session, on behalf of an account: used by a sessionless MCP
         // client (`docs/mcp.md`), which has no runner to perform them itself.
@@ -1481,6 +1483,12 @@ export const mcpServers = sqliteTable('mcp_servers', {
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /** JSON McpTransport: shape depends on transport; the column need not know it. */
   transport: text('transport').notNull(),
+  /**
+   * Null for instance-wide servers. A project server reaches every conversation of its project
+   * without per-conversation selection, and no other project. Names stay unique across both
+   * scopes because a conversation receives both lists in one name-keyed table.
+   */
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull(),
   updatedAt: timestamp('updated_at').notNull(),
 })

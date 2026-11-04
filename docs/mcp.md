@@ -117,6 +117,30 @@ private even when the new project is shared.
 These capabilities belong to personal sessions. External global MCP clients and
 project-scoped API tokens do not gain access to personal discussions.
 
+## Installing MCP servers from a session
+
+A session can propose a registry MCP server when a task needs tools Sillage does not
+provide. `list_mcp_servers` prints the servers the session may receive, instance-wide
+ones and those scoped to its project, with their transport and whether the session
+currently gets them; secret values appear only as `{{secret.NAME}}` references.
+`install_mcp_server` takes a `name`, a `transport` (`stdio` with `command`, `args`,
+`env`, or `http`/`sse` with `url`, `headers`), an optional `purpose`, a suggested
+`scope` and `secret_hints`. Nothing is installed by the call: the proposal appears in
+the conversation as an editable form (`mcp_install.requested`), the user checks the
+parameters, types the referenced secrets, picks the scope and installs or declines.
+Secrets go straight to the encrypted store; the agent only ever sees the reference,
+and a proposal with a credential written in clear is refused. The tool returns at
+once, like `request_decision`; the outcome comes back as a message, and the server is
+enabled in the requesting session (live for Claude, after the turn for the others).
+
+Scopes: a **project** server reaches every conversation of its project without being
+ticked in the composer and no other project; a **global** server is offered to every
+conversation and ticked per conversation. Names are unique across both scopes, since a
+conversation receives both lists in one name-keyed table. Installing needs the same
+right as declaring a server by hand (administrator); anyone owning the conversation
+may decline. Code: `apps/server/src/agents/mcp-install.ts`, the answer route in
+`http/routes/mcp.ts`, the form in `apps/web/src/components/chat/McpInstallPrompt.tsx`.
+
 ## Referencing sessions
 
 Use `session:<conversation UUID>` to cite a Sillage conversation. `list_sessions`,

@@ -20,6 +20,7 @@ const probeServer: McpServer = {
   id: randomUUID(),
   name: PROBE_NAME,
   enabled: true,
+  projectId: null,
   transport: {
     type: 'stdio',
     // Minimal listable MCP server without networking, so failures identify

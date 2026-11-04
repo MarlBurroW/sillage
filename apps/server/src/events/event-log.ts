@@ -56,6 +56,7 @@ const NOTABLE = new Set<SillageEvent['type']>([
   'question.requested',
   'elicitation.requested',
   'plan.review_requested',
+  'mcp_install.requested',
   // Held session messages await human delivery or dismissal.
   'session_message.held',
 ])

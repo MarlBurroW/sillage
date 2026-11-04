@@ -6,7 +6,8 @@ import { agentConfigSchema, type CodexMode } from './agent-config.js'
 import type { CardColumn, CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
-import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
+import { mcpInstallScopeSchema, mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
+import { secretNameSchema } from './secrets.js'
 import { instructionsModeSchema, type InstructionsMode } from './instructions.js'
 import { memoryModeSchema, type MemoryMode } from './memory.js'
 import type { ProjectAgentDefaults } from './project-defaults.js'
@@ -984,7 +985,7 @@ export interface PushPayload {
    * What the notification announces, so the service worker can compose a title in the device
    * language; `title` remains the fallback.
    */
-  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'test'
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall' | 'turnCompleted' | 'decision' | 'test'
   /** Pending decisions, for the installed app icon badge. */
   badge?: number
 }
@@ -1369,6 +1370,8 @@ export const createMcpServerBodySchema = z.object({
   name: mcpServerNameSchema,
   enabled: z.boolean().default(true),
   transport: mcpTransportSchema,
+  /** Omitted or null: instance-wide. */
+  projectId: z.string().nullable().default(null),
 })
 
 export const updateMcpServerBodySchema = z
@@ -1376,8 +1379,26 @@ export const updateMcpServerBodySchema = z
     name: mcpServerNameSchema,
     enabled: z.boolean(),
     transport: mcpTransportSchema,
+    projectId: z.string().nullable(),
   })
   .partial()
+
+/**
+ * Answer to an agent's `mcp_install.requested`. Installing sends the form as edited by the
+ * user, plus the values of referenced secrets that the store lacks; those go straight to the
+ * secret store and never into the journal.
+ */
+export const answerMcpInstallBodySchema = z.discriminatedUnion('decision', [
+  z.object({
+    decision: z.literal('installed'),
+    name: mcpServerNameSchema,
+    transport: mcpTransportSchema,
+    scope: mcpInstallScopeSchema,
+    secrets: z.record(secretNameSchema, z.string().min(1)).default({}),
+  }),
+  z.object({ decision: z.literal('declined') }),
+])
+export type AnswerMcpInstallBody = z.infer<typeof answerMcpInstallBodySchema>
 
 export interface McpServerListDto {
   servers: McpServer[]

@@ -11,6 +11,7 @@ import {
   projects,
   type ConversationRow,
   type Db,
+  mcpServers,
 } from '@sillage/db'
 import {
   parseAgentConfig,
@@ -122,6 +123,7 @@ const NOTIFIABLE: Partial<Record<SillageEvent['type'], string>> = {
   'question.requested': "L'agent te demande de choisir",
   'elicitation.requested': 'Un service demande une saisie',
   'plan.review_requested': 'Un plan attend ta validation',
+  'mcp_install.requested': "L'agent propose d'installer un serveur MCP",
   'turn.completed': "L'agent a terminé",
 }
 
@@ -154,6 +156,7 @@ function requestDetail(event: SillageEvent): string | null {
   }
   if (event.type === 'question.requested') return event.questions[0] ? clip(event.questions[0].question) : null
   if (event.type === 'elicitation.requested') return clip(`${event.serverName} : ${event.message}`)
+  if (event.type === 'mcp_install.requested') return clip(event.name)
   return null
 }
 
@@ -162,6 +165,7 @@ const REQUEST_KINDS: Partial<Record<SillageEvent['type'], CliRequestKind>> = {
   'question.requested': 'question',
   'elicitation.requested': 'elicitation',
   'plan.review_requested': 'plan',
+  'mcp_install.requested': 'mcpInstall',
 }
 
 export class SessionManager {
@@ -482,6 +486,11 @@ export class SessionManager {
 
   setNotifier(notifier: ConversationNotifier): void {
     this.notifier = notifier
+  }
+
+  /** Same notification as runner events, for journal entries written elsewhere, such as an agent's MCP proposal posted by `AgentRequests`. */
+  notifyRequest(conversationId: string, event: SillageEvent): void {
+    void this.notifyIfAway(conversationId, event)
   }
 
   /** Notifies owners unless viewing conversations. Sockets are the only reliable presence signal: subscribed tabs already receive live events, so additional system pushes would announce content being read. Errors never propagate because notification failures must not interrupt agents (invariant I1). */
@@ -875,7 +884,7 @@ export class SessionManager {
       // and user-declared servers must win
       // over platform-added servers.
       resolveMcpServers: (current) => {
-        const resolved = resolveMcpServers(this.db, this.secrets, current.mcpServers)
+        const resolved = resolveMcpServers(this.db, this.secrets, current.mcpServers, conversation.projectId)
         const builtin = builtinMcpServer({
           enabled: this.config.mcp.sillageServer,
           config: current,
@@ -1670,15 +1679,19 @@ export class SessionManager {
     }
   }
 
-  /** Reapplies configuration in open sessions using an edited or deleted registry server. Runners compare resolved servers, so an unchanged ID list with a new URL or token still reconnects; restarts wait for turn ends like any setting change. Fire and forget: the write already succeeded. */
-  reloadMcpServer(serverId: string): void {
+  /** Reapplies configuration in open sessions using an edited or deleted registry server: those selecting it, and every open session of the project it is scoped to, since project servers apply without selection. Runners compare resolved servers, so an unchanged ID list with a new URL or token still reconnects; restarts wait for turn ends like any setting change. `formerProjectId` covers the sessions a deletion or a move takes the server from, which the row no longer names. Fire and forget: the write already succeeded. */
+  reloadMcpServer(serverId: string, formerProjectId: string | null = null): void {
+    const scopedProject = this.db.select({ projectId: mcpServers.projectId }).from(mcpServers).where(eq(mcpServers.id, serverId)).get()?.projectId ?? null
     for (const conversationId of this.runners.keys()) {
       const row = this.db
-        .select({ config: conversations.config })
+        .select({ config: conversations.config, projectId: conversations.projectId })
         .from(conversations)
         .where(eq(conversations.id, conversationId))
         .get()
-      if (!row || !parseAgentConfig(row.config).mcpServers.includes(serverId)) continue
+      if (!row) continue
+      const concerned = parseAgentConfig(row.config).mcpServers.includes(serverId)
+        || (row.projectId !== null && (row.projectId === scopedProject || row.projectId === formerProjectId))
+      if (!concerned) continue
       this.reloadConfig(conversationId).catch((err: unknown) => {
         process.stderr.write(
           `[mcp ${conversationId}] reconfiguration failed: ${err instanceof Error ? err.message : String(err)}\n`,

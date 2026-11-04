@@ -18,6 +18,7 @@ const REQUEST_TITLES: Record<CliRequestKind, MessageKey> = {
   question: 'toast.cli.question',
   elicitation: 'toast.cli.elicitation',
   plan: 'toast.cli.plan',
+  mcpInstall: 'toast.cli.mcpInstall',
 }
 
 /**

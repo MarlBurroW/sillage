@@ -34,6 +34,7 @@ const insert = (name: string, headers: Record<string, string>) => {
       name,
       enabled: true,
       transport: JSON.stringify({ type: 'http', url: 'https://api.example.com/mcp', headers }),
+      projectId: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })

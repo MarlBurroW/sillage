@@ -8,7 +8,9 @@ import type {
   ElicitationValue,
   EventBodyRef,
   Loop,
+  McpInstallScope,
   McpServerStatus,
+  McpTransport,
   PermissionOption,
   PlanFollowUpOption,
   SillageEvent,
@@ -97,6 +99,21 @@ export interface ElicitationItem {
   content: Record<string, ElicitationValue>
 }
 
+/** A registry MCP server proposed by the agent, awaiting confirmation or already settled. */
+export interface McpInstallItem {
+  kind: 'mcp_install'
+  id: string
+  name: string
+  transport: McpTransport
+  purpose: string | null
+  scope: McpInstallScope
+  secretHints: Record<string, string>
+  status: 'pending' | 'installed' | 'declined' | 'expired'
+  /** Name and scope actually recorded, when the user edited the proposal before installing. */
+  installedName: string | null
+  installedScope: McpInstallScope | null
+}
+
 /** A plan submitted for approval before execution. */
 export interface PlanItem {
   kind: 'plan'
@@ -166,6 +183,7 @@ export type ChatItem = (
   | PermissionItem
   | QuestionItem
   | ElicitationItem
+  | McpInstallItem
   | PlanItem
   | ErrorItem
   | NoticeItem
@@ -1046,6 +1064,38 @@ export function applyEvent(
           ...(state.items[index] as ElicitationItem),
           status: event.status,
           content: event.content,
+        })
+      }
+      break
+    }
+
+    case 'mcp_install.requested': {
+      appendItem(state, {
+        kind: 'mcp_install',
+        id: event.requestId,
+        name: event.name,
+        transport: event.transport,
+        purpose: event.purpose ?? null,
+        scope: event.scope,
+        secretHints: event.secretHints ?? {},
+        status: 'pending',
+        installedName: null,
+        installedScope: null,
+      })
+      break
+    }
+
+    case 'mcp_install.resolved': {
+      const index = findLastIndex(
+        state.items,
+        (item) => item.kind === 'mcp_install' && item.id === event.requestId,
+      )
+      if (index !== -1) {
+        replaceItem(state, index, {
+          ...(state.items[index] as McpInstallItem),
+          status: event.decision,
+          installedName: event.name ?? null,
+          installedScope: event.scope ?? null,
         })
       }
       break

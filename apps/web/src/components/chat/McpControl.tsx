@@ -60,6 +60,10 @@ export function McpControl({
   const Separator = presentation === 'panel' ? McpDivider : MenuSeparator
   const active = new Set(selected)
   const external = inventory.filter((server) => server.external)
+  // Project servers apply to every conversation of their project: no checkbox, an inert row that
+  // says so, like CLI-declared servers.
+  const global = servers.filter((server) => server.projectId === null)
+  const ofProject = servers.filter((server) => server.projectId !== null)
   const toolsByName = new Map(inventory.map((server) => [server.name, server.tools.length]))
 
   const toggle = (id: string, checked: boolean) => {
@@ -68,7 +72,7 @@ export function McpControl({
     const next = new Set(active)
     if (checked) next.add(id)
     else next.delete(id)
-    onSelectedChange(servers.filter((server) => next.has(server.id)).map((server) => server.id))
+    onSelectedChange(global.filter((server) => next.has(server.id)).map((server) => server.id))
   }
 
   // strictMcp overrides activation: only declared servers are allowed, excluding Sillage with the
@@ -100,8 +104,8 @@ export function McpControl({
       ) : (
         <>
           {/* Headings are needed only to distinguish sections; without CLI servers one section needs no name. */}
-          {external.length > 0 ? <MenuLabel>{t('composer.mcp.sillage')}</MenuLabel> : null}
-          {servers.map((server) => (
+          {external.length > 0 || ofProject.length > 0 ? <MenuLabel>{t('composer.mcp.sillage')}</MenuLabel> : null}
+          {global.map((server) => (
             <CheckboxItem
               key={server.id}
               checked={active.has(server.id)}
@@ -116,6 +120,23 @@ export function McpControl({
           ))}
         </>
       )}
+
+      {ofProject.length > 0 ? (
+        <>
+          <Separator />
+          <MenuLabel>{t('composer.mcp.project')}</MenuLabel>
+          {ofProject.map((server) => (
+            <div
+              key={server.id}
+              className={cx('flex items-baseline gap-2 rounded-md px-2.5 py-1.5 text-sm', server.enabled ? 'text-ink' : 'text-ink-faint line-through')}
+            >
+              <span className="min-w-0 flex-1 truncate">{server.name}</span>
+              <ToolCount count={toolsByName.get(server.name)} />
+            </div>
+          ))}
+          <p className="px-2.5 pb-1 text-[0.6875rem] text-ink-faint">{t('composer.mcp.project.hint')}</p>
+        </>
+      ) : null}
 
       {external.length > 0 ? (
         <>

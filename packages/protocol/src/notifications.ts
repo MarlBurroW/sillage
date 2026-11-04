@@ -21,7 +21,7 @@ export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true }
 
 /** What a CLI is waiting for, used in toast labels. */
-export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan'
+export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall'
 
 /**
  * A toast. Text is composed client-side in the user's language: the server sends only facts.

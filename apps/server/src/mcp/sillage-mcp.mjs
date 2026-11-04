@@ -85,6 +85,7 @@ const REQUEST_WAIT_MS = {
   create_automation: 30000,
   request_decision: 15000,
   withdraw_decision: 15000,
+  install_mcp_server: 15000,
   message_session: 20000,
   steer_session: 20000,
   interrupt_session: 20000,
@@ -935,6 +936,45 @@ const TOOLS = [
         }, }, required: ['file'] },
   },
   {
+    name: 'list_mcp_servers',
+    description:
+      "List the MCP servers Sillage can hand to this session: instance-wide ones and those scoped to the current project, with their transport and whether this session currently receives them. Call before install_mcp_server to avoid proposing a server that already exists. Secret values are never shown, only their {{secret.NAME}} references.",
+    annotations: { readOnlyHint: true },
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'install_mcp_server',
+    description:
+      "Propose an MCP server for the user to install, when a task needs tools Sillage does not provide (an external API, a database, a SaaS). Nothing is installed by this call: the user sees the proposal in this conversation as an editable form and confirms it, choosing the scope. Credentials must appear only as {{secret.NAME}} references in env or headers; the user types the actual value in the form and it goes to Sillage's encrypted store. Never ask for a secret in the conversation and never write one in clear. Returns immediately: end your turn or continue independent work, the outcome arrives as a message and the tools become available once installed. One pending proposal at a time.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Server name, 1 to 64 letters, digits, hyphens or underscores; the CLI prefixes its tools with it (mcp__<name>__<tool>).' },
+        transport: {
+          type: 'object',
+          description: 'Either {type:"stdio", command, args?, env?} for a local process, or {type:"http"|"sse", url, headers?} for a remote server. Use {{secret.NAME}} for every credential in env or headers (for example Authorization: "Bearer {{secret.GITHUB_TOKEN}}").',
+          properties: {
+            type: { type: 'string', enum: ['stdio', 'http', 'sse'] },
+            command: { type: 'string' },
+            args: { type: 'array', items: { type: 'string' } },
+            env: { type: 'object', additionalProperties: { type: 'string' } },
+            url: { type: 'string' },
+            headers: { type: 'object', additionalProperties: { type: 'string' } },
+          },
+          required: ['type'],
+        },
+        purpose: { type: 'string', description: 'One sentence for the user on what the server brings to the current task (at most 300 characters).' },
+        scope: { type: 'string', enum: ['project', 'global'], description: 'Suggested scope, which the user can change: "project" (default in a project) makes it available to every conversation of this project only; "global" offers it to every conversation of the instance.' },
+        secret_hints: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+          description: 'For each referenced secret name, where the user obtains the value (a settings page, a URL). Shown next to the input field.',
+        },
+      },
+      required: ['name', 'transport'],
+    },
+  },
+  {
     name: 'count_active_sessions',
     description:
       "Count working conversations across the entire instance, not just this project. Use to assess whether restarting Sillage is safe: restarting kills all running CLI processes, including this conversation's. Returns counts only, without titles, projects or content.",
@@ -1063,6 +1103,8 @@ const SESSION_ONLY_TOOLS = new Set([
   'read_session_messages',
   'request_decision',
   'withdraw_decision',
+  'install_mcp_server',
+  'list_mcp_servers',
 ])
 
 /** Tools permitting some calls without projects. */
@@ -2336,6 +2378,50 @@ function renderThread(found, before) {
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
 
+/**
+ * Registry servers this session may receive: instance-wide rows and the project's own. Secret
+ * values never reach this process; env and header values are printed as stored, which for
+ * credentials is their `{{secret.NAME}}` reference. Mirrors `resolveMcpServers` in
+ * `apps/server/src/agents/mcp-registry.ts`: project servers apply without selection.
+ */
+function listMcpServers() {
+  const rows = db
+    .prepare('SELECT id, name, enabled, transport, project_id AS projectId FROM mcp_servers WHERE project_id IS NULL OR project_id = ? ORDER BY project_id IS NULL DESC, name')
+    .all(PROJECT_ID || '')
+  let selected = new Set()
+  if (CURRENT_CONVERSATION) {
+    const row = db.prepare('SELECT config FROM conversations WHERE id = ?').get(CURRENT_CONVERSATION)
+    try {
+      selected = new Set(JSON.parse(row?.config ?? '{}').mcpServers ?? [])
+    } catch {
+      selected = new Set()
+    }
+  }
+  return rows.map((row) => {
+    let transport = {}
+    try {
+      transport = JSON.parse(row.transport)
+    } catch {
+      transport = {}
+    }
+    const active = Boolean(row.enabled) && (row.projectId ? true : selected.has(row.id))
+    return { ...row, transport, active }
+  })
+}
+
+function renderMcpServers(servers) {
+  if (servers.length === 0) return 'No MCP server is declared for this session yet, neither instance-wide nor for this project. Propose one with install_mcp_server if the task needs it.'
+  const lines = servers.map((server) => {
+    const t = server.transport
+    const target = t.type === 'stdio' ? [t.command, ...(t.args ?? [])].join(' ') : t.url
+    const pairs = Object.entries((t.type === 'stdio' ? t.env : t.headers) ?? {})
+    const scope = server.projectId ? 'this project' : 'global'
+    const state = !server.enabled ? 'disabled' : server.active ? 'active in this session' : 'not enabled in this session'
+    return `- ${server.name} (${scope}, ${t.type}, ${state}): ${target}${pairs.length ? `\n  ${pairs.map(([key, value]) => `${key}=${value}`).join(', ')}` : ''}`
+  })
+  return `${servers.length} MCP server(s) declared in Sillage:\n${lines.join('\n')}\nProject servers reach every conversation of the project; global ones are enabled per conversation in the composer.`
+}
+
 /** Deposits daemon requests and waits for responses. The daemon polls every half-second; this process rereads rows through its read-only connection until handled. */
 async function requestDaemon(kind, payload) {
   const id = randomUUID()
@@ -2833,6 +2919,10 @@ async function callTool(name, args) {
     return text(renderCount(countActiveSessions()))
   }
 
+  if (name === 'list_mcp_servers') {
+    return text(renderMcpServers(listMcpServers()))
+  }
+
   if (
     name === 'rename_session' ||
     name === 'link_cards' ||
@@ -2850,6 +2940,7 @@ async function callTool(name, args) {
     name === 'create_automation' ||
     name === 'request_decision' ||
     name === 'withdraw_decision' ||
+    name === 'install_mcp_server' ||
     name === 'message_session' ||
     name === 'steer_session' ||
     name === 'interrupt_session' ||
@@ -2869,6 +2960,10 @@ async function callTool(name, args) {
     }
     if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
       return { ...text('The `question` parameter is required.'), isError: true }
+    }
+    if (name === 'install_mcp_server') {
+      if (!(typeof args?.name === 'string' && args.name.trim())) return { ...text('The `name` parameter is required.'), isError: true }
+      if (!args?.transport || typeof args.transport !== 'object') return { ...text('The `transport` parameter is required.'), isError: true }
     }
     if (name === 'attach_card' && !Number.isInteger(args?.number)) {
       return { ...text('The `number` parameter is required and must be an integer.'), isError: true }

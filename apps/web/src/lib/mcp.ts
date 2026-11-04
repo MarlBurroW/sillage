@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { McpServer, McpServerListDto, McpTransport } from '@sillage/protocol'
+import type {
+  AnswerMcpInstallBody,
+  McpServer,
+  McpServerListDto,
+  McpTransport,
+} from '@sillage/protocol'
 import { api } from './api'
 
 /**
@@ -22,6 +27,26 @@ export interface McpServerInput {
   name: string
   enabled: boolean
   transport: McpTransport
+  /** Null or absent for an instance-wide server. */
+  projectId?: string | null
+}
+
+/**
+ * Registry entries a conversation of `projectId` can receive: instance-wide ones and its own
+ * project's. Mirrors the server-side resolution, so the composer never offers a server the CLI
+ * would not get.
+ */
+export function serversForProject(servers: McpServer[], projectId: string | null | undefined): McpServer[] {
+  return servers.filter((server) => server.projectId === null || server.projectId === projectId)
+}
+
+/** Answers an agent's installation proposal shown in a conversation. */
+export function answerMcpInstall(
+  conversationId: string,
+  requestId: string,
+  body: AnswerMcpInstallBody,
+): Promise<{ server: McpServer | null }> {
+  return api.post(`/api/conversations/${conversationId}/mcp-installs/${requestId}`, body)
 }
 
 export function useCreateMcpServer() {
@@ -47,6 +72,12 @@ export function useDeleteMcpServer() {
     mutationFn: (id: string) => api.delete<void>(`/api/mcp/servers/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: MCP_KEY }),
   })
+}
+
+/** Lets a surface outside the hooks above (the installation prompt) refresh the registry. */
+export function useInvalidateMcpServers() {
+  const queryClient = useQueryClient()
+  return () => queryClient.invalidateQueries({ queryKey: MCP_KEY })
 }
 
 /**

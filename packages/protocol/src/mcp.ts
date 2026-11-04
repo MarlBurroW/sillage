@@ -75,10 +75,34 @@ export const mcpServerSchema = z.object({
    */
   enabled: z.boolean(),
   transport: mcpTransportSchema,
+  /**
+   * Null for instance-wide servers offered to every conversation. A project server applies to all
+   * conversations of that project without selection, and is invisible elsewhere.
+   */
+  projectId: z.string().nullable().default(null),
   createdAt: z.number(),
   updatedAt: z.number(),
 })
 export type McpServer = z.infer<typeof mcpServerSchema>
+
+/** Where an agent-proposed server lands: the instance registry or the current project only. */
+export const mcpInstallScopeSchema = z.enum(['global', 'project'])
+export type McpInstallScope = z.infer<typeof mcpInstallScopeSchema>
+
+/**
+ * Keys whose literal values are refused in agent proposals. The agent must reference a stored
+ * secret instead, so the user types the value in the confirmation form and nothing sensitive
+ * transits through the model or the journal.
+ */
+const SENSITIVE_KEY = /(token|secret|password|passwd|api[_-]?key|apikey|authorization|credential|private[_-]?key)/i
+
+/** Transport entries that look like credentials written in clear. */
+export function clearTextSecrets(transport: McpTransport): string[] {
+  const pairs = transport.type === 'stdio' ? transport.env : transport.headers
+  return Object.entries(pairs)
+    .filter(([key, value]) => SENSITIVE_KEY.test(key) && value.trim().length > 0 && !/\{\{\s*secret\./.test(value))
+    .map(([key]) => key)
+}
 
 /**
  * Server state as reported by the CLI.
