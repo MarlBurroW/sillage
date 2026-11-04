@@ -6,6 +6,7 @@ import {
   GitBranch,
   ImagePlus,
   Globe,
+  PlugZap,
   Lock,
   Save,
   ShieldAlert,
@@ -35,6 +36,7 @@ import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { WorktreeBoard } from '../components/WorktreeBoard'
+import { ProjectMcpServers } from '../components/mcp/ProjectMcpServers'
 import {
   Badge,
   Banner,
@@ -102,6 +104,7 @@ const PROJECT_SECTIONS = [
   { key: 'instructions', icon: FileText },
   { key: 'memory', icon: Brain },
   { key: 'skills', icon: BookOpen },
+  { key: 'mcp', icon: PlugZap },
   { key: 'worktrees', icon: GitBranch },
 ] as const
 
@@ -178,6 +181,7 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
             </Card> : null}
             {key === 'memory' ? <ProjectMemory projectId={project.id} /> : null}
             {key === 'skills' ? <ProjectSkills projectId={project.id} isOwner={project.isOwner} /> : null}
+            {key === 'mcp' ? <ProjectMcpServers projectId={project.id} /> : null}
             {key === 'worktrees' ? <WorktreeBoard projectId={project.id} isRepository={project.git !== null} showEmpty /> : null}
           </div>
         </section>

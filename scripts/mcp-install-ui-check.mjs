@@ -166,6 +166,27 @@ try {
   await page.getByText(`Projet : ${project.name}`).waitFor()
   await page.screenshot({ path: join(shots, 'settings.png'), fullPage: true })
 
+  // Project page: the server sits in its own MCP section, where another one can be declared.
+  await page.goto(`${base}/p/${project.id}?section=mcp`)
+  const section = page.getByRole('region', { name: 'MCP', exact: true })
+  await section.getByText('gh_issues', { exact: true }).waitFor()
+  assert.equal(await section.getByText(`Projet : ${project.name}`).count(), 0)
+  await section.getByRole('button', { name: 'Déclarer un serveur' }).click()
+  await section.getByRole('textbox', { name: 'Nom', exact: true }).fill('local_tools')
+  await section.getByRole('textbox', { name: 'Commande' }).fill('npx')
+  const declared = page.waitForResponse(response => response.url().endsWith('/api/mcp/servers') && response.request().method() === 'POST')
+  await section.getByRole('button', { name: 'Déclarer le serveur' }).click()
+  assert.equal((await (await declared).json()).projectId, project.id)
+  await section.getByText('local_tools', { exact: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'project-section.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  await section.getByText('local_tools', { exact: true }).waitFor()
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'project section: horizontal overflow')
+  await page.screenshot({ path: join(shots, 'project-section-phone.png'), fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  assert.equal((await (await context.request.get(`${base}/api/mcp/servers`)).json()).servers.filter(entry => entry.projectId === project.id).length, 2)
+
   // A second proposal, declined: nothing written.
   await propose({ name: 'slack_notes', transport: { type: 'stdio', command: 'npx', args: ['-y', 'slack-mcp'], env: { SLACK_TOKEN: '{{secret.SLACK_TOKEN}}' } }, scope: 'global' })
   await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
@@ -175,7 +196,7 @@ try {
   await page.getByRole('button', { name: 'Refuser', exact: true }).click()
   assert.ok((await declined).ok())
   await page.getByText('Refusé', { exact: true }).waitFor()
-  assert.equal((await (await context.request.get(`${base}/api/mcp/servers`)).json()).servers.length, before + 1)
+  assert.equal((await (await context.request.get(`${base}/api/mcp/servers`)).json()).servers.length, before + 2)
   assert.equal((await (await context.request.get(`${base}/api/secrets`)).json()).secrets.some(entry => entry.name === 'SLACK_TOKEN'), false)
   await page.screenshot({ path: join(shots, 'declined.png') })
 
