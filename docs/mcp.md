@@ -62,9 +62,9 @@ disabling Sillage MCP keeps the native CLI naming behavior.
   plan, or input according to the shape described by `read_session`). The last
   four go through the daemon (`agent_requests`, no migration).
 
-Actions going through the daemon remain subject to its guards: at most six
-launches per hour, counted together for everything coming from outside sessions;
-the daemon must be running, otherwise the request expires.
+Actions going through the daemon remain subject to its guards: launch chains
+cannot exceed two levels, and the daemon must be running, otherwise the request
+expires.
 
 ## Personal discussions
 

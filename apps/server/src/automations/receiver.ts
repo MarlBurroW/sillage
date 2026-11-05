@@ -118,7 +118,7 @@ export class AutomationReceiver {
     }
 
     // Calls marked by a session count as launches by that session:
-    // `start_session` depth and rate limits apply.
+    // the `start_session` depth limit applies.
     if (decision.originConversationId) {
       const refusal = launchRefusal(this.ctx.db, decision.originConversationId)
       if (refusal) return respond(this.record(task, settings, event, deliveryId, 'chain_refused', refusal.reason, extras))

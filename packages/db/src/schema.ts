@@ -577,8 +577,8 @@ export const sessionWatches = sqliteTable(
  * continue (the new session ID, or available models after naming an invalid one). Only the
  * daemon owns the CLI catalog, runners and worktree creation.
  *
- * Kept after processing to record who launched what, allowing launch-chain depth and hourly
- * counts to be calculated.
+ * Kept after processing to record who launched what, allowing launch-chain depth to be
+ * calculated.
  */
 export const agentRequests = sqliteTable(
   'agent_requests',

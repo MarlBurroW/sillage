@@ -9,7 +9,7 @@ import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { memoryFileSchema, writeMemoryFileBodySchema, conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
 import { Cron } from 'croner'
-import { and, asc, count, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
@@ -106,13 +106,8 @@ const STALE_MS = 5 * 60 * 1000
 /** Maximum launch-chain depth: human sessions launch one session, which may launch one final session. Further levels drift from human oversight and create unintended swarms. */
 export const MAX_LAUNCH_DEPTH = 2
 
-/** Successful launches per session per hour. */
-export const LAUNCHES_PER_HOUR = 6
-
 /** Longer missions belong in files referenced by mission prompts. */
 export const MAX_LAUNCH_PROMPT_CHARS = 20000
-
-const HOUR_MS = 60 * 60 * 1000
 
 /** Minimum agent-created schedule interval. Interfaces allow tighter intervals because humans choose them; misunderstood per-minute tasks could consume quotas before discovery. */
 export const MIN_AGENT_SCHEDULE_MINUTES = 15
@@ -409,7 +404,7 @@ export class AgentRequests {
       )
     }
 
-    this.assertLaunchAllowed(requester, request.id)
+    this.assertLaunchAllowed(requester)
 
     const agent = this.parseAgent(payload.agent, requester.agent)
     const config = await this.launchConfig(agent, project, requester.userId, payload, requester.apiToken)
@@ -466,9 +461,9 @@ export class AgentRequests {
     return { text: lines.filter(Boolean).join('\n'), launchedId: row.id }
   }
 
-  /** Launch depth and rate safeguards. Walk ancestry through requests retaining created session IDs, avoiding conversation columns needed solely by this module. */
-  private assertLaunchAllowed(requester: Requester, requestId: string): void {
-    const refusal = launchRefusal(this.ctx.db, requester.id, requestId)
+  /** Launch depth safeguard. Walk ancestry through requests retaining created session IDs, avoiding conversation columns needed solely by this module. */
+  private assertLaunchAllowed(requester: Requester): void {
+    const refusal = launchRefusal(this.ctx.db, requester.id)
     if (refusal) throw new Refusal(refusal.message)
   }
 
@@ -1418,11 +1413,10 @@ function describeRun(
   return `“${label}” started in a panel terminal visible to the user. You cannot read its output: run the command in your shell if you need the result yourself.`
 }
 
-/** Why `from` cannot launch more sessions, or null: excessive chain depth or hourly launches. Shared with webhooks: session-marked calls count as its `webhook_launch`, applying identical limits whether chains use start_session or GitHub issues. */
+/** Why `from` cannot launch more sessions, or null: excessive chain depth. No limit on how many sessions one session launches: a user delegating a large job needs them all, and refusals only made agents wait. Shared with webhooks: session-marked calls count as its `webhook_launch`, applying the same limit whether chains use start_session or GitHub issues. */
 export function launchRefusal(
   db: AppContext['db'],
   from: string,
-  excludeRequestId?: string,
 ): { reason: DeliveryReason; message: string } | null {
   let depth = 0
   let current = from
@@ -1445,25 +1439,6 @@ export function launchRefusal(
     }
   }
 
-  const [recent] = db
-    .select({ total: count() })
-    .from(agentRequests)
-    .where(
-      and(
-        eq(agentRequests.conversationId, from),
-        inArray(agentRequests.kind, ['start_session', 'webhook_launch']),
-        eq(agentRequests.isError, false),
-        ...(excludeRequestId ? [ne(agentRequests.id, excludeRequestId)] : []),
-        gt(agentRequests.createdAt, Date.now() - HOUR_MS),
-      ),
-    )
-    .all()
-  if ((recent?.total ?? 0) >= LAUNCHES_PER_HOUR) {
-    return {
-      reason: { code: 'chain_rate', params: { max: LAUNCHES_PER_HOUR } },
-      message: `Refused: this session has already launched ${LAUNCHES_PER_HOUR} sessions in the last hour. Create cards with create_card for the rest; the user can start them.`,
-    }
-  }
   return null
 }
 

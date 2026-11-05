@@ -286,6 +286,7 @@ export const DELIVERY_REASON_CODES = [
   'coalesced',
   'circuit_open',
   'chain_depth',
+  // No longer produced: kept so deliveries recorded under the former hourly limit still display.
   'chain_rate',
   'script_skip',
   'script_timeout',

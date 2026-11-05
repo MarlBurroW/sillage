@@ -26,7 +26,7 @@ import type { AgentRegistry } from '../src/agents/registry.js'
 import { EventLog } from '../src/events/event-log.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
-import { AgentRequests, LAUNCHES_PER_HOUR, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
+import { AgentRequests, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
 import { adoptSessionTitle } from '../src/conversations/title.js'
 import { projectOverview } from '../src/agents/overview.js'
 
@@ -262,7 +262,7 @@ test('start_session links a card and moves it to in progress', async (t) => {
   assert.equal(db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()?.cardId, 'card')
 })
 
-test('start_session refuses deep launch chains and launch storms', async (t) => {
+test('start_session refuses deep launch chains but not many launches from one session', async (t) => {
   const { db, conversation, mcp } = await harness(t)
   for (const id of ['root', 'child', 'grandchild']) conversation(id)
   const launched = (from: string, to: string | null, at = Date.now()) =>
@@ -277,10 +277,9 @@ test('start_session refuses deep launch chains and launch storms', async (t) => 
   assert.equal(deep.isError, true)
   assert.match(deep.content[0]!.text, /Launch chains/)
 
-  for (let i = 0; i < LAUNCHES_PER_HOUR - 1; i++) launched('root', null)
-  const storm = await mcp('root', 'start_session', { prompt: 'une de trop' })
-  assert.equal(storm.isError, true)
-  assert.match(storm.content[0]!.text, /in the last hour/)
+  for (let i = 0; i < 20; i++) launched('root', null)
+  const many = await mcp('root', 'start_session', { prompt: 'encore une' })
+  assert.equal(many.isError, undefined, many.content[0]?.text)
 })
 
 test('create_card opens a todo card and says which session opened it', async (t) => {
