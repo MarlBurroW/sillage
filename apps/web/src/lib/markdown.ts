@@ -28,6 +28,16 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
  */
 md.linkify.set({ fuzzyLink: false })
 
+/**
+ * Agents cite local files as `[report](file:///Users/…/report.html)`. markdown-it refuses the
+ * `file:` scheme outright, so the whole link stayed as raw Markdown source. Accept it here: the
+ * file-path pass below turns such a target into an editor button or inert text, and no `file:`
+ * address ever reaches an `href` or `src`.
+ */
+const FILE_URL = /^file:/i
+const validateLink = md.validateLink
+md.validateLink = (url) => FILE_URL.test(url.trim()) || validateLink(url)
+
 /** Checkbox marker at the start of a list item, following GitHub conventions. */
 const TASK_MARKER = /^\[([ xX])\]\s+/
 
@@ -99,6 +109,8 @@ function pathCandidate(content: string): string | null {
  * protocol-relative, or is an anchor. Drive-qualified Windows paths are handled separately.
  */
 const NON_PATH_TARGET = /^(\w+:|\/\/|#)/
+/** `file:` prefix of a URL naming a file on this machine; another host names a network share. */
+const LOCAL_FILE_URL = /^file:(?:\/\/(?:localhost)?)?(?=\/)/i
 
 /**
  * Path carried by a link or image target, or null if it leads elsewhere. Decode markdown-it's
@@ -110,9 +122,10 @@ const NON_PATH_TARGET = /^(\w+:|\/\/|#)/
  */
 function pathTarget(target: string | null, base?: string): string | null {
   if (!target) return null
-  let decoded = target
+  // `file:///C:/…` leaves `/C:/…`, the URL-shaped drive path handled by `pathCandidate`.
+  let decoded = target.replace(LOCAL_FILE_URL, '')
   try {
-    decoded = decodeURI(target)
+    decoded = decodeURI(decoded)
   } catch {
     // Invalid escape sequence: use the target as written.
   }
@@ -189,8 +202,13 @@ function markFilePaths(md: MarkdownIt): void {
         }
 
         if (child.type === 'image') {
-          const path = pathTarget(child.attrGet('src'), env.base)
-          if (!path) continue
+          const src = child.attrGet('src')
+          const path = pathTarget(src, env.base)
+          if (!path) {
+            // A `file:` address the workspace cannot name must not become a browser request.
+            if (src && FILE_URL.test(src)) child.attrSet('data-sg-drop', '')
+            continue
+          }
           if (!mark(child, path)) continue
 
           // Use the workspace read URL as the source: a disk path is not a browser-accessible
@@ -205,9 +223,13 @@ function markFilePaths(md: MarkdownIt): void {
         }
 
         if (child.type === 'link_open') {
-          const path = pathTarget(child.attrGet('href'), env.base)
-          if (!path) continue
-          const known = mark(child, path)
+          const href = child.attrGet('href')
+          const path = pathTarget(href, env.base)
+          // As for images: an unusable `file:` target renders as text rather than as a link.
+          const dropped = !path && !!href && FILE_URL.test(href)
+          if (!path && !dropped) continue
+          if (dropped) child.attrSet('data-sg-drop', '')
+          const known = path ? mark(child, path) : false
           // Links cannot nest: the first closing token belongs to this link. Mark it too so
           // rendering knows which tag to close.
           const close = children.slice(i + 1).find((next) => next.type === 'link_close')

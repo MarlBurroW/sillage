@@ -107,6 +107,10 @@ try {
         'D:%5Cprojets%5Csample.mp3',
         '/home/demo/sample.mp3',
         'outputs/sample.mp3',
+        'file:///Users/demo/.horde/report.html',
+        'file:///D:/projets/sample.mp3',
+        'file://localhost/home/demo/sample.mp3',
+        'file://nas/share/sample.mp3',
         'https://example.com/sample.mp3',
         'mailto:demo@example.com',
         '//example.com/sample.mp3',
@@ -120,10 +124,14 @@ try {
     })
     assert.deepEqual(cases.map((c) => c.candidates), [
       [file], ['D:/projets/ai-studio/sample.mp3'], ['d:/projets/Voix française/sample.mp3'],
-      ['D:/projets/sample.mp3'], ['/home/demo/sample.mp3'], ['docs/outputs/sample.mp3'], [], [], [],
+      ['D:/projets/sample.mp3'], ['/home/demo/sample.mp3'], ['docs/outputs/sample.mp3'],
+      ['/Users/demo/.horde/report.html'], ['D:/projets/sample.mp3'], ['/home/demo/sample.mp3'],
+      [], [], [], [],
     ])
-    for (const item of cases.slice(0, 6)) assert.match(item.html, /data-sg-path=/)
-    for (const item of cases.slice(6)) assert.match(item.html, /target="_blank"/)
+    for (const item of cases.slice(0, 9)) assert.match(item.html, /data-sg-path=/)
+    // A file: URL on another host is no workspace path: text, never a link the browser could follow.
+    assert.equal(cases[9].html.trim(), '<p>Sample</p>')
+    for (const item of cases.slice(10)) assert.match(item.html, /target="_blank"/)
     assert.deepEqual(errors, [])
     console.log(`Windows file links → audio editor: ${width}px OK`)
     await context.close()
