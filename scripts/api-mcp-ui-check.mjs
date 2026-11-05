@@ -107,7 +107,7 @@ async function exercise(context, base, profile) {
     await page.screenshot({ path: join(shots, `${profile}-${name}-project-picker.png`), fullPage: true })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     await page.keyboard.press('Escape')
-    assert.ok(await projectTrigger.evaluate(element => element === document.activeElement))
+    await page.waitForFunction(element => element === document.activeElement, await projectTrigger.elementHandle())
     await projectTrigger.click()
     await picker.getByRole('checkbox', { name: 'Beta selector', exact: true }).click()
     assert.ok(!(await picker.getByRole('checkbox', { name: 'Beta selector', exact: true }).isChecked()))
