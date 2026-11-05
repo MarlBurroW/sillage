@@ -1,3 +1,4 @@
+import { ProjectSelector } from '../ProjectSelector'
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { McpServer } from '@sillage/protocol'
@@ -15,7 +16,6 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
-  Select,
   Switch,
 } from '../ui'
 import { formToTransport, mcpErrorOf, serverToForm, TransportFields, type McpFormState } from './McpServerForm'
@@ -37,13 +37,13 @@ export function ScopeSelect({ value, onChange }: { value: string; onChange: (val
   const projects = useProjects().data ?? []
   return (
     <div className="flex flex-col gap-1.5">
-      <Select
+      <ProjectSelector
         label={t('mcp.scope.label')}
         value={value}
         onChange={onChange}
         options={[
           { value: GLOBAL_SCOPE, label: t('mcp.scope.global') },
-          ...projects.map((project) => ({ value: project.id, label: t('mcp.scope.project', { name: project.name }) })),
+          ...projects.map((project) => ({ value: project.id, label: project.name, project })),
         ]}
       />
       <p className="text-xs text-ink-faint">{t('mcp.scope.hint')}</p>

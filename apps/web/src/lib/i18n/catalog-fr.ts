@@ -3,6 +3,7 @@ import { exportFr } from './export-fr'
 
 /** French catalog. Typed from English so missing keys fail the build. */
 export const fr: Catalog = {
+  'projectSelector.count': '{count} projets sélectionnés',
   ...exportFr,
   "concentration.enter": "Activer le mode concentration",
   "concentration.exit": "Quitter le mode concentration",

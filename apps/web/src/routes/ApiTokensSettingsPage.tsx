@@ -1,3 +1,4 @@
+import { ProjectSelector } from '../components/ProjectSelector'
 import { BookOpen, Check, Copy, KeyRound, Plug, Plus, Terminal, Trash2, Unplug } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import {
@@ -629,19 +630,8 @@ function CreateTokenCard({
             <Select label={t('apiTokens.projects.access')} value={projectMode} onChange={setProjectMode}
               options={[{ value: 'all', label: t('apiTokens.projects.all') }, { value: 'selected', label: t('apiTokens.projects.selected') }]} />
             {projectMode === 'selected' ? <>
-            <div className="flex flex-wrap gap-3">
-              {(projects ?? []).map((project) => (
-                <label key={project.id} className="flex items-center gap-2 text-sm text-ink">
-                  <input
-                    type="checkbox"
-                    checked={projectIds.includes(project.id)}
-                    onChange={() => setProjectIds(toggle(projectIds, project.id))}
-                    className="size-4 accent-accent"
-                  />
-                  {project.name}
-                </label>
-              ))}
-            </div>
+            <ProjectSelector multiple label={t('apiTokens.projects.label')} value={projectIds} onChange={setProjectIds}
+              options={(projects ?? []).map(project => ({ value: project.id, label: project.name, project }))} />
             {projectIds.length === 0 ? <p role="alert" className="text-xs text-critical">{t('apiTokens.projects.required')}</p> : null}
             </> : null}
           </fieldset>

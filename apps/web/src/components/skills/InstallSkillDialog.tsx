@@ -1,3 +1,4 @@
+import { ProjectSelector } from '../ProjectSelector'
 import { SkillLoading, SkillSpinner } from './SkillLoading'
 import { Check, Circle } from 'lucide-react'
 import { useState } from 'react'
@@ -5,7 +6,7 @@ import { Link } from 'react-router-dom'
 import { skillNameSchema, type LibrarySkillScope } from '@sillage/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { useInstallDiscoveredSkill, useSourcePreview, type DiscoverableSkill } from '../../lib/skill-sources'
-import { Banner, Select } from '../ui'
+import { Banner } from '../ui'
 import { useSkillPermissions } from './permissions'
 import { NameField, SkillDialog } from './SkillDialog'
 
@@ -43,8 +44,8 @@ export function InstallSkillDialog({ candidate, scope, projectId, onClose }: {
       <Link to={`/skills/${install.data.id}`} className="text-sm text-accent hover:underline">{t('skills.install.open')}</Link>
     </> : <>
       <p className="text-sm text-ink-soft">{t(candidate.kind === 'directory' ? 'skills.install.explanation' : 'skills.install.savedExplanation')}</p>
-      <Select label={t('skills.field.destination')} value={destination?.value ?? ''} disabled={install.isPending}
-        onChange={setTarget} options={permissions.destinations.map((entry) => ({ value: entry.value, label: entry.label }))} />
+      <ProjectSelector label={t('skills.field.destination')} value={destination?.value ?? ''} disabled={install.isPending}
+        onChange={setTarget} options={permissions.destinations} />
       <NameField value={name} onChange={setName} disabled={install.isPending} />
       {!destination ? <Banner>{t('skills.catalog.noDestination')}</Banner> : null}
       {candidate.kind === 'source' ? <>

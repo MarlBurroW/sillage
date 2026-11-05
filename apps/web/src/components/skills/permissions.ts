@@ -1,12 +1,11 @@
+import type { ProjectOption } from '../ProjectSelector'
 import type { LibrarySkillScope } from '@sillage/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects } from '../../lib/projects'
 import { useCurrentUser } from '../../lib/session'
 
 /** Writable scope offered by selectors. */
-export interface SkillDestination {
-  value: string
-  label: string
+export interface SkillDestination extends ProjectOption {
   scope: LibrarySkillScope
   projectId: string | null
 }
@@ -29,7 +28,8 @@ export function useSkillPermissions() {
     ...(isAdmin ? [{ value: 'global', label: t('skills.scope.global'), scope: 'global' as const, projectId: null }] : []),
     ...owned.map((project) => ({
       value: project.id,
-      label: t('skills.scope.projectNamed', { name: project.name }),
+      label: project.name,
+      project,
       scope: 'project' as const,
       projectId: project.id,
     })),

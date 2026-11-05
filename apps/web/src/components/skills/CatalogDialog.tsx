@@ -1,3 +1,4 @@
+import { ProjectSelector } from '../ProjectSelector'
 import { SkillLoading } from './SkillLoading'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Library, X } from 'lucide-react'
@@ -214,9 +215,9 @@ export function CatalogDialog({
           )}
           {current && !sourcesError ? <footer className="shrink-0 border-t border-line p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <Select label={t('skills.field.destination')} value={destination?.value ?? ''} disabled={busy}
+              <ProjectSelector label={t('skills.field.destination')} value={destination?.value ?? ''} disabled={busy}
                 onChange={(value) => { setTarget(value); setChecked(new Set()); setErrors({}); setCompleted(0) }}
-                options={permissions.destinations.map((entry) => ({ value: entry.value, label: entry.label }))} />
+                options={permissions.destinations} />
               <Button busy={busy && progress.total > 0} disabled={busy || checked.size === 0 || !destination} onClick={() => void installSelected()}>
                 {busy && progress.total > 0 ? t('skills.catalog.installing') : t('skills.batch.install', { count: checked.size })}
               </Button>

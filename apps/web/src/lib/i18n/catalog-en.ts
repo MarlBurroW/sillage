@@ -9,6 +9,7 @@
 import { exportEn } from './export-en'
 
 export const en = {
+  'projectSelector.count': '{count} projects selected',
   ...exportEn,
   "concentration.enter": "Enter focus mode",
   "concentration.exit": "Exit focus mode",

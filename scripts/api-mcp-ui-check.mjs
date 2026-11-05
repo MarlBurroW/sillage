@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -61,6 +61,18 @@ async function exercise(context, base, profile) {
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/agents/*/models*', route => route.fulfill({ json: catalog }))
   await context.request.patch(`${base}/api/me/settings`, { data: { onboarding: { pending: false } } })
+  const projects = []
+  for (const name of ['Alpha selector', 'Beta selector']) {
+    const workspacePath = join(data, `${profile}-${name}`)
+    await mkdir(workspacePath)
+    const response = await context.request.post(`${base}/api/projects`, { data: { name, workspacePath, visibility: 'private' } })
+    assert.equal(response.status(), 201, await response.text())
+    projects.push(await response.json())
+  }
+  await page.route('**/api/projects', route => route.fulfill({ json: [
+    ...projects,
+    ...Array.from({ length: 45 }, (_, index) => ({ ...projects[0], id: `extra-${index}`, name: `Project with a long descriptive name ${index}` })),
+  ] }))
   for (const [name, viewport] of [['wide', { width: 1920, height: 1080 }], ['laptop', { width: 1440, height: 1000 }], ['phone', { width: 390, height: 844 }]]) {
     await page.setViewportSize(viewport)
     await page.goto(`${base}/settings/api`)
@@ -76,6 +88,30 @@ async function exercise(context, base, profile) {
     await page.getByRole('button', { name: 'Créer une clé', exact: true }).click()
     await page.getByRole('heading', { name: 'Nouvelle clé d’accès' }).waitFor()
     await page.getByRole('textbox', { name: 'Nom', exact: true }).fill(`${profile} external client`)
+    await page.getByRole('combobox', { name: 'Accès aux projets', exact: true }).click()
+    await page.getByRole('option', { name: 'Seulement les projets sélectionnés', exact: true }).click()
+    const projectTrigger = page.getByRole('button', { name: 'Projets', exact: true })
+    await projectTrigger.click()
+    const picker = page.getByRole('dialog', { name: 'Projets', exact: true })
+    const search = picker.getByRole('textbox')
+    await search.fill('zzzzzzzzzz')
+    await picker.getByRole('status').filter({ hasText: 'Aucun' }).waitFor()
+    await search.fill('Alpha selector')
+    await search.press('Enter')
+    assert.ok(await picker.getByRole('checkbox', { name: 'Alpha selector', exact: true }).isChecked())
+    await search.fill('Beta selector')
+    await search.press('ArrowDown')
+    await page.keyboard.press('Space')
+    assert.ok(await picker.getByRole('checkbox', { name: 'Beta selector', exact: true }).isChecked())
+    await search.fill('')
+    await page.screenshot({ path: join(shots, `${profile}-${name}-project-picker.png`), fullPage: true })
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    await page.keyboard.press('Escape')
+    assert.ok(await projectTrigger.evaluate(element => element === document.activeElement))
+    await projectTrigger.click()
+    await picker.getByRole('checkbox', { name: 'Beta selector', exact: true }).click()
+    assert.ok(!(await picker.getByRole('checkbox', { name: 'Beta selector', exact: true }).isChecked()))
+    await page.keyboard.press('Escape')
     assert.ok(await page.getByRole('checkbox', { name: /^Outils de projet/ }).isChecked())
     await page.getByRole('combobox', { name: 'Modèles autorisés', exact: true }).click()
     await page.getByRole('option', { name: 'Seulement la sélection' }).click()
@@ -94,6 +130,7 @@ async function exercise(context, base, profile) {
   const response = await created
   assert.equal(response.status(), 201, await response.text())
   const token = await response.json()
+  assert.deepEqual(token.token.projectIds, [projects[0].id])
   assert.deepEqual(token.token.executionPolicy.agents, [{ agent: 'claude', models: ['alpha', 'beta'], efforts: ['low'], maxBudgetUsd: 2 }])
   await page.getByRole('heading', { name: 'Votre jeton', exact: true }).waitFor()
   assert.ok(await page.getByText(`Authorization: Bearer ${token.secret}`, { exact: true }).isVisible())
@@ -120,6 +157,22 @@ async function exercise(context, base, profile) {
   assert.deepEqual(mcpTools, restTools)
   const access = await (await context.request.get(`${base}/api/v1/access`, { headers })).json()
   assert.deepEqual(access.executionPolicy.agents[0].models, ['alpha'])
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await page.goto(`${base}/settings/mcp`)
+    await page.getByRole('button', { name: 'Déclarer un serveur' }).first().click()
+    const scope = page.getByRole('button', { name: 'Portée', exact: true })
+    await scope.click()
+    let picker = page.getByRole('dialog', { name: 'Portée', exact: true })
+    await picker.getByRole('textbox').fill('Alpha selector')
+    await picker.getByRole('textbox').press('Enter')
+    assert.match(await scope.innerText(), /Alpha selector/)
+    await scope.click()
+    picker = page.getByRole('dialog', { name: 'Portée', exact: true })
+    assert.equal(await picker.getByRole('textbox').inputValue(), '')
+    await picker.getByRole('radio', { name: 'Toute l’instance', exact: true }).click()
+    assert.match(await scope.innerText(), /Toute l’instance/)
+  }
   assert.deepEqual(errors, [])
   await context.close()
 }

@@ -1,3 +1,4 @@
+import { ProjectSelector } from '../components/ProjectSelector'
 import { conversationPath } from '@sillage/protocol'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Bot, Play, RefreshCw, RotateCw, Server, Square, SquareTerminal, Unplug, X } from 'lucide-react'
@@ -5,8 +6,9 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { ServiceAppAction, ServiceAppDto, ServiceDto, ServicesDto } from '@sillage/protocol'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { Badge, Banner, Button, EmptyState, IconButton, Select } from '../components/ui'
+import { Badge, Banner, Button, EmptyState, IconButton } from '../components/ui'
 import { api } from '../lib/api'
+import { useProjects } from '../lib/projects'
 import { formatBytes } from '../lib/attachments'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 
@@ -15,6 +17,7 @@ type Attributed = Pick<ServiceDto, 'projectId' | 'projectName' | 'conversationId
 export function ServicesPage() {
   const t = useTranslate()
   const client = useQueryClient()
+  const { data: visibleProjects = [] } = useProjects()
   const [project, setProject] = useState('all')
   const query = useQuery({
     queryKey: ['services'],
@@ -41,7 +44,7 @@ export function ServicesPage() {
   const inProject = (entry: { projectId: string | null }) => project === 'all' || (entry.projectId ?? 'unknown') === project
   const options = [
     { value: 'all', label: t('services.allProjects') },
-    ...projects.map(([value, label]) => ({ value, label })),
+    ...projects.map(([value, label]) => ({ value, label, project: visibleProjects.find(entry => entry.id === value) })),
     ...(owners.some((entry) => !entry.projectId) ? [{ value: 'unknown', label: t('services.noProject') }] : []),
   ]
   // Keep filters clearable when a project's last service has just stopped.
@@ -81,7 +84,7 @@ export function ServicesPage() {
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <p className="max-w-xl text-sm text-ink-soft">{t('services.description')}</p>
-            <Select value={project} onChange={setProject} options={options} placeholder={t('services.allProjects')} className="sm:w-56 sm:shrink-0" />
+            <ProjectSelector value={project} onChange={setProject} options={options} label={t('apiTokens.projects.label')} className="sm:w-56 sm:shrink-0" />
           </div>
           {query.error ? <Banner>{t('services.loadError')} {query.error.message}</Banner> : null}
           {stop.error ? <Banner>{stop.error.message}</Banner> : null}

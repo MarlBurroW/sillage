@@ -1,3 +1,4 @@
+import { ProjectSelector } from '../components/ProjectSelector'
 import { SkillLoading } from '../components/skills/SkillLoading'
 import {
   ArrowLeft,
@@ -39,7 +40,6 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
-  Select,
 } from '../components/ui'
 import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
@@ -315,11 +315,11 @@ function DestinationSelect({
 }) {
   const t = useTranslate()
   return (
-    <Select
+    <ProjectSelector
       label={t('skills.field.destination')}
       value={value}
       onChange={onChange}
-      options={destinations.map((destination) => ({ value: destination.value, label: destination.label }))}
+      options={destinations}
     />
   )
 }
