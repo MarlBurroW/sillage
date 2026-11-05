@@ -175,7 +175,15 @@ The periodic cleanup removes expired, revoked and orphaned files.
 - **MCP servers** declared once and handed to the agents that should get them.
   A server that was down when the session started can be reconnected from the MCP
   panel without restarting the session; Claude Code also retries failed servers at
-  the start of each turn.
+  the start of each turn. Global servers live in the settings and project servers on
+  the project page. An agent can propose a server in the conversation: nothing is
+  written until you confirm the form and type its secrets yourself, and they never
+  reach the journal or the model.
+- **Benchmarks.** Under **Discussions**, run one prompt across models, effort levels
+  and CLIs, with optional starting files and a check script. Runs start without
+  personal memory or platform prompt, so every variant receives the same text.
+  Compare measurements, outputs and pass rates, rate runs blind, chart a measure,
+  export CSV or JSON, and rerun a benchmark to follow it over time.
 - **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, with global and
   project skills managed from the interface, with visible progress while searching,
   installing or updating. [Skill library](skill-library.md).
