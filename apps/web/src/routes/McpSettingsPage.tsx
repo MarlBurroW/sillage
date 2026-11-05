@@ -2,7 +2,7 @@ import { Plug, Plus } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState } from '../components/ui'
-import { GLOBAL_SCOPE, McpServerCard, ScopeSelect } from '../components/mcp/McpServerCard'
+import { McpServerCard } from '../components/mcp/McpServerCard'
 import { EMPTY_MCP_FORM, formToTransport, mcpErrorOf, TransportFields, type McpFormState } from '../components/mcp/McpServerForm'
 import { ListHeading, SectionHeader } from './SettingsPage'
 import { useTranslate } from '../lib/i18n'
@@ -10,28 +10,22 @@ import { useCreateMcpServer, useMcpServers } from '../lib/mcp'
 import { useCurrentUser } from '../lib/session'
 
 /**
- * MCP server registry: instance-wide servers and servers scoped to one project, in a single list
- * so the page keeps one clear end. Scope shows as a badge on each row; the form chooses it.
+ * Global MCP servers, written by administrators. A project's servers are managed on its own page
+ * by its owner, like skills: the settings hold only what concerns every project.
  */
-
 export function McpSettingsPage() {
   const t = useTranslate()
   const { data: me } = useCurrentUser()
   const isAdmin = me?.isAdmin === true
   const { data } = useMcpServers()
-  // Instance-wide first: they concern everyone; project servers follow, grouped by their order.
-  const servers = [...(data?.servers ?? [])].sort((a, b) =>
-    Number(a.projectId !== null) - Number(b.projectId !== null) || a.name.localeCompare(b.name),
-  )
+  const servers = (data?.servers ?? []).filter((server) => server.projectId === null)
 
   const createServer = useCreateMcpServer()
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState<McpFormState>(EMPTY_MCP_FORM)
-  const [scope, setScope] = useState(GLOBAL_SCOPE)
 
   const openForm = () => {
     setForm(EMPTY_MCP_FORM)
-    setScope(GLOBAL_SCOPE)
     createServer.reset()
     setAdding(true)
   }
@@ -39,7 +33,7 @@ export function McpSettingsPage() {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     createServer.mutate(
-      { name: form.name.trim(), enabled: true, transport: formToTransport(form), projectId: scope || null },
+      { name: form.name.trim(), enabled: true, transport: formToTransport(form), projectId: null },
       { onSuccess: () => setAdding(false) },
     )
   }
@@ -55,6 +49,11 @@ export function McpSettingsPage() {
       <SectionHeader title={t('mcp.section.title')} description={t('mcp.section.description')} />
 
       <Banner tone="info">{t('mcp.banner')}</Banner>
+      {/*
+       * Why a global server is not simply on everywhere, unlike a global skill, and where the
+       * project ones went: the two questions this page raises once scopes exist.
+       */}
+      <p className="text-sm text-ink-faint">{t('mcp.activation')}</p>
       {/*
        * Two meanings of MCP: here, servers Sillage provides to agents; under “API and MCP”, the
        * server Sillage exposes. Explain this so users do not search here for external Codex
@@ -82,7 +81,6 @@ export function McpSettingsPage() {
             <CardBody>
               <form onSubmit={submit} className="flex flex-col gap-4">
                 <TransportFields form={form} onChange={setForm} autoFocus />
-                <ScopeSelect value={scope} onChange={setScope} />
                 {mcpErrorOf(createServer.error) ? <Banner>{mcpErrorOf(createServer.error)}</Banner> : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="submit" disabled={createServer.isPending}>

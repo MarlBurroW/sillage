@@ -103,8 +103,8 @@ export function McpControl({
         <p className="px-2.5 py-2 text-xs text-ink-faint">{t('composer.mcp.empty')}</p>
       ) : (
         <>
-          {/* Headings are needed only to distinguish sections; without CLI servers one section needs no name. */}
-          {external.length > 0 || ofProject.length > 0 ? <MenuLabel>{t('composer.mcp.sillage')}</MenuLabel> : null}
+          {/* Headings are needed only to distinguish sections; a lone section needs no name. */}
+          {global.length > 0 && (external.length > 0 || ofProject.length > 0) ? <MenuLabel>{t('composer.mcp.global')}</MenuLabel> : null}
           {global.map((server) => (
             <CheckboxItem
               key={server.id}
@@ -118,12 +118,14 @@ export function McpControl({
               </span>
             </CheckboxItem>
           ))}
+          {/* Why these are not simply on, unlike global skills. */}
+          {global.length > 0 ? <p className="px-2.5 pb-1 text-[0.6875rem] text-ink-faint">{t('composer.mcp.global.hint')}</p> : null}
         </>
       )}
 
       {ofProject.length > 0 ? (
         <>
-          <Separator />
+          {global.length > 0 ? <Separator /> : null}
           <MenuLabel>{t('composer.mcp.project')}</MenuLabel>
           {ofProject.map((server) => (
             <div

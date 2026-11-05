@@ -858,7 +858,7 @@ const TOOLS = [
           type: 'string',
           enum: ['project', 'global'],
           description:
-            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account.",
+            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account, project writes the project owner's.",
         },
       },
     },
@@ -880,7 +880,7 @@ const TOOLS = [
           type: 'string',
           enum: ['project', 'global'],
           description:
-            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account.",
+            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account, project writes the project owner's.",
         },
       },
       required: ['old_text', 'new_text'],
@@ -898,7 +898,7 @@ const TOOLS = [
           type: 'string',
           enum: ['project', 'global'],
           description:
-            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account.",
+            "`project` (default) for this project; `global` for all projects. Global writes require an administrator account, project writes the project owner's.",
         },
       },
       required: ['content'],
@@ -1975,6 +1975,18 @@ function projectInstructionsMode() {
   return { mode: hasFile ? 'repo' : 'sillage', chosen: false }
 }
 
+/**
+ * Whether the acting account owns the served project. Project configuration (instructions, image)
+ * belongs to its owner; members of a shared project work in it without changing it. Agent-side
+ * twin of `assertScopeWriter` in `apps/server/src/http/scope-access.ts`, with which it must agree.
+ */
+function actingAccountOwnsProject() {
+  if (!PROJECT_ID) return false
+  const actor = USER?.id ?? (CURRENT_CONVERSATION ? db.prepare('SELECT user_id AS userId FROM conversations WHERE id = ?').get(CURRENT_CONVERSATION)?.userId : null)
+  const owner = db.prepare('SELECT owner_id AS ownerId FROM projects WHERE id = ?').get(PROJECT_ID)?.ownerId
+  return Boolean(actor) && actor === owner
+}
+
 /** Whether the account that opened this conversation is an administrator. */
 function conversationOwnerIsAdmin() {
   if (!CURRENT_CONVERSATION) return false
@@ -2046,6 +2058,12 @@ function instructionsTarget(args, writing) {
     return {
       refusal:
         "This project keeps instructions in its repository's `AGENTS.md` or `CLAUDE.md`: read and edit them with your file tools. SILLAGE.md tools apply only to global instructions (`scope: global`).",
+    }
+  }
+  if (writing && !actingAccountOwnsProject()) {
+    return {
+      refusal:
+        "This project's SILLAGE.md section belongs to the project owner, and this session runs for another account. Tell the user: the owner can record the instruction, here or in the project page.",
     }
   }
   return { scope, projectId: PROJECT_ID, fixMode: !chosen }
@@ -2770,6 +2788,9 @@ async function callTool(name, args) {
   }
 
   if (name === 'set_project_image') {
+    if (!actingAccountOwnsProject()) {
+      return { ...text("A project's image belongs to its owner, and this session runs for another account. Leave it as it is."), isError: true }
+    }
     const path = typeof args?.path === 'string' ? args.path.trim() : ''
     if (!path) return { ...text('The `path` parameter is required.'), isError: true }
     const provisional = args?.provisional === true

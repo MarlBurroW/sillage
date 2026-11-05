@@ -435,6 +435,13 @@
       "when": 1793832442006,
       "tag": "0061_keen_nico_minoru",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1793838852605,
+      "tag": "0062_modern_george_stacy",
+      "breakpoints": true
     }
   ]
 }

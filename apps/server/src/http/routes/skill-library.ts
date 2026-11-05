@@ -21,8 +21,9 @@ import { readSkillArchive } from '../../skill-library/archive.js'
 import { scanLocalSkills } from '../../skill-library/local-scan.js'
 import type { SkillLibrary } from '../../skill-library/store.js'
 import type { AppContext } from '../context.js'
-import { badRequest, forbidden, notFound } from '../errors.js'
+import { badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { assertScopeWriter } from '../scope-access.js'
 import { visibleProject } from './projects.js'
 
 /**
@@ -196,15 +197,9 @@ export function skillAccess(ctx: AppContext, library: SkillLibrary) {
     return project
   }
 
+  /** The scope rule shared with instructions, memory and MCP servers (`scope-access.ts`). */
   const assertCanWrite = (user: UserRow, scope: LibrarySkillScope, projectId: string | null): void => {
-    if (scope === 'global') {
-      if (!user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
-      return
-    }
-    const project = requireVisibleProject(projectId ?? '', user)
-    if (project.ownerId !== user.id) {
-      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
-    }
+    assertScopeWriter(ctx, user, scope === 'global' ? null : (projectId ?? ''))
   }
 
   /** Project skills invisible to the caller are reported as nonexistent, not forbidden. */

@@ -19,22 +19,17 @@ import {
   writeInstructions,
 } from '../../instructions/store.js'
 import type { AppContext } from '../context.js'
-import { forbidden, notFound } from '../errors.js'
+import { notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { assertScopeWriter, canWriteScope } from '../scope-access.js'
 import { visibleProject } from './projects.js'
 
-/** SILLAGE.md edited through the interface. Permissions match the skill library: everyone reads global instructions, only administrators write them because they enter every session; project members read project instructions and owners edit them. Writes affect subsequently started sessions. Claude records its system prompt at the first exchange and reuses it when resuming; open sessions retain their version until their next compaction. */
+/** SILLAGE.md edited through the interface. Permissions follow the scope rule (`scope-access.ts`): everyone reads global instructions, only administrators write them because they enter every session; project members read project instructions and owners edit them. Writes affect subsequently started sessions. Claude records its system prompt at the first exchange and reuses it when resuming; open sessions retain their version until their next compaction. */
 export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext): void {
   const requireProject = (projectId: string, user: UserRow): ProjectRow => {
     const project = visibleProject(ctx, projectId, user.id)
     if (!project) throw notFound('project_not_found', 'Project not found.')
     return project
-  }
-
-  const assertOwner = (project: ProjectRow, user: UserRow): void => {
-    if (project.ownerId !== user.id) {
-      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
-    }
   }
 
   const globalDto = (user: UserRow): InstructionsDto => {
@@ -43,7 +38,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
       content: row?.content ?? '',
       updatedAt: row?.updatedAt ?? null,
       author: instructionsAuthor(ctx.db, row, user.id),
-      canEdit: user.isAdmin,
+      canEdit: canWriteScope(user, null),
     }
   }
 
@@ -56,7 +51,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
       content: row?.content ?? '',
       updatedAt: row?.updatedAt ?? null,
       author: instructionsAuthor(ctx.db, row, user.id),
-      canEdit: project.ownerId === user.id,
+      canEdit: canWriteScope(user, project),
       mode: resolveInstructionsMode(project),
       modeChosen: project.instructionsMode !== null,
       repoFiles: await readRepoInstructionFiles(project.workspacePath),
@@ -69,7 +64,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.put('/api/instructions', async (request): Promise<InstructionsDto> => {
     const user = requireUser(request)
-    if (!user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
+    assertScopeWriter(ctx, user, null)
     const body = updateInstructionsBodySchema.parse(request.body)
     writeInstructions(ctx.db, null, body.content, user.id)
     return globalDto(user)
@@ -85,7 +80,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
   app.patch('/api/projects/:id/instructions', async (request): Promise<ProjectInstructionsDto> => {
     const user = requireUser(request)
     let project = requireProject((request.params as { id: string }).id, user)
-    assertOwner(project, user)
+    assertScopeWriter(ctx, user, project.id)
     const body = updateProjectInstructionsBodySchema.parse(request.body)
 
     const mode =
@@ -104,7 +99,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
     async (request): Promise<RepoInstructionFileDto> => {
       const user = requireUser(request)
       const project = requireProject((request.params as { id: string }).id, user)
-      assertOwner(project, user)
+      assertScopeWriter(ctx, user, project.id)
       const body = writeRepoInstructionsBodySchema.parse(request.body)
       await writeFile(join(project.workspacePath, body.path), body.content, 'utf8')
       return { path: body.path, content: body.content }

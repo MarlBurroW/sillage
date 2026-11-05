@@ -135,11 +135,25 @@ enabled in the requesting session (live for Claude, after the turn for the other
 
 Scopes: a **project** server reaches every conversation of its project without being
 ticked in the composer and no other project; a **global** server is offered to every
-conversation and ticked per conversation. Names are unique across both scopes, since a
-conversation receives both lists in one name-keyed table. Installing needs the same
-right as declaring a server by hand (administrator); anyone owning the conversation
-may decline. Code: `apps/server/src/agents/mcp-install.ts`, the answer route in
-`http/routes/mcp.ts`, the form in `apps/web/src/components/chat/McpInstallPrompt.tsx`.
+conversation and ticked per conversation, because each one costs a process and context.
+Names are unique across what one conversation receives, global servers plus its
+project's, so two projects may each have their `postgres`; same rule as library skills.
+
+Rights follow the one rule for scoped configuration (`apps/server/src/http/scope-access.ts`):
+what is global belongs to administrators, what is in a project to its owner, and members
+of a shared project read its configuration without changing it. Installing therefore
+takes the project owner for the project scope and an administrator for the global one;
+whoever the proposal is shown to may decline it. A typed secret is stored when the store
+lacks it; replacing a stored one stays with administrators. The agent tools answer the
+same way for the account their session runs for: `edit_instructions` and
+`write_instructions` in project scope and `set_project_image` take the project owner's
+session, global instructions an administrator's (`actingAccountOwnsProject` in
+`sillage-mcp.mjs`, the twin of `assertScopeWriter`). Covered by
+`apps/server/test/scope-rule.test.ts`.
+
+Code: `apps/server/src/agents/mcp-install.ts`, the answer route in `http/routes/mcp.ts`,
+the form in `apps/web/src/components/chat/McpInstallPrompt.tsx`, the project page section
+in `components/mcp/ProjectMcpServers.tsx`.
 
 ## Referencing sessions
 

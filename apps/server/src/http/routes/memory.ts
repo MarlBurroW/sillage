@@ -9,8 +9,9 @@ import {
   writeMemoryFile,
 } from '../../memory/store.js'
 import type { AppContext } from '../context.js'
-import { badRequest, forbidden, notFound } from '../errors.js'
+import { badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { assertScopeWriter, canWriteScope } from '../scope-access.js'
 import { visibleProject } from './projects.js'
 
 /** Project memory read and edited through the interface. Members can read it and owners can edit it, like instructions. Agents write directly instead: Claude through the directory, Codex through the MCP server. */
@@ -19,12 +20,6 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
     const project = visibleProject(ctx, projectId, user.id)
     if (!project) throw notFound('project_not_found', 'Project not found.')
     return project
-  }
-
-  const assertOwner = (project: ProjectRow, user: UserRow): void => {
-    if (project.ownerId !== user.id) {
-      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
-    }
   }
 
   const requireFile = (params: unknown): string => {
@@ -55,14 +50,14 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
       dir,
       files: await listMemory(dir),
       importedFrom: readImportMarker(dir),
-      canEdit: project.ownerId === user.id,
+      canEdit: canWriteScope(user, project),
     }
   })
 
   app.put('/api/projects/:id/memory/:file', async (request, reply) => {
     const user = requireUser(request)
     const project = requireProject((request.params as { id: string }).id, user)
-    assertOwner(project, user)
+    assertScopeWriter(ctx, user, project.id)
     assertSillageMemory(project)
     const body = writeMemoryFileBodySchema.parse(request.body)
     await writeMemoryFile(dirOf(project), requireFile(request.params), body.content)
@@ -72,7 +67,7 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
   app.delete('/api/projects/:id/memory/:file', async (request, reply) => {
     const user = requireUser(request)
     const project = requireProject((request.params as { id: string }).id, user)
-    assertOwner(project, user)
+    assertScopeWriter(ctx, user, project.id)
     assertSillageMemory(project)
     await deleteMemoryFile(dirOf(project), requireFile(request.params))
     return reply.status(204).send()

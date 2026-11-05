@@ -1,11 +1,17 @@
 import type { FastifyInstance } from 'fastify'
 import { mcpServers } from '@sillage/db'
-import { putSecretBodySchema, secretNameSchema, type SecretListDto } from '@sillage/protocol'
+import {
+  checkSecretsBodySchema,
+  putSecretBodySchema,
+  secretNameSchema,
+  type SecretListDto,
+  type StoredSecretsDto,
+} from '@sillage/protocol'
 import { secretsUsedBy } from '../../agents/mcp-registry.js'
 import type { SecretStore } from '../../secrets/store.js'
 import type { AppContext } from '../context.js'
 import { notFound } from '../errors.js'
-import { requireAdmin } from '../require-user.js'
+import { requireAdmin, requireUser } from '../require-user.js'
 
 /**
  * Instance secret store.
@@ -46,6 +52,17 @@ export function registerSecretRoutes(
         usedBy: usedBy.get(secret.name) ?? [],
       })),
     }
+  })
+
+  /**
+   * Which of the given names the store holds. Open to every account, unlike the list: a project
+   * owner installing a server that references a secret must know whether a value is still needed,
+   * and learns nothing beyond names they already typed.
+   */
+  app.post('/api/secrets/check', async (request): Promise<StoredSecretsDto> => {
+    requireUser(request)
+    const { names } = checkSecretsBodySchema.parse(request.body)
+    return { stored: names.filter((name) => secrets.has(name)) }
   })
 
   /**

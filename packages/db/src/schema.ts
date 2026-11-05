@@ -1476,17 +1476,18 @@ export const userSettings = sqliteTable('user_settings', {
 export const mcpServers = sqliteTable('mcp_servers', {
   id: text('id').primaryKey(),
   /**
-   * Unique: the name is the CLI-side key; two servers sharing a name would silently overwrite
-   * each other in the table passed to the CLI.
+   * The CLI-side key: two servers sharing a name would silently overwrite each other in the table
+   * passed to the CLI. Unique across what one conversation receives, global servers plus its
+   * project's, which no index can express since SQLite treats `NULL` values as distinct: the
+   * service enforces it, like library skills.
    */
-  name: text('name').notNull().unique(),
+  name: text('name').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /** JSON McpTransport: shape depends on transport; the column need not know it. */
   transport: text('transport').notNull(),
   /**
-   * Null for instance-wide servers. A project server reaches every conversation of its project
-   * without per-conversation selection, and no other project. Names stay unique across both
-   * scopes because a conversation receives both lists in one name-keyed table.
+   * Null for global servers. A project server reaches every conversation of its project without
+   * per-conversation selection, and no other project.
    */
   projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull(),

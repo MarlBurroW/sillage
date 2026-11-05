@@ -181,7 +181,7 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
             </Card> : null}
             {key === 'memory' ? <ProjectMemory projectId={project.id} /> : null}
             {key === 'skills' ? <ProjectSkills projectId={project.id} isOwner={project.isOwner} /> : null}
-            {key === 'mcp' ? <ProjectMcpServers projectId={project.id} /> : null}
+            {key === 'mcp' ? <ProjectMcpServers projectId={project.id} isOwner={project.isOwner} /> : null}
             {key === 'worktrees' ? <WorktreeBoard projectId={project.id} isRepository={project.git !== null} showEmpty /> : null}
           </div>
         </section>
@@ -302,6 +302,8 @@ function ProjectDefaults({
   const { groups, mcp, catalogError } = useAgentSettings({
     config: preset ?? account,
     onConfigChange: write,
+    // The project's own servers appear too, always on: the defaults only choose among global ones.
+    projectId,
   })
 
   const agents: Choice<AgentKind>[] = agentKindSchema.options.map((value) => ({

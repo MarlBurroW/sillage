@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm'
 import { conversations, mcpServers, openDatabase, projects, runMigrations, users } from '@sillage/db'
 import { DEFAULT_CLAUDE_CONFIG, parseAgentConfig } from '@sillage/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
-import { answerMcpInstall, pendingMcpInstall } from '../src/agents/mcp-install.js'
+import { answerMcpInstall, mcpServerNameClash, pendingMcpInstall } from '../src/agents/mcp-install.js'
 import { resolveMcpServers } from '../src/agents/mcp-registry.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
@@ -71,6 +71,10 @@ async function harness(t: TestContext) {
   return { db, dbPath, log, secrets, sessions, sent, reloaded, conversation, mcp }
 }
 
+/** Rights are the route's concern (`scope-rule.test.ts`); here only secret replacement differs. */
+const ADMIN = { id: 'owner', canReplaceSecrets: true }
+const OWNER = { id: 'owner', canReplaceSecrets: false }
+
 const github = {
   name: 'github',
   transport: { type: 'http', url: 'https://api.githubcopilot.com/mcp/', headers: { Authorization: 'Bearer {{secret.GITHUB_TOKEN}}' } },
@@ -116,22 +120,24 @@ test('installing stores the typed secret, scopes the server and tells the agent'
 
   // A value is required for a secret the store lacks.
   await assert.rejects(
-    answerMcpInstall({ db, log, secrets, sessions }, row, pending, { decision: 'installed', name: 'github', transport: pending.transport, scope: 'project', secrets: {} }, 'owner'),
-    /Missing value for GITHUB_TOKEN/,
+    answerMcpInstall({ db, log, secrets, sessions }, row, pending, { decision: 'installed', name: 'github', transport: pending.transport, scope: 'project', secrets: {} }, ADMIN),
+    { code: 'mcp_install_secret_missing', params: { names: 'GITHUB_TOKEN' } },
   )
 
   const server = await answerMcpInstall(
     { db, log, secrets, sessions }, row, pending,
-    { decision: 'installed', name: 'gh', transport: pending.transport, scope: 'project', secrets: { GITHUB_TOKEN: 'ghp_typed_by_user' } },
-    'owner',
+    // A value for a secret the transport does not reference is not stored.
+    { decision: 'installed', name: 'gh', transport: pending.transport, scope: 'project', secrets: { GITHUB_TOKEN: 'ghp_typed_by_user', UNRELATED: 'x' } },
+    OWNER,
   )
+  assert.equal(secrets.has('UNRELATED'), false)
   assert.ok(server)
   assert.equal(server.name, 'gh')
   assert.equal(server.projectId, 'project')
   assert.equal(secrets.resolve('GITHUB_TOKEN'), 'ghp_typed_by_user')
   assert.equal(pendingMcpInstall(log, 'self'), null)
   assert.deepEqual(reloaded, ['self'])
-  assert.match(sent[0]!.text, /“gh” is installed for this project.*renamed from “github”/)
+  assert.match(sent[0]!.text, /“gh” is installed in project scope.*renamed from “github”/)
   // The secret value never reaches the journal.
   const journal = log.read('self', 0, 100).map((entry) => JSON.stringify(entry.event)).join('\n')
   assert.doesNotMatch(journal, /ghp_typed_by_user/)
@@ -164,6 +170,14 @@ test('installing stores the typed secret, scopes the server and tells the agent'
   })()
   assert.match(elsewhere.content[0]!.text, /No MCP server is declared/)
 
+  // Names are unique across what one conversation receives: another project may reuse “gh”, a
+  // global server may not, and this project may not take a global name.
+  assert.equal(mcpServerNameClash(db, 'gh', 'other'), null)
+  assert.equal(mcpServerNameClash(db, 'gh', 'project'), 'taken')
+  assert.equal(mcpServerNameClash(db, 'gh', null), 'taken')
+  assert.equal(mcpServerNameClash(db, 'gh', 'project', server.id), null)
+  assert.equal(mcpServerNameClash(db, 'sillage', 'other'), 'reserved')
+
   // A deleted project takes its servers with it: nothing else would ever reach them.
   db.update(conversations).set({ projectId: 'other' }).where(eq(conversations.projectId, 'project')).run()
   db.delete(projects).where(eq(projects.id, 'project')).run()
@@ -178,19 +192,32 @@ test('a global installation is selected in the requesting conversation and decli
   const pending = pendingMcpInstall(log, 'self')!
   assert.equal(pending.scope, 'global')
 
-  const server = await answerMcpInstall({ db, log, secrets, sessions }, row, pending, { decision: 'installed', name: 'files', transport: pending.transport, scope: 'global', secrets: {} }, 'owner')
+  const server = await answerMcpInstall({ db, log, secrets, sessions }, row, pending, { decision: 'installed', name: 'files', transport: pending.transport, scope: 'global', secrets: {} }, ADMIN)
   assert.ok(server)
   assert.equal(server.projectId, null)
   assert.deepEqual(parseAgentConfig(db.select().from(conversations).where(eq(conversations.id, 'self')).get()!.config).mcpServers, [server.id])
   assert.equal(db.select().from(mcpServers).all().length, 1)
 
-  // The name is now taken, whatever the scope.
+  // A global name is taken for every project.
   const dup = await mcp('self', 'install_mcp_server', { name: 'files', transport: { type: 'stdio', command: 'x' } })
   assert.equal(dup.isError, true)
   assert.match(dup.content[0]!.text, /already exists/)
+  assert.equal(mcpServerNameClash(db, 'files', 'other'), 'taken')
 
   await mcp('self', 'install_mcp_server', { name: 'slack', transport: { type: 'http', url: 'https://mcp.slack.com', headers: { 'X-Token': '{{secret.SLACK}}' } } })
-  const declined = await answerMcpInstall({ db, log, secrets, sessions }, row, pendingMcpInstall(log, 'self')!, { decision: 'declined' }, 'owner')
+  const slack = pendingMcpInstall(log, 'self')!
+  // Someone who is not an administrator adds a missing secret, but never replaces a stored one.
+  secrets.put('SLACK', 'stored-by-admin')
+  const install = { decision: 'installed' as const, name: 'slack', transport: slack.transport, scope: 'project' as const }
+  await assert.rejects(
+    answerMcpInstall({ db, log, secrets, sessions }, row, slack, { ...install, secrets: { SLACK: 'overwrite' } }, OWNER),
+    { code: 'mcp_install_secret_exists', statusCode: 403 },
+  )
+  assert.equal(secrets.resolve('SLACK'), 'stored-by-admin')
+  assert.equal(db.select().from(mcpServers).all().length, 1)
+  secrets.delete('SLACK')
+
+  const declined = await answerMcpInstall({ db, log, secrets, sessions }, row, slack, { decision: 'declined' }, OWNER)
   assert.equal(declined, null)
   assert.equal(db.select().from(mcpServers).all().length, 1)
   assert.equal(secrets.resolve('SLACK'), undefined)
