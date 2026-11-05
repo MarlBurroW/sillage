@@ -1,0 +1,1 @@
+DROP INDEX `mcp_servers_name_unique`;

@@ -6,7 +6,7 @@ import { useConversation } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
 import { answerMcpInstall, useInvalidateMcpServers } from '../../lib/mcp'
 import { useProjects } from '../../lib/projects'
-import { useSecrets } from '../../lib/secrets'
+import { useStoredSecrets } from '../../lib/secrets'
 import { useCurrentUser } from '../../lib/session'
 import { formToTransport, transportToForm, TransportFields } from '../mcp/McpServerForm'
 import { Badge, Button, ChoiceList, Field, cx } from '../ui'
@@ -16,6 +16,10 @@ import { Badge, Button, ChoiceList, Field, cx } from '../ui'
  * every parameter the model wrote, can correct it, chooses the scope, and types the secrets the
  * agent only referenced. The values go to the encrypted store with the answer and never appear
  * in the thread.
+ *
+ * Installing follows the scope rule, as declaring the server by hand would: the project owner
+ * for the project scope, an administrator for the global one. Anyone the proposal is shown to
+ * may decline it.
  */
 export function McpInstallPrompt({
   conversationId,
@@ -32,12 +36,19 @@ export function McpInstallPrompt({
   const { data: conversation } = useConversation(conversationId)
   const projectId = conversation?.projectId ?? null
   const project = useProjects().data?.find((candidate) => candidate.id === projectId)
-  // Only administrators may list secrets, and only they can install.
-  const stored = useSecrets(isAdmin && item.status === 'pending').data?.secrets ?? []
   const invalidateRegistry = useInvalidateMcpServers()
+  const pending = item.status === 'pending'
+
+  // Scopes this account may write. Derived on each render: the project arrives after the first one.
+  const allowed: McpInstallScope[] = [
+    ...(project?.isOwner === true ? (['project'] as const) : []),
+    ...(isAdmin ? (['global'] as const) : []),
+  ]
+  const canInstall = allowed.length > 0
 
   const [form, setForm] = useState(() => transportToForm(item.name, item.transport))
-  const [scope, setScope] = useState<McpInstallScope>(projectId ? item.scope : 'global')
+  const [chosen, setChosen] = useState<McpInstallScope>(item.scope)
+  const scope = allowed.includes(chosen) ? chosen : (allowed[0] ?? item.scope)
   const [secretValues, setSecretValues] = useState<Record<string, string>>({})
   const [replacing, setReplacing] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState(false)
@@ -50,13 +61,23 @@ export function McpInstallPrompt({
     const values = Object.values(transport.type === 'stdio' ? transport.env : transport.headers)
     return [...new Set(values.flatMap((value) => referencedSecrets(value)))]
   }, [form])
-  const storedNames = new Set(stored.map((secret) => secret.name))
-  const needsValue = (name: string) => !storedNames.has(name) || replacing[name] === true
+  // Names only, and only those the form references: listing the store stays with administrators.
+  const stored = new Set(useStoredSecrets(referenced, pending && canDecide && canInstall).data?.stored ?? [])
+  // Replacing a stored secret changes it for every server that uses it: administrators only.
+  const needsValue = (name: string) => !stored.has(name) || (isAdmin && replacing[name] === true)
 
   const STATUS_LABEL: Record<Exclude<McpInstallItem['status'], 'pending'>, string> = {
     installed: t('mcpInstall.status.installed'),
     declined: t('mcpInstall.status.declined'),
     expired: t('mcpInstall.status.expired'),
+  }
+  const SCOPE_OPTIONS = {
+    project: {
+      value: 'project' as const,
+      label: t('mcpInstall.scope.project'),
+      hint: t('mcpInstall.scope.project.hint', { project: project?.name ?? '' }),
+    },
+    global: { value: 'global' as const, label: t('mcpInstall.scope.global'), hint: t('mcpInstall.scope.global.hint') },
   }
 
   const submit = async (event: FormEvent) => {
@@ -71,7 +92,7 @@ export function McpInstallPrompt({
         decision: 'installed',
         name: form.name.trim(),
         transport: formToTransport(form),
-        scope: projectId ? scope : 'global',
+        scope,
         secrets,
       })
       await invalidateRegistry()
@@ -93,7 +114,12 @@ export function McpInstallPrompt({
     }
   }
 
-  const pending = item.status === 'pending'
+  // Said only when a scope is out of reach, so an owner-administrator reads nothing extra.
+  const rightsNote = !canInstall
+    ? t('mcpInstall.rights.none')
+    : projectId !== null && allowed.length === 1
+      ? t(allowed[0] === 'project' ? 'mcpInstall.rights.projectOnly' : 'mcpInstall.rights.globalOnly')
+      : null
 
   return (
     <div
@@ -127,7 +153,7 @@ export function McpInstallPrompt({
       {pending && canDecide ? (
         <form onSubmit={(event) => void submit(event)} className="mt-3 flex flex-col gap-4">
           <p className="text-xs text-ink-faint">{t('mcpInstall.review')}</p>
-          <fieldset disabled={!isAdmin || busy} className="flex min-w-0 flex-col gap-4">
+          <fieldset disabled={!canInstall || busy} className="flex min-w-0 flex-col gap-4">
             <TransportFields form={form} onChange={setForm} secretsBanner={false} />
 
             {referenced.length > 0 ? (
@@ -154,12 +180,14 @@ export function McpInstallPrompt({
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <span className="font-mono text-xs">{name}</span>
                         <Badge tone="positive">{t('mcpInstall.secret.existing')}</Badge>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => setReplacing((prev) => ({ ...prev, [name]: true }))}>
-                          {t('mcpInstall.secret.replace')}
-                        </Button>
+                        {isAdmin ? (
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setReplacing((prev) => ({ ...prev, [name]: true }))}>
+                            {t('mcpInstall.secret.replace')}
+                          </Button>
+                        ) : null}
                       </div>
                     )}
-                    {needsValue(name) && storedNames.has(name) ? (
+                    {needsValue(name) && stored.has(name) ? (
                       <Button type="button" size="sm" variant="ghost" className="self-start" onClick={() => setReplacing((prev) => ({ ...prev, [name]: false }))}>
                         {t('mcpInstall.secret.keep')}
                       </Button>
@@ -169,27 +197,27 @@ export function McpInstallPrompt({
               </div>
             ) : null}
 
-            {projectId ? (
+            {/* A choice only when there is one; a single reachable scope is stated, not offered. */}
+            {allowed.length === 2 ? (
               <ChoiceList
                 label={t('mcpInstall.scope.label')}
                 value={scope}
-                onChange={setScope}
-                options={[
-                  {
-                    value: 'project' as const,
-                    label: t('mcpInstall.scope.project'),
-                    hint: t('mcpInstall.scope.project.hint', { project: project?.name ?? '' }),
-                  },
-                  { value: 'global' as const, label: t('mcpInstall.scope.global'), hint: t('mcpInstall.scope.global.hint') },
-                ]}
+                onChange={setChosen}
+                options={[SCOPE_OPTIONS.project, SCOPE_OPTIONS.global]}
               />
+            ) : allowed.length === 1 && projectId !== null ? (
+              <p className="text-sm">
+                <span className="text-ink-soft">{t('mcpInstall.scope.label')} : </span>
+                <span className="font-medium">{SCOPE_OPTIONS[scope].label}</span>
+                <span className="block text-xs text-ink-faint">{SCOPE_OPTIONS[scope].hint}</span>
+              </p>
             ) : null}
           </fieldset>
 
-          {!isAdmin ? <p className="text-xs text-ink-faint">{t('mcpInstall.adminOnly')}</p> : null}
+          {rightsNote ? <p className="text-xs text-ink-faint">{rightsNote}</p> : null}
 
           <div className="flex flex-wrap gap-2">
-            {isAdmin ? (
+            {canInstall ? (
               <Button type="submit" size="sm" disabled={busy}>
                 {busy ? t('mcpInstall.installing') : t('mcpInstall.install')}
               </Button>

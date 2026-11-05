@@ -22,6 +22,11 @@ export class SecretStore {
       .all()
   }
 
+  /** Existence without decryption, for forms that must know whether a value is still needed. */
+  has(name: string): boolean {
+    return this.db.select({ name: secrets.name }).from(secrets).where(eq(secrets.name, name)).get() !== undefined
+  }
+
   /** Writes or replaces secrets in full; partial edits are unsupported. */
   put(name: string, value: string): void {
     const encrypted = encryptValue(this.key, value)

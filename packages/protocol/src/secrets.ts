@@ -45,6 +45,16 @@ export interface SecretListDto {
   secrets: Secret[]
 }
 
+/** Names to look up, bounded: a form references a handful of secrets, never a catalog. */
+export const checkSecretsBodySchema = z.object({
+  names: z.array(secretNameSchema).max(50),
+})
+
+/** The subset of requested names the store holds. */
+export interface StoredSecretsDto {
+  stored: string[]
+}
+
 /** Substitution pattern recognized in environment and header values. */
 const SECRET_PATTERN = /\{\{\s*secret\.([A-Za-z0-9_]+)\s*\}\}/g
 

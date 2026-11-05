@@ -8,9 +8,9 @@ import type {
 import { api } from './api'
 
 /**
- * Instance-wide MCP server registry. Everyone can read so composers can offer servers for
- * conversations to enable. Only administrators can write, enforced server-side: declaring an MCP
- * server describes a command CLIs execute as the server's system user.
+ * MCP server registry: global servers and each project's. Everyone reads what they can see so
+ * composers can offer it. Writes follow the scope rule, enforced server-side: administrators for
+ * global servers, the project owner for a project's.
  */
 
 const MCP_KEY = ['mcp', 'servers']
@@ -27,12 +27,12 @@ export interface McpServerInput {
   name: string
   enabled: boolean
   transport: McpTransport
-  /** Null or absent for an instance-wide server. */
+  /** Null or absent for a global server. Set at creation only: a server does not change scope. */
   projectId?: string | null
 }
 
 /**
- * Registry entries a conversation of `projectId` can receive: instance-wide ones and its own
+ * Registry entries a conversation of `projectId` can receive: global ones and its own
  * project's. Mirrors the server-side resolution, so the composer never offers a server the CLI
  * would not get.
  */

@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { automationWebhooks, cards, conversations, projectImages, scheduledTasks, worktrees, type Db } from '@sillage/db'
+import { automationWebhooks, cards, conversations, projectImages, projects, scheduledTasks, worktrees, type Db } from '@sillage/db'
 import { MAX_SESSION_TITLE_CHARS, sessionReference, sessionMarker, sessionTrailer } from '@sillage/protocol'
 
 /** Project activity injected at session startup. CLIs lack others' history and may not think to query MCP; this unsolicited overview justifies its token cost. Compute rather than store notes that grow stale with undeserved authority: one fresh query per start. Durable user-managed instructions belong separately in SILLAGE.md (`instructions/store.ts`). Cover the whole project rather than `find_file_edits`' worktree scope because other branches are active work too; identify worktrees per row for agents to distinguish. */
@@ -109,6 +109,11 @@ const COLUMN_WORDS: Record<string, string> = {
 /** Project image reminder while missing or provisional. Navigation images aid recognition but humans forget them; agents can find repository logos. New projects may lack logos, so provisional placeholders keep reminders active until replaced. Permanent images and agents without relevant tools suppress reminders. */
 function imageReminder(db: Db, input: OverviewInput): string | null {
   if (!input.sillageMcp) return null
+  // The image belongs to the project owner (`http/scope-access.ts`): a member's session would be
+  // refused by `set_project_image`, so it is not asked.
+  const owner = db.select({ id: projects.ownerId }).from(projects).where(eq(projects.id, input.projectId)).get()?.id
+  const actor = db.select({ id: conversations.userId }).from(conversations).where(eq(conversations.id, input.conversationId)).get()?.id
+  if (!owner || owner !== actor) return null
 
   const image = db
     .select({ provisional: projectImages.provisional })

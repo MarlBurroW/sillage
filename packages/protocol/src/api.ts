@@ -1374,12 +1374,12 @@ export const createMcpServerBodySchema = z.object({
   projectId: z.string().nullable().default(null),
 })
 
+/** Scope is set at creation: a server does not move between the instance and a project. */
 export const updateMcpServerBodySchema = z
   .object({
     name: mcpServerNameSchema,
     enabled: z.boolean(),
     transport: mcpTransportSchema,
-    projectId: z.string().nullable(),
   })
   .partial()
 

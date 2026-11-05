@@ -3,22 +3,21 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
 import { useCreateMcpServer, useMcpServers } from '../../lib/mcp'
-import { useCurrentUser } from '../../lib/session'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState } from '../ui'
 import { McpServerCard } from './McpServerCard'
 import { EMPTY_MCP_FORM, formToTransport, mcpErrorOf, TransportFields, type McpFormState } from './McpServerForm'
 
 /**
- * Servers scoped to one project, managed where the project is configured. Instance-wide servers
- * stay in the settings: they concern every project, and listing them here would suggest they can
- * be edited per project. The same registry serves both; only the scope filter differs.
+ * Servers scoped to one project, managed where the project is configured, by its owner like the
+ * rest of the page. Global servers stay in the settings: they concern every project, and listing
+ * them here would suggest they can be edited per project; only their count is recalled, as for
+ * skills. The same registry serves both pages; only the scope differs.
  */
-export function ProjectMcpServers({ projectId }: { projectId: string }) {
+export function ProjectMcpServers({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const t = useTranslate()
-  const { data: me } = useCurrentUser()
-  // Declaring a server grants execution rights, so the instance rule applies here too.
-  const canEdit = me?.isAdmin === true
-  const servers = (useMcpServers().data?.servers ?? []).filter((server) => server.projectId === projectId)
+  const all = useMcpServers().data?.servers ?? []
+  const servers = all.filter((server) => server.projectId === projectId)
+  const globals = all.filter((server) => server.projectId === null).length
   const createServer = useCreateMcpServer()
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState<McpFormState>(EMPTY_MCP_FORM)
@@ -37,7 +36,7 @@ export function ProjectMcpServers({ projectId }: { projectId: string }) {
     )
   }
 
-  const addButton = canEdit ? (
+  const addButton = isOwner ? (
     <Button size="sm" icon={<Plus size={15} />} disabled={adding} onClick={openForm}>
       {t('mcp.create.open')}
     </Button>
@@ -52,15 +51,16 @@ export function ProjectMcpServers({ projectId }: { projectId: string }) {
           icon={<PlugZap size={16} />}
         />
         <CardBody className="flex flex-col gap-3">
-          <p className="text-sm text-ink-faint">
-            {t('project.mcp.global')}{' '}
-            <Link to="/settings/mcp" className="text-accent hover:underline">
-              {t('project.mcp.global.link')}
-            </Link>
-          </p>
-          {canEdit ? null : <Banner>{t('mcp.readonly')}</Banner>}
+          {globals > 0 ? (
+            <p className="text-sm text-ink-faint">
+              {t('project.mcp.globals', { count: globals })}{' '}
+              <Link to="/settings/mcp" className="text-accent hover:underline">
+                {t('project.mcp.globals.link')}
+              </Link>
+            </p>
+          ) : null}
           {/* Below the header rather than beside it: on phones the title would wrap around the button. */}
-          {servers.length > 0 && !adding ? <div className="flex justify-end">{addButton}</div> : null}
+          {servers.length > 0 && !adding && addButton ? <div className="flex justify-end">{addButton}</div> : null}
 
           {adding ? (
             <form onSubmit={submit} className="flex flex-col gap-4 rounded-md border border-line bg-sunken p-3">
@@ -81,7 +81,7 @@ export function ProjectMcpServers({ projectId }: { projectId: string }) {
             <EmptyState
               icon={<Plug size={22} />}
               title={t('project.mcp.empty.title')}
-              description={t('project.mcp.empty.description')}
+              description={t(isOwner ? 'project.mcp.empty.description' : 'project.mcp.empty.member')}
               action={addButton}
             />
           ) : null}
@@ -89,7 +89,7 @@ export function ProjectMcpServers({ projectId }: { projectId: string }) {
       </Card>
 
       {servers.map((server) => (
-        <McpServerCard key={server.id} server={server} canEdit={canEdit} showScope={false} />
+        <McpServerCard key={server.id} server={server} canEdit={isOwner} />
       ))}
     </div>
   )

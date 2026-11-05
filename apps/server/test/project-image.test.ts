@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import { eq } from 'drizzle-orm'
-import { openDatabase, projects, runMigrations, users } from '@sillage/db'
+import { conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
 import type { ProjectDto } from '@sillage/protocol'
 import { projectOverview } from '../src/agents/overview.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
@@ -30,6 +30,10 @@ async function harness(t: TestContext) {
   t.after(() => sqlite.close())
   db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
   db.insert(projects).values({ id: 'project', name: 'project', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  // The image tool acts for the session's account, which must own the project.
+  db.insert(conversations).values({
+    id: 'c', projectId: 'project', userId: 'owner', agent: 'claude', title: 'c', status: 'idle', config: '{}', createdAt: 1, updatedAt: 1,
+  } as typeof conversations.$inferInsert).run()
 
   const app = Fastify()
   await app.register(multipart)

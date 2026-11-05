@@ -87,10 +87,10 @@ try {
   const Database = createRequire(join(serverDir, 'package.json'))('better-sqlite3')
   const db = new Database(join(dataDir, 'sillage.db'))
   // Conversation mode carries no account: the session identifies the requester, as in sillage-mcp.mjs.
-  const propose = async (payload) => {
+  const propose = async (payload, conversationId = conversation.id) => {
     const id = randomUUID()
     db.prepare('INSERT INTO agent_requests (id, project_id, conversation_id, user_id, kind, payload, created_at) VALUES (?, ?, ?, NULL, ?, ?, ?)')
-      .run(id, project.id, conversation.id, 'install_mcp_server', JSON.stringify(payload), Date.now())
+      .run(id, project.id, conversationId, 'install_mcp_server', JSON.stringify(payload), Date.now())
     for (let i = 0; i < 100; i++) {
       const row = db.prepare('SELECT settled_at AS settledAt, result, is_error AS isError FROM agent_requests WHERE id = ?').get(id)
       if (row?.settledAt) {
@@ -123,7 +123,9 @@ try {
   const secretField = page.getByLabel('GITHUB_TOKEN', { exact: true })
   assert.equal(await secretField.getAttribute('type'), 'password')
   await page.getByText('github.com/settings/tokens').waitFor()
-  await page.getByRole('radio', { name: /Ce projet seulement/ }).waitFor()
+  // An owner who is also administrator chooses between both scopes, the proposed one first.
+  await page.getByRole('radio', { name: /^Projet/, checked: true }).waitFor()
+  await page.getByRole('radio', { name: /^Global/ }).waitFor()
 
   // The whole card, at both sizes; reload at phone size so the sidebar drawer closes.
   const card = () => title.locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]')
@@ -145,7 +147,7 @@ try {
   const answer = await installed
   assert.ok(answer.ok(), await answer.text())
   await page.getByText('Installé', { exact: true }).waitFor()
-  await page.getByText(`Disponible dans toutes les conversations de ${project.name}.`).waitFor()
+  await page.getByText(`Portée projet : disponible dans toutes les conversations de ${project.name}.`).waitFor()
   await page.getByText('Serveur MCP gh_issues proposé par l’agent').scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(shots, 'installed.png') })
 
@@ -161,16 +163,20 @@ try {
   assert.doesNotMatch(journal, /ghp_typed_in_the_form/)
   assert.match(journal, /mcp_install\.resolved/)
 
-  // Settings: one list, the project badge tells the scope.
+  // Settings hold global servers only, like skills, and say why those are ticked rather than on.
   await page.goto(`${base}/settings/mcp`)
-  await page.getByText(`Projet : ${project.name}`).waitFor()
+  await page.getByText('Un serveur global n’est pas actif d’office').waitFor()
+  await page.getByText('playwright', { exact: true }).waitFor()
+  assert.equal(await page.getByText('gh_issues', { exact: true }).count(), 0)
+  assert.equal(await page.getByRole('combobox', { name: 'Portée' }).count(), 0)
   await page.screenshot({ path: join(shots, 'settings.png'), fullPage: true })
 
   // Project page: the server sits in its own MCP section, where another one can be declared.
   await page.goto(`${base}/p/${project.id}?section=mcp`)
   const section = page.getByRole('region', { name: 'MCP', exact: true })
   await section.getByText('gh_issues', { exact: true }).waitFor()
-  assert.equal(await section.getByText(`Projet : ${project.name}`).count(), 0)
+  const globalCount = registry.servers.filter(entry => entry.projectId === null).length
+  await section.getByText(`Serveurs globaux proposés ici aussi, à cocher par conversation : ${globalCount}.`).waitFor()
   await section.getByRole('button', { name: 'Déclarer un serveur' }).click()
   await section.getByRole('textbox', { name: 'Nom', exact: true }).fill('local_tools')
   await section.getByRole('textbox', { name: 'Commande' }).fill('npx')
@@ -191,7 +197,7 @@ try {
   await propose({ name: 'slack_notes', transport: { type: 'stdio', command: 'npx', args: ['-y', 'slack-mcp'], env: { SLACK_TOKEN: '{{secret.SLACK_TOKEN}}' } }, scope: 'global' })
   await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
   await page.getByText('L’agent propose d’installer le serveur MCP slack_notes').waitFor({ timeout: 15000 })
-  await page.getByRole('radio', { name: /Toute l’instance/, checked: true }).waitFor()
+  await page.getByRole('radio', { name: /^Global/, checked: true }).waitFor()
   const declined = page.waitForResponse(response => response.url().includes('/mcp-installs/') && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Refuser', exact: true }).click()
   assert.ok((await declined).ok())
@@ -199,6 +205,53 @@ try {
   assert.equal((await (await context.request.get(`${base}/api/mcp/servers`)).json()).servers.length, before + 2)
   assert.equal((await (await context.request.get(`${base}/api/secrets`)).json()).secrets.some(entry => entry.name === 'SLACK_TOKEN'), false)
   await page.screenshot({ path: join(shots, 'declined.png') })
+
+  // The scope rule seen by a member who neither owns the project nor administers the instance:
+  // they read the project's servers and may decline a proposal, and install nothing.
+  assert.ok((await context.request.post(`${base}/api/users`, { data: { username: 'sam', displayName: 'Sam', password: 'sillage-member', isAdmin: false } })).ok())
+  assert.ok((await context.request.patch(`${base}/api/projects/${project.id}`, { data: { visibility: 'shared' } })).ok())
+  const sam = db.prepare('SELECT id FROM users WHERE username = ?').get('sam')
+  const seeded = db.prepare('SELECT agent, config FROM conversations WHERE id = ?').get(conversation.id)
+  const samConversation = randomUUID()
+  db.prepare('INSERT INTO conversations (id, project_id, user_id, title, agent, config, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(samConversation, project.id, sam.id, 'Session de Sam', seeded.agent, seeded.config, 'idle', Date.now(), Date.now())
+  await propose({ name: 'team_wiki', transport: { type: 'http', url: 'https://wiki.example.com/mcp', headers: { Authorization: 'Bearer {{secret.WIKI_TOKEN}}' } } }, samConversation)
+
+  const memberContext = await browser.newContext({ locale: 'fr-FR', serviceWorkers: 'block' })
+  await memberContext.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
+  assert.ok((await memberContext.request.post(`${base}/api/auth/login`, { data: { username: 'sam', password: 'sillage-member' } })).ok())
+  await memberContext.request.patch(`${base}/api/me/settings`, { data: { onboarding: { pending: false } } })
+  page = await memberContext.newPage()
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  await page.goto(`${base}/p/${project.id}/c/${samConversation}`)
+  await page.getByText('L’agent propose d’installer le serveur MCP team_wiki').waitFor({ timeout: 15000 })
+  await page.getByText('Installer en portée projet revient au propriétaire du projet').waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Installer', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('radio').count(), 0)
+  assert.ok(await page.getByRole('textbox', { name: 'Nom', exact: true }).isDisabled())
+  await page.getByText('Serveur MCP', { exact: false }).first().scrollIntoViewIfNeeded()
+  await page.screenshot({ path: join(shots, 'member-prompt.png') })
+  // The server refuses what the interface does not offer.
+  const forced = await memberContext.request.post(`${base}/api/conversations/${samConversation}/mcp-installs/${JSON.parse(db.prepare("SELECT payload FROM events WHERE conversation_id = ? AND type = 'mcp_install.requested'").get(samConversation).payload).requestId}`,
+    { data: { decision: 'installed', name: 'team_wiki', scope: 'project', secrets: { WIKI_TOKEN: 'x' }, transport: { type: 'http', url: 'https://wiki.example.com/mcp', headers: { Authorization: 'Bearer {{secret.WIKI_TOKEN}}' } } } })
+  assert.equal(forced.status(), 403)
+  assert.equal((await forced.json()).error.code, 'project_edit_forbidden')
+  const memberDeclined = page.waitForResponse(response => response.url().includes('/mcp-installs/') && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Refuser', exact: true }).click()
+  assert.ok((await memberDeclined).ok())
+  await page.getByText('Refusé', { exact: true }).waitFor()
+
+  await page.goto(`${base}/p/${project.id}?section=mcp`)
+  const memberSection = page.getByRole('region', { name: 'MCP', exact: true })
+  await memberSection.getByText('gh_issues', { exact: true }).waitFor()
+  assert.equal(await memberSection.getByRole('button', { name: 'Déclarer un serveur' }).count(), 0)
+  assert.equal(await memberSection.getByRole('switch').count(), 0)
+  await page.screenshot({ path: join(shots, 'member-project-section.png'), fullPage: true })
+  await page.goto(`${base}/settings/mcp`)
+  await page.getByText('Seul un administrateur peut déclarer ou modifier un serveur global.').waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Déclarer un serveur' }).count(), 0)
+  await memberContext.close()
 
   assert.deepEqual(errors, [])
   db.close()

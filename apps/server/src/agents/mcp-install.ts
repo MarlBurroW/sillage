@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull, or } from 'drizzle-orm'
 import { conversations, mcpServers, type ConversationRow, type Db } from '@sillage/db'
 import {
   clearTextSecrets,
@@ -15,6 +15,7 @@ import {
   type SillageEvent,
 } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
+import { badRequest, conflict, forbidden } from '../http/errors.js'
 import type { SecretStore } from '../secrets/store.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { rowToMcpServer } from './mcp-registry.js'
@@ -45,14 +46,34 @@ export function transportSecrets(transport: McpTransport): string[] {
 }
 
 /**
- * Names are CLI keys shared by both scopes of one conversation, so uniqueness ignores scope.
- * The database constraint catches races; this gives a readable reason first.
+ * Why a name cannot be used in a scope, or null when it is free.
+ *
+ * Names are CLI keys within what one conversation receives: global servers plus its project's. A
+ * global name therefore collides with every project, a project name with global servers and its
+ * own project only, so two projects may each have their `postgres`. Same rule as library skills.
  */
-export function freeMcpServerName(db: Db, name: string, exceptId?: string): string | null {
-  if (isReservedMcpServerName(name)) return `The name “${name}” is reserved by Sillage.`
-  const existing = db.select({ id: mcpServers.id }).from(mcpServers).where(eq(mcpServers.name, name)).get()
-  if (existing && existing.id !== exceptId) return `An MCP server named “${name}” already exists.`
-  return null
+export function mcpServerNameClash(
+  db: Db,
+  name: string,
+  projectId: string | null,
+  exceptId?: string,
+): 'reserved' | 'taken' | null {
+  if (isReservedMcpServerName(name)) return 'reserved'
+  const visible =
+    projectId === null
+      ? eq(mcpServers.name, name)
+      : and(eq(mcpServers.name, name), or(isNull(mcpServers.projectId), eq(mcpServers.projectId, projectId)))
+  const clash = db.select({ id: mcpServers.id }).from(mcpServers).where(visible).all().find((row) => row.id !== exceptId)
+  return clash ? 'taken' : null
+}
+
+/** The registry routes and the installation answer refuse a name with the same translatable codes. */
+export function assertFreeMcpServerName(db: Db, name: string, projectId: string | null, exceptId?: string): void {
+  const clash = mcpServerNameClash(db, name, projectId, exceptId)
+  // Sillage's own server is absent from the table: an entry with its name would replace it in the
+  // CLI configuration, and the agent would lose history access without any error being reported.
+  if (clash === 'reserved') throw conflict('mcp_server_name_reserved', 'The name {name} is reserved by Sillage.', { name })
+  if (clash === 'taken') throw conflict('mcp_server_name_taken', 'An MCP server named {name} already exists.', { name })
 }
 
 /** The latest proposal of a conversation still awaiting an answer, if any. */
@@ -78,8 +99,19 @@ export function proposeMcpInstall(
   if (!mcpServerNameSchema.safeParse(name).success) {
     throw new McpInstallRefusal('`name` is required: 1 to 64 letters, digits, hyphens or underscores. The CLI prefixes the server tools with it.')
   }
-  const taken = freeMcpServerName(db, name)
-  if (taken) throw new McpInstallRefusal(`${taken} Pick another name, or use list_mcp_servers to check whether it already does what you need.`)
+
+  const scopeInput = payload.scope === undefined ? (conversation.projectId ? 'project' : 'global') : payload.scope
+  const parsedScope = mcpInstallScopeSchema.safeParse(scopeInput)
+  if (!parsedScope.success) throw new McpInstallRefusal('`scope` must be "project" or "global".')
+  if (parsedScope.data === 'project' && !conversation.projectId) {
+    throw new McpInstallRefusal('This discussion has no project: only the "global" scope is possible here.')
+  }
+
+  const clash = mcpServerNameClash(db, name, parsedScope.data === 'project' ? conversation.projectId : null)
+  if (clash === 'reserved') throw new McpInstallRefusal(`The name “${name}” is reserved by Sillage. Pick another one.`)
+  if (clash === 'taken') {
+    throw new McpInstallRefusal(`An MCP server named “${name}” already exists. Pick another name, or use list_mcp_servers to check whether it already does what you need.`)
+  }
 
   const parsedTransport = mcpTransportSchema.safeParse(payload.transport)
   if (!parsedTransport.success) {
@@ -91,13 +123,6 @@ export function proposeMcpInstall(
     throw new McpInstallRefusal(
       `Refused: ${clear.join(', ')} look like credentials written in clear. Set them to {{secret.NAME}} instead; the user types the value in the confirmation form and it goes to the encrypted store. Never ask the user to paste a secret in the conversation.`,
     )
-  }
-
-  const scopeInput = payload.scope === undefined ? (conversation.projectId ? 'project' : 'global') : payload.scope
-  const parsedScope = mcpInstallScopeSchema.safeParse(scopeInput)
-  if (!parsedScope.success) throw new McpInstallRefusal('`scope` must be "project" or "global".')
-  if (parsedScope.data === 'project' && !conversation.projectId) {
-    throw new McpInstallRefusal('This discussion has no project: only the "global" scope is possible here.')
   }
 
   const purpose = typeof payload.purpose === 'string' ? payload.purpose.trim() : ''
@@ -131,7 +156,7 @@ export function proposeMcpInstall(
   const text = [
     `The proposal for “${name}” is shown to the user in this conversation, with every parameter editable${referenced.length > 0 ? ` and a field for ${referenced.join(', ')}` : ''}.`,
     'Do not wait for it: end your turn or continue independent work. You will receive a message when the user installs or declines it, and the server tools become available in this session once installed.',
-    'Do not propose it again meanwhile.',
+    'Installing a project server takes the project owner, a global one an administrator: if the user cannot, they will tell you. Do not propose it again meanwhile.',
   ].join(' ')
   return { text, event }
 }
@@ -143,17 +168,25 @@ export interface McpInstallDeps {
   sessions: Pick<SessionManager, 'sendMessage' | 'reloadConfig'>
 }
 
+/** The account answering, already allowed to write the chosen scope by the route. */
+export interface McpInstallActor {
+  id: string
+  /** Replacing a stored secret changes it for every server that references it: administrators only. */
+  canReplaceSecrets: boolean
+}
+
 /**
  * Applies the user's answer: stores typed secrets, creates the registry entry, enables it for the
  * requesting conversation, then tells the agent. Returns the created server for the UI, or null
- * when declined. Throws `McpInstallRefusal` for the user with the reason to display.
+ * when declined. Refusals are translatable HTTP errors: this runs only behind the answer route,
+ * which has checked that the actor may write the chosen scope.
  */
 export async function answerMcpInstall(
   deps: McpInstallDeps,
   conversation: Pick<ConversationRow, 'id' | 'projectId'>,
   request: RequestedEvent,
   body: AnswerMcpInstallBody,
-  decidedBy: string,
+  actor: McpInstallActor,
 ): Promise<ReturnType<typeof rowToMcpServer> | null> {
   const { db, log, secrets, sessions } = deps
 
@@ -165,7 +198,7 @@ export async function answerMcpInstall(
       serverId: null,
       name: null,
       scope: null,
-      decidedBy,
+      decidedBy: actor.id,
     })
     await notify(sessions, conversation.id, [
       '[Sillage — MCP server proposal declined]',
@@ -175,17 +208,28 @@ export async function answerMcpInstall(
     return null
   }
 
-  const taken = freeMcpServerName(db, body.name)
-  if (taken) throw new McpInstallRefusal(taken)
   if (body.scope === 'project' && !conversation.projectId) {
-    throw new McpInstallRefusal('This discussion has no project: choose the global scope.')
+    throw badRequest('mcp_install_no_project', 'This discussion has no project: choose the global scope.')
   }
-  // Every referenced secret must resolve after this call, otherwise the server would start
-  // excluded with a “missing secret” failure the user did not see coming.
-  const missing = transportSecrets(body.transport).filter((name) => secrets.resolve(name) === undefined && !body.secrets[name])
-  if (missing.length > 0) throw new McpInstallRefusal(`Missing value for ${missing.join(', ')}.`)
+  const projectId = body.scope === 'project' ? conversation.projectId : null
+  assertFreeMcpServerName(db, body.name, projectId)
 
-  for (const [name, value] of Object.entries(body.secrets)) secrets.put(name, value)
+  // Only what the transport references is stored: the form is not a way to create arbitrary
+  // secrets, and every reference must resolve afterwards, otherwise the server would start
+  // excluded with a “missing secret” failure the user did not see coming.
+  const referenced = transportSecrets(body.transport)
+  const typed = referenced.filter((name) => body.secrets[name])
+  const replaced = typed.filter((name) => secrets.has(name))
+  if (replaced.length > 0 && !actor.canReplaceSecrets) {
+    throw forbidden('mcp_install_secret_exists', 'The secret {names} is already stored: only an administrator can replace it. Leave its field empty to use it.', {
+      names: replaced.join(', '),
+    })
+  }
+  const missing = referenced.filter((name) => !secrets.has(name) && !body.secrets[name])
+  if (missing.length > 0) {
+    throw badRequest('mcp_install_secret_missing', 'Missing value for {names}.', { names: missing.join(', ') })
+  }
+  for (const name of typed) secrets.put(name, body.secrets[name] as string)
 
   const now = Date.now()
   const row = {
@@ -193,7 +237,7 @@ export async function answerMcpInstall(
     name: body.name,
     enabled: true,
     transport: JSON.stringify(body.transport),
-    projectId: body.scope === 'project' ? conversation.projectId : null,
+    projectId,
     createdAt: now,
     updatedAt: now,
   }
@@ -221,7 +265,7 @@ export async function answerMcpInstall(
     serverId: row.id,
     name: body.name,
     scope: body.scope,
-    decidedBy,
+    decidedBy: actor.id,
   })
 
   // Live where the CLI allows it (Claude), otherwise after the turn, like any settings change.
@@ -237,7 +281,7 @@ export async function answerMcpInstall(
 }
 
 function describeScope(scope: McpInstallScope): string {
-  return scope === 'project' ? 'for this project' : 'for the whole instance'
+  return scope === 'project' ? 'in project scope, for every conversation of this project' : 'in global scope'
 }
 
 async function notify(sessions: McpInstallDeps['sessions'], conversationId: string, lines: string[]): Promise<void> {

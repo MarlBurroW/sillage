@@ -157,22 +157,6 @@ async function exercise(context, base, profile) {
   assert.deepEqual(mcpTools, restTools)
   const access = await (await context.request.get(`${base}/api/v1/access`, { headers })).json()
   assert.deepEqual(access.executionPolicy.agents[0].models, ['alpha'])
-  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
-    await page.setViewportSize(viewport)
-    await page.goto(`${base}/settings/mcp`)
-    await page.getByRole('button', { name: 'Déclarer un serveur' }).first().click()
-    const scope = page.getByRole('button', { name: 'Portée', exact: true })
-    await scope.click()
-    let picker = page.getByRole('dialog', { name: 'Portée', exact: true })
-    await picker.getByRole('textbox').fill('Alpha selector')
-    await picker.getByRole('textbox').press('Enter')
-    assert.match(await scope.innerText(), /Alpha selector/)
-    await scope.click()
-    picker = page.getByRole('dialog', { name: 'Portée', exact: true })
-    assert.equal(await picker.getByRole('textbox').inputValue(), '')
-    await picker.getByRole('radio', { name: 'Toute l’instance', exact: true }).click()
-    assert.match(await scope.innerText(), /Toute l’instance/)
-  }
   assert.deepEqual(errors, [])
   await context.close()
 }
