@@ -1,6 +1,9 @@
 import type { exportEn } from './export-en.js'
 
 export const exportFr: Record<keyof typeof exportEn, string> = {
+  "export.publish.configureHelp": "L’administrateur du serveur peut la renseigner dans Réglages → À propos → Revoir la visite, à l’étape consacrée à l’adresse de l’instance. Utilise une adresse accessible aux destinataires, puis rouvre cette fenêtre.",
+  "export.publish.configure": "Comment configurer l’URL publique ?",
+  "export.publish.requiresUrl": "Une URL publique est nécessaire pour partager un lien",
   "export.document.presentation": "Présentation et outils",
   "export.range.hint": "Décoche ce que tu veux retirer. Utilise « Commencer ici » et « Terminer ici » pour partager un passage plus court.",
   "export.range.beginHere": "Commencer ici",
@@ -115,7 +118,7 @@ export const exportFr: Record<keyof typeof exportEn, string> = {
   "export.download": "Télécharger le HTML",
   "export.publish": "Créer un lien public",
   "export.publish.hint": "Toute personne disposant du lien peut lire cette copie sans se connecter.",
-  "export.publish.unavailable": "Les liens publics nécessitent Sillage Server et une URL publique configurée.",
+  "export.publish.unavailable": "Configure une URL publique pour ce serveur afin de créer des liens de partage. Tu peux déjà télécharger le fichier HTML.",
   "export.publish.desktop": "Télécharge le fichier HTML pour partager cette conversation depuis Desktop.",
   "export.expiry": "Expiration du lien",
   "export.expiry.30": "Dans 30 jours",
@@ -175,7 +178,7 @@ export const exportFr: Record<keyof typeof exportEn, string> = {
   "error.export_image_review": "Vérifie chaque image sélectionnée avant de créer l’aperçu.",
   "error.export_scan_failed": "La vérification des informations privées a échoué. Réessaie avant d’exporter.",
   "error.export_failed": "Impossible de préparer l’export. Réessaie.",
-  "error.export_publish_unavailable": "Configure l’URL publique dans les réglages de Server pour publier un lien.",
+  "error.export_publish_unavailable": "Une URL publique doit être configurée pour ce serveur avant de créer un lien de partage.",
   "error.export_expiry": "Choisis une date d’expiration dans le futur.",
   "error.export_owner": "Seul le propriétaire de la conversation peut l’exporter ou la partager."
 }

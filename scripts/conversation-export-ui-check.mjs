@@ -116,6 +116,30 @@ try {
       lastPage = page
       page.on('pageerror', error => errors.push(error.message))
       await page.goto(base + '/p/export-project/c/export-session')
+      if (profile === 'server') {
+        // An existing hosted instance may never have saved a public URL during onboarding.
+        assert.ok((await context.request.patch(base + '/api/settings', { data: { publicUrl: '' } })).ok())
+        await page.getByRole('button', { name: 'Exporter et partager', exact: true }).click()
+        const unconfigured = page.getByRole('dialog', { name: 'Exporter et partager', exact: true })
+        const notice = unconfigured.getByRole('status').filter({ hasText: 'Une URL publique est nécessaire pour partager un lien' })
+        await notice.waitFor()
+        await notice.getByText('Comment configurer l’URL publique ?', { exact: true }).click()
+        await notice.getByText(/L’administrateur du serveur peut la renseigner/).waitFor()
+        assert.ok(await unconfigured.evaluate(el => el.scrollWidth <= el.clientWidth), 'URL help fits ' + size)
+        await page.screenshot({ path: join(shots, 'public-url-help-' + size + '.png') })
+        await notice.getByText('Comment configurer l’URL publique ?', { exact: true }).click()
+        await unconfigured.getByRole('tab', { name: 'Liens partagés', exact: true }).click()
+        assert.equal(await notice.isVisible(), true)
+        await unconfigured.getByRole('tab', { name: 'Préparer un export', exact: true }).click()
+        await unconfigured.getByRole('button', { name: 'Vérifier le contenu', exact: true }).click()
+        await unconfigured.getByRole('button', { name: 'Ouvrir l’aperçu final', exact: true }).click()
+        await unconfigured.getByRole('link', { name: 'Télécharger le HTML', exact: true }).waitFor()
+        assert.equal(await notice.isVisible(), true)
+        assert.equal(await unconfigured.getByRole('button', { name: 'Créer un lien public', exact: true }).count(), 0)
+        await page.screenshot({ path: join(shots, 'public-url-preview-' + size + '.png') })
+        await unconfigured.getByRole('button', { name: 'Fermer', exact: true }).click()
+        assert.ok((await context.request.patch(base + '/api/settings', { data: { publicUrl: 'https://shared.example.test' } })).ok())
+      }
       let pollingInterrupted = false, createdDrafts = 0
       page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/conversations/export-session/exports')) createdDrafts++ })
       await page.route(/\/api\/exports\/[^/]+$/, async route => {
@@ -126,6 +150,8 @@ try {
       })
       await page.getByRole('button', { name: 'Exporter et partager', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: 'Exporter et partager', exact: true })
+      await dialog.getByText('Éléments inclus : 8 sur 8', { exact: true }).waitFor()
+      assert.equal(await dialog.getByText('Une URL publique est nécessaire pour partager un lien', { exact: true }).count(), 0)
       const settings = dialog.locator('summary').filter({ hasText: 'Présentation et outils' })
       if (size === 'phone') await settings.click()
       await dialog.getByLabel('Titre', { exact: true }).fill('Construire ensemble, même hors ligne')

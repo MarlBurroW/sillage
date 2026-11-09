@@ -1,6 +1,9 @@
 export const exportEn = {
   "export.document.presentation": "Presentation and tools",
   "export.range.hint": "Uncheck anything you want to leave out. Use “Start here” and “End here” to share a shorter passage.",
+  "export.publish.configureHelp": "The server administrator can set it in Settings → About → Replay the tour, at the instance address step. Use an address your recipients can access, then reopen this dialog.",
+  "export.publish.configure": "How do I configure the public URL?",
+  "export.publish.requiresUrl": "A public URL is required to share a link",
   "export.range.beginHere": "Start here",
   "export.range.endHere": "End here",
   "export.range.reset": "Reset the range",
@@ -113,7 +116,7 @@ export const exportEn = {
   "export.download": "Download HTML",
   "export.publish": "Create public link",
   "export.publish.hint": "Anyone with the link can read this copy without signing in.",
-  "export.publish.unavailable": "Public links require Sillage Server and a configured public URL.",
+  "export.publish.unavailable": "Configure a public URL for this server to create sharing links. You can already download the HTML file.",
   "export.publish.desktop": "Download the HTML file to share this conversation from Desktop.",
   "export.expiry": "Link expiration",
   "export.expiry.30": "In 30 days",
@@ -173,7 +176,7 @@ export const exportEn = {
   "error.export_image_review": "Check each selected image before creating the preview.",
   "error.export_scan_failed": "Private information could not be checked. Try again before exporting.",
   "error.export_failed": "The export could not be prepared. Try again.",
-  "error.export_publish_unavailable": "Configure the public URL in Server settings to publish a link.",
+  "error.export_publish_unavailable": "A public URL must be configured for this server before creating a sharing link.",
   "error.export_expiry": "Choose an expiration date in the future.",
   "error.export_owner": "Only the conversation owner can export or share it."
 }

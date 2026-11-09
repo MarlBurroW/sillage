@@ -111,6 +111,16 @@ export default function ExportDialog({ source, onClose }: { source: Conversation
             { value: 'prepare', label: t('export.tab.prepare') }, { value: 'links', label: t('export.tab.links') },
           ]} />
         </div>}
+        {!expanded && publicSharing && draft && !draft.canPublish && <div className="shrink-0 px-4 py-3 sm:px-6">
+          <Banner tone="info">
+            <span className="block font-medium text-ink">{t('export.publish.requiresUrl')}</span>
+            <span className="mt-1 block">{t('export.publish.unavailable')}</span>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-accent focus-visible:outline-2 focus-visible:outline-accent">{t('export.publish.configure')}</summary>
+              <p className="mt-2">{t('export.publish.configureHelp')}</p>
+            </details>
+          </Banner>
+        </div>}
         <div id="export-main-panel" role={publicSharing ? 'tabpanel' : undefined} aria-labelledby={publicSharing ? 'export-main-' + tab : undefined} className="flex min-h-0 flex-1 flex-col">
         {tab === 'links' ? <SharedLinks conversationId={source.id} /> : <>
           {!expanded && <ol className="flex shrink-0 items-center gap-3 border-b border-line px-4 sm:gap-7 sm:px-6" aria-label={t('export.tab.prepare')}>
@@ -158,7 +168,7 @@ export default function ExportDialog({ source, onClose }: { source: Conversation
                 </Button>
                 {copy.state === 'failed' && <p className="w-full text-xs text-ink-faint">{t('export.copyFailed')}</p>}
               </div> : <Button variant="secondary" className="w-full sm:w-auto" icon={<Link2 size={16} />} onClick={() => setPublishOpen(true)} disabled={!previewLoaded || draft.status !== 'complete'}>{t('export.publish')}</Button>
-              : <p className="text-xs text-ink-faint">{t(publicSharing ? 'export.publish.unavailable' : 'export.publish.desktop')}</p>}
+              : !publicSharing && <p className="text-xs text-ink-faint">{t('export.publish.desktop')}</p>}
             </div>}
           </div>}
           {!busy && draft && options && !expanded && <div className="shrink-0 border-t border-line px-4 py-3 sm:px-6">
