@@ -15,3 +15,6 @@ data/
 
 # Runtime assembled by scripts/stage-runtime.mjs (CI, desktop app)
 /out/
+
+# Screenshots left by local verification runs
+/.artifacts/
