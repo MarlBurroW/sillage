@@ -72,7 +72,7 @@ export function AboutSection() {
       .catch(() => undefined)
   }, [tracking])
 
-  useRestartWatch(status?.phase, status?.targetVersion ?? null)
+  useRestartWatch(tracking, status?.targetVersion ?? null)
 
   const startNow = () => {
     setConfirming(false)
@@ -159,6 +159,37 @@ export function AboutSection() {
         </CardBody>
       </Card>
 
+      {/* Above the release notes: below them the progress sat off-screen and the
+          disabled button looked like nothing was happening. */}
+      {tracking && status ? (
+        <Card>
+          <CardHeader
+            title={
+              status.phase === 'failed'
+                ? t('about.update.failed.title')
+                : t('about.update.title', { version: status.targetVersion ?? '' })
+            }
+            description={t(PHASE_LABEL_KEYS[status.phase])}
+          />
+          <CardBody className="flex flex-col gap-2">
+            {status.phase === 'failed' && status.error ? (
+              <Banner>{status.error}</Banner>
+            ) : null}
+            <pre className="max-h-48 overflow-y-auto rounded-md bg-surface-high px-3 py-2 font-mono text-xs whitespace-pre-wrap">
+              {status.log.join('\n')}
+            </pre>
+            {status.phase === 'restarting' ? (
+              <p className="text-xs text-ink-faint">{t('about.restarting.message')}</p>
+            ) : null}
+            {status.phase === 'failed' ? (
+              <div>
+                <Button onClick={() => setConfirming(true)}>{t('about.retry')}</Button>
+              </div>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
+
       {info?.updateAvailable || desktopVersion || desktopProblem ? (
         <Card>
           <CardHeader
@@ -217,35 +248,6 @@ export function AboutSection() {
                 <Markdown text={release.body} />
               </article>
             ))}
-          </CardBody>
-        </Card>
-      ) : null}
-
-      {tracking && status ? (
-        <Card>
-          <CardHeader
-            title={
-              status.phase === 'failed'
-                ? t('about.update.failed.title')
-                : t('about.update.title', { version: status.targetVersion ?? '' })
-            }
-            description={t(PHASE_LABEL_KEYS[status.phase])}
-          />
-          <CardBody className="flex flex-col gap-2">
-            {status.phase === 'failed' && status.error ? (
-              <Banner>{status.error}</Banner>
-            ) : null}
-            <pre className="max-h-48 overflow-y-auto rounded-md bg-surface-high px-3 py-2 font-mono text-xs whitespace-pre-wrap">
-              {status.log.join('\n')}
-            </pre>
-            {status.phase === 'restarting' ? (
-              <p className="text-xs text-ink-faint">{t('about.restarting.message')}</p>
-            ) : null}
-            {status.phase === 'failed' ? (
-              <div>
-                <Button onClick={() => setConfirming(true)}>{t('about.retry')}</Button>
-              </div>
-            ) : null}
           </CardBody>
         </Card>
       ) : null}
@@ -376,20 +378,27 @@ function DesktopUpdateAction({
 }
 
 /**
- * After restart, poll the public health route until the new version responds,
- * then reload to serve the updated frontend.
+ * Poll the public health route until the target version responds, then reload to serve
+ * the updated frontend. The target is latched from the first status that names it, not
+ * read from the `restarting` phase: that phase lasts half a second before the server
+ * exits, so the 1 s status poll usually misses it, and the restarted server then answers
+ * `idle` with no target, which left the page waiting forever on a finished update.
  */
-function useRestartWatch(phase: UpdatePhase | undefined, targetVersion: string | null) {
+function useRestartWatch(tracking: boolean, targetVersion: string | null) {
+  const [target, setTarget] = useState<string | null>(null)
   useEffect(() => {
-    if (phase !== 'restarting' || !targetVersion) return
+    if (targetVersion) setTarget(targetVersion)
+  }, [targetVersion])
+  useEffect(() => {
+    if (!tracking || !target) return
     const timer = setInterval(() => {
       void fetch('/api/health', { cache: 'no-store' })
         .then((res) => (res.ok ? (res.json() as Promise<{ version?: string }>) : null))
         .then((health) => {
-          if (health?.version === targetVersion) window.location.reload()
+          if (health?.version === target) window.location.reload()
         })
         .catch(() => undefined)
     }, 2000)
     return () => clearInterval(timer)
-  }, [phase, targetVersion])
+  }, [tracking, target])
 }
