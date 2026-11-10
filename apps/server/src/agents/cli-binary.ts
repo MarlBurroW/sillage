@@ -139,6 +139,11 @@ export class CliBinary {
     this.cache.invalidate()
   }
 
+  /** Configuration state without probing: callers deciding whether a probe is worth launching. */
+  get isEnabled(): boolean {
+    return this.enabled
+  }
+
   /** Only default executable names resolve to the package Sillage installs. */
   get installable(): boolean {
     const names: Record<AgentKind, string> = {

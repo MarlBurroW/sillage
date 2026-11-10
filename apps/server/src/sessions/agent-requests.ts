@@ -103,6 +103,12 @@ const POLL_MS = 500
 /** Ignore requests older than this: their MCP callers returned long ago, and launching sessions whose IDs nobody receives would be worse than doing nothing. */
 const STALE_MS = 5 * 60 * 1000
 
+/** Concurrent requests per daemon. Enough that sessions never queue behind one another in practice, low enough that a burst cannot launch dozens of CLIs at once. */
+const MAX_IN_FLIGHT = 8
+
+/** How long a launch waits for a cold model catalog before starting with the CLI's own defaults. Warm catalogs answer instantly; a cold probe boots a CLI, which on Windows can outlast the caller's wait, and the probe keeps running to warm the cache for the next launch. */
+const DEFAULTS_BUDGET_MS = 3000
+
 /** Maximum launch-chain depth: human sessions launch one session, which may launch one final session. Further levels drift from human oversight and create unintended swarms. */
 export const MAX_LAUNCH_DEPTH = 2
 
@@ -124,6 +130,17 @@ function describeError(err: unknown): string {
 }
 
 class Refusal extends Error {}
+
+/** `fallback` when `promise` outlasts `ms`; the promise keeps running, which is wanted for probes that warm a cache. Rejections also yield the fallback: callers here treat an unreachable catalog like a slow one. */
+function withinBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      () => { clearTimeout(timer); resolve(fallback) },
+    )
+  })
+}
 
 /** Must match protocol `createWorktreeBodySchema`: names also become directories. */
 function assertWorktreeName(name: string): void {
@@ -156,7 +173,7 @@ interface StartSessionPayload {
 
 export class AgentRequests {
   private timer: NodeJS.Timeout | null = null
-  private busy = false
+  private readonly inFlight = new Set<string>()
   private logger: FastifyBaseLogger | null = null
 
   constructor(
@@ -192,28 +209,36 @@ export class AgentRequests {
     this.timer = null
   }
 
+  /**
+   * Requests run concurrently, bounded by `MAX_IN_FLIGHT`. Sequential handling let one slow
+   * request (a cold model catalog, a CLI slow to boot on Windows) hold every other session's
+   * request past its MCP wait, so callers saw “Sillage did not respond” while nothing was wrong
+   * with the service. Each sweep awaits only the requests it started, so tests driving `sweep()`
+   * still observe their own request settled.
+   */
   async sweep(): Promise<void> {
-    if (this.busy) return
-    this.busy = true
-    try {
-      const pending = this.ctx.db
-        .select()
-        .from(agentRequests)
-        .where(isNull(agentRequests.settledAt))
-        .orderBy(asc(agentRequests.createdAt))
-        .limit(20)
-        .all()
+    const room = MAX_IN_FLIGHT - this.inFlight.size
+    if (room <= 0) return
+    const pending = this.ctx.db
+      .select()
+      .from(agentRequests)
+      .where(isNull(agentRequests.settledAt))
+      .orderBy(asc(agentRequests.createdAt))
+      .limit(20)
+      .all()
+      .filter((request) => !this.inFlight.has(request.id))
 
-      for (const request of pending) {
-        if (request.createdAt < Date.now() - STALE_MS) {
-          this.settle(request.id, 'Request expired: Sillage did not process it in time.', true)
-          continue
-        }
-        await this.handle(request)
+    const started: Promise<void>[] = []
+    for (const request of pending) {
+      if (request.createdAt < Date.now() - STALE_MS) {
+        this.settle(request.id, 'Request expired: Sillage did not process it in time.', true)
+        continue
       }
-    } finally {
-      this.busy = false
+      if (started.length >= room) break
+      this.inFlight.add(request.id)
+      started.push(this.handle(request).finally(() => this.inFlight.delete(request.id)))
     }
+    await Promise.all(started)
   }
 
   private async handle(request: AgentRequestRow): Promise<void> {
@@ -501,7 +526,8 @@ export class AgentRequests {
     const requestedModel = typeof payload.model === 'string' ? payload.model.trim() : ''
     const requestedEffort = typeof payload.effort === 'string' ? payload.effort.trim().toLowerCase() : ''
     if (!requestedModel && !requestedEffort) {
-      return this.registry.adapter(agent).resolveDefaults(base)
+      // Resolving sentinels reads the catalog: a cold one must not delay the session past the caller's wait, and the CLI applies the same defaults itself.
+      return withinBudget(this.registry.adapter(agent).resolveDefaults(base), DEFAULTS_BUDGET_MS, base)
     }
 
     const catalog = await this.sessions.modelsFor(userId, base)
@@ -1248,25 +1274,28 @@ export class AgentRequests {
 
     const policy = requester.apiToken ? readExecutionPolicy(requester.apiToken) : null
     if (payload.agent) for (const agent of agents) assertAgentAllowed(policy, agent)
-    const sections: string[] = []
-    for (const agent of agents.filter((kind) => !policy || policy.agents.some((rule) => rule.agent === kind))) {
+    // CLIs the user hid or the instance disabled are not probed: an explicit `agent` still names them so the answer explains their absence.
+    const hidden = new Set(readUserSettings(this.ctx.db, requester.userId).hiddenAgents)
+    const listed = agents.filter((kind) => !policy || policy.agents.some((rule) => rule.agent === kind))
+    // Each cold catalog boots a CLI: probing in sequence summed their startups and outran the caller's wait. Independent probes run together.
+    const sections = await Promise.all(listed.map(async (agent) => {
+      const head = `## ${agent}`
+      if (this.registry.adapter(agent).cli?.isEnabled === false) return `${head}\nDisabled in Sillage settings.`
+      if (hidden.has(agent) && !payload.agent) return `${head}\nHidden by the user in Sillage: pass \`agent: "${agent}"\` to list it anyway.`
       const defaults = await this.launchConfig(agent, project, requester.userId, {}, requester.apiToken).catch(() => null)
       const models = await (defaults ? this.sessions.modelsFor(requester.userId, defaults) : this.registry.adapter(agent).models())
         .then((listing) => allowedModels(policy, agent, listing.models))
         .catch(() => null)
-      const head = defaults
-        ? `## ${agent} — defaults: model ${describeModel(defaults)}, effort ${describeEffort(defaults)}`
-        : `## ${agent}`
-      if (!models) {
-        sections.push(`${head}\nCatalog unavailable: the CLI may not be installed.`)
-        continue
-      }
+      const headline = defaults
+        ? `${head} — defaults: model ${describeModel(defaults)}, effort ${describeEffort(defaults)}`
+        : head
+      if (!models) return `${headline}\nCatalog unavailable: the CLI may not be installed, or it did not answer in time.`
       const lines = models.map((model) => {
         const efforts = model.efforts.map((entry) => entry.value)
         return `- \`${model.value}\` (${model.displayName})${model.isDefault ? ' [CLI default]' : ''}${efforts.length > 0 ? ` — efforts: ${efforts.join(', ')}` : ''}`
       })
-      sections.push([head, ...lines].join('\n'))
-    }
+      return [headline, ...lines].join('\n')
+    }))
     return `${sections.join('\n\n')}\n\nIn start_session, \`model\` accepts a value or display name, and \`effort: "max"\` selects the highest level when the model has no level with that name.`
   }
 }

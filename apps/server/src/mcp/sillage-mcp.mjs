@@ -76,7 +76,8 @@ const REQUEST_WAIT_MS = {
   unlink_cards: 15000,
   attach_card: 15000,
   detach_card: 15000,
-  list_models: 30000,
+  // Cold catalogs boot one CLI each; Windows startups are slow. The daemon keeps probing after this wait, so a retry finds warm caches.
+  list_models: 60000,
   schedule_task: 30000,
   register_action: 15000,
   remove_action: 20000,
@@ -2457,12 +2458,12 @@ async function requestDaemon(kind, payload) {
     const row = read.get(id)
     if (row?.settled_at) return { ...text(row.result ?? ''), ...(row.is_error ? { isError: true } : {}) }
   }
+  const slow = {
+    start_session: 'Sillage has not finished starting the session (the CLI is slow to start, or the service is not running). Do not resubmit: check list_sessions later.',
+    list_models: 'The model catalogs are still loading: each CLI is probed once at first use, which can take a while on a cold start. Retry in a moment, or pass `agent` to list a single CLI.',
+  }
   return {
-    ...text(
-      kind === 'start_session'
-        ? 'Sillage has not finished starting the session (the CLI is slow to start, or the service is not running). Do not resubmit: check list_sessions later.'
-        : 'Sillage did not respond in time; the service may not be running. Try again later.',
-    ),
+    ...text(slow[kind] ?? 'Sillage did not respond in time; the service may not be running. Try again later.'),
     isError: true,
   }
 }

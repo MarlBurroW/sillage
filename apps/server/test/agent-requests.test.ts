@@ -19,6 +19,7 @@ import {
   openDatabase,
   projects,
   runMigrations,
+  userSettings,
   users,
 } from '@sillage/db'
 import { parseSessionMessage, type AgentConfig, type AgentModelDto } from '@sillage/protocol'
@@ -97,9 +98,14 @@ async function harness(t: TestContext) {
     },
     modelsFor: (_userId: string, config: AgentConfig) => registry.adapter(config.agent).models(),
   } as unknown as SessionManager
+  // Per-CLI catalog latency, standing in for a cold probe that boots a CLI.
+  const catalogDelay: Record<string, number> = {}
   const registry = {
     adapter: (agent: string) => ({
-      models: async () => ({ models: CATALOG[agent] }),
+      models: async () => {
+        if (catalogDelay[agent]) await new Promise((done) => setTimeout(done, catalogDelay[agent]))
+        return { models: CATALOG[agent] }
+      },
       // CLI substitutes its model for empty model names, like the real adapter.
       resolveDefaults: async (config: AgentConfig) =>
         config.model ? config : { ...config, model: CATALOG[agent]?.[0]?.value ?? '' },
@@ -130,7 +136,7 @@ async function harness(t: TestContext) {
     return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  return { db, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value } }
+  return { db, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value }, setCatalogDelay: (agent: string, ms: number) => { catalogDelay[agent] = ms } }
 }
 
 test('an agent names only its own session and broadcasts the title without changing its activity', async (t) => {
@@ -502,4 +508,30 @@ test('agents tag cards from the shared catalog and create tags only while the pr
   assert.match(cleared.content[0]!.text, /Tags cleared/)
   assert.equal(db.select().from(cardTagLinks).all().length, 1)
   assert.equal((await mcp('author', 'update_card', { number: 1, tags: Array.from({ length: 9 }, (_, i) => `t${i}`) })).isError, true)
+})
+
+test('a slow request does not hold the other sessions’ requests', async (t) => {
+  const { conversation, mcp, setCatalogDelay } = await harness(t)
+  conversation('slow')
+  conversation('quick')
+  // Only `list_models` reads catalogs; with the sequential sweep, the rename behind it waited for the whole probe.
+  setCatalogDelay('claude', 4000)
+  const started = Date.now()
+  const pending = mcp('slow', 'list_models', { agent: 'claude' })
+  const quick = await mcp('quick', 'rename_session', { title: 'Vite' })
+  assert.equal(quick.isError, undefined, quick.content[0]?.text)
+  assert.ok(Date.now() - started < 3000, 'the rename waited for the catalog probe')
+  const slow = await pending
+  assert.match(slow.content[0]!.text, /`opus` \(Opus\)/)
+})
+
+test('list_models skips disabled and hidden CLIs instead of probing them', async (t) => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('parent')
+  db.insert(userSettings).values({ userId: 'owner', data: JSON.stringify({ hiddenAgents: ['codex'] }) }).run()
+  const all = await mcp('parent', 'list_models', {})
+  assert.match(all.content[0]!.text, /## codex\nHidden by the user/)
+  assert.match(all.content[0]!.text, /## claude — defaults/)
+  const explicit = await mcp('parent', 'list_models', { agent: 'codex' })
+  assert.match(explicit.content[0]!.text, /`astra-1` \(Astra\)/)
 })
