@@ -22,14 +22,18 @@ const statusKey = (projectId: string) => ['worktree-status', projectId]
  * return stale data while recalculating (`fresh: false`); retry once shortly afterward for the next
  * snapshot.
  */
-export function useWorktreeStatuses(projectId: string | null | undefined) {
-  return useQuery({
+export function worktreeStatusQuery(projectId: string | null | undefined) {
+  return {
     queryKey: statusKey(projectId ?? ''),
     queryFn: () => api.get<WorktreeStatusListDto>(`/api/projects/${projectId}/worktrees/status`),
     enabled: Boolean(projectId),
     staleTime: 15_000,
-    refetchInterval: (query) => (query.state.data && !query.state.data.fresh ? 2_000 : false),
-  })
+    refetchInterval: (query: { state: { data?: WorktreeStatusListDto } }) => (query.state.data && !query.state.data.fresh ? 2_000 : false),
+  }
+}
+
+export function useWorktreeStatuses(projectId: string | null | undefined) {
+  return useQuery(worktreeStatusQuery(projectId))
 }
 
 /**
@@ -41,21 +45,23 @@ export function useWorktreeStatuses(projectId: string | null | undefined) {
  */
 export function useConversationWorktree(conversation: Pick<ConversationDto, 'id' | 'projectId'>): WorktreeStatusDto | null {
   const { data } = useWorktreeStatuses(conversation.projectId)
-  return useMemo(() => {
-    if (!data) return null
-    let edited: WorktreeStatusDto | null = null
-    let editedAt = -1
-    for (const tree of data.worktrees) {
-      const link = tree.conversations.find((entry) => entry.id === conversation.id)
-      if (!link) continue
-      if (link.link === 'worktree') return tree
-      if (link.lastActiveAt > editedAt) {
-        edited = tree
-        editedAt = link.lastActiveAt
-      }
+  return useMemo(() => (data ? conversationWorktree(data, conversation.id) : null), [data, conversation.id])
+}
+
+/** Same choice outside React, for views that read several projects at once. */
+export function conversationWorktree(list: WorktreeStatusListDto, conversationId: string): WorktreeStatusDto | null {
+  let edited: WorktreeStatusDto | null = null
+  let editedAt = -1
+  for (const tree of list.worktrees) {
+    const link = tree.conversations.find((entry) => entry.id === conversationId)
+    if (!link) continue
+    if (link.link === 'worktree') return tree
+    if (link.lastActiveAt > editedAt) {
+      edited = tree
+      editedAt = link.lastActiveAt
     }
-    return edited
-  }, [data, conversation.id])
+  }
+  return edited
 }
 
 /** Remaining work, merged trees with files to sort, and cleanup for the project counter. */

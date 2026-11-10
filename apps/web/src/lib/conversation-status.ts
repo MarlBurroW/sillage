@@ -27,6 +27,12 @@ const loops = new Map<string, number>()
 /** Latest known `seq` per conversation for unread state. Separate table for the same reason. */
 const seqs = new Map<string, number>()
 /**
+ * When a push last showed this thread doing something, in milliseconds. The REST `updatedAt` dates
+ * from list loading; time windows such as “active in the last 30 minutes” need what happened
+ * since.
+ */
+const activity = new Map<string, number>()
+/**
  * Volume readings per conversation for detailed sidebar mode. The only table holding objects:
  * `useSyncExternalStore` identity comparison prohibits recreating them on read. Store the received
  * object unchanged and replace it only when a field changes.
@@ -122,6 +128,11 @@ export function liveSeq(conversationId: string): number {
   return seqs.get(conversationId) ?? 0
 }
 
+/** Last observed activity, 0 before any push since the page loaded. */
+export function liveActivityAt(conversationId: string): number {
+  return activity.get(conversationId) ?? 0
+}
+
 export function liveStatus(conversationId: string): ConversationStatus | undefined {
   return statuses.get(conversationId)
 }
@@ -189,6 +200,7 @@ export function useStatusFeed(): void {
           void queryClient.invalidateQueries({ queryKey: ['card-tags'] })
         }
         if (busy) settledAt.delete(conversationId)
+        if (busy || wasBusy || (seqs.get(conversationId) ?? 0) !== lastNotableSeq) activity.set(conversationId, Date.now())
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)

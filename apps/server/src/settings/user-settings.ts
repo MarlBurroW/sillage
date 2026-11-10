@@ -13,6 +13,7 @@ import {
   type ProjectDefaults,
   type UserSettingsDto,
   type NewsPreferences,
+  type SessionView,
 } from '@sillage/protocol'
 
 export type UserSettings = UserSettingsDto
@@ -95,6 +96,17 @@ export function writeOnboarding(db: Db, userId: string, onboarding: OnboardingSt
 export function writeProjectDefaults(db: Db, userId: string, projectDefaults: ProjectDefaults): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, projectDefaults })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Replaces the whole list of saved wall views, in tab order. */
+export function writeSessionViews(db: Db, userId: string, sessionViews: SessionView[]): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, sessionViews })
 
   db.insert(userSettings)
     .values({ userId, data })

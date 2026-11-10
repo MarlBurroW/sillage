@@ -27,6 +27,7 @@ import { setPanelOpen, setPanelTab, setPanelTree, showTerminal } from '../lib/pa
 import { projectViewOf, projectViewPath } from '../lib/project-view'
 import { useProjects } from '../lib/projects'
 import { useSchedules } from '../lib/schedules'
+import { useSessionViews, viewName } from '../lib/session-views'
 import { splitExcerpt, useMessageSearch } from '../lib/search'
 import { useInstance } from '../lib/instance'
 import { useCurrentUser } from '../lib/session'
@@ -192,6 +193,8 @@ export function CommandPalette({
 
   // Build only when opened: conversation lists change on every live event and closed palettes have
   // no use for updates.
+  const { views: savedViews } = useSessionViews()
+  const wallViews = useMemo(() => savedViews.map((view) => ({ id: view.id, name: viewName(view, t) })), [savedViews, t])
   const items = useMemo(
     () =>
       !open ? [] : [...(canConcentrate ? [{
@@ -213,8 +216,9 @@ export function CommandPalette({
         settings,
         theme,
         applyTheme,
+        wallViews,
       })],
-    [open, canConcentrate, concentration, t, visibleProjects, currentProjectId, conversations, catalog, schedules, actions, runAction, mcp, settings, theme, applyTheme],
+    [open, canConcentrate, concentration, t, visibleProjects, currentProjectId, conversations, catalog, schedules, actions, runAction, mcp, settings, theme, applyTheme, wallViews],
   )
   const fileItems = useMemo(
     () => buildFileItems(t, files.data, visibleProjects),

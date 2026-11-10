@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { DEFAULT_PROJECT_DEFAULTS, type AgentConfig, type AgentKind, type BoardOrder, type ComposerLayout, type NotificationPrefs, type OnboardingState, type ProjectDefaults, type UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
-const USER_SETTINGS_KEY = ['user-settings']
+export const USER_SETTINGS_KEY = ['user-settings']
 
 /** Use `enabled` for screens mounted before login: the route returns 401 without an account. */
 export function useUserSettings(enabled = true) {

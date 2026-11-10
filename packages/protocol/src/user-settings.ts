@@ -4,6 +4,7 @@ import { agentKindSchema, type AgentKind } from './events.js'
 import { instructionsModeSchema } from './instructions.js'
 import { memoryModeSchema, type MemoryMode } from './memory.js'
 import { DEFAULT_NOTIFICATION_PREFS, notificationPrefsSchema, type NotificationPrefs } from './notifications.js'
+import { MAX_SESSION_VIEWS, sessionViewSchema, type SessionView } from './session-query.js'
 import {
   agentConfigSchema,
   claudeConfigSchema,
@@ -103,6 +104,14 @@ export interface UserSettingsDto {
    * appearance, instructions), so resuming on another device must continue at the right step.
    */
   onboarding: OnboardingState
+  /**
+   * Saved views of the session wall, in tab order; `null` until the account changes any, so the
+   * built-in views can still evolve for accounts that never touched them.
+   *
+   * Account-level like collapsed projects: a view is a way of watching one's own work, wanted
+   * on every device.
+   */
+  sessionViews: SessionView[] | null
   /**
    * Defaults for new projects created by this account when creation specifies nothing.
    *
@@ -310,6 +319,7 @@ export const storedUserSettingsSchema = z
     composerLayout: composerLayoutSchema.default(DEFAULT_COMPOSER_LAYOUT).catch(DEFAULT_COMPOSER_LAYOUT),
     onboarding: onboardingStateSchema.default(DEFAULT_ONBOARDING).catch(DEFAULT_ONBOARDING),
     projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
+    sessionViews: z.array(sessionViewSchema).max(MAX_SESSION_VIEWS).nullable().default(null).catch(null),
   })
   .catch({
     news: DEFAULT_NEWS_PREFERENCES,
@@ -323,6 +333,7 @@ export const storedUserSettingsSchema = z
     composerLayout: DEFAULT_COMPOSER_LAYOUT,
     onboarding: DEFAULT_ONBOARDING,
     projectDefaults: DEFAULT_PROJECT_DEFAULTS,
+    sessionViews: null,
   })
 
 export const updateUserSettingsBodySchema = z.object({
@@ -349,4 +360,8 @@ export const updateUserSettingsBodySchema = z.object({
   onboarding: onboardingStateSchema.optional(),
   /** Replaced wholesale: two choices always made together. */
   projectDefaults: projectDefaultsSchema.optional(),
+  /** Whole list in tab order, like collapsed projects: the wall knows every view it shows. */
+  sessionViews: z.array(sessionViewSchema).max(MAX_SESSION_VIEWS)
+    .refine((views) => new Set(views.map((view) => view.id)).size === views.length, 'Duplicate view id')
+    .optional(),
 })

@@ -11,6 +11,7 @@ import {
   writeOnboarding,
   writeProjectDefaults,
   writeProjectsDir,
+  writeSessionViews,
   writeUserAgentDefault,
 } from '../../settings/user-settings.js'
 import type { AppContext } from '../context.js'
@@ -39,6 +40,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.composerLayout) writeComposerLayout(ctx.db, user.id, body.composerLayout)
     if (body.onboarding) writeOnboarding(ctx.db, user.id, body.onboarding)
     if (body.projectDefaults) writeProjectDefaults(ctx.db, user.id, body.projectDefaults)
+    if (body.sessionViews) writeSessionViews(ctx.db, user.id, body.sessionViews)
     // Reread rather than rebuild from the body: the screen needs both CLIs, and
     // the body includes only one.
     return readUserSettings(ctx.db, user.id)

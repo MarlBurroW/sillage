@@ -4,6 +4,7 @@ import {
   CalendarClock,
   Contrast,
   FolderPlus,
+  LayoutGrid,
   MessageSquare,
   Moon,
   Plug,
@@ -88,6 +89,8 @@ export interface PaletteSources {
   settings: readonly SettingsEntry[]
   theme: Theme
   applyTheme: (theme: Theme) => void
+  /** Saved wall views, reachable by name like settings sections. */
+  wallViews: readonly { id: string; name: string }[]
 }
 
 function projectItems(t: Translate, project: ProjectDto, current: boolean): PaletteItem[] {
@@ -326,6 +329,11 @@ function generalItems(sources: PaletteSources): PaletteItem[] {
   const commands = [
     command('new-project', t('shell.projects.add'), <FolderPlus size={ICON} />, { type: 'navigate', to: '/projects/new' }),
     command('services', t('services.title'), <Server size={ICON} />, { type: 'navigate', to: '/services' }),
+    command('wall', t('wall.title'), <LayoutGrid size={ICON} />, { type: 'navigate', to: '/wall' }),
+    ...sources.wallViews.map((view) => command(`wall:${view.id}`, t('wall.palette.view', { name: view.name }), <LayoutGrid size={ICON} />, {
+      type: 'navigate',
+      to: `/wall?view=${encodeURIComponent(view.id)}`,
+    })),
     // Omit the applied theme because selecting it would do nothing.
     ...THEMES.filter((theme) => theme !== sources.theme).map((theme) =>
       command(`theme:${theme}`, t('search.command.theme', { name: t(THEME_LABELS[theme]) }), themeIcons[theme], {

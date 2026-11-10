@@ -23,6 +23,8 @@ import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
 // Load on demand: explorer and script editor are used only here and the main bundle has no precache headroom.
 const AutomationPage = lazy(() => import('./routes/AutomationPage').then((module) => ({ default: module.AutomationPage })))
+// The wall pulls its own styles and query tooling: keep them out of the main bundle, close to the precache limit.
+const WallPage = lazy(() => import('./routes/WallPage').then((module) => ({ default: module.WallPage })))
 // Onboarding runs once per account: its code, including QR generation, does not belong in the main bundle.
 const OnboardingPage = lazy(() => import('./routes/OnboardingPage').then((module) => ({ default: module.OnboardingPage })))
 import { AboutSection } from './routes/AboutSection'
@@ -127,6 +129,7 @@ export function App() {
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />
+          <Route path="/wall" element={<Suspense fallback={null}><WallPage /></Suspense>} />
           <Route path="/p/:projectId" element={<ProjectPage />} />
           <Route path="/p/:projectId/board" element={<BoardPage />} />
           <Route path="/p/:projectId/schedules" element={<SchedulePage />} />

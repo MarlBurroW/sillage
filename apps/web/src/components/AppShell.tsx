@@ -53,6 +53,7 @@ import {
   Users,
   X,
   FolderGit2,
+  LayoutGrid,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
@@ -230,9 +231,10 @@ export function AppShell() {
   const discussionRoute = useMatch('/discussions/:conversationId')
   const boardRoute = useMatch('/p/:projectId/board')
   const servicesRoute = useMatch('/services')
+  const wallRoute = useMatch('/wall')
   const schedulesRoute = useMatch('/p/:projectId/schedules')
   const automationRoute = useMatch('/p/:projectId/schedules/:taskId')
-  const contextualHeader = Boolean(conversationRoute || discussionRoute || boardRoute || servicesRoute || schedulesRoute || automationRoute)
+  const contextualHeader = Boolean(conversationRoute || discussionRoute || boardRoute || servicesRoute || wallRoute || schedulesRoute || automationRoute)
   const navInactive = concentration || (wide ? hidden : !navOpen)
   useVisualViewport()
   useFileDropGuard()
@@ -536,6 +538,7 @@ function Sidebar({
         <SidebarActivity conversations={attended} projects={projects} onNavigate={onNavigate}>
           <div className="sidebar-global-links">
             <button type="button" className="sidebar-global-link" onClick={() => setFavoritesOpen(value => !value)} aria-expanded={favoritesOpen} aria-controls="sidebar-favorites"><Star size={14} /><span>{t('shell.favorites.heading')}</span><span className="ml-auto tabular-nums text-ink-faint">{favorites.length}</span></button>
+            <NavLink to="/wall" onClick={onNavigate} className="sidebar-global-link"><LayoutGrid size={14} /><span>{t('wall.nav')}</span></NavLink>
             <SidebarDecisions onNavigate={onNavigate} />
           </div>
           {favoritesOpen && <div id="sidebar-favorites" className="sidebar-favorites"><ul>
