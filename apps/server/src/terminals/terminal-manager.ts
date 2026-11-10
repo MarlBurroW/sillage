@@ -329,11 +329,11 @@ export class TerminalManager {
       this.flushReplay(managed)
       if (managed.exited || !managed.pty) continue
       // Windows: node-pty closes the console and leaves ending its processes to a helper it
-      // starts, which a server on its way out never hears from, and that exit then waits
-      // for the shell: five seconds, until Windows ends what ignored the close. Ending the
-      // tree ourselves lets the server leave at once, without a helper left behind.
+      // starts, which a server on its way out never hears from: the stop then lasts until
+      // Windows ends what ignored the close, five seconds later. End the tree ourselves
+      // first; a console left open instead keeps the server from exiting at all.
       if (process.platform === 'win32') killTree(managed.pty.pid, 'SIGKILL')
-      else managed.pty.kill()
+      managed.pty.kill()
     }
     this.terminals.clear()
   }
