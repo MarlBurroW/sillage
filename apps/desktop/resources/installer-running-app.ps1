@@ -50,16 +50,17 @@ $spared = @($PID, $self.ParentProcessId)
 # CIM rather than Get-Process, which cannot read the path of a 64-bit process from the
 # 32-bit PowerShell an installer starts.
 function Get-Running {
-  # @() makes a lone match a collection, so that Count is reliable in PowerShell 5.1: one
-  # process left is the usual case here, and it must not pass for none.
-  @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | Where-Object {
-      $_.ExecutablePath -and
-      $_.ExecutablePath.StartsWith($prefix, 'OrdinalIgnoreCase') -and
-      $spared -notcontains $_.ProcessId
-    })
+  Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | Where-Object {
+    $_.ExecutablePath -and
+    $_.ExecutablePath.StartsWith($prefix, 'OrdinalIgnoreCase') -and
+    $spared -notcontains $_.ProcessId
+  }
 }
 
-$found = Get-Running
+# @() at each call: a function returns a lone match as the object itself, and its Count is
+# not reliable in PowerShell 5.1. One process left is the usual case here, and it must not
+# pass for none.
+$found = @(Get-Running)
 if ($found.Count -eq 0) { exit 0 }
 Write-SetupLog ('{0}: running from {1}: {2}' -f $mode, $dir, (Format-Processes $found))
 
@@ -88,7 +89,7 @@ while ((Get-Date) -lt $deadline -and @(Get-Process -Id $ids -ErrorAction Silentl
 $deadline = (Get-Date).AddSeconds($KillSeconds)
 $reported = @()
 while ($true) {
-  $found = Get-Running
+  $found = @(Get-Running)
   if ($found.Count -eq 0) {
     # Windows releases the files of a process a moment after it is gone.
     Start-Sleep -Milliseconds 300

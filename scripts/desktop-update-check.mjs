@@ -5,7 +5,7 @@ import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } f
 import { mkdir, mkdtemp, rm, symlink, unlink } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { _electron as electron } from 'playwright'
@@ -150,6 +150,18 @@ function startLeftover() {
 async function reinstallByHand() {
   const installer = join(feed, /^path: (.+)$/m.exec(channel)?.[1]?.trim() ?? '')
   assert.ok(existsSync(installer) && statSync(installer).isFile(), `no installer named in ${channelFile}`)
+  // The installer of the update tidies up for a few seconds after it relaunched the app,
+  // and a second installer leaves at once (code 2) rather than run beside it.
+  const running = () => {
+    const script = `Get-Process -Name '${basename(installer, '.exe')}' -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }; exit 0`
+    return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' }).split(/\s+/).filter(Boolean)
+  }
+  const since = Date.now()
+  const first = running()
+  await waitFor('the installer of the update to finish', () => running().length === 0, 120_000)
+  console.log(first.length > 0
+    ? `installer of the update (${first.join(', ')}) gone ${Math.round((Date.now() - since) / 1000)} s after the relaunch`
+    : 'installer of the update already gone')
   // Replacing the installation starts by removing its directory: a file of ours that is
   // gone says the previous one really went, which the unchanged version cannot.
   const marker = join(dirname(executable), 'reinstall-check')
@@ -165,7 +177,7 @@ async function reinstallByHand() {
         throw new Error(`${what}: the installer did not finish`)
       }),
     ])
-    assert.equal(code, 0, `${what}: the installer exited with ${code}`)
+    assert.equal(code, 0, `${what}: the installer exited with ${code} (installers running: ${running().join(', ') || 'none'})`)
     assert.ok(!existsSync(marker), `${what}: the previous installation was not removed`)
     assert.equal(installedVersion(), target, `${what}: no application after the installer`)
     console.log(`${what}: reinstalled`)

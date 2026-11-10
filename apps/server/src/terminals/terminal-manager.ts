@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
 import type { Config } from '../config.js'
+import { killTree } from '../platform/process-tree.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
 
@@ -326,7 +327,13 @@ export class TerminalManager {
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       this.persistMeta(managed)
       this.flushReplay(managed)
-      if (!managed.exited) managed.pty?.kill()
+      if (managed.exited || !managed.pty) continue
+      // Windows: node-pty closes the console and leaves ending its processes to a helper it
+      // starts, which a server on its way out never hears from, and that exit then waits
+      // for the shell: five seconds, until Windows ends what ignored the close. Ending the
+      // tree ourselves lets the server leave at once, without a helper left behind.
+      if (process.platform === 'win32') killTree(managed.pty.pid, 'SIGKILL')
+      else managed.pty.kill()
     }
     this.terminals.clear()
   }

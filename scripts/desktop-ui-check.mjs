@@ -272,6 +272,10 @@ try {
     assert.equal(typeof took(stage), 'number', `étape ${stage} absente du journal de diagnostic`)
   }
   console.log(`démarrage : serveur prêt en ${took('server-ready')} ms, interface en ${took('interface-ready')} ms ; arrêt du serveur en ${took('server-stop')} ms`)
+  // With the terminal of this check still open. On Windows, a server that leaves its shell
+  // to the console's close takes five seconds to stop, during which a relaunch or an
+  // installer finds Sillage still running.
+  assert.ok(took('server-stop') < 3000, `le serveur a mis ${took('server-stop')} ms à s'arrêter`)
 
   // A database the server cannot open: it exits while starting, every time. The app tries
   // again by itself once, then asks; here "Try again" once, then "Quit".
