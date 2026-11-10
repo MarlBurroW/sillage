@@ -166,6 +166,13 @@ try {
   assert.ok(settings.sessionViews.some((view) => view.name === 'Revue du matin' && view.query === 'active:30m sort:activity'))
   await page.screenshot({ path: join(shots, 'wall-saved-view.png') })
 
+  // Saved views are reachable from the command palette and open their own tab.
+  await page.keyboard.press('Control+k')
+  const palette = page.getByRole('dialog', { name: 'Rechercher', exact: true })
+  await palette.getByRole('combobox').fill('mur non lues')
+  await palette.getByRole('option', { name: /Mur : Non lues/ }).first().click()
+  await tabs.getByRole('tab', { name: /Non lues/, selected: true }).waitFor()
+
   // A running session that finishes while unread keeps its slot, marked out of view.
   await tabs.getByRole('tab', { name: /En cours/ }).click()
   const finishing = byStatus('running').find((entry) => entry.lastReadSeq === 0)
