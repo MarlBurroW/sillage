@@ -93,11 +93,6 @@ async function stages(profile) {
   return lines.split('\n').filter(Boolean).map((line) => JSON.parse(line))
 }
 
-// TEMPORARY: measures on a real Windows what the stop of a terminal's shell costs.
-if (process.platform === 'win32') {
-  await import('./windows-pty-stop-probe.mjs').then(({ probe }) => probe(executable)).catch((err) => console.log(`pty stop probe failed: ${err.stack ?? err}`))
-}
-
 try {
   app = await electron.launch({
     executablePath: executable,
@@ -280,8 +275,20 @@ try {
   // With the terminal of this check still open. On Windows, a server that leaves its shell
   // to the console's close takes five seconds to stop, during which a relaunch or an
   // installer finds Sillage still running.
-  // TEMPORARY: a warning while the probe above is being read, an assertion again after it.
-  if (took('server-stop') >= 3000) console.log(`ATTENTION : le serveur a mis ${took('server-stop')} ms à s'arrêter`)
+  // TEMPORARY: what the server logged while stopping, and the requests of the connections
+  // it names, while the slow stop on Windows is being tracked down. An assertion again after.
+  {
+    const log = (await readFile(join(userData, 'logs/server.log'), 'utf8')).split('\n').filter(Boolean)
+    const from = log.findLastIndex((line) => line.includes('arrêt en cours'))
+    const tail = log.slice(from)
+    console.log(`--- server.log, from the stop on\n${tail.join('\n')}`)
+    const ports = new Set(tail.join(' ').match(/<\d+/g)?.map((port) => port.slice(1)))
+    for (const port of ports) {
+      const urls = log.slice(0, from).filter((line) => line.includes(`"remotePort":${port}`)).map((line) => JSON.parse(line).req?.url)
+      console.log(`--- connection from port ${port}: ${urls.length} request(s), last ${urls.slice(-3).join(' , ')}`)
+    }
+    if (took('server-stop') >= 3000) console.log(`ATTENTION : le serveur a mis ${took('server-stop')} ms à s'arrêter`)
+  }
 
   // A database the server cannot open: it exits while starting, every time. The app tries
   // again by itself once, then asks; here "Try again" once, then "Quit".
