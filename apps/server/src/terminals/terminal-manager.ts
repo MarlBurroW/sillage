@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { spawn, type IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
 import type { Config } from '../config.js'
@@ -15,6 +16,9 @@ const REPLAY_BYTES = 128 * 1024
 
 /** Persist changed screens at this interval. */
 const FLUSH_INTERVAL_MS = 30 * 1000
+
+/** How long a stop waits for the shells it ends. They take milliseconds, or 0.1 s on Windows. */
+const SHELL_EXIT_TIMEOUT_MS = 2000
 
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
@@ -319,29 +323,24 @@ export class TerminalManager {
       .map((managed) => managed.id)
   }
 
-  /** Daemon shutdown writes screens then kills processes while retaining files, which restore entries as interrupted after restart. */
-  shutdown(mode: 'kill' | 'leave' | 'pid' = 'kill'): Promise<void>[] {
+  /** Daemon shutdown writes screens then kills processes while retaining files, which restore entries as interrupted after restart. Resolves once the shells are gone. */
+  async shutdown(): Promise<void> {
     clearInterval(this.flushTimer)
-    // TEMPORARY (mode, returned exits): ways of ending the shells compared on Windows.
-    const exits: Promise<void>[] = []
+    const gone: Promise<void>[] = []
     for (const managed of this.terminals.values()) {
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       this.persistMeta(managed)
       this.flushReplay(managed)
       const pty = managed.pty
       if (managed.exited || !pty) continue
-      exits.push(new Promise((resolve) => pty.onExit(() => resolve())))
-      if (mode === 'kill') pty.kill()
-      else if (mode === 'pid') {
-        try {
-          process.kill(pty.pid)
-        } catch {
-          // Already gone.
-        }
-      }
+      gone.push(new Promise((resolve) => pty.onExit(() => resolve())))
+      pty.kill()
     }
     this.terminals.clear()
-    return exits
+    // Wait for the shells, a tenth of a second on Windows: a process that exits while a
+    // console it has just closed is still ending its shell never finishes exiting, and
+    // stays until whoever asked for the stop kills it. Bounded, for a shell that will not go.
+    await Promise.race([Promise.all(gone), delay(SHELL_EXIT_TIMEOUT_MS, undefined, { ref: false })])
   }
 
   private restore(): void {

@@ -1,5 +1,4 @@
 import { mkdirSync, rmSync } from 'node:fs'
-import { Socket } from 'node:net'
 import { openDatabase, projects } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
@@ -223,44 +222,11 @@ async function main(): Promise<void> {
     tasks.stop()
     board.stop()
     decisions.stop()
-    // TEMPORARY: where a stop that drags on Windows spends its time, and what is still open.
-    const stopStarted = Date.now()
-    const probe = (label: string) => {
-      const handles = (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles()
-      const sockets = handles
-        .filter((handle): handle is Socket => handle instanceof Socket)
-        .map((socket) => {
-          const internals = socket as Socket & { parser?: unknown; _httpMessage?: unknown; _handle?: { reading?: boolean } | null }
-          return `${socket.localPort ?? '-'}<${socket.remotePort ?? '-'} r${socket.bytesRead} w${socket.bytesWritten} ${socket.readyState}${socket.destroyed ? ' destroyed' : ''}${socket.closed ? ' closed' : ''}${internals._handle ? (internals._handle.reading ? ' reading' : ' not-reading') : ' no-handle'}${internals.parser ? ' http' : ''}${internals._httpMessage ? ' responding' : ''}`
-        })
-      const resources: Record<string, number> = {}
-      for (const name of process.getActiveResourcesInfo()) resources[name] = (resources[name] ?? 0) + 1
-      app.log.info({ probe: label, ms: Date.now() - stopStarted, resources, sockets }, 'PROBE stop')
-    }
-    probe('start')
     await antigravityLogin.closeAll()
     await sessions.stopAll()
-    probe('sessions stopped')
-    // TEMPORARY: ways of leaving compared on Windows, chosen by the probe that starts us.
-    const variant = process.env.SILLAGE_STOP_PROBE ?? ''
-    const exits = terminals.shutdown(variant.includes('nokill') ? 'leave' : variant.includes('killpid') ? 'pid' : 'kill')
-    probe('terminals shut down')
-    // Not kept alive by the probe itself: a process that could leave should.
-    const pending = setInterval(() => probe('http still closing'), 1000)
-    pending.unref()
+    await terminals.shutdown()
     await app.close()
-    clearInterval(pending)
-    probe('http closed')
     sqlite.close()
-    if (variant.includes('waitexit')) {
-      await Promise.race([Promise.all(exits), new Promise((resolve) => setTimeout(resolve, 3000))])
-      probe('shells gone')
-    }
-    const pause = /delay(\d+)/.exec(variant)
-    if (pause) await new Promise((resolve) => setTimeout(resolve, Number(pause[1])))
-    probe('exiting')
-    if (variant.includes('hard')) process.kill(process.pid)
-    if (variant.includes('really')) (process as unknown as { reallyExit(code: number): never }).reallyExit(0)
     process.exit(0)
   }
   process.on('SIGINT', () => void shutdown('SIGINT'))

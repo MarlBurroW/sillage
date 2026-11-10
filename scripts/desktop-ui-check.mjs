@@ -89,11 +89,6 @@ async function stages(profile) {
   return lines.split('\n').filter(Boolean).map((line) => JSON.parse(line))
 }
 
-// TEMPORARY: compares on a real Windows the ways the server can leave with a terminal open.
-if (process.platform === 'win32') {
-  await import('./windows-stop-probe.mjs').then(({ probe }) => probe(executable)).catch((err) => console.log(`stop probe failed: ${err.stack ?? err}`))
-}
-
 try {
   app = await electron.launch({
     executablePath: executable,
@@ -273,16 +268,10 @@ try {
     assert.equal(typeof took(stage), 'number', `étape ${stage} absente du journal de diagnostic`)
   }
   console.log(`démarrage : serveur prêt en ${took('server-ready')} ms, interface en ${took('interface-ready')} ms ; arrêt du serveur en ${took('server-stop')} ms`)
-  // TEMPORARY: the probe lines of the server, and what it logged from the stop on.
-  {
-    const log = (await readFile(join(userData, 'logs/server.log'), 'utf8')).split('\n').filter(Boolean)
-    const from = log.findLastIndex((line) => line.includes('arrêt en cours'))
-    console.log(`--- server.log, upgrades answered in HTTP\n${log.slice(0, from).filter((line) => line.includes('PROBE') || line.includes('"url":"/api/ws"')).join('\n')}`)
-    console.log(`--- server.log, from the stop on\n${log.slice(from).join('\n')}`)
-  }
-  // A server that waits for a connection it will never see closed takes until the app's
-  // bound to stop, and a relaunch or an installer then finds Sillage still running. The
-  // refused WebSocket upgrade above left such a connection behind.
+  // With the terminal of this check still open and a WebSocket upgrade refused above: a
+  // server that waits for that connection, or that exits while the terminal's console is
+  // closing (Windows), lasts until the app's bound, and a relaunch or an installer then
+  // finds Sillage still running.
   assert.ok(took('server-stop') < 3000, `le serveur a mis ${took('server-stop')} ms à s'arrêter`)
 
   // A database the server cannot open: it exits while starting, every time. The app tries
