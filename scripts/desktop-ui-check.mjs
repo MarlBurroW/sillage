@@ -64,14 +64,10 @@ function diagnose(path) {
   )
 }
 
-/**
- * Raw HTTP request forging `Host`/`Origin` like a hostile page. Without the shared agent:
- * it keeps its connection five seconds, and the one of the refused WebSocket upgrade is
- * out of the stopping server's reach, which would wait for it and pass for slow to stop.
- */
+/** Raw HTTP request forging `Host`/`Origin` like a hostile page. */
 function raw(port, path, headers) {
   return new Promise((resolve, reject) => {
-    const req = request({ host: '127.0.0.1', port, path, headers, agent: false }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path, headers }, (res) => {
       res.resume()
       resolve(res.statusCode)
     })
@@ -272,23 +268,10 @@ try {
     assert.equal(typeof took(stage), 'number', `étape ${stage} absente du journal de diagnostic`)
   }
   console.log(`démarrage : serveur prêt en ${took('server-ready')} ms, interface en ${took('interface-ready')} ms ; arrêt du serveur en ${took('server-stop')} ms`)
-  // With the terminal of this check still open. On Windows, a server that leaves its shell
-  // to the console's close takes five seconds to stop, during which a relaunch or an
-  // installer finds Sillage still running.
-  // TEMPORARY: what the server logged while stopping, and the requests of the connections
-  // it names, while the slow stop on Windows is being tracked down. An assertion again after.
-  {
-    const log = (await readFile(join(userData, 'logs/server.log'), 'utf8')).split('\n').filter(Boolean)
-    const from = log.findLastIndex((line) => line.includes('arrêt en cours'))
-    const tail = log.slice(from)
-    console.log(`--- server.log, from the stop on\n${tail.join('\n')}`)
-    const ports = new Set(tail.join(' ').match(/<\d+/g)?.map((port) => port.slice(1)))
-    for (const port of ports) {
-      const urls = log.slice(0, from).filter((line) => line.includes(`"remotePort":${port}`)).map((line) => JSON.parse(line).req?.url)
-      console.log(`--- connection from port ${port}: ${urls.length} request(s), last ${urls.slice(-3).join(' , ')}`)
-    }
-    if (took('server-stop') >= 3000) console.log(`ATTENTION : le serveur a mis ${took('server-stop')} ms à s'arrêter`)
-  }
+  // A server that waits for a connection it will never see closed takes until the app's
+  // bound to stop, and a relaunch or an installer then finds Sillage still running. The
+  // refused WebSocket upgrade above left such a connection behind.
+  assert.ok(took('server-stop') < 3000, `le serveur a mis ${took('server-stop')} ms à s'arrêter`)
 
   // A database the server cannot open: it exits while starting, every time. The app tries
   // again by itself once, then asks; here "Try again" once, then "Quit".

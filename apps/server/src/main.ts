@@ -1,5 +1,4 @@
 import { mkdirSync, rmSync } from 'node:fs'
-import { Socket } from 'node:net'
 import { openDatabase, projects } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
@@ -223,32 +222,11 @@ async function main(): Promise<void> {
     tasks.stop()
     board.stop()
     decisions.stop()
-    // TEMPORARY: where a stop that drags on Windows spends its time, and what is still open.
-    const stopStarted = Date.now()
-    const probe = (label: string) => {
-      const handles = (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles()
-      const sockets = handles
-        .filter((handle): handle is Socket => handle instanceof Socket)
-        .map((socket) => {
-          const internals = socket as Socket & { parser?: unknown; _httpMessage?: unknown }
-          return `${socket.localPort ?? '-'}<${socket.remotePort ?? '-'} r${socket.bytesRead} w${socket.bytesWritten}${socket.destroyed ? ' destroyed' : ''}${internals.parser ? ' http' : ''}${internals._httpMessage ? ' responding' : ''}`
-        })
-      const resources: Record<string, number> = {}
-      for (const name of process.getActiveResourcesInfo()) resources[name] = (resources[name] ?? 0) + 1
-      app.log.info({ probe: label, ms: Date.now() - stopStarted, resources, sockets }, 'arrêt : sonde')
-    }
-    probe('start')
     await antigravityLogin.closeAll()
     await sessions.stopAll()
-    probe('sessions stopped')
     terminals.shutdown()
-    probe('terminals shut down')
-    const pending = setInterval(() => probe('http still closing'), 1000)
     await app.close()
-    clearInterval(pending)
-    probe('http closed')
     sqlite.close()
-    probe('exiting')
     process.exit(0)
   }
   process.on('SIGINT', () => void shutdown('SIGINT'))

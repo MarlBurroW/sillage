@@ -1,4 +1,5 @@
 import { personalWorkspace } from '../conversations/personal-workspaces.js'
+import type { Socket } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
 import {
@@ -291,6 +292,15 @@ export async function registerWebSocketHub(
 ): Promise<void> {
   const { default: websocket } = await import('@fastify/websocket')
   await app.register(websocket)
+
+  // The plugin closes the connection of an upgrade answered in plain HTTP, but only for a
+  // request its own `onRequest` hook has seen. One refused by a hook declared before it
+  // (the origin guard, the session check) kept its socket for as long as the client did,
+  // and a stopping server waits for every connection. `injectWS` requests have no socket.
+  app.addHook('onResponse', async (request) => {
+    const socket = request.raw.socket as Socket | undefined
+    if (request.raw.headers.upgrade !== undefined) socket?.destroy()
+  })
 
   const connections = new Set<Connection>()
 
