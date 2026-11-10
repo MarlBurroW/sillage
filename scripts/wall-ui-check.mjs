@@ -160,8 +160,11 @@ try {
   await page.getByRole('button', { name: 'Nouvelle vue depuis cette requête' }).click()
   const dialog = page.getByRole('dialog', { name: 'Nouvelle vue' })
   await dialog.getByLabel('Nom').fill('Revue du matin')
+  // The tab appears optimistically: wait for the account settings to confirm before rereading them.
+  const stored = page.waitForResponse((response) => response.url().endsWith('/api/me/settings') && response.request().method() === 'PATCH')
   await dialog.getByRole('button', { name: 'Créer la vue' }).click()
   await tabs.getByRole('tab', { name: /Revue du matin/, selected: true }).waitFor()
+  assert.ok((await stored).ok())
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.ok(settings.sessionViews.some((view) => view.name === 'Revue du matin' && view.query === 'active:30m sort:activity'))
   await page.screenshot({ path: join(shots, 'wall-saved-view.png') })
