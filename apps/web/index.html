@@ -74,11 +74,39 @@
           const value = Number(raw)
           if (Number.isFinite(value)) root.style.setProperty(prop, String(value))
         }
+
+        // Sillage Desktop comes from its startup page, which shows the same mark: no delay there.
+        if (window.sillageDesktop) root.dataset.boot = 'now'
       })()
     </script>
+    <!--
+         Startup mark, shown while the bundle loads and the session is checked; the app removes it
+         with its first screen (src/lib/boot-mark.ts). A browser waits before showing it: most
+         loads end sooner, and a mark that only flashes distracts more than a blank page. Same
+         mark, size and place as Sillage Desktop's startup page (apps/desktop/public/splash.html),
+         which this page replaces: keep the two in step.
+    -->
+    <style>
+      #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+      /* The margin stands for the title under the startup page's mark. */
+      #boot svg { width: 72px; height: 72px; margin-bottom: 40px; fill: var(--sg-accent, #535cda); opacity: 0; animation: boot-breathe 1.6s ease-in-out 0.6s infinite; }
+      /* In Sillage Desktop, in the colours of the startup page too: the mark must not change on the way. */
+      :root[data-boot='now'] #boot svg { animation-delay: 0s; fill: #535cda; }
+      @media (prefers-color-scheme: dark) { :root[data-boot='now'] #boot svg { fill: #8f9bff; } }
+      @keyframes boot-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+      @keyframes boot-still { to { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { #boot svg { animation-name: boot-still; animation-duration: 1ms; animation-iteration-count: 1; animation-fill-mode: forwards; } }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot" aria-hidden="true">
+      <svg viewBox="0 0 100 100">
+        <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z" />
+        <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z" />
+        <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z" />
+      </svg>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

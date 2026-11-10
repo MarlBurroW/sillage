@@ -20,6 +20,20 @@ export interface Handshake {
   session: string
 }
 
+/**
+ * Why the server did not come up. An early exit often has a passing cause (the port or
+ * the database still held by a previous run), unlike a Node that cannot be started.
+ */
+export class ServerStartError extends Error {
+  constructor(
+    readonly reason: 'spawn' | 'exit' | 'timeout',
+    /** What the reason leaves out: the system's error, the exit code or signal, the time waited. */
+    readonly detail: string,
+  ) {
+    super(`${reason}: ${detail}`)
+  }
+}
+
 export interface RunningServer {
   readonly pid: number | undefined
   /** Resolves when the server responds and the user's session is open. */
@@ -34,6 +48,8 @@ const LOG_ROTATE_BYTES = 10 * 1024 * 1024
 const READY_TIMEOUT_MS = 120_000
 /** Time to clean up active sessions, as when stopping a server service. */
 const STOP_TIMEOUT_MS = 15_000
+/** After the kill, how long to wait for the exit event before moving on without it. */
+const KILL_GRACE_MS = 2_000
 
 /**
  * Start Sillage's release server with installed-service settings
@@ -76,13 +92,20 @@ export function startServer(options: ServerOptions): RunningServer {
   child.once('exit', () => {
     exited = true
   })
+  // A Node that cannot be spawned (missing after an interrupted update, or blocked)
+  // reports `error` and never `exit`: there is nothing to stop.
+  child.once('error', () => {
+    if (child.pid === undefined) exited = true
+  })
+  // Closing the pipe of a server that already died must not throw in the main process.
+  child.stdin?.on('error', () => undefined)
 
   const ready = new Promise<Handshake>((resolve, reject) => {
     const channel = child.stdio[3] as Readable
     let buffer = ''
     const timer = setTimeout(() => {
       killTree(child.pid)
-      reject(new Error(`le serveur n'a pas répondu en ${READY_TIMEOUT_MS / 1000} s`))
+      reject(new ServerStartError('timeout', `${READY_TIMEOUT_MS / 1000} s`))
     }, READY_TIMEOUT_MS)
     const fail = (err: Error) => {
       clearTimeout(timer)
@@ -101,8 +124,8 @@ export function startServer(options: ServerOptions): RunningServer {
         reject(err instanceof Error ? err : new Error(String(err)))
       }
     })
-    child.once('error', fail)
-    child.once('exit', (code, signal) => fail(new Error(`le serveur s'est arrêté au démarrage (${signal ?? `code ${code}`})`)))
+    child.once('error', (err) => fail(new ServerStartError('spawn', err.message)))
+    child.once('exit', (code, signal) => fail(new ServerStartError('exit', signal ?? `code ${code}`)))
   })
   // Rejection after resolution (a later normal shutdown) must not report anything.
   ready.catch(() => {})
@@ -116,7 +139,12 @@ export function startServer(options: ServerOptions): RunningServer {
     stop() {
       if (exited) return Promise.resolve()
       return new Promise((resolve) => {
-        const timer = setTimeout(() => killTree(child.pid), STOP_TIMEOUT_MS)
+        const timer = setTimeout(() => {
+          killTree(child.pid)
+          // Quitting and updating wait on this promise: never leave them pending on an
+          // exit event that does not come.
+          setTimeout(resolve, KILL_GRACE_MS)
+        }, STOP_TIMEOUT_MS)
         child.once('exit', () => {
           clearTimeout(timer)
           resolve()

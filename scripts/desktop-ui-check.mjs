@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,7 +12,8 @@ import { _electron as electron } from 'playwright'
 /**
  * Launch the packaged desktop app for real: server starts, window opens without
  * sign-in, hosted-server-only screens disappear, requests from outside the window
- * are refused, quitting stops the server.
+ * are refused, quitting stops the server. Then once more over a database the server
+ * cannot open: the app must offer to try again, and leave with an error.
  *
  * Also opens a terminal that must execute in the platform shell (PowerShell on
  * Windows), and runs a scheduled-task check script through POSIX shell (Git for
@@ -63,10 +64,14 @@ function diagnose(path) {
   )
 }
 
-/** Raw HTTP request forging `Host`/`Origin` like a hostile page. */
+/**
+ * Raw HTTP request forging `Host`/`Origin` like a hostile page. Without the shared agent:
+ * it keeps its connection five seconds, and the one of the refused WebSocket upgrade is
+ * out of the stopping server's reach, which would wait for it and pass for slow to stop.
+ */
 function raw(port, path, headers) {
   return new Promise((resolve, reject) => {
-    const req = request({ host: '127.0.0.1', port, path, headers }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path, headers, agent: false }, (res) => {
       res.resume()
       resolve(res.statusCode)
     })
@@ -80,6 +85,12 @@ async function listening(port) {
     () => true,
     () => false,
   )
+}
+
+/** Records of the diagnostics the app keeps in its profile (`logs/performance.jsonl`). */
+async function stages(profile) {
+  const lines = await readFile(join(profile, 'logs/performance.jsonl'), 'utf8')
+  return lines.split('\n').filter(Boolean).map((line) => JSON.parse(line))
 }
 
 try {
@@ -96,6 +107,9 @@ try {
   // creation inside the application shell.
   await page.waitForURL(/\/bienvenue$/, { timeout: 60_000 })
   await page.getByRole('heading', { level: 1 }).first().waitFor()
+  // The startup mark of index.html lets clicks through: left behind, it would cover the
+  // interface without failing anything else here.
+  await page.locator('#boot').waitFor({ state: 'detached', timeout: 10_000 })
   assert.equal(await page.evaluate(() => window.sillageDesktop?.window?.platform), process.platform)
   const titlebar = page.locator('.desktop-titlebar')
   assert.equal((await titlebar.boundingBox()).height, 36)
@@ -249,6 +263,56 @@ try {
   app = undefined
   for (let i = 0; i < 50 && (await listening(port)); i++) await delay(200)
   assert.equal(await listening(port), false, 'quitter l’app arrête son serveur')
+
+  // What the exported diagnostics say of this launch. Printed: on a CI runner, these are
+  // the startup times of a real Windows or macOS.
+  const timeline = await stages(userData)
+  const took = (stage) => timeline.find((record) => record.stage === stage)?.metrics.ms
+  for (const stage of ['server-ready', 'interface-ready', 'server-stop']) {
+    assert.equal(typeof took(stage), 'number', `étape ${stage} absente du journal de diagnostic`)
+  }
+  console.log(`démarrage : serveur prêt en ${took('server-ready')} ms, interface en ${took('interface-ready')} ms ; arrêt du serveur en ${took('server-stop')} ms`)
+
+  // A database the server cannot open: it exits while starting, every time. The app tries
+  // again by itself once, then asks; here "Try again" once, then "Quit".
+  const broken = join(scratch, 'broken')
+  await mkdir(join(broken, 'data'), { recursive: true })
+  await writeFile(join(broken, 'data/sillage.db'), 'not a database\n'.repeat(400))
+  const asked = join(scratch, 'asked.jsonl')
+  await writeFile(asked, '')
+  const refused = await electron.launch({
+    executablePath: executable,
+    chromiumSandbox: true,
+    env: { ...process.env, SILLAGE_DESKTOP_USER_DATA: broken },
+    timeout: 120_000,
+  })
+  const failing = refused.process()
+  const exited = new Promise((resolve) => failing.once('exit', (code, signal) => resolve(signal ?? code)))
+  try {
+    // A native dialog, out of Playwright's reach: answered from the main process, which
+    // has the pause before its own retry to receive this.
+    await refused.evaluate(({ dialog }, file) => {
+      const { appendFileSync } = process.mainModule.require('node:fs')
+      let calls = 0
+      dialog.showMessageBoxSync = (...args) => {
+        const options = args.at(-1)
+        appendFileSync(file, `${JSON.stringify({ buttons: options.buttons, detail: options.detail, attached: args.length > 1 })}\n`)
+        return ++calls === 1 ? 0 : options.buttons.length - 1
+      }
+    }, asked)
+    const code = await Promise.race([exited, delay(90_000, 'timeout', { ref: false })])
+    const dialogs = (await readFile(asked, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line))
+    assert.equal(dialogs.length, 2, `une question après le nouvel essai silencieux, une après « Réessayer » : ${JSON.stringify(dialogs)}`)
+    assert.equal(dialogs[0].buttons.length, 3, 'réessayer, télécharger, quitter')
+    assert.ok(dialogs[0].attached, 'la question doit tenir à la fenêtre de démarrage')
+    assert.match(dialogs[0].detail, /server\.log/, 'la question dit où lire le journal')
+    assert.equal(code, 1, 'un démarrage abandonné se termine en erreur')
+    assert.deepEqual((await stages(broken)).filter((record) => record.stage === 'server-start-failed').map((record) => record.metrics.items), [1, 2, 3])
+    console.log(`démarrage impossible : ${dialogs[0].detail.split('\n')[0]}`)
+  } finally {
+    // Stuck behind a dialog nobody answers, the app would not hear a request to close.
+    if (failing.exitCode === null && failing.signalCode === null) failing.kill('SIGKILL')
+  }
 
   console.log(`desktop-ui-check : ok (captures dans ${shots})`)
 } finally {

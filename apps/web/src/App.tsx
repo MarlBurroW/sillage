@@ -4,9 +4,10 @@ import { BenchmarksPage } from './routes/BenchmarksPage'
 import { NewBenchmarkPage } from './routes/NewBenchmarkPage'
 import { BenchmarkPage } from './routes/BenchmarkPage'
 import { NewsSettingsPage } from './routes/NewsSettingsPage'
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
+import { dismissBootMark } from './lib/boot-mark'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
 import { useUserSettings } from './lib/user-settings'
@@ -58,6 +59,12 @@ function OnboardingExit() {
   return <Navigate to={projects.length === 0 ? '/projects/new' : '/'} replace />
 }
 
+/** Inside the boundary of a lazy first screen: takes the startup mark away once it is there. */
+function BootMarkEnd() {
+  useEffect(dismissBootMark, [])
+  return null
+}
+
 export function App() {
   const { data: user, isPending } = useCurrentUser()
   // Await with the session so screens read capabilities without an intermediate state.
@@ -66,12 +73,20 @@ export function App() {
   // the app before opening it.
   const { data: settings, isPending: settingsPending } = useUserSettings(Boolean(user))
 
-  // Blank screen rather than spinner: session checks are local and brief, so a flashing spinner is
-  // more distracting than nothing.
-  if (isPending || instancePending || (user && settingsPending)) return null
+  // Nothing of our own while the session is checked: the startup mark of index.html covers this
+  // wait, and holds back in browsers, where a spinner flashing by distracts more than nothing.
+  const booting = isPending || instancePending || Boolean(user && settingsPending)
+  // Onboarding is due: this account's own, or the first account of a database without one.
+  const welcome = Boolean(user ? settings?.onboarding.pending : instance?.needsSetup && instance.capabilities.passwordAuth)
+  useEffect(() => {
+    // The onboarding is a chunk of its own: the mark stays until it has loaded (BootMarkEnd).
+    if (!booting && !welcome) dismissBootMark()
+  }, [booting, welcome])
+  if (booting) return null
 
   const onboarding = (
     <Suspense fallback={null}>
+      <BootMarkEnd />
       <OnboardingPage />
     </Suspense>
   )
@@ -79,7 +94,7 @@ export function App() {
   if (!user) {
     // A database with no account has no login page to offer: onboarding starts by creating the
     // first account at any address.
-    if (instance?.needsSetup && instance.capabilities.passwordAuth) {
+    if (welcome) {
       return (
         <BrowserRouter>
           <Routes>
@@ -100,7 +115,7 @@ export function App() {
 
   // Due onboarding occupies the entire screen until finished or skipped and resumes at its saved
   // step on any device.
-  if (settings?.onboarding.pending) {
+  if (welcome) {
     return (
       <BrowserRouter>
         <Routes>

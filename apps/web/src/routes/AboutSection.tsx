@@ -31,6 +31,12 @@ const UNSUPPORTED_KEYS: Record<DesktopUpdateUnsupportedReason, MessageKey> = {
   location: 'about.desktop.unsupported.location',
 }
 
+/**
+ * The Windows app installs from here only, behind a visible installer and without a
+ * password: a silent installation on quit left a closed app with no sign of the work.
+ */
+const WINDOWS_APP = window.sillageDesktop?.window?.platform === 'win32'
+
 export function AboutSection() {
   const t = useTranslate()
   const { data: user } = useCurrentUser()
@@ -275,7 +281,7 @@ export function AboutSection() {
           }}
         >
           <p>{t('about.desktop.confirm.body', { version: desktopState.version })}</p>
-          {desktopState.installOnQuit ? null : <p>{t('about.desktop.confirm.password')}</p>}
+          {desktopState.installOnQuit || WINDOWS_APP ? null : <p>{t('about.desktop.confirm.password')}</p>}
         </ConfirmDialog>
       ) : null}
     </div>
@@ -348,7 +354,10 @@ function DesktopUpdateAction({
       return (
         <div className="flex flex-col items-start gap-3 text-sm">
           <p className="text-ink-soft">
-            {t(state.installOnQuit ? 'about.desktop.ready' : 'about.desktop.readyPassword', { version: state.version })}
+            {t(
+              state.installOnQuit ? 'about.desktop.ready' : WINDOWS_APP ? 'about.desktop.readyRestart' : 'about.desktop.readyPassword',
+              { version: state.version },
+            )}
           </p>
           <Button onClick={onInstall}>{t('about.desktop.install')}</Button>
         </div>
@@ -356,10 +365,7 @@ function DesktopUpdateAction({
     case 'installing':
       return (
         <p className="text-sm text-ink-soft">
-          {t(
-            window.sillageDesktop?.window?.platform === 'win32' ? 'about.desktop.installingWindows' : 'about.desktop.installing',
-            { version: state.version },
-          )}
+          {t(WINDOWS_APP ? 'about.desktop.installingWindows' : 'about.desktop.installing', { version: state.version })}
         </p>
       )
     case 'error':

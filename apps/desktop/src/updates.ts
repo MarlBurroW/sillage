@@ -16,8 +16,11 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 const LOG_ROTATE_BYTES = 1024 * 1024
 /** Leftover CLIs die on taskkill; this mostly covers PowerShell listing them. */
 const RELEASE_TIMEOUT_MS = 15_000
-/** After quitting for an update, exit even if a page refuses to unload. */
-const QUIT_GRACE_MS = 5_000
+/**
+ * How long the app stays up for the Windows installer to show its window. Windows
+ * verifies the package before running it, seconds during which nothing else is on screen.
+ */
+const INSTALLER_SHOW_MS = 8_000
 
 export interface UpdateOptions {
   userData: string
@@ -27,25 +30,19 @@ export interface UpdateOptions {
   stopServer(): Promise<void>
   /** Restart the server if installation fails after it has stopped. */
   restartServer(): Promise<void>
-}
-
-export interface DesktopUpdates {
-  /**
-   * Called once the server has stopped on quit: an update installing on quit runs the same
-   * installer, which needs the installation directory free of leftover processes.
-   */
-  prepareQuit(): Promise<void>
+  /** Windows: leave at once, the server is already stopped and the installer is waiting. */
+  quitForInstall(): void
 }
 
 /**
  * Update the entire desktop app from GitHub releases (electron-builder writes the
  * app-update.yml and latest*.yml metadata). Check on launch and every four hours,
  * download in the background, and install on quit or from About.
- * Windows uses NSIS; Linux uses AppImage or .deb. macOS uses our bundle updater
- * because Squirrel.Mac rejects ad hoc signatures. Logs go beside the server log.
+ * Windows uses NSIS, from About only; Linux uses AppImage or .deb. macOS uses our bundle
+ * updater because Squirrel.Mac rejects ad hoc signatures. Logs go beside the server log.
  * SILLAGE_DESKTOP_UPDATE_FEED overrides GitHub for the end-to-end check.
  */
-export function setupUpdates(options: UpdateOptions): DesktopUpdates {
+export function setupUpdates(options: UpdateOptions): void {
   const resultFile = join(options.userData, 'update-result')
   const created = createUpdater(resultFile)
   const updater = typeof created === 'string' ? null : created
@@ -60,7 +57,7 @@ export function setupUpdates(options: UpdateOptions): DesktopUpdates {
   }
 
   const check = async () => {
-    // A ready update installs on quit; discover newer versions at the next launch.
+    // A ready update waits to be installed; discover newer versions at the next launch.
     if (!updater || state.status === 'downloading' || state.status === 'ready' || state.status === 'installing') return
     // The error event publishes failures.
     await updater.checkForUpdates().catch(() => undefined)
@@ -99,21 +96,13 @@ export function setupUpdates(options: UpdateOptions): DesktopUpdates {
       if (process.platform === 'win32') await options.restartServer()
       return
     }
+    if (process.platform === 'win32') {
+      await installerShown()
+      options.quitForInstall()
+      return
+    }
     if (appImage) app.relaunch({ execPath: appImage, args: process.argv.slice(1) })
     app.quit()
-    // The installer waits for this process, then asks the user to close it: a page refusing
-    // to unload must not keep it alive.
-    setTimeout(() => app.exit(0), QUIT_GRACE_MS).unref()
-  }
-
-  const prepareQuit = async () => {
-    if (!updater || process.platform !== 'win32' || state.status !== 'ready' || !updater.autoInstallOnAppQuit) return
-    const survivors = await releaseInstallDir(installDir(), log, RELEASE_TIMEOUT_MS).catch((err: Error) => {
-      log.error(err)
-      return []
-    })
-    // The silent installer then gives up on its own; the update is offered again at next launch.
-    if (survivors.length > 0) log.warn('installation on quit will be refused by the installer')
   }
 
   const guarded =
@@ -126,10 +115,13 @@ export function setupUpdates(options: UpdateOptions): DesktopUpdates {
   ipcMain.handle(UPDATE_CHANNELS.check, guarded(check))
   ipcMain.handle(UPDATE_CHANNELS.install, guarded(install))
 
-  if (!updater) return { prepareQuit }
+  if (!updater) return
   updater.logger = log
   // The .deb requires administrator permission; ask only on explicit installation, never on quit.
-  updater.autoInstallOnAppQuit = !(updater instanceof DebUpdater)
+  // On Windows, installing on quit means a silent installer at work for a minute with no
+  // sign of it and no relaunch: reopening Sillage meanwhile starts a half-replaced copy
+  // that fails, and the reinstall that follows finds that installer in its way.
+  updater.autoInstallOnAppQuit = !(updater instanceof DebUpdater || updater instanceof NsisUpdater)
   const feed = process.env.SILLAGE_DESKTOP_UPDATE_FEED
   if (feed) {
     updater.setFeedURL({ provider: 'generic', url: feed })
@@ -160,7 +152,20 @@ export function setupUpdates(options: UpdateOptions): DesktopUpdates {
 
   setTimeout(() => void check(), FIRST_CHECK_DELAY_MS)
   setInterval(() => void check(), CHECK_INTERVAL_MS)
-  return { prepareQuit }
+}
+
+/**
+ * The installer's window takes the focus when it appears: stay on screen until then
+ * rather than leave a gap, without waiting for an installer that shows nothing.
+ */
+function installerShown(): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, INSTALLER_SHOW_MS)
+    BrowserWindow.getFocusedWindow()?.once('blur', () => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
 }
 
 function createUpdater(resultFile: string): BaseUpdater | DesktopUpdateUnsupportedReason {
@@ -227,7 +232,7 @@ function isMacPermission(message: string): boolean {
   return process.platform === 'darwin' && /operation not permitted/i.test(message)
 }
 
-function fileLogger(file: string): Logger {
+export function fileLogger(file: string): Logger {
   mkdirSync(dirname(file), { recursive: true })
   try {
     if (statSync(file).size > LOG_ROTATE_BYTES) renameSync(file, `${file}.1`)

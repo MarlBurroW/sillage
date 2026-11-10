@@ -3,7 +3,7 @@ import { dirname } from 'node:path'
 
 const MAX_BYTES = 256 * 1024
 const MAX_RECORDS = 300
-export const DIAGNOSTIC_STAGES = ['startup', 'memory', 'memory-unavailable', 'server-exit', 'unresponsive', 'responsive', 'renderer-exit', 'child-exit', 'thread-open', 'thread-ready', 'thread-history', 'thread-visible', 'thread-error', 'renderer-sample'] as const
+export const DIAGNOSTIC_STAGES = ['startup', 'server-ready', 'server-start-failed', 'interface-ready', 'memory', 'memory-unavailable', 'server-stop', 'server-exit', 'unresponsive', 'responsive', 'renderer-exit', 'child-exit', 'thread-open', 'thread-ready', 'thread-history', 'thread-visible', 'thread-error', 'renderer-sample'] as const
 export type DiagnosticStage = typeof DIAGNOSTIC_STAGES[number]
 const METRICS = new Set(['ms', 'items', 'bytes', 'cursor', 'cached', 'heapBytes', 'rssBytes', 'mainRssBytes', 'rendererRssBytes', 'gpuRssBytes', 'otherRssBytes', 'serverRssBytes', 'serverHeapBytes', 'cliAndToolsRssBytes', 'cliAndToolsCount', 'exitCode', 'oom', 'longTasks', 'longTaskMs', 'cacheBytes', 'cacheEntries'])
 interface RecordEntry { at: string; stage: DiagnosticStage; metrics: Record<string, number> }

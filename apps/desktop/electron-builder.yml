@@ -53,6 +53,10 @@ win:
   target:
     - nsis
 
+nsis:
+  # Our own check for what still runs from the installation directory; the file says why.
+  include: resources/installer.nsh
+
 linux:
   # The .deb installs an AppArmor profile: since Ubuntu 24.04, Chromium's sandbox
   # cannot create its namespaces without it and the app exits at launch.
