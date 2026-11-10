@@ -117,8 +117,8 @@ try {
     t: 'status', conversationId: conversation.id, status, background: 0, warm: true, loops: 0,
     lastNotableSeq: conversation.lastNotableSeq, metrics: conversation.metrics,
   }))
-  const tiles = () => page.locator('article.wall-tile')
   // The query lives in the URL, updated after the click: wait for it rather than read at once.
+  const expectTiles = (count) => page.waitForFunction((expected) => document.querySelectorAll('article.wall-tile').length === expected, count)
   const expectQuery = (value) => page.waitForFunction((expected) => document.querySelector('.wall-query-input')?.value === expected, value)
   const queryField = page.getByRole('combobox', { name: 'Requête de sessions' }).or(page.getByLabel('Requête de sessions'))
 
@@ -137,7 +137,7 @@ try {
   await expectQuery('is:attention,running')
   await page.getByRole('toolbar', { name: 'Filtres' }).getByRole('button', { name: 'Non lues', exact: true }).click()
   await expectQuery('is:attention,running is:unread')
-  assert.equal(await tiles().count(), fixtures.filter((entry) => ['running', 'awaiting_input', 'error'].includes(entry.status) && entry.lastReadSeq === 0).length)
+  await expectTiles(fixtures.filter((entry) => ['running', 'awaiting_input', 'error'].includes(entry.status) && entry.lastReadSeq === 0).length)
   await page.getByRole('button', { name: 'Rétablir' }).waitFor()
 
   // Typed query with a project menu, then an invalid token that is underlined and ignored.
@@ -146,7 +146,7 @@ try {
   await queryField.fill('is:bogus limit:2')
   await page.locator('.wall-query-invalid').waitFor()
   await page.getByText('Ignoré, valeur invalide : is:bogus').waitFor()
-  assert.equal(await tiles().count(), 2)
+  await expectTiles(2)
   // Autocomplete follows typing.
   await queryField.fill('')
   await queryField.pressSequentially('wor')
