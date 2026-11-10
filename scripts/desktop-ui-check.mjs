@@ -89,6 +89,11 @@ async function stages(profile) {
   return lines.split('\n').filter(Boolean).map((line) => JSON.parse(line))
 }
 
+// TEMPORARY: compares on a real Windows the ways the server can leave with a terminal open.
+if (process.platform === 'win32') {
+  await import('./windows-stop-probe.mjs').then(({ probe }) => probe(executable)).catch((err) => console.log(`stop probe failed: ${err.stack ?? err}`))
+}
+
 try {
   app = await electron.launch({
     executablePath: executable,

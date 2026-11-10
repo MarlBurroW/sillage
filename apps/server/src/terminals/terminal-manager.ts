@@ -320,15 +320,28 @@ export class TerminalManager {
   }
 
   /** Daemon shutdown writes screens then kills processes while retaining files, which restore entries as interrupted after restart. */
-  shutdown(): void {
+  shutdown(mode: 'kill' | 'leave' | 'pid' = 'kill'): Promise<void>[] {
     clearInterval(this.flushTimer)
+    // TEMPORARY (mode, returned exits): ways of ending the shells compared on Windows.
+    const exits: Promise<void>[] = []
     for (const managed of this.terminals.values()) {
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       this.persistMeta(managed)
       this.flushReplay(managed)
-      if (!managed.exited) managed.pty?.kill()
+      const pty = managed.pty
+      if (managed.exited || !pty) continue
+      exits.push(new Promise((resolve) => pty.onExit(() => resolve())))
+      if (mode === 'kill') pty.kill()
+      else if (mode === 'pid') {
+        try {
+          process.kill(pty.pid)
+        } catch {
+          // Already gone.
+        }
+      }
     }
     this.terminals.clear()
+    return exits
   }
 
   private restore(): void {

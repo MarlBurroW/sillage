@@ -241,7 +241,9 @@ async function main(): Promise<void> {
     await antigravityLogin.closeAll()
     await sessions.stopAll()
     probe('sessions stopped')
-    terminals.shutdown()
+    // TEMPORARY: ways of leaving compared on Windows, chosen by the probe that starts us.
+    const variant = process.env.SILLAGE_STOP_PROBE ?? ''
+    const exits = terminals.shutdown(variant.includes('nokill') ? 'leave' : variant.includes('killpid') ? 'pid' : 'kill')
     probe('terminals shut down')
     // Not kept alive by the probe itself: a process that could leave should.
     const pending = setInterval(() => probe('http still closing'), 1000)
@@ -250,7 +252,15 @@ async function main(): Promise<void> {
     clearInterval(pending)
     probe('http closed')
     sqlite.close()
+    if (variant.includes('waitexit')) {
+      await Promise.race([Promise.all(exits), new Promise((resolve) => setTimeout(resolve, 3000))])
+      probe('shells gone')
+    }
+    const pause = /delay(\d+)/.exec(variant)
+    if (pause) await new Promise((resolve) => setTimeout(resolve, Number(pause[1])))
     probe('exiting')
+    if (variant.includes('hard')) process.kill(process.pid)
+    if (variant.includes('really')) (process as unknown as { reallyExit(code: number): never }).reallyExit(0)
     process.exit(0)
   }
   process.on('SIGINT', () => void shutdown('SIGINT'))
