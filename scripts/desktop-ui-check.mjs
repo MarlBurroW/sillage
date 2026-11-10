@@ -268,6 +268,13 @@ try {
     assert.equal(typeof took(stage), 'number', `étape ${stage} absente du journal de diagnostic`)
   }
   console.log(`démarrage : serveur prêt en ${took('server-ready')} ms, interface en ${took('interface-ready')} ms ; arrêt du serveur en ${took('server-stop')} ms`)
+  // TEMPORARY: the probe lines of the server, and what it logged from the stop on.
+  {
+    const log = (await readFile(join(userData, 'logs/server.log'), 'utf8')).split('\n').filter(Boolean)
+    const from = log.findLastIndex((line) => line.includes('arrêt en cours'))
+    console.log(`--- server.log, upgrades answered in HTTP\n${log.slice(0, from).filter((line) => line.includes('PROBE') || line.includes('"url":"/api/ws"')).join('\n')}`)
+    console.log(`--- server.log, from the stop on\n${log.slice(from).join('\n')}`)
+  }
   // A server that waits for a connection it will never see closed takes until the app's
   // bound to stop, and a relaunch or an installer then finds Sillage still running. The
   // refused WebSocket upgrade above left such a connection behind.

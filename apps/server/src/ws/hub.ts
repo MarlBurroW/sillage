@@ -299,6 +299,11 @@ export async function registerWebSocketHub(
   // and a stopping server waits for every connection. `injectWS` requests have no socket.
   app.addHook('onResponse', async (request) => {
     const socket = request.raw.socket as Socket | undefined
+    // TEMPORARY trace: the stop still drags on Windows with this in place.
+    if (request.raw.headers.upgrade !== undefined) {
+      app.log.info({ url: request.url, from: socket?.remotePort, destroyed: socket?.destroyed }, 'PROBE upgrade answered in HTTP: destroying its socket')
+      socket?.once('close', () => app.log.info({ url: request.url }, 'PROBE upgrade answered in HTTP: socket closed'))
+    }
     if (request.raw.headers.upgrade !== undefined) socket?.destroy()
   })
 
