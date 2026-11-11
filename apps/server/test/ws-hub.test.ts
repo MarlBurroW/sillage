@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { EventEmitter } from 'node:events'
+import { EventEmitter, once } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { connect, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
+import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
@@ -174,6 +176,36 @@ test('un socket qui arrive reçoit le statut des sessions vivantes qu’il peut 
   assert.equal(status.conversationId, 'c1')
   assert.equal(status.background, 2)
   assert.equal(other.some((m) => m.t === 'status'), false)
+})
+
+test('une montée en WebSocket refusée avant le hub voit sa connexion fermée par le serveur', async (t) => {
+  const { ctx } = await database(t)
+  const app = Fastify()
+  // Like the origin guard and the session check of `buildApp`: declared before the hub, so
+  // the websocket plugin never sees the request they refuse.
+  app.addHook('onRequest', async () => {
+    throw Object.assign(new Error('forbidden'), { statusCode: 403 })
+  })
+  await registerWebSocketHub(app, ctx, {} as EventLog, stubSessions(), { setPresence: () => {} } as unknown as Notifications)
+  await app.listen({ port: 0, host: '127.0.0.1' })
+  const { port } = app.server.address() as AddressInfo
+  const socket = connect(port, '127.0.0.1')
+  // The client first: closing the server waits for every connection still open.
+  t.after(async () => {
+    socket.destroy()
+    await app.close()
+  })
+  let answer = ''
+  socket.on('data', (chunk) => (answer += chunk))
+  socket.write([
+    'GET /api/ws HTTP/1.1', `Host: 127.0.0.1:${port}`, 'Connection: Upgrade', 'Upgrade: websocket',
+    'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', '',
+  ].join('\r\n'))
+
+  // This client never lets go by itself: a server that waits for it cannot finish stopping.
+  const closed = await Promise.race([once(socket, 'close').then(() => true), delay(2000, false)])
+  assert.match(answer, /^HTTP\/1\.1 403 /)
+  assert.ok(closed, 'le serveur a gardé la connexion de la montée qu’il a refusée')
 })
 
 test('chaque route de LIST_ROUTES existe', async (t) => {

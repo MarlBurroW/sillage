@@ -226,7 +226,7 @@ async function main(): Promise<void> {
     decisions.stop()
     await antigravityLogin.closeAll()
     await sessions.stopAll()
-    terminals.shutdown()
+    await terminals.shutdown()
     await app.close()
     sqlite.close()
     process.exit(0)

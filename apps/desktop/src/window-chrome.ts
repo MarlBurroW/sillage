@@ -1,11 +1,14 @@
 import { BrowserWindow, Menu, ipcMain, type BrowserWindowConstructorOptions, type IpcMainInvokeEvent } from 'electron'
 import { WINDOW_CHANNELS } from './ipc'
 
-export function windowChromeOptions(): BrowserWindowConstructorOptions {
+/** Startup page colours until the interface sends its own (`colors` below). */
+export function windowChromeOptions(dark: boolean): BrowserWindowConstructorOptions {
   return {
     titleBarStyle: 'hidden',
     autoHideMenuBar: true,
-    titleBarOverlay: { height: 36, color: '#0b0d1c', symbolColor: '#e1e3ef' },
+    titleBarOverlay: dark
+      ? { height: 36, color: '#0b0d1c', symbolColor: '#e1e3ef' }
+      : { height: 36, color: '#f7f7fb', symbolColor: '#2a2d42' },
     ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 14, y: 11 } } : {}),
   }
 }

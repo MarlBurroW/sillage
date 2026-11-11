@@ -99,9 +99,11 @@ from the one Claude keeps when used alone.
   `logs/server.log`. A server install on the same machine keeps its own data and port.
 - **Agents run while the app runs.** On macOS, closing the window leaves the app and
   its sessions running; quit with ⌘Q. On Windows and Linux, closing the last window
-  quits. Nothing runs while the computer sleeps, and a scheduled task that came due
+  quits. Quitting ends the sessions and stops the server first, which can take a few
+  seconds with nothing on screen: opening Sillage again meanwhile brings it back.
+  Nothing runs while the computer sleeps, and a scheduled task that came due
   during sleep runs once on wake.
-- **Updates** are automatic: see [below](#updates).
+- **Updates** are downloaded by the app itself: see [below](#updates).
 - **Other devices reach it through Tailscale only**: see [Remote access](#remote-access).
 - **Not available:** push notifications, and webhook automations triggered from the
   Internet, which need a public address (the test bench still works). Settings hide
@@ -141,20 +143,30 @@ to recognise.
 ## Updates
 
 The app updates itself from the GitHub releases. It checks when it starts, then every
-four hours, downloads a new version in the background and installs it when you quit
-Sillage; Settings > About shows the download, then the version that is ready. To
-install it right away, click **Restart and update** there: Sillage closes, installs the
-new version and reopens. Running conversations are interrupted and resume with the next
-message. Your data stays where it is.
+four hours, and downloads a new version in the background; Settings > About shows the
+download, then the version that is ready. Click **Restart and update** there to install
+it: Sillage closes, installs the new version and reopens. On macOS and with the
+AppImage, a version that is ready is also installed when you quit Sillage. Running
+conversations are interrupted and resume with the next message. Your data stays where
+it is.
 
-- **Windows:** Sillage closes, a small installer window shows the progress, then
-  Sillage reopens. Before handing over, the app stops anything still running from its
-  own folder, such as a CLI or MCP server its server started under the bundled Node:
-  the installer cannot replace files they hold and would ask you to close them, and
-  cancelling there leaves a half-replaced installation. If something cannot be
-  stopped, About names it and the update waits for another try. Should Sillage still
-  fail to start after an update, its error dialog offers to download the installer
-  again: running it replaces the installation and keeps your data.
+- **Windows:** a version that is ready is installed from About only, never when you
+  quit: the installer works for a while, and behind a closed app it showed nothing,
+  while a Sillage reopened meanwhile found itself half replaced. From About, the
+  installer window shows the progress as Sillage closes, then Sillage reopens.
+  Before handing over, the app stops anything still running from its own folder, such
+  as a CLI or MCP server its server started under the bundled Node: the installer
+  cannot replace files they hold. If something cannot be stopped, About names it and
+  the update waits for another try.
+
+  The installer you run yourself over an installation frees the folder the same way: it
+  asks before closing an open Sillage, waits for one that is quitting, and stops what
+  a closed one left running, instead of asking you to close an application you cannot
+  see. It notes what it had to stop in `logs/installer.log`.
+
+  Should Sillage fail to start, it tries once more by itself, then says why and offers
+  to try again or to download the installer: running it replaces the installation and
+  keeps your data.
 - **macOS:** Sillage replaces its own app in the Applications folder. Run from the disk
   image, or from a folder where macOS isolates it, it cannot, and About says so. Should
   macOS refuse the replacement, About tells you to allow Sillage under System Settings >
@@ -185,8 +197,13 @@ quitting stops the server. On Linux it needs a display, for example `xvfb-run`.
 
 `scripts/desktop-update-check.mjs` checks the update end to end: an installed version
 finds a newer one in a folder served over HTTP (`SILLAGE_DESKTOP_UPDATE_FEED`), downloads
-it, then replaces and relaunches itself. The workflow runs it with `update-check`, on
-two versions it packages for the purpose; the CI does so on Linux and Windows.
+it, then replaces and relaunches itself. On Windows it then runs the new installer by
+hand, over the open app and over a process left running from its folder. The workflow
+runs it with `update-check`, on two versions it packages for the purpose; the CI does so
+on Linux and Windows.
+
+The Windows installer is electron-builder's, with our own check for what still runs from
+the installation folder (`apps/desktop/resources/installer.nsh`, which says why).
 
 `pnpm test:desktop-updates-ui` checks About in both editions at desktop and phone
 widths with deterministic update states (build the web app first).

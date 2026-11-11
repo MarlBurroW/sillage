@@ -54,7 +54,10 @@ export type DesktopUpdateState =
   | { status: 'idle'; checkedAt: string | null }
   | { status: 'checking' }
   | { status: 'downloading'; version: string; percent: number }
-  /** The .deb needs administrator permission, so it cannot install on quit. */
+  /**
+   * Neither the .deb, which needs administrator permission, nor the Windows installer, which
+   * must stay visible, installs on quit.
+   */
   | { status: 'ready'; version: string; installOnQuit: boolean }
   | { status: 'installing'; version: string }
   /** macPermission indicates a macOS App Management permission failure. */

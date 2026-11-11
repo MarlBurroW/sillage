@@ -138,9 +138,12 @@ try {
         assert.equal(await page.evaluate(() => window.updateProbe.checks), 3)
         await page.evaluate(() => window.updateProbe.publish({ status: 'downloading', version: '0.25.0', percent: 37 }))
         await page.getByText('37 %', { exact: true }).waitFor()
-        await page.evaluate(() => window.updateProbe.publish({ status: 'ready', version: '0.25.0', installOnQuit: true }))
+        // Windows installs from About only, behind its visible installer and without a password.
+        await page.evaluate((installOnQuit) => window.updateProbe.publish({ status: 'ready', version: '0.25.0', installOnQuit }), width !== 1440)
+        await page.getByText(width === 1440 ? /Son installation redémarre Sillage/ : /s'installera quand vous quitterez Sillage/).waitFor()
         await install.click()
         assert.equal(await page.evaluate(() => window.updateProbe.installs), 0)
+        assert.equal(await page.getByRole('dialog').getByText(/mot de passe/).count(), 0)
         await page.getByRole('dialog').getByRole('button', { name: 'Redémarrer et mettre à jour', exact: true }).click()
         assert.equal(await page.evaluate(() => window.updateProbe.installs), 1)
         await page.screenshot({ path: join(scratch, `${profile}-${width}.png`), fullPage: true })

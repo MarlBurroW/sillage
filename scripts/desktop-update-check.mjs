@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, symlink, unlink } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { _electron as electron } from 'playwright'
@@ -13,7 +13,8 @@ import { _electron as electron } from 'playwright'
 /**
  * End-to-end update check: an installed version A discovers version B in a local
  * HTTP feed, downloads it, exposes Restart and update in About, and replaces and
- * relaunches itself after confirmation.
+ * relaunches itself after confirmation. On Windows, B's installer is then run by hand
+ * over the installation, twice: over the open app, and over what a closed one left running.
  * Usage: node scripts/desktop-update-check.mjs --app <executable of A> --feed <B directory>
  * Use an installed NSIS app on Windows, a writable .app on macOS, or an AppImage /
  * installed .deb on Linux (under Xvfb). The feed contains packages and latest*.yml.
@@ -128,6 +129,73 @@ let launchAttempted = false
 let leftover = null
 let leftoverExited = false
 
+function startLeftover() {
+  const node = join(dirname(executable), 'resources', 'node', 'node.exe')
+  leftoverExited = false
+  leftover = spawn(node, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', windowsHide: true })
+  leftover.on('exit', () => {
+    leftoverExited = true
+  })
+  leftover.unref()
+  console.log(`processus résiduel lancé depuis le dossier d'installation (${leftover.pid})`)
+  return leftover.pid
+}
+
+/**
+ * Windows: someone downloads the installer and runs it over their installation. The
+ * installer has to free the directory itself then (apps/desktop/resources/installer.nsh):
+ * close an open Sillage in order, and stop what a closed one left running rather than
+ * ask to close an application nobody can see.
+ */
+async function reinstallByHand() {
+  const installer = join(feed, /^path: (.+)$/m.exec(channel)?.[1]?.trim() ?? '')
+  assert.ok(existsSync(installer) && statSync(installer).isFile(), `no installer named in ${channelFile}`)
+  // The installer of the update tidies up for a few seconds after it relaunched the app,
+  // and a second installer leaves at once (code 2) rather than run beside it.
+  const running = () => {
+    const script = `Get-Process -Name '${basename(installer, '.exe')}' -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }; exit 0`
+    return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' }).split(/\s+/).filter(Boolean)
+  }
+  const since = Date.now()
+  const first = running()
+  await waitFor('the installer of the update to finish', () => running().length === 0, 120_000)
+  console.log(first.length > 0
+    ? `installer of the update (${first.join(', ')}) gone ${Math.round((Date.now() - since) / 1000)} s after the relaunch`
+    : 'installer of the update already gone')
+  // Replacing the installation starts by removing its directory: a file of ours that is
+  // gone says the previous one really went, which the unchanged version cannot.
+  const marker = join(dirname(executable), 'reinstall-check')
+  const installerLog = () => readFileSync(join(userData, 'logs', 'installer.log'), 'utf8')
+  const reinstall = async (what) => {
+    writeFileSync(marker, '')
+    // Silent, as in the workflow: the installer then answers its own questions.
+    const setup = spawn(installer, ['/S'], { stdio: 'ignore' })
+    const code = await Promise.race([
+      new Promise((done, fail) => setup.once('exit', done).once('error', fail)),
+      delay(180_000, undefined, { ref: false }).then(() => {
+        setup.kill()
+        throw new Error(`${what}: the installer did not finish`)
+      }),
+    ])
+    assert.equal(code, 0, `${what}: the installer exited with ${code} (installers running: ${running().join(', ') || 'none'})`)
+    assert.ok(!existsSync(marker), `${what}: the previous installation was not removed`)
+    assert.equal(installedVersion(), target, `${what}: no application after the installer`)
+    console.log(`${what}: reinstalled`)
+  }
+
+  assert.ok(appProcesses().length > 0, 'the relaunched app should still be open')
+  await reinstall('over the open app')
+  assert.equal(appProcesses().length, 0, 'the installer should have closed the app')
+  assert.match(installerLog(), /close: running from /)
+  // Closed through its window, the app quits in order; the installer only stops what stays.
+  assert.doesNotMatch(installerLog(), /stopping Sillage\.exe/, 'the app was stopped instead of closed')
+
+  const pid = startLeftover()
+  await reinstall('over a leftover process')
+  await waitFor('leftover process stopped by the installer', () => leftoverExited, 30_000)
+  assert.match(installerLog(), new RegExp(`stopping node\\.exe \\(${pid}\\)`))
+}
+
 try {
   if (process.platform === 'win32') {
     assert.ok(process.env.LOCALAPPDATA, 'LOCALAPPDATA is required for the isolated update check')
@@ -182,13 +250,7 @@ try {
   if (process.platform === 'win32') {
     // NSIS refuses to replace files a process still holds and asks the user to close it:
     // the app must stop what still runs from its directory before handing over.
-    const node = join(dirname(executable), 'resources', 'node', 'node.exe')
-    leftover = spawn(node, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', windowsHide: true })
-    leftover.on('exit', () => {
-      leftoverExited = true
-    })
-    leftover.unref()
-    console.log(`processus résiduel lancé depuis le dossier d'installation (${leftover.pid})`)
+    startLeftover()
   }
   await install.click()
   await page.getByRole('dialog').getByRole('button', { name: /Redémarrer et mettre à jour|Restart and update/ }).click()
@@ -224,9 +286,10 @@ try {
       .then((response) => response.ok).catch(() => false)
   }, 120_000)
   console.log('contrôle de mise à jour réussi (serveur relancé et disponible)')
+  if (process.platform === 'win32') await reinstallByHand()
 } catch (err) {
   await page?.screenshot({ path: join(shots, 'failure.png'), fullPage: true }).catch(() => {})
-  for (const name of ['updater.log', 'server.log', 'performance.jsonl']) {
+  for (const name of ['updater.log', 'installer.log', 'server.log', 'performance.jsonl']) {
     const log = join(userData, 'logs', name)
     if (existsSync(log)) console.log(`--- ${name}\n${readFileSync(log, 'utf8').slice(-16000)}`)
   }

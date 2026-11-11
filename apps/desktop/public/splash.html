@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <!-- Startup page: shown while bundled Node boots the server, before the interface
          can be loaded. Same background as the window and the interface's first paint.
+         The interface then shows the same mark at the same place until its first screen
+         (apps/web/index.html): keep the two in step.
          The main process passes the localized title as ?title=. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
     <style>
@@ -16,6 +18,8 @@
       .bar { position: fixed; inset: 0 0 auto 0; height: 36px; -webkit-app-region: drag; }
       .mark { width: 72px; height: 72px; fill: var(--mark); animation: breathe 1.6s ease-in-out infinite; }
       .stack { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+      /* A fixed height under the mark, which the interface reserves too. */
+      #title { margin: 0; line-height: 20px; white-space: nowrap; }
       @keyframes breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
       @media (prefers-reduced-motion: reduce) { .mark { animation: none; } }
     </style>
