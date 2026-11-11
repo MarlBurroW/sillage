@@ -12,8 +12,6 @@ import type { SessionRelay } from '../sessions/session-relay.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
-import { bearerSecret, resolveApiToken } from '../auth/api-tokens.js'
-import { SESSION_COOKIE, resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
 import type { PushService } from '../push/push-service.js'
 import type { SessionManager } from '../sessions/session-manager.js'
@@ -23,8 +21,12 @@ import { registerWebSocketHub } from '../ws/hub.js'
 import { BENCHMARK_PREVIEW_PREFIX, MAX_ATTACHMENT_BYTES } from '@sillage/protocol'
 import type { AppContext } from './context.js'
 import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
+import { registerIdentityHook } from './identity.js'
 import { registerLocalOriginGuard } from './local-origin.js'
 import { INSTANCE_PROFILE } from '../instance/profile.js'
+import { RemoteAccessService } from '../remote-access/service.js'
+import { SystemTailscaleCli } from '../remote-access/tailscale.js'
+import { registerRemoteAccessRoutes } from './routes/remote-access.js'
 import { registerApiTokenRoutes } from './routes/api-tokens.js'
 import { registerV1Routes } from './v1/index.js'
 import type { Scheduler } from '../scheduler/scheduler.js'
@@ -162,7 +164,10 @@ export async function buildApp(
   })
 
   registerErrorHandler(app)
-  if (INSTANCE_PROFILE === 'desktop') registerLocalOriginGuard(app)
+  // Desktop only: a server instance has no guard and no launcher-owned port to forward.
+  const remoteAccess = INSTANCE_PROFILE === 'desktop' ? new RemoteAccessService(ctx.db, new SystemTailscaleCli(), app.log) : null
+  app.decorate('remoteAccess', remoteAccess)
+  if (remoteAccess) registerLocalOriginGuard(app, remoteAccess)
 
   /**
    * Nothing compressed responses along the path: neither Sillage nor its nginx
@@ -179,24 +184,7 @@ export async function buildApp(
     limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES },
   })
 
-  // Resolve identity on every request. Routes then decide whether they
-  // require a user through requireUser().
-  app.addHook('onRequest', async (request) => {
-    const secret = bearerSecret(request.headers.authorization)
-    const identity = secret ? resolveApiToken(ctx.db, secret) : null
-    if (identity) {
-      request.apiToken = identity.token
-      request.user = identity.user
-      return
-    }
-
-    // Fall back to cookies even with an `Authorization` header: a proxy or
-    // extension adding one must not make the interface unusable.
-    const token = request.cookies[SESSION_COOKIE]
-    if (!token) return
-    const user = await resolveSession(ctx.db, token)
-    if (user) request.user = user
-  })
+  registerIdentityHook(app, ctx)
 
   app.addHook('onRequest', async (request) => {
     if (!request.url.startsWith('/api/')) return
@@ -313,6 +301,7 @@ export async function buildApp(
   registerUserSettingsRoutes(app, ctx)
   registerNewsRoutes(app, ctx)
   registerSystemRoutes(app, ctx)
+  if (remoteAccess) registerRemoteAccessRoutes(app, remoteAccess)
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)

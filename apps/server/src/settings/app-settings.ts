@@ -71,3 +71,29 @@ function readValue(db: Db, key: string): unknown {
     return undefined
   }
 }
+
+/** Desktop remote access through Tailscale Serve; see `remote-access/service.ts`. Kept out of `AppSettingsDto`: it is an action with checks and side effects (Serve), not a value the generic settings form patches. */
+export interface RemoteAccessSettings {
+  enabled: boolean
+  /** Tailnet hostname the guard accepts in `Host`, recorded when enabling. */
+  hostname: string | null
+  /** Tailnet login allowed to open sessions, recorded when enabling. */
+  login: string | null
+}
+
+export function readRemoteAccess(db: Db): RemoteAccessSettings {
+  const raw = readValue(db, 'remoteAccess') as Partial<RemoteAccessSettings> | undefined
+  const hostname = typeof raw?.hostname === 'string' && raw.hostname ? raw.hostname : null
+  const login = typeof raw?.login === 'string' && raw.login ? raw.login : null
+  // Both are needed to accept anyone: a partial record disables rather than opens.
+  return { enabled: raw?.enabled === true && hostname !== null && login !== null, hostname, login }
+}
+
+export function writeRemoteAccess(db: Db, settings: RemoteAccessSettings): void {
+  const now = Date.now()
+  const serialized = JSON.stringify(settings)
+  db.insert(appSettings)
+    .values({ key: 'remoteAccess', value: serialized, updatedAt: now })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value: serialized, updatedAt: now } })
+    .run()
+}

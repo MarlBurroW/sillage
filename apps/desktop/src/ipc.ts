@@ -11,3 +11,5 @@ export const UPDATE_CHANNELS = {
 export const WINDOW_CHANNELS = { menu: 'sillage:window:menu', colors: 'sillage:window:colors' } as const
 
 export const DIAGNOSTIC_CHANNELS = { export: 'sillage:diagnostics:export', record: 'sillage:diagnostics:record' } as const
+
+export const REMOTE_ACCESS_CHANNELS = { changed: 'sillage:remote-access:changed' } as const

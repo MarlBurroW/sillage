@@ -2,7 +2,8 @@ import { setupWindowChrome, windowChromeOptions } from './window-chrome'
 import { setupDiagnostics } from './diagnostics'
 import type { DiagnosticLog } from './diagnostic-log'
 import { delimiter, dirname, join } from 'node:path'
-import { BrowserWindow, app, dialog, session, shell } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, powerSaveBlocker, session, shell } from 'electron'
+import { REMOTE_ACCESS_CHANNELS } from './ipc'
 import { stablePort } from './port'
 import { startServer, type RunningServer } from './server'
 import { loginShellEnv, pathKey } from './shell-env'
@@ -39,6 +40,8 @@ let origin = ''
 let quitting = false
 /** Retain startup settings for recovery after a crash or failed installation. */
 let launchSettings: { env: NodeJS.ProcessEnv; port: number } | null = null
+/** Active while remote access is on; see `keepAwake`. */
+let awakeBlocker: number | null = null
 
 // Disposable launch-check profile (scripts/desktop-ui-check.mjs), leaving user
 // projects/settings untouched. Set before reading any path.
@@ -75,6 +78,9 @@ if (!app.requestSingleInstanceLock()) {
 
 async function boot(): Promise<void> {
   setupWindowChrome(isAppUrl)
+  ipcMain.on(REMOTE_ACCESS_CHANNELS.changed, (event, enabled: unknown) => {
+    if (isAppUrl(event.senderFrame?.url ?? '')) keepAwake(enabled === true)
+  })
   diagnostics = setupDiagnostics({ logDir: dirname(logFile), serverPid: () => server?.pid, origin: () => origin, isAppUrl })
   // Show the window at once: Node, the server and its first page take seconds on
   // Windows, during which a launch with nothing on screen looks ignored.
@@ -115,6 +121,7 @@ async function launch({ env, port }: { env: NodeJS.ProcessEnv; port: number }): 
   server = started
   const handshake = await started.ready
   origin = handshake.origin
+  keepAwake(handshake.remoteAccess)
   // No expiration: the cookie does not outlive the app, and the server opens a new
   // session on every launch.
   await session.defaultSession.cookies.set({
@@ -130,6 +137,20 @@ async function launch({ env, port }: { env: NodeJS.ProcessEnv; port: number }): 
     server = null
     void stopped(code, { env, port })
   })
+}
+
+/**
+ * A phone reaching Sillage through Tailscale finds nothing once the machine sleeps, and the
+ * user enabled remote access precisely to leave agents working. Prevent system sleep while it
+ * is on; the display may still turn off. The server announces the state at startup, the
+ * settings page reports toggles (`REMOTE_ACCESS_CHANNELS.changed`).
+ */
+function keepAwake(enabled: boolean): void {
+  if (enabled && awakeBlocker === null) awakeBlocker = powerSaveBlocker.start('prevent-app-suspension')
+  if (!enabled && awakeBlocker !== null) {
+    powerSaveBlocker.stop(awakeBlocker)
+    awakeBlocker = null
+  }
 }
 
 /** Report a server crash during use and offer to restart it. */

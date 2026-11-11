@@ -74,6 +74,10 @@ export interface DesktopBridge {
     export(): Promise<void>
     record(stage: string, metrics: Record<string, number>): void
   }
+  remoteAccess?: {
+    /** Remote access toggled in settings: the main process keeps the machine awake while it is on. */
+    changed(enabled: boolean): void
+  }
   updates: {
     state(): Promise<DesktopUpdateState>
     /** Returns an unsubscribe function. */

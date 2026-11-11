@@ -18,6 +18,8 @@ export interface ServerOptions {
 export interface Handshake {
   origin: string
   session: string
+  /** Remote access through Tailscale Serve is on: other devices may connect at any time. */
+  remoteAccess: boolean
 }
 
 export interface RunningServer {
@@ -95,8 +97,8 @@ export function startServer(options: ServerOptions): RunningServer {
       if (end === -1) return
       clearTimeout(timer)
       try {
-        const { port, session } = JSON.parse(buffer.slice(0, end)) as { port: number; session: string }
-        resolve({ origin: `http://127.0.0.1:${port}`, session })
+        const { port, session, remoteAccess } = JSON.parse(buffer.slice(0, end)) as { port: number; session: string; remoteAccess?: boolean }
+        resolve({ origin: `http://127.0.0.1:${port}`, session, remoteAccess: remoteAccess === true })
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)))
       }

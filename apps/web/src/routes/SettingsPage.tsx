@@ -17,6 +17,7 @@ import {
   Mic,
   Palette,
   Plug,
+  Radio,
   SlidersHorizontal,
   Terminal,
   UserRound,
@@ -200,6 +201,15 @@ const SECTIONS: Section[] = [
     descriptionKey: 'settings.section.archiving.description',
     icon: <Archive size={16} />,
     adminOnly: true,
+  },
+  {
+    to: 'acces-distant',
+    group: 'administration',
+    labelKey: 'settings.section.remoteAccess',
+    descriptionKey: 'settings.section.remoteAccess.description',
+    icon: <Radio size={16} />,
+    adminOnly: true,
+    requires: 'remoteAccess',
   },
   {
     to: 'sessions',

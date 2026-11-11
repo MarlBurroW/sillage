@@ -15,6 +15,7 @@ export function instanceCapabilities(profile: InstanceProfile): InstanceCapabili
     // Desktop has one account: nothing to share or hide.
     sharedProjects: !desktop,
     publicConversationSharing: !desktop,
+    remoteAccess: desktop,
   }
 }
 

@@ -11,6 +11,11 @@ sessions to another machine, or synchronise installations. Saved conversation
 history is distinct from a running process; do not assume interrupted work will
 resume automatically after a shutdown.
 
+**Sillage Desktop** has this built in: turn on **Settings › Remote access** and the app
+configures Tailscale Serve and signs your own devices in by itself; see the
+[Desktop guide](desktop.md#remote-access). The rest of this page is for Sillage
+Server.
+
 ## Choose your connection
 
 | Route | Best fit | What to configure |

@@ -102,10 +102,41 @@ from the one Claude keeps when used alone.
   quits. Nothing runs while the computer sleeps, and a scheduled task that came due
   during sleep runs once on wake.
 - **Updates** are automatic: see [below](#updates).
-- **Not available:** access from other devices, push notifications, and webhook
-  automations triggered from the Internet, which need a public address (the test
-  bench still works). Settings hide the password, logout, push notifications and
-  user accounts. The process view (Services) stays Linux only.
+- **Other devices reach it through Tailscale only**: see [Remote access](#remote-access).
+- **Not available:** push notifications, and webhook automations triggered from the
+  Internet, which need a public address (the test bench still works). Settings hide
+  the password, logout, push notifications and user accounts. The process view
+  (Services) stays Linux only.
+
+## Remote access
+
+Sillage Desktop can open itself to your phone and your other computers through
+[Tailscale](https://tailscale.com), the private network between your own devices that
+the [remote access guide](remote-access.md) recommends for the server edition. Nothing
+is opened on your router and nobody outside your tailnet can see the instance.
+
+Install Tailscale on this machine and on the devices, sign them into the same
+tailnet, then turn on **Settings › Remote access**. Sillage keeps listening on
+`127.0.0.1` and asks Tailscale Serve to forward the machine's HTTPS address
+(`https://<machine>.<tailnet>.ts.net`) to it. The page shows that address and a QR
+code to scan.
+
+There is nothing to approve afterwards. Serve tells Sillage which Tailscale account
+each connection comes from, and Sillage accepts only the account that owns the
+machine: a device signed into that account is signed into Sillage at once, with no
+password. Anyone else on the tailnet, and any visitor through Funnel (which would
+publish the address to the Internet), is refused.
+
+While remote access is on, the app keeps the machine from sleeping; the screen may
+still turn off. Quitting Sillage ends the access, and the next launch restores the
+Serve mapping if the port changed.
+
+When Tailscale will not let Sillage configure Serve itself (on Linux, Serve needs
+`sudo` unless your account is Tailscale's
+[operator](https://tailscale.com/kb/1080/cli#tailscale-set)), the page prints the
+command to run once; access is enabled all the same. HTTPS certificates must be
+enabled on the tailnet, and a machine shared as a tagged node has no owner account
+to recognise.
 
 ## Updates
 

@@ -18,6 +18,18 @@ export async function openDesktopSession(db: Db): Promise<string> {
   return token
 }
 
+/**
+ * Session for a device relayed by Tailscale Serve (`http/local-origin.ts`): the same sole
+ * account, with its own cookie because the tailnet address is another site for the browser.
+ * Null only before the launcher has created the account, which never happens after startup.
+ */
+export async function openTailnetSession(db: Db, userAgent: string): Promise<{ token: string; user: UserRow } | null> {
+  const user = await firstAdmin(db)
+  if (!user) return null
+  const { token } = await createSession(db, user.id, userAgent)
+  return { token, user }
+}
+
 async function firstAdmin(db: Db): Promise<UserRow | undefined> {
   const rows = await db.select().from(users).where(eq(users.isAdmin, true)).orderBy(asc(users.createdAt)).limit(1)
   return rows[0]
@@ -38,12 +50,12 @@ async function createLocalUser(db: Db): Promise<UserRow> {
   return row
 }
 
-/** Sends listening port and session to the launcher as one JSON line, then closes the descriptor. Sessions cross neither network nor logs, and child processes inherit no channel. */
-export function announceToLauncher(port: number, session: string): void {
+/** Sends listening port, session and whether remote access is on to the launcher as one JSON line, then closes the descriptor. Sessions cross neither network nor logs, and child processes inherit no channel. The launcher keeps the machine awake while remote access is on: a sleeping host answers no phone. */
+export function announceToLauncher(port: number, session: string, remoteAccess: boolean): void {
   if (!Number.isInteger(HANDSHAKE_FD) || HANDSHAKE_FD < 3) {
     throw new Error("Profil desktop sans lanceur : SILLAGE_HANDSHAKE_FD doit désigner le canal hérité de l'application.")
   }
-  writeSync(HANDSHAKE_FD, `${JSON.stringify({ port, session })}\n`)
+  writeSync(HANDSHAKE_FD, `${JSON.stringify({ port, session, remoteAccess })}\n`)
   closeSync(HANDSHAKE_FD)
 }
 

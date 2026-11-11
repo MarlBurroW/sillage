@@ -30,6 +30,7 @@ const OnboardingPage = lazy(() => import('./routes/OnboardingPage').then((module
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
+import { RemoteAccessSettingsPage } from './routes/RemoteAccessSettingsPage'
 import { AppearanceSection } from './routes/AppearanceSection'
 import { CliVersionsSettingsPage } from './routes/CliVersionsSettingsPage'
 import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
@@ -157,6 +158,7 @@ export function App() {
             <Route path="secrets" element={<SecretsSettingsPage />} />
             <Route path="dictee" element={<DictationSettingsPage />} />
             <Route path="archivage" element={<ArchivingSettingsPage />} />
+            <Route path="acces-distant" element={<RemoteAccessSettingsPage />} />
             <Route path="sessions" element={<SessionsSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />

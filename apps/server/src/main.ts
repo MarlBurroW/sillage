@@ -185,7 +185,9 @@ async function main(): Promise<void> {
   if (INSTANCE_PROFILE === 'desktop') {
     const address = app.server.address()
     const port = typeof address === 'object' && address ? address.port : config.server.port
-    announceToLauncher(port, await openDesktopSession(db))
+    announceToLauncher(port, await openDesktopSession(db), Boolean(app.remoteAccess?.allowed()))
+    // After the announcement: the Tailscale CLI may take seconds, and the window must not wait.
+    void app.remoteAccess?.listening(port)
   }
 
   // Git helper launchers describe this process's Node and release. Rewrite every
