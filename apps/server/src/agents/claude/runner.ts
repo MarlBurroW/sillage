@@ -207,7 +207,11 @@ export class ClaudeRunner implements AgentRunner {
     return this.config
   }
 
-  constructor(private readonly ctx: RunnerContext) {
+  constructor(
+    private readonly ctx: RunnerContext,
+    /** Model sent to the CLI for a configured one; the adapter names the model behind "default". */
+    private readonly cliModel: (model: string) => string = (model) => model,
+  ) {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as ClaudeConfig
     this.launchedWithBypass = this.config.permissionMode === 'bypassPermissions'
@@ -235,7 +239,7 @@ export class ClaudeRunner implements AgentRunner {
           : {}),
         cwd: this.ctx.cwd,
         env: agentProcessEnv(this.ctx.processEnv),
-        model: config.model,
+        model: this.cliModel(config.model),
         effort: config.effort,
         permissionMode: toPermissionMode(config.permissionMode),
         // SDK requires this opt-in besides mode; do not depend on installed binary tolerance that
@@ -1224,7 +1228,7 @@ export class ClaudeRunner implements AgentRunner {
 
     // The CLI default is stored as '': 2.1.312 rejects it as an unknown model id, which made every
     // live change fail and fall back to a restart. Undefined is the SDK's way to ask for the default.
-    await this.session.setModel(config.model || undefined)
+    await this.session.setModel(this.cliModel(config.model) || undefined)
     await this.session.applyFlagSettings(liveFlagSettings(this.config, config))
     await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
 

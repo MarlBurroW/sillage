@@ -17,6 +17,13 @@ export function parseClaudeCredential(credential: string): { kind: ClaudeAccount
   return { kind, token: credential.slice(separator + 1) }
 }
 
+/** Credential of the account a session's launch environment carries; undefined for the CLI's own login. Inverse of the variables `SessionManager` sets. */
+export function claudeCredentialOfEnv(env: Record<string, string> | undefined): string | undefined {
+  if (env?.ANTHROPIC_API_KEY) return claudeCredential('apiKey', env.ANTHROPIC_API_KEY)
+  if (env?.CLAUDE_CODE_OAUTH_TOKEN) return claudeCredential('oauth', env.CLAUDE_CODE_OAUTH_TOKEN)
+  return undefined
+}
+
 /** Authentication that would take precedence over the one a probe sets (documented precedence). */
 export function withoutAuthOverrides(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env }

@@ -20,7 +20,7 @@ import { ClaudeCommandCatalog } from './command-catalog.js'
 import { describeEdit } from './file-edits.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
-import { parseClaudeCredential } from './credential.js'
+import { claudeCredentialOfEnv, parseClaudeCredential } from './credential.js'
 import { ClaudeUsageReader, claudeAccountUsage } from './usage.js'
 
 /** Fork cut points are transcript-entry `uuid`, not API IDs. Only `user`, `attachment` and `assistant` entries have them; nonexistent transcript `result` messages cause 'Message <uuid> not found in session'. */
@@ -64,7 +64,14 @@ export class ClaudeAdapter implements AgentAdapter {
   invalidateCatalogs(): void { this.catalog.invalidate(); this.commandCatalog.invalidate() }
 
   createRunner(ctx: RunnerContext): AgentRunner {
-    return new ClaudeRunner(ctx)
+    // Each CLI process picks its own default from a server-side flag (see `ClaudeModelCatalog`), so
+    // "Default: Fable 5.1" in the selector could start a session on another model. Name the model
+    // the selector announced instead; an unread catalog leaves the choice to the CLI.
+    return new ClaudeRunner(ctx, (model) =>
+      model === CLI_DEFAULT || model === 'default'
+        ? (this.catalog.defaultModel(claudeCredentialOfEnv(ctx.processEnv)) ?? model)
+        : model,
+    )
   }
 
   forkCut(log: EventLog, conversationId: string, throughSeq: number): ClaudeForkCut {
