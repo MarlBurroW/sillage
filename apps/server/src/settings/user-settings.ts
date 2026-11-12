@@ -14,6 +14,7 @@ import {
   type UserSettingsDto,
   type NewsPreferences,
   type SessionView,
+  type UsageLimitResumePrefs,
 } from '@sillage/protocol'
 
 export type UserSettings = UserSettingsDto
@@ -96,6 +97,17 @@ export function writeOnboarding(db: Db, userId: string, onboarding: OnboardingSt
 export function writeProjectDefaults(db: Db, userId: string, projectDefaults: ProjectDefaults): void {
   const current = readUserSettings(db, userId)
   const data = JSON.stringify({ ...current, projectDefaults })
+
+  db.insert(userSettings)
+    .values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
+    .run()
+}
+
+/** Replaces the resume-after-limit preferences wholesale: one form edits the three fields together. */
+export function writeUsageLimitResume(db: Db, userId: string, usageLimitResume: UsageLimitResumePrefs): void {
+  const current = readUserSettings(db, userId)
+  const data = JSON.stringify({ ...current, usageLimitResume })
 
   db.insert(userSettings)
     .values({ userId, data })

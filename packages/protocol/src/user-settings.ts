@@ -4,6 +4,7 @@ import { agentKindSchema, type AgentKind } from './events.js'
 import { instructionsModeSchema } from './instructions.js'
 import { memoryModeSchema, type MemoryMode } from './memory.js'
 import { DEFAULT_NOTIFICATION_PREFS, notificationPrefsSchema, type NotificationPrefs } from './notifications.js'
+import { DEFAULT_USAGE_LIMIT_RESUME, usageLimitResumePrefsSchema, type UsageLimitResumePrefs } from './usage-limit-resume.js'
 import { MAX_SESSION_VIEWS, sessionViewSchema, type SessionView } from './session-query.js'
 import {
   agentConfigSchema,
@@ -87,6 +88,8 @@ export interface UserSettingsDto {
   appearance: AppearancePrefs | null
   /** Notification kinds this account wants across all devices. */
   notifications: NotificationPrefs
+  /** Whether and how sessions this account stopped on a usage limit resume by themselves. */
+  usageLimitResume: UsageLimitResumePrefs
   /**
    * Settings pinned below the composer per CLI, in addition to the permanent model/effort chip.
    * Desktop screens only; phones retain only the chip.
@@ -316,6 +319,7 @@ export const storedUserSettingsSchema = z
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
+    usageLimitResume: usageLimitResumePrefsSchema.default(DEFAULT_USAGE_LIMIT_RESUME).catch(DEFAULT_USAGE_LIMIT_RESUME),
     composerLayout: composerLayoutSchema.default(DEFAULT_COMPOSER_LAYOUT).catch(DEFAULT_COMPOSER_LAYOUT),
     onboarding: onboardingStateSchema.default(DEFAULT_ONBOARDING).catch(DEFAULT_ONBOARDING),
     projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
@@ -330,6 +334,7 @@ export const storedUserSettingsSchema = z
     projectsDir: null,
     appearance: null,
     notifications: DEFAULT_NOTIFICATION_PREFS,
+    usageLimitResume: DEFAULT_USAGE_LIMIT_RESUME,
     composerLayout: DEFAULT_COMPOSER_LAYOUT,
     onboarding: DEFAULT_ONBOARDING,
     projectDefaults: DEFAULT_PROJECT_DEFAULTS,
@@ -354,6 +359,8 @@ export const updateUserSettingsBodySchema = z.object({
   /** Replaced wholesale, like collapsed projects. */
   appearance: appearancePrefsSchema.optional(),
   notifications: notificationPrefsSchema.optional(),
+  /** Replaced wholesale: three fields edited on one form. */
+  usageLimitResume: usageLimitResumePrefsSchema.optional(),
   /** Also replaced wholesale: the UI knows the CLI's entire list. */
   composerLayout: composerLayoutSchema.optional(),
   /** Replaced wholesale: onboarding knows its complete state at every step. */

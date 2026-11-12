@@ -1,3 +1,4 @@
+import { USAGE_LIMIT_RESUMED_NOTICE, USAGE_LIMIT_STOP_NOTICE } from './usage-limit-resume.js'
 import type {
   AgentQuestion,
   AgentSkillDto,
@@ -652,6 +653,9 @@ const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
   'context.compaction_started',
 ])
 
+/** Notice codes rendered inline rather than grouped under a collapsed “warnings” row. */
+const PROMINENT_NOTICES = new Set<string>([USAGE_LIMIT_STOP_NOTICE, USAGE_LIMIT_RESUMED_NOTICE])
+
 /**
  * Apply an event. Mutate state, then return it in a new object: deep-copying on every event is too
  * expensive for long conversations on phones, and only the root reference triggers React rendering.
@@ -1133,7 +1137,9 @@ export function applyEvent(
       const index = findLastIndex(state.items, (item) => item.kind === 'notice' && item.id === id)
       const item: NoticeItem = {
         kind: 'notice', id, text: event.message, code: event.code,
-        level: event.level, details: event.details,
+        // A usage-limit stop says when the session resumes: it stays visible in the thread like a
+        // model change rather than folded into the collapsed warnings.
+        level: PROMINENT_NOTICES.has(event.code) ? undefined : event.level, details: event.details,
       }
       if (index === -1) appendItem(state, item)
       else replaceItem(state, index, item)

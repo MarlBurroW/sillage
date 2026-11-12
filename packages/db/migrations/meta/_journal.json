@@ -442,6 +442,13 @@
       "when": 1793838852605,
       "tag": "0062_modern_george_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1794448717160,
+      "tag": "0063_oval_the_stranger",
+      "breakpoints": true
     }
   ]
 }

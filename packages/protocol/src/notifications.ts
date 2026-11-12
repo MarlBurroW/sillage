@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { DecisionSourceKind } from './decisions.js'
+import type { UsageLimitResumeReason } from './usage-limit-resume.js'
 
 /**
  * What Sillage reports outside the currently viewed conversation: a system notification on
@@ -8,17 +9,19 @@ import type { DecisionSourceKind } from './decisions.js'
  */
 
 /** Notification kinds, individually disableable by each account. */
-export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted'])
+export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted', 'usageLimit'])
 export type NotificationKind = z.infer<typeof notificationKindSchema>
 
 export const notificationPrefsSchema = z.object({
   decision: z.boolean(),
   cliRequest: z.boolean(),
   turnCompleted: z.boolean(),
+  /** Added later: stored preferences predating it lack the key and must keep parsing. */
+  usageLimit: z.boolean().default(true),
 })
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>
 
-export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true }
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true, usageLimit: true }
 
 /** What a CLI is waiting for, used in toast labels. */
 export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall'
@@ -44,6 +47,18 @@ export type InAppNotification =
       conversationTitle: string
       /** Requested action in one line: tool and command, or the question asked. */
       detail: string | null
+    }
+  | {
+      kind: 'usageLimit'
+      conversationId: string
+      projectId: string | null
+      conversationTitle: string
+      /** When the CLI says the limit lifts; null when it did not say. */
+      resetsAt: number | null
+      /** When Sillage will resume the session by itself; null when it will not. */
+      resumeAt: number | null
+      /** Why it will not, when `resumeAt` is null. */
+      reason: UsageLimitResumeReason | null
     }
 
 /** Subscription push service inferred from its address, indicating the device type. */

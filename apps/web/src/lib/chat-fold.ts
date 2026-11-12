@@ -1,6 +1,8 @@
 export * from '@sillage/protocol/chat-state'
 import { isAwaitingUser, type ChatState, type ChatItem, type NoticeItem } from '@sillage/protocol/chat-state'
+import { USAGE_LIMIT_RESUMED_NOTICE, USAGE_LIMIT_STOP_NOTICE } from '@sillage/protocol'
 import { locale, translate } from './i18n'
+import { describeUsageLimitStop, readUsageLimitDetails } from './usage-limit'
 
 /** Tokens in thousands, below which extra precision adds no useful information. */
 function thousands(tokens: number): string {
@@ -102,6 +104,11 @@ export function noticeText(item: NoticeItem): string {
   if (item.code === 'portable_fork') return translate('antigravity.fork.notice')
   if (item.code === 'additional_directories_unsupported') return translate('antigravity.directories.notice')
   if (item.code === 'antigravity_sandbox_unavailable') return translate('antigravity.sandbox.notice')
+  if (item.code === USAGE_LIMIT_RESUMED_NOTICE) return translate('usageLimit.notice.resumed')
+  if (item.code === USAGE_LIMIT_STOP_NOTICE) {
+    const details = readUsageLimitDetails(item.details)
+    return details ? `${translate('usageLimit.notice.title')} · ${describeUsageLimitStop(details)}` : item.text
+  }
   const value = item.translation
   if (!value) return item.text
   if (value.key === 'compaction') return describeCompaction(value.pre, value.post)

@@ -1,11 +1,12 @@
 import { conversationPath } from '@sillage/protocol'
-import { CircleHelp, ShieldQuestion, X } from 'lucide-react'
+import { CircleHelp, Hourglass, ShieldQuestion, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { CliRequestKind } from '@sillage/protocol'
 import { openDecision, useDecisions } from '../lib/decisions'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { dismissDecisionToasts, dismissToast, pushToast, useToasts, type Toast } from '../lib/toasts'
+import { describeUsageLimitStop } from '../lib/usage-limit'
 import { wsClient } from '../lib/ws-client'
 import { Button, IconButton } from './ui'
 import { toastQuestion } from './decisions/decision-text'
@@ -61,19 +62,26 @@ function ToastCard({ toast }: { toast: Toast }) {
   const navigate = useNavigate()
   const { notification } = toast
   const decision = notification.kind === 'decision'
+  const limit = notification.kind === 'usageLimit'
 
   return (
     <div role="status" className="surface pointer-events-auto flex gap-3 rounded-xl border border-accent/40 p-3.5 shadow-pop">
-      <span className="mt-0.5 shrink-0 text-accent">{decision ? <CircleHelp size={18} /> : <ShieldQuestion size={18} />}</span>
+      <span className="mt-0.5 shrink-0 text-accent">
+        {decision ? <CircleHelp size={18} /> : limit ? <Hourglass size={18} /> : <ShieldQuestion size={18} />}
+      </span>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-accent">
-          {decision ? t('toast.decision.title') : t(REQUEST_TITLES[notification.request])}
+          {decision ? t('toast.decision.title') : limit ? t('toast.usageLimit.title') : t(REQUEST_TITLES[notification.request])}
         </p>
         <p className="mt-0.5 line-clamp-2 text-sm font-medium text-ink">
           {decision ? toastQuestion(notification, t) : notification.conversationTitle}
         </p>
         <p className="mt-0.5 truncate text-xs text-ink-faint">
-          {decision ? [notification.sourceLabel, notification.projectName].filter(Boolean).join(' · ') : notification.detail}
+          {decision
+            ? [notification.sourceLabel, notification.projectName].filter(Boolean).join(' · ')
+            : limit
+              ? describeUsageLimitStop(notification)
+              : notification.detail}
         </p>
         <div className="mt-2.5 flex gap-2">
           <Button

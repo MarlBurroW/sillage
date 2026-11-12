@@ -22,7 +22,9 @@ function emit(): void {
 
 /** Key identifying the announced item: keep only one toast per decision or conversation. */
 function keyOf(notification: InAppNotification): string {
-  return notification.kind === 'decision' ? `decision:${notification.decisionId}` : `cli:${notification.conversationId}`
+  if (notification.kind === 'decision') return `decision:${notification.decisionId}`
+  if (notification.kind === 'usageLimit') return `limit:${notification.conversationId}`
+  return `cli:${notification.conversationId}`
 }
 
 export function pushToast(notification: InAppNotification): void {

@@ -12,6 +12,7 @@ import {
   writeProjectDefaults,
   writeProjectsDir,
   writeSessionViews,
+  writeUsageLimitResume,
   writeUserAgentDefault,
 } from '../../settings/user-settings.js'
 import type { AppContext } from '../context.js'
@@ -37,6 +38,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.projectsDir !== undefined) writeProjectsDir(ctx.db, user.id, body.projectsDir)
     if (body.appearance) writeAppearance(ctx.db, user.id, body.appearance)
     if (body.notifications) writeNotificationPrefs(ctx.db, user.id, body.notifications)
+    if (body.usageLimitResume) writeUsageLimitResume(ctx.db, user.id, body.usageLimitResume)
     if (body.composerLayout) writeComposerLayout(ctx.db, user.id, body.composerLayout)
     if (body.onboarding) writeOnboarding(ctx.db, user.id, body.onboarding)
     if (body.projectDefaults) writeProjectDefaults(ctx.db, user.id, body.projectDefaults)
