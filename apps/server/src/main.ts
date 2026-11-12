@@ -18,6 +18,7 @@ import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { Notifications } from './notifications/dispatcher.js'
 import { DecisionService } from './decisions/service.js'
+import { UsageLimitResumeService } from './usage-limits/resume-service.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
 import { TaskScheduler } from './scheduler/task-scheduler.js'
@@ -101,6 +102,9 @@ async function main(): Promise<void> {
   // Project worktree progress invalidated at every turn completion.
   const worktreeStatus = new WorktreeStatusService(db, log)
   const decisions = new DecisionService({ db, config }, sessions, notifications)
+  // Sessions stopped by a usage limit: one notification, and a resume after the reset when the
+  // account allows it.
+  const usageLimits = new UsageLimitResumeService(db, log, sessions, notifications)
   // Cleaning work closes terminals and archives sessions; detected merges
   // propose cleanup in 'To decide'.
   const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
@@ -177,6 +181,7 @@ async function main(): Promise<void> {
   benchmarkRunner.start(app.log)
   board.start(app.log)
   decisions.start(app.log)
+  usageLimits.start(app.log)
 
   await app.listen({ host: config.server.host, port: config.server.port })
 

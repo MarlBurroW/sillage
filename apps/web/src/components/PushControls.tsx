@@ -231,6 +231,7 @@ const KINDS: Array<{ kind: NotificationKind; label: MessageKey; hint: MessageKey
   { kind: 'decision', label: 'push.prefs.decision', hint: 'push.prefs.decision.hint' },
   { kind: 'cliRequest', label: 'push.prefs.cliRequest', hint: 'push.prefs.cliRequest.hint' },
   { kind: 'turnCompleted', label: 'push.prefs.turnCompleted', hint: 'push.prefs.turnCompleted.hint' },
+  { kind: 'usageLimit', label: 'push.prefs.usageLimit', hint: 'push.prefs.usageLimit.hint' },
 ]
 
 function Preferences() {

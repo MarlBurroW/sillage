@@ -17,6 +17,7 @@ const TITLES = {
     plan: 'Un plan attend ta validation',
     turnCompleted: "L'agent a terminé",
     decision: 'Décision à prendre',
+    usageLimit: "Limite d'usage atteinte",
     test: 'Notification de test',
   },
   en: {
@@ -26,6 +27,7 @@ const TITLES = {
     plan: 'A plan is waiting for approval',
     turnCompleted: 'The agent has finished',
     decision: 'Decision to make',
+    usageLimit: 'Usage limit reached',
     test: 'Test notification',
   },
 }
@@ -35,10 +37,25 @@ function titleOf(payload) {
   return (payload.kind && TITLES[language][payload.kind]) || payload.title
 }
 
+function clock(ms) {
+  return new Date(ms).toLocaleTimeString(self.navigator.language || 'en', { hour: '2-digit', minute: '2-digit' })
+}
+
 function bodyOf(payload) {
-  if (payload.kind !== 'test') return payload.body
   const french = (self.navigator.language || 'en').toLowerCase().startsWith('fr')
-  return french ? 'Les notifications de Sillage arrivent bien sur cet appareil.' : 'Sillage notifications reach this device.'
+  if (payload.kind === 'test') {
+    return french ? 'Les notifications de Sillage arrivent bien sur cet appareil.' : 'Sillage notifications reach this device.'
+  }
+  if (payload.kind === 'usageLimit') {
+    // Body is the conversation title; the times come separately so this device can format them.
+    const lifted = typeof payload.resetsAt === 'number' ? (french ? `levée à ${clock(payload.resetsAt)}` : `lifts at ${clock(payload.resetsAt)}`) : null
+    const resume =
+      typeof payload.resumeAt === 'number'
+        ? french ? `reprise à ${clock(payload.resumeAt)}` : `resumes at ${clock(payload.resumeAt)}`
+        : french ? 'pas de reprise automatique' : 'no automatic resume'
+    return [payload.body, [lifted, resume].filter(Boolean).join(' · ')].join('\n')
+  }
+  return payload.body
 }
 
 self.addEventListener('push', (event) => {

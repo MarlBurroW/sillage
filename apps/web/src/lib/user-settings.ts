@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { DEFAULT_PROJECT_DEFAULTS, type AgentConfig, type AgentKind, type BoardOrder, type ComposerLayout, type NotificationPrefs, type OnboardingState, type ProjectDefaults, type UserSettingsDto } from '@sillage/protocol'
+import { DEFAULT_PROJECT_DEFAULTS, type AgentConfig, type AgentKind, type BoardOrder, type ComposerLayout, type NotificationPrefs, type OnboardingState, type ProjectDefaults, type UsageLimitResumePrefs, type UserSettingsDto } from '@sillage/protocol'
 import { api } from './api'
 
 export const USER_SETTINGS_KEY = ['user-settings']
@@ -146,6 +146,15 @@ export function useUpdateCollapsedProjects() {
 }
 
 /** Replace requested notification types atomically and apply immediately. */
+/** Replace the resume-after-limit preferences atomically: one form, three fields. */
+export function useUpdateUsageLimitResume() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (usageLimitResume: UsageLimitResumePrefs) => api.patch<UserSettingsDto>('/api/me/settings', { usageLimitResume }),
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
 export function useUpdateNotificationPrefs() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -50,6 +50,7 @@ import { AntigravityAccountsSettingsPage } from './routes/AntigravityAccountsSet
 import { DecisionsPage } from './routes/DecisionsPage'
 import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
 import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
+import { UsageLimitsSettingsPage } from './routes/UsageLimitsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
 
@@ -160,6 +161,7 @@ export function App() {
             <Route path="notifications" element={<NotificationsSection />} />
             <Route path="cli" element={<CliDefaultsSettingsPage />} />
             <Route path="cli-versions" element={<CliVersionsSettingsPage />} />
+            <Route path="limites" element={<UsageLimitsSettingsPage />} />
             <Route path="projets" element={<Navigate to="/projects/new" replace />} />
             <Route path="mcp" element={<McpSettingsPage />} />
             <Route path="consignes" element={<InstructionsSettingsPage />} />

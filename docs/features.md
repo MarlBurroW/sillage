@@ -165,6 +165,11 @@ The periodic cleanup removes expired, revoked and orphaned files.
   **Decisions** and receive your answer back in its session, with an expiry and an
   optional fallback choice. This is separate from the CLI's permission requests
   and is off by default for each source.
+- **Resume after a usage limit.** When a subscription limit stops a turn, Sillage
+  notifies you once with the time it lifts. Enable automatic resume under
+  **Settings › Usage limits** and the session gets a resume message after the
+  reset, once per limit, unless someone wrote or interrupted it in between, or
+  the limit lifts later than your threshold. Scheduled runs are only reported.
 - **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
   all five CLIs, editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).

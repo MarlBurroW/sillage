@@ -10,6 +10,8 @@ import type {
   DecisionSourceKind,
   DecisionStatus,
   InstructionsMode, MemoryMode,
+  UsageLimitResumeReason,
+  UsageLimitResumeStatus,
 } from '@sillage/protocol'
 import { sql } from 'drizzle-orm'
 import {
@@ -1443,6 +1445,49 @@ export const decisions = sqliteTable(
 )
 
 /**
+ * Sessions stopped mid-turn by a subscription usage limit, and what Sillage does about them.
+ *
+ * One row per stop, kept after resolution: the latest row tells whether this session was already
+ * resumed once for the current limit, and the thread notice can be explained later. Persistent
+ * rather than an in-memory timer so a resume survives a daemon restart, which is exactly when
+ * unattended work has nobody to type “continue”.
+ */
+export const usageLimitResumes = sqliteTable(
+  'usage_limit_resumes',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    /** Account whose preferences decide, and who gets the notification: the conversation owner. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** When the CLI said the limit lifts; NULL when it did not say. */
+    resetsAt: timestamp('resets_at'),
+    /** When the session resumes by itself; NULL when it will not. */
+    resumeAt: timestamp('resume_at'),
+    status: text('status').$type<UsageLimitResumeStatus>().notNull(),
+    /** Why there was, or will be, no resume. NULL while scheduled or once resumed. */
+    reason: text('reason').$type<UsageLimitResumeReason>(),
+    /** Text sent on resume, frozen at scheduling so a later preference change does not alter a pending resume. */
+    message: text('message'),
+    /**
+     * Set on a resumed row when a person writes in the session afterwards. A session that stops
+     * again on the limit resumes once more only if someone wrote in between: otherwise it would
+     * loop on a limit the CLI misreported.
+     */
+    supersededAt: timestamp('superseded_at'),
+    createdAt: timestamp('created_at').notNull(),
+    resolvedAt: timestamp('resolved_at'),
+  },
+  (t) => [
+    index('idx_usage_limit_resumes_status').on(t.status, t.resumeAt),
+    index('idx_usage_limit_resumes_conversation').on(t.conversationId, t.createdAt),
+  ],
+)
+
+/**
  * Instance settings: values shared by everyone that an administrator can change without editing
  * `config.toml` or restarting the service, which would kill child CLI processes.
  *
@@ -1839,6 +1884,7 @@ export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
 export type CardTagRow = typeof cardTags.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
+export type UsageLimitResumeRow = typeof usageLimitResumes.$inferSelect
 export type BoardLinkRow = typeof boardLinks.$inferSelect
 export type DecisionRow = typeof decisions.$inferSelect
 export type CardIssueRow = typeof cardIssues.$inferSelect

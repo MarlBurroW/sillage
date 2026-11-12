@@ -985,7 +985,10 @@ export interface PushPayload {
    * What the notification announces, so the service worker can compose a title in the device
    * language; `title` remains the fallback.
    */
-  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall' | 'turnCompleted' | 'decision' | 'test'
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall' | 'turnCompleted' | 'decision' | 'test' | 'usageLimit'
+  /** `usageLimit` only: when the limit lifts and when the session resumes, for a body composed in the device language. */
+  resetsAt?: number | null
+  resumeAt?: number | null
   /** Pending decisions, for the installed app icon badge. */
   badge?: number
 }

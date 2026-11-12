@@ -20,6 +20,7 @@ import {
   Radio,
   SlidersHorizontal,
   Terminal,
+  TimerReset,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -114,6 +115,13 @@ const SECTIONS: Section[] = [
   {
     to: 'cli-versions', group: 'agents', labelKey: 'cliUpdates.title',
     descriptionKey: 'cliUpdates.navDescription', icon: <Terminal size={16} />,
+  },
+  {
+    to: 'limites',
+    group: 'agents',
+    labelKey: 'settings.section.usageLimits',
+    descriptionKey: 'settings.section.usageLimits.description',
+    icon: <TimerReset size={16} />,
   },
   {
     to: 'mcp',
