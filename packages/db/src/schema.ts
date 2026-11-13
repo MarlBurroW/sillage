@@ -601,6 +601,7 @@ export const agentRequests = sqliteTable(
         'create_project',
         'delete_project',
         'continue_in_project',
+        'move_session',
         'find_files',
         'write_personal_memory',
         'delete_personal_memory',
@@ -969,6 +970,22 @@ export const conversationHandoffs = sqliteTable('conversation_handoffs', {
   text: text('text').notNull(),
   createdAt: timestamp('created_at').notNull(),
 })
+
+/** Pending moves survive daemon restarts; completed entries retain the old workspace for history links. */
+export const conversationProjectMoves = sqliteTable('conversation_project_moves', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  fromProjectId: text('from_project_id').notNull(),
+  toProjectId: text('to_project_id').notNull(),
+  fromCwd: text('from_cwd').notNull(),
+  throughSeq: integer('through_seq'),
+  createdAt: timestamp('created_at').notNull(),
+  completedAt: timestamp('completed_at'),
+  error: text('error'),
+}, (t) => [
+  index('idx_conversation_project_moves_history').on(t.conversationId, t.createdAt),
+  uniqueIndex('idx_conversation_project_moves_pending').on(t.conversationId).where(sql`${t.completedAt} IS NULL`),
+])
 
 /**
  * Scheduled tasks: a prompt the daemon replays at a fixed cadence, each run in a fresh session.

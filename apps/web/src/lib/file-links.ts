@@ -38,6 +38,13 @@ function emit(): void {
   for (const listener of listeners) listener()
 }
 
+export function refreshFileLinks(scope: WorkspaceScope): void {
+  const previous = byScope.get(scope)
+  byScope.delete(scope)
+  if (previous) request(scope, [...previous.asked])
+  emit()
+}
+
 async function flush(scope: WorkspaceScope): Promise<void> {
   const queued = pending.get(scope)
   pending.delete(scope)

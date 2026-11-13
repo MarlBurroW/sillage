@@ -321,6 +321,10 @@ export const reorderConversationsBodySchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
 })
 
+export const moveConversationBodySchema = z.object({
+  project: z.string().trim().min(1).max(200),
+}).strict()
+
 export const updateConversationBodySchema = z
   .object({
     title: z.string().min(1).max(200),

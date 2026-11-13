@@ -66,6 +66,7 @@ const REQUEST_WAIT_MS = {
   create_project: 30000,
   delete_project: 60000,
   continue_in_project: 60000,
+  move_session: 15000,
   find_files: 60000,
   write_personal_memory: 15000,
   delete_personal_memory: 15000,
@@ -212,6 +213,11 @@ const TAGS_PARAM = {
 }
 
 const TOOLS = [
+  {
+    name: 'move_session',
+    description: 'Move this same session to an existing project when the user identifies the correct project after starting in the wrong one. Keep its ID and full conversation history. Give the exact project name or ID; use list_projects to find it. The move happens after this turn and background work finish: after success, finish your turn and let the user continue here. The next turn uses the destination directory, instructions, memory, skills and MCP tools, with selected past messages as context and the full journal available through read_conversation. Files and project memory stay where they are. Moving to a shared project makes the conversation visible there. Do not create another session.',
+    inputSchema: { type: 'object', properties: { project: { type: 'string', description: 'Exact destination project name or ID.' } }, required: ['project'], additionalProperties: false },
+  },
   {
     name: 'rename_session',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -1095,6 +1101,7 @@ function personalTools() {
 }
 
 const SESSION_ONLY_TOOLS = new Set([
+  'move_session',
   'rename_session',
   'attach_card',
   'detach_card',
@@ -1190,13 +1197,15 @@ function selectProject(name, args) {
 
 /** Global projects visible in the account's interface (owned and shared), further restricted by optional allowlists. Combine both filters like API tokens: borrowing identities never expands them. */
 function visibleProjects() {
+  const accountId = USER?.id ?? db.prepare('SELECT user_id AS id FROM conversations WHERE id = ?').get(CURRENT_CONVERSATION)?.id
+  if (!accountId) return []
   return db
     .prepare(
       `SELECT id, name FROM projects
        WHERE archived_at IS NULL AND (owner_id = ? OR visibility = 'shared')
        ORDER BY position, name`,
     )
-    .all(USER.id)
+    .all(accountId)
     .filter((row) => ALLOWED_PROJECTS.length === 0 || ALLOWED_PROJECTS.includes(row.id))
 }
 
@@ -2602,6 +2611,7 @@ function missingTargetCard(args) {
 }
 
 async function callTool(name, args) {
+  if (name === 'move_session') return requestDaemon(name, args ?? {})
   if (PERSONAL && !db.prepare('SELECT id FROM conversations WHERE id = ? AND user_id = ? AND project_id IS NULL').get(CURRENT_CONVERSATION, USER.id)) return { ...text('The personal discussion no longer exists.'), isError: true }
   if (PERSONAL && PERSONAL_TOOLS.some(tool => tool.name === name)) return requestDaemon(name, args ?? {})
   if (PERSONAL && !PROJECT_ID && (name === 'write_memory' || name === 'delete_memory')) return requestDaemon(name === 'write_memory' ? 'write_personal_memory' : 'delete_personal_memory', args ?? {})
@@ -3176,7 +3186,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       ? personalTools()
       : GLOBAL
       ? globalTools()
-      : TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name)))
+      : [LIST_PROJECTS, ...TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name)))]
     send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
     return
   }

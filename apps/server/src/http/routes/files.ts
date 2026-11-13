@@ -1,4 +1,5 @@
 import { isUtf8 } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { constants, createReadStream } from 'node:fs'
 import { open, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
@@ -38,8 +39,9 @@ function extensionOf(path: string): string {
 const WRITE_BODY_LIMIT = 6 * MAX_EDITABLE_BYTES + 64 * 1024
 
 /** Disk file fingerprint. Size and modification time avoid hashing content: the filesystem supplies both without rereading the file, and distinct writes produce different pairs. */
-function fingerprint(size: number, mtimeMs: number): string {
-  return `${size}:${Math.round(mtimeMs)}`
+function fingerprint(size: number, mtimeMs: number, absolute: string): string {
+  // A session can move projects: identical metadata in another folder is not the file being edited.
+  return `${size}:${Math.round(mtimeMs)}:${createHash('sha256').update(absolute).digest('hex').slice(0, 16)}`
 }
 
 /** Workspace file reads and writes for the panel editor. Invariant I2 does not apply: files are live disk state rather than events. Nothing here is journaled. */
@@ -83,7 +85,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       return {
         path,
         content: buffer.toString('utf8'),
-        fingerprint: fingerprint(info.size, info.mtimeMs),
+        fingerprint: fingerprint(info.size, info.mtimeMs, absolute),
         extension: extensionOf(path),
         lossy: !isUtf8(buffer),
       }
@@ -104,7 +106,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         throw err
       })
       const info = absolute ? await stat(absolute).catch(() => null) : null
-      return { fingerprint: info?.isFile() ? fingerprint(info.size, info.mtimeMs) : null }
+      return { fingerprint: info?.isFile() ? fingerprint(info.size, info.mtimeMs, absolute!) : null }
     })
 
     /** Filters candidate paths to actual workspace files. Conversations use this to make only working links clickable. Path-like syntax proves nothing: `text/plain`, `@sillage/protocol` and `fs/promises` all resemble paths, and broken links are worse than text. Uses `POST` for reads because lists fit poorly in URLs and form the client cache key. */
@@ -231,7 +233,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       // `fingerprint: null` explicitly chooses overwriting
       // after a conflict has been displayed.
       if (body.fingerprint !== null) {
-        const current = info ? fingerprint(info.size, info.mtimeMs) : null
+        const current = info ? fingerprint(info.size, info.mtimeMs, absolute) : null
         if (current !== body.fingerprint) {
           throw new HttpError(
             409,
@@ -243,7 +245,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       await writeFile(absolute, body.content, 'utf8')
       const written = await stat(absolute)
-      return { fingerprint: fingerprint(written.size, written.mtimeMs) }
+      return { fingerprint: fingerprint(written.size, written.mtimeMs, absolute) }
     })
   }
 }

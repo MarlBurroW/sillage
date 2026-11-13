@@ -248,7 +248,21 @@ class Connection {
   }
 
   notifyListsChanged(): void {
+    for (const id of this.subscriptions.keys()) {
+      if (!canReadConversation(this.ctx, id, this.userId)) this.unsubscribe(id)
+    }
     this.send({ t: 'lists-changed' })
+  }
+
+  notifyWorkspaceChanged(conversationId: string): void {
+    const key = `conversation:${conversationId}`
+    const current = this.treeWatches.get(key)
+    const paths = [...(current?.keys() ?? [])]
+    for (const stop of current?.values() ?? []) stop()
+    this.treeWatches.delete(key)
+    if (!canReadConversation(this.ctx, conversationId, this.userId)) return
+    this.watchTree('conversation', conversationId, paths)
+    for (const path of new Set(['', ...paths])) this.send({ t: 'tree-changed', scope: 'conversation', id: conversationId, path })
   }
 
   belongsTo(userId: string): boolean {
@@ -338,6 +352,9 @@ export async function registerWebSocketHub(
   // List-shaped changes made outside HTTP routes, such as an agent attaching its session to a card.
   sessions.statusBus.on('lists', () => {
     for (const connection of connections) connection.notifyListsChanged()
+  })
+  sessions.statusBus.on('workspace', ({ conversationId }: { conversationId: string }) => {
+    for (const connection of connections) connection.notifyWorkspaceChanged(conversationId)
   })
 
   app.get('/api/ws', { websocket: true }, (socket, request) => {

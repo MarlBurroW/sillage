@@ -166,7 +166,10 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
   const referenceReminder = input.sillageMcp
     ? 'To cite a session in your replies, write session:<id> using its exact Sillage identifier: the interface turns it into a link with its title and details. read_conversation accepts this identifier or reference to read the thread, including archives. A mention alone is not a request to message another agent.'
     : null
-  const briefing = [referenceReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
+  const projectReminder = input.sillageMcp
+    ? 'If the task belongs to a different project, point out the mismatch. Once the user identifies the intended project, use list_projects and move_session to move this same session with its full history, then finish your turn so the move can take effect. The next turn uses the destination workspace and instructions; files and project memory stay in their original folders.'
+    : null
+  const briefing = [referenceReminder, projectReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
 

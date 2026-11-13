@@ -1,11 +1,13 @@
 import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
 import { conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
-import { and, eq, gt, or, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import {
   conversationHandoffs,
+  conversationProjectMoves,
   conversations,
   permissionRequests,
   projects,
@@ -31,6 +33,7 @@ import { sessionReferenceContext } from '../conversations/references.js'
 import { publicUrlOf } from '../settings/app-settings.js'
 import { projectOverview, sessionTitleReminder } from '../agents/overview.js'
 import { adoptSessionTitle } from '../conversations/title.js'
+import { checkpointBeforeProjectMove, commitProjectMove, pendingProjectMove, prepareProjectMove, requestProjectMove } from '../conversations/project-transfer.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
 import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
@@ -180,6 +183,7 @@ export class SessionManager {
   private readonly checkpoints = new Map<string, ActiveCheckpoint>()
   /** Conversations whose announced message has not reached the CLI yet; see `announce`. */
   private readonly pendingDeliveries = new Set<string>()
+  private readonly projectMoveLocks = new Set<string>()
   /** Set later because the WebSocket hub tracking viewers does not exist when managers are constructed. */
   private notifier: ConversationNotifier | null = null
   readonly statusBus = new EventEmitter()
@@ -600,6 +604,7 @@ export class SessionManager {
 
   /** Whether messages sent now would not reach CLIs immediately. */
   private isBusy(conversationId: string): boolean {
+    if (this.projectMoveLocks.has(conversationId)) return true
     if (this.pendingDeliveries.has(conversationId)) return true
     const status = this.runners.get(conversationId)?.status
     return status === 'running' || status === 'awaiting_input'
@@ -607,6 +612,10 @@ export class SessionManager {
 
   /** On returning idle, apply pending restarts before flushing queues. Restarts call `setStatus('idle')` and reenter here; clear flags beforehand so reentry goes directly to queues and pending messages reach reconfigured runners. */
   private async settleIdle(conversationId: string): Promise<void> {
+    if (pendingProjectMove(this.db, conversationId)) {
+      await this.applyProjectMove(conversationId)
+      return
+    }
     const managed = this.runners.get(conversationId)
     if (managed?.pendingRestart) {
       const reason = managed.pendingRestart
@@ -615,6 +624,60 @@ export class SessionManager {
       return
     }
 
+    await this.flushQueue(conversationId)
+  }
+
+  /** Agents request their own move during a turn; acknowledge it before stopping their MCP process. */
+  async moveToProject(conversationId: string, userId: string, target: string) {
+    const result = await requestProjectMove(this.db, conversationId, userId, target)
+    await this.applyProjectMove(conversationId)
+    const stored = this.db.select().from(conversationProjectMoves).where(eq(conversationProjectMoves.id, result.move.id)).get()
+    if (stored?.error) throw new HttpError(409, 'project_move_failed', stored.error)
+    if (stored?.completedAt === null) this.log.append(conversationId, {
+      type: 'agent.notice', id: result.move.id, code: 'project_move_pending', level: 'info',
+      message: `Move to ${result.project.name} scheduled after the turn and background work finish.`,
+      details: { project: result.project.name },
+    })
+    this.statusBus.emit('lists')
+    return { projectId: result.project.id, projectName: result.project.name, pending: Boolean(pendingProjectMove(this.db, conversationId)) }
+  }
+
+  /** Also swept by the daemon after recovery and when detached work finishes. */
+  async applyPendingProjectMoves(): Promise<void> {
+    const pending = this.db.select({ conversationId: conversationProjectMoves.conversationId }).from(conversationProjectMoves)
+      .where(isNull(conversationProjectMoves.completedAt)).all()
+    await Promise.all(pending.map(move => this.applyProjectMove(move.conversationId)))
+  }
+
+  private async applyProjectMove(conversationId: string): Promise<void> {
+    if (this.isBusy(conversationId) || this.startingRunners.has(conversationId) || this.backgroundCount(conversationId) || this.loopCount(conversationId)) return
+    const pending = pendingProjectMove(this.db, conversationId)
+    if (!pending) return
+    this.projectMoveLocks.add(conversationId)
+    try {
+      const prepared = prepareProjectMove(this.db, this.log, conversationId)
+      if (!prepared) return
+      if (!(await stat(prepared.project.workspacePath).catch(() => null))?.isDirectory()) throw new Error('The destination project directory is missing.')
+      await this.stopRunner(conversationId, { keepQueue: true })
+      // Recheck access after stopping: project visibility may have changed meanwhile.
+      const current = prepareProjectMove(this.db, this.log, conversationId)
+      if (!current) return
+      commitProjectMove(this.db, current)
+      this.statusBus.emit('workspace', { conversationId })
+      // Revoke old viewers' subscriptions before publishing events in the destination project.
+      this.statusBus.emit('lists')
+      this.log.append(conversationId, {
+        type: 'agent.notice', id: current.move.id, code: 'project_moved', level: 'info',
+        message: `Session moved to ${current.project.name}. History is preserved; the next message uses the destination workspace and instructions.`,
+        details: { project: current.project.name, previousDirectory: current.move.fromCwd, directory: current.project.workspacePath },
+      })
+      this.broadcastStatus(conversationId, 'idle', false)
+    } catch (error) {
+      this.db.update(conversationProjectMoves).set({ completedAt: Date.now(), error: String(error) }).where(eq(conversationProjectMoves.id, pending.id)).run()
+      this.log.append(conversationId, { type: 'agent.notice', code: 'project_move_failed', level: 'warning', message: `The session could not be moved: ${error instanceof Error ? error.message : String(error)}`, details: String(error) })
+    } finally {
+      this.projectMoveLocks.delete(conversationId)
+    }
     await this.flushQueue(conversationId)
   }
 
@@ -1248,11 +1311,12 @@ export class SessionManager {
     mentions: string[] = [],
     skills: string[] = [],
   ): Promise<void> {
+    if (pendingProjectMove(this.db, conversationId)) await this.applyProjectMove(conversationId)
     if (!this.claimClientMessage(conversationId, clientMessageId)) return
 
     // During active turns, messages wait rather than enter CLIs
     // and mix into current-turn context.
-    if (this.isBusy(conversationId)) {
+    if (this.isBusy(conversationId) || pendingProjectMove(this.db, conversationId)) {
       const queueId = randomUUID()
       const queue = this.queues.get(conversationId) ?? []
       queue.push({ queueId, clientMessageId, text, attachments, mentions, skills })
@@ -1443,6 +1507,7 @@ export class SessionManager {
     conversationId: string,
     key: string,
   ): Promise<{ written: number; deleted: number; indexRestored: boolean }> {
+    if (checkpointBeforeProjectMove(this.db, conversationId, key)) throw new HttpError(409, 'checkpoint_previous_project', 'This checkpoint belongs to the previous project and cannot be restored here.')
     if (this.isBusy(conversationId)) {
       throw new HttpError(
         409,

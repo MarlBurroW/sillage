@@ -217,6 +217,7 @@ export class AgentRequests {
    * still observe their own request settled.
    */
   async sweep(): Promise<void> {
+    await this.sessions.applyPendingProjectMoves?.()
     const room = MAX_IN_FLIGHT - this.inFlight.size
     if (room <= 0) return
     const pending = this.ctx.db
@@ -258,6 +259,16 @@ export class AgentRequests {
         const { title } = renameSessionBodySchema.parse(payload)
         const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, conversation.id, title, 'agent')
         this.settle(request.id, result === 'protected' ? 'The user chose the title; it is preserved.' : `Your session title: “${title}”.`, false)
+        return
+      }
+      if (request.kind === 'move_session') {
+        if (!conversation || !conversation.projectId) throw new Refusal('This tool moves your own project session only.')
+        const target = typeof payload.project === 'string' ? payload.project.trim() : ''
+        if (!target) throw new Refusal('Provide the exact destination project name or ID.')
+        const moved = await this.sessions.moveToProject(conversation.id, userId, target)
+        this.settle(request.id, moved.pending
+          ? `Move to “${moved.projectName}” scheduled. Finish this turn now; Sillage moves this same session when the turn and background work finish. The full journal is retained. No files or project memory are moved. Do not create a replacement session.`
+          : `This same session now belongs to “${moved.projectName}”. History is retained. The next turn uses its directory and instructions.`, false)
         return
       }
       if (request.kind === 'write_personal_memory' || request.kind === 'delete_personal_memory') {
