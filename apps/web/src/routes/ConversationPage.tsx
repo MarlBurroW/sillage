@@ -16,6 +16,7 @@ import {
   FileText,
   FolderTree,
   FolderPlus,
+  FolderInput,
   GaugeCircle,
   GitBranch,
   SquareKanban,
@@ -35,6 +36,8 @@ import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { ContinuationIntro } from '../components/chat/ContinuationIntro'
 import { HandoffDialog } from '../components/chat/HandoffDialog'
+import { MoveProjectDialog } from '../components/chat/MoveProjectDialog'
+import { refreshFileLinks } from '../lib/file-links'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -164,12 +167,22 @@ function scrollToBottom(node: HTMLElement): void {
 export function ConversationPage() {
   const t = useTranslate()
   const { conversationId } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   // Draft passed by a fork: the cut message returns to the composer.
   const draft = (useLocation().state as { draft?: string } | null)?.draft ?? ''
   const queryClient = useQueryClient()
   const { data: user } = useCurrentUser()
   const { data: conversation } = useConversation(conversationId)
+  useEffect(() => {
+    if (!conversation || location.pathname === conversationPath(conversation)) return
+    // Old project URLs and agent-triggered moves follow the same stable conversation ID.
+    navigate(conversationPath(conversation) + location.search + location.hash, { replace: true })
+    refreshFileLinks(conversation.id)
+    for (const key of ['tree', 'tree-search', 'tree-content', 'git', 'commits']) {
+      void queryClient.invalidateQueries({ queryKey: [key, conversation.id] })
+    }
+  }, [conversation, location.pathname, location.search, location.hash, navigate, queryClient])
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
   const { loadOlder } = stream
   const currentThread = useRef(conversationId)
@@ -316,6 +329,7 @@ export function ConversationPage() {
   /** “Continue in another CLI” dialog: switching tools requires confirmation. */
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const [handoffOpen, setHandoffOpen] = useState(false)
+  const [moveProjectOpen, setMoveProjectOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
@@ -1056,6 +1070,11 @@ export function ConversationPage() {
               <IconButton label={t('conversation.handoff.menu')} onClick={() => setHandoffOpen(true)}>
                 <ArrowRightLeft size={18} />
               </IconButton>
+              {isOwner && conversation.projectId && !conversation.scheduleId && !conversation.benchmarkId ? (
+                <IconButton label={t('conversation.move.title')} onClick={() => setMoveProjectOpen(true)}>
+                  <FolderInput size={18} />
+                </IconButton>
+              ) : null}
               {/*
                * Direct access to the card: with one, it toggles the panel's Card tab; without,
                * it attaches the session to one. Readers who cannot attach only see it with a card.
@@ -1271,6 +1290,7 @@ export function ConversationPage() {
         {handoffOpen ? (
           <HandoffDialog open={handoffOpen} onOpenChange={setHandoffOpen} source={conversation} />
         ) : null}
+        {moveProjectOpen ? <MoveProjectDialog source={conversation} onClose={() => setMoveProjectOpen(false)} /> : null}
         {exportOpen && <Suspense fallback={null}><ExportDialog source={conversation} onClose={() => setExportOpen(false)} /></Suspense>}
 
         <ThreadSearch

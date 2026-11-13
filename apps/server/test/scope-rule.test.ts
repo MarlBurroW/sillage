@@ -12,6 +12,7 @@ import { conversations, mcpServers, openDatabase, projects, runMigrations, users
 import { DEFAULT_CLAUDE_CONFIG, type McpServer, type McpServerListDto } from '@sillage/protocol'
 import { proposeMcpInstall } from '../src/agents/mcp-install.js'
 import { projectOverview } from '../src/agents/overview.js'
+import { transferTarget } from '../src/conversations/project-transfer.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
 import type { AppContext } from '../src/http/context.js'
@@ -85,6 +86,16 @@ async function harness(t: TestContext) {
 }
 
 const stdio = { type: 'stdio', command: 'true', args: [], env: {} }
+
+test('moving a session is work: its owner may choose a visible project, regardless of project ownership or admin role', async t => {
+  const { db, dir } = await harness(t)
+  db.insert(projects).values({ id: 'destination', name: 'Destination', ownerId: 'admin', visibility: 'shared', workspacePath: dir, createdAt: 1 }).run()
+  assert.equal(transferTarget(db, 'c-member', 'member', 'destination').project.id, 'destination')
+  assert.equal(transferTarget(db, 'c-owner', 'owner', 'destination').project.id, 'destination')
+  assert.throws(() => transferTarget(db, 'c-member', 'admin', 'destination'), { code: 'conversation_write_forbidden' })
+  assert.throws(() => transferTarget(db, 'c-member', 'owner', 'destination'), { code: 'conversation_write_forbidden' })
+  assert.throws(() => transferTarget(db, 'c-member', 'member', 'private'), { code: 'project_not_found' })
+})
 
 test('MCP servers: administrators write the global scope, owners their project, nobody else', async (t) => {
   const { call } = await harness(t)

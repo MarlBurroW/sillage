@@ -21,6 +21,7 @@ export function toolOrigin(name: string, presentation?: ToolPresentation): ToolO
 }
 const SILLAGE_LABELS: Record<string, MessageKey> = {
   rename_session: 'sillageTool.rename_session',
+  move_session: 'sillageTool.move_session',
   search_history: 'sillageTool.search_history',
   read_conversation: 'sillageTool.read_conversation',
   list_sessions: 'sillageTool.list_sessions',

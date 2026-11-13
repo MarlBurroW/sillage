@@ -4,6 +4,7 @@ import { resolveRealInside } from './workspace.js'
 import { readableConversation } from './conversations/access.js'
 import { linkedWorktreePaths } from './worktrees/linked.js'
 import { notFound } from './http/errors.js'
+import { previousProjectRoots } from './conversations/project-transfer.js'
 
 /** Shared by conversation previews and exports; linked worktrees retain their real-path boundary. */
 export async function workspaceImagePath(db: Db, root: string, conversationId: string | null, userId: string, path: string): Promise<string> {
@@ -18,7 +19,7 @@ export async function workspaceImagePath(db: Db, root: string, conversationId: s
   if (conversationId) {
     const conversation = readableConversation(db, conversationId, userId)
     if (conversation.projectId) {
-      const roots = linkedWorktreePaths(db, conversationId, conversation.projectId)
+      const roots = [...linkedWorktreePaths(db, conversationId, conversation.projectId), ...previousProjectRoots(db, conversationId, userId)]
       const matches = [...new Set((await Promise.all(roots.map(existing))).filter(entry => entry !== null))]
       if (matches.length === 1) return matches[0]!
     }

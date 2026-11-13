@@ -80,6 +80,19 @@ export function useRenameConversation() {
   })
 }
 
+export function useMoveConversation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, project }: { id: string; project: string }) =>
+      api.post<{ projectId: string; projectName: string; pending: boolean }>(`/api/conversations/${id}/move`, { project }),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['conversation', id] })
+      void queryClient.invalidateQueries({ queryKey: ['cards'] })
+    },
+  })
+}
+
 /**
  * Attaches a conversation to a board card, or detaches it with `null`. The board counts the
  * session on its new card, so card lists are reread along with the conversation.

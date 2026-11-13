@@ -72,7 +72,7 @@ test('the global tool list adds list_projects, a project parameter, and drops se
   const start = tools.find(tool => tool.name === 'start_session')!
   assert.match(JSON.stringify(start.inputSchema.properties.agent), /Omit to use Claude/)
 
-  for (const absent of ['rename_session', 'send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'request_decision']) {
+  for (const absent of ['move_session', 'rename_session', 'send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'request_decision']) {
     assert.ok(!names.includes(absent), absent)
   }
   const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))

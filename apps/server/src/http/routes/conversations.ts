@@ -2,12 +2,13 @@ import { continueInProject } from '../../conversations/continue-in-project.js'
 import { join } from 'node:path'
 import { readableConversation, readableConversationFilter } from '../../conversations/access.js'
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNull, min, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNotNull, isNull, min, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   cards,
   conversationFavorites,
   conversationHandoffs,
+  conversationProjectMoves,
   conversationReads,
   conversations,
   projects,
@@ -22,6 +23,7 @@ import {
   forkConversationBodySchema,
   handoffConversationBodySchema,
   markReadBodySchema,
+  moveConversationBodySchema,
   permissionDecisionBodySchema,
   planDecisionBodySchema,
   questionAnswerBodySchema,
@@ -413,8 +415,12 @@ export function registerConversationRoutes(
     let portable: ReturnType<typeof buildHandoff> | null = null
     let agentSessionId: string | null
     const handoff = ctx.db.select().from(conversationHandoffs).where(eq(conversationHandoffs.conversationId, id)).get()
+    const moves = ctx.db.select().from(conversationProjectMoves).where(and(eq(conversationProjectMoves.conversationId, id), isNotNull(conversationProjectMoves.throughSeq))).all()
     try {
-      portable = source.agent === 'antigravity' ? buildHandoff(readHandoffItems(log, id, body.throughSeq), { id, title: source.title, agent: source.agent }, source.agent, clampHandoffTokens(undefined), handoff) : null
+      // A moved session has several native histories. Its normalized journal alone covers every cut point.
+      portable = source.agent === 'antigravity' || moves.length > 0
+        ? buildHandoff(readHandoffItems(log, id, body.throughSeq), { id, title: source.title, agent: source.agent }, source.agent, clampHandoffTokens(undefined), handoff?.fromConversationId === id ? undefined : handoff)
+        : null
       agentSessionId = portable ? null : await sessions.forkSession(id, body.throughSeq)
     } catch (err) {
       if (err instanceof ForkError) throw badRequest('fork_failed', err.message)
@@ -456,6 +462,10 @@ export function registerConversationRoutes(
     }
     ctx.db.insert(conversations).values(row).run()
 
+    for (const move of moves) ctx.db.insert(conversationProjectMoves).values({
+      ...move, id: randomUUID(), conversationId: row.id, throughSeq: Math.min(move.throughSeq!, body.throughSeq),
+    }).run()
+
     // Without this copy the fork would appear empty while the agent
     // remembers the entire retained history (invariant I2).
     const copied = log.copyThrough(id, row.id, body.throughSeq)
@@ -466,7 +476,7 @@ export function registerConversationRoutes(
     // prompt on every start and would be lost without a dedicated row.
     if (portable) {
       ctx.db.insert(conversationHandoffs).values({ conversationId: row.id, fromConversationId: id, throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens, text: portable.text, createdAt: now }).run()
-      log.append(row.id, { type: 'agent.notice', code: 'portable_fork', level: 'info', message: 'Antigravity does not provide native forks. This new session receives the retained conversation as portable context.', details: { throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens } })
+      log.append(row.id, { type: 'agent.notice', code: moves.length ? 'project_move_fork' : 'portable_fork', level: 'info', message: 'This fork receives the retained conversation as portable context.', details: { throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens } })
     } else if (handoff) {
       ctx.db.insert(conversationHandoffs).values({ ...handoff, conversationId: row.id }).run()
     }
@@ -537,6 +547,14 @@ export function registerConversationRoutes(
     return reply
       .status(201)
       .send(conversationToDto(row, user.id, 0, readCardLink(ctx, row.cardId), false))
+  })
+
+  app.post('/api/conversations/:id/move', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadWritable(id, user.id)
+    const body = moveConversationBodySchema.parse(request.body)
+    return sessions.moveToProject(id, user.id, body.project)
   })
 
   /** Context received from the source, allowing users to see what the agent knows. */
