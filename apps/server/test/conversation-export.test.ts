@@ -275,11 +275,21 @@ test('editing invalidates review artifacts, failed analysis blocks sharing, and 
   const { draft } = await f.render(await f.analyze(await f.ready()))
   const oldFile = f.service.artifact(draft.id, 'owner', draft.revision).file
   f.service.analyze(draft.id, 'owner', exportOptionsSchema.parse({ ...draft.options, excluded: ['unknown-entry'] }))
+  // Access is revoked synchronously; unlinking the obsolete preview is background cleanup.
+  assert.throws(() => f.service.artifact(draft.id, 'owner', draft.revision), /Preview/)
+  await assert.rejects(f.service.publish(draft.id, 'owner', draft.revision, null), /Preview/)
   for (let i = 0; i < 100 && f.service.get(draft.id, 'owner').status !== 'failed'; i++) await delay(10)
   assert.equal(f.service.get(draft.id, 'owner').status, 'failed')
   assert.throws(() => f.service.artifact(draft.id, 'owner', draft.revision), /Preview/)
   await assert.rejects(f.service.publish(draft.id, 'owner', draft.revision, null), /Preview/)
-  await assert.rejects(readFile(oldFile))
+  for (let i = 0; i < 500; i++) {
+    try { await readFile(oldFile) } catch (error) {
+      assert.equal((error as NodeJS.ErrnoException).code, 'ENOENT')
+      break
+    }
+    await delay(10)
+  }
+  await assert.rejects(readFile(oldFile), { code: 'ENOENT' })
   await f.service.cancel(draft.id, 'owner')
   assert.throws(() => f.service.get(draft.id, 'owner'), /expired/)
   const next = f.service.create('c', 'owner', 'en')

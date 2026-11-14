@@ -132,6 +132,8 @@ export const mcpServerStatusSchema = z.object({
    */
   tools: z.array(z.string()).default([]),
   error: z.string().nullable().default(null),
+  /** Discovery can fail after connection succeeds; keep both facts visible. */
+  toolsError: z.string().nullable().optional(),
   /**
    * Server from CLI files (`~/.claude.json`, `config.toml`, claude.ai connectors), not Sillage.
    * The UI must show it without offering edits: Sillage does not own it.

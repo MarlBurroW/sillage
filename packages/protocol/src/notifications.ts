@@ -9,7 +9,7 @@ import type { UsageLimitResumeReason } from './usage-limit-resume.js'
  */
 
 /** Notification kinds, individually disableable by each account. */
-export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted', 'usageLimit'])
+export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted', 'usageLimit', 'credentialExpiry'])
 export type NotificationKind = z.infer<typeof notificationKindSchema>
 
 export const notificationPrefsSchema = z.object({
@@ -18,10 +18,11 @@ export const notificationPrefsSchema = z.object({
   turnCompleted: z.boolean(),
   /** Added later: stored preferences predating it lack the key and must keep parsing. */
   usageLimit: z.boolean().default(true),
+  credentialExpiry: z.boolean().default(true),
 })
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>
 
-export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true, usageLimit: true }
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true, usageLimit: true, credentialExpiry: true }
 
 /** What a CLI is waiting for, used in toast labels. */
 export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall'
@@ -30,6 +31,11 @@ export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan' 
  * A toast. Text is composed client-side in the user's language: the server sends only facts.
  */
 export type InAppNotification =
+  | {
+      kind: 'credentialExpiry'
+      agent: 'claude'
+      loginExpiresAt: string
+    }
   | {
       kind: 'decision'
       decisionId: string

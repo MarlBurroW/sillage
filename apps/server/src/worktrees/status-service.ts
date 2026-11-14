@@ -3,8 +3,9 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktreeKeptFiles, worktrees, type Db, type ProjectRow, type WorktreeRow } from '@sillage/db'
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { assessWorktree, defaultBase, listWorktrees, type WorktreeAssessment } from './assess.js'
+import { assessWorktree, defaultBase, listWorktrees, remoteBase, type WorktreeAssessment } from './assess.js'
 import { hasOwnWork } from './own-work.js'
+import type { WorktreeRemoteStatus } from './remote-status.js'
 
 /** Recalculate lists older than this limit and reuse fresher ones. Keep short because sessions modify trees, but sidebar reads on every turn end would otherwise launch dozens of git processes. */
 const TTL_MS = 30_000
@@ -34,7 +35,12 @@ export class WorktreeStatusService {
   constructor(
     private readonly db: Db,
     log: EventLog,
+    private readonly remote?: Pick<WorktreeRemoteStatus, 'get' | 'onRefreshed'>,
   ) {
+    if (remote) remote.onRefreshed = (projectId) => {
+      this.invalidate(projectId)
+      this.scheduleRefresh(projectId)
+    }
     // Trees are most likely to change at turn completion;
     // edits outside cwd may attach sessions to new trees.
     log.subscribeAll((entry) => {
@@ -191,11 +197,19 @@ export class WorktreeStatusService {
     }
 
     const list = [...unified.values()]
-    const assessed = await mapLimited(list, CONCURRENCY, (tree) =>
-      base
-        ? assessWorktree(repo, base, tree)
-        : assessWorktree(repo, 'HEAD', { ...tree, head: null }),
-    )
+    const pulls = this.remote?.get(project, list.flatMap((tree) => tree.branch ? [tree.branch] : []))
+    const fetchedBase = await remoteBase(repo, base)
+    const assessed = await mapLimited(list, CONCURRENCY, async (tree) => {
+      if (!base) return assessWorktree(repo, 'HEAD', { ...tree, head: null })
+      const pull = tree.branch ? pulls?.get(tree.branch) : undefined
+      const mergedHead = pull?.state === 'merged' && pull.head === tree.head &&
+        pull.base === base.replace(/^(refs\/remotes\/)?origin\//, '')
+      const local = await assessWorktree(repo, base, tree, { mergedHead })
+      if (!fetchedBase || local.state === 'merged' || local.state === 'missing') return local
+      const remote = await assessWorktree(repo, fetchedBase, tree, { mergedHead })
+      // Prefer either proof of delivery; retain local progress when neither base contains it.
+      return remote.state === 'merged' || (!local.commitsInBase && remote.commitsInBase) ? remote : local
+    })
 
     const kept = new Map(
       this.db
@@ -215,6 +229,7 @@ export class WorktreeStatusService {
         branch: tree.branch,
         external: tree.id === null,
         conversations: linked,
+        pullRequest: tree.branch ? pulls?.get(tree.branch) ?? null : null,
         ...assessment,
         ...this.settleLeftovers(tree.id, assessment, commitsInBase, ownCommits, linked, kept.get(tree.path)),
       }

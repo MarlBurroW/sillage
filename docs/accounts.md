@@ -82,6 +82,28 @@ Sillage keeps the CLI from opening a browser of its own during the sign-in
 make the code from Sillage's link useless. Where that cannot be prevented (Windows),
 a token obtained through the callback still creates the account.
 
+### Host sign-in expiry
+
+Administrators see the host CLI's sign-in state and estimated expiry in **Claude
+accounts**. Sillage reads `claude auth status` in the existing home, without copying
+credentials or spending a model turn (probed on 2.1.318). It caches the result for
+five minutes and checks hourly even with no conversation running. The refresh action
+reads it immediately.
+
+At ten days before expiry, then three days, then the reported expiry, administrators
+receive a notification once per threshold. Activity retains a link to the account
+settings while attention is needed. Server can deliver push notifications; Desktop
+keeps the in-app warning. Notification preferences include CLI sign-in expiry. The
+date can be an estimate, with actual expiry up to three days earlier; it does not
+prove the current token is still accepted by Anthropic.
+
+The warning links to the existing guided personal-account flow. Selecting that
+account in conversations and schedules avoids relying on the host login; adding it
+alone does not change their account. Renewing the shared host login itself still
+requires `claude auth login` on the machine running Sillage, described in the
+settings details. API keys, environment tokens, and extra accounts do not report
+this date. Older CLIs and failed status reads show that the date is unavailable.
+
 ### Limits
 
 - A token cannot open Remote Control sessions nor fetch claude.ai connectors. Local

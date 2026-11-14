@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -9,6 +9,7 @@ import { CodexAsyncQuestions } from '../src/agents/codex/async-questions.js'
 import { CodexTurnUsage } from '../src/agents/codex/turn-usage.js'
 import { startedItem, completedItem } from '../src/agents/codex/item-events.js'
 import { EventLog } from '../src/events/event-log.js'
+import { codexErrorCode } from '../src/agents/codex/errors.js'
 import { asyncMessage, context, done, itemEvent, runnerFixture } from './codex-support.js'
 
 test('échec de transmission : garder la question répondable, sans résolution optimiste', async () => {
@@ -59,7 +60,7 @@ test('recherche, images, sommeil, compaction et revue ont un rendu normalisé', 
   const items = [
     { type: 'webSearch', id: 'web', query: 'Codex', action: { type: 'openPage', url: 'https://developers.openai.com' }, results: [{ title: 'Result' }] },
     { type: 'imageView', id: 'view', path: '/tmp/image.png' },
-    { type: 'imageGeneration', id: 'image', status: 'completed', revisedPrompt: 'test', result: 'aGVsbG8=', failure: null },
+    { type: 'imageGeneration', id: 'image', status: 'completed', revisedPrompt: 'test', result: 'aGVsbG8=', failure: null, generationId: null },
     { type: 'sleep', id: 'sleep', durationMs: 1000 },
     { type: 'contextCompaction', id: 'compact' },
     { type: 'enteredReviewMode', id: 'review', review: 'Check changes' },
@@ -74,6 +75,36 @@ test('recherche, images, sommeil, compaction et revue ont un rendu normalisé', 
   assert.ok(completed.some((event) => event.type === 'tool.completed' && event.toolCallId === 'view' && JSON.stringify(event.output) === '{"path":"/tmp/image.png"}'))
   assert.ok(completed.some((event) => event.type === 'context.compacted'))
   assert.ok(completed.some((event) => event.type === 'agent.notice' && event.code === 'enteredReviewMode'))
+})
+
+test('generated image file IDs use the saved file without inventing a remote URL', (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), 'sillage-generated-image-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
+  const png = Buffer.from('89504e470d0a1a0a', 'hex')
+  writeFileSync(join(cwd, 'generated.png'), png)
+  const item: ThreadItem = {
+    type: 'imageGeneration', id: 'generated', status: 'completed', revisedPrompt: 'fixture',
+    generationId: 'generation', fileId: 'remote-file', savedPath: join(cwd, 'generated.png'), failure: null,
+  }
+  const events = completedItem(item, cwd, 10, 'parent')
+  const image = events.find((event) => event.type === 'message.completed')
+  assert.deepEqual(image, {
+    type: 'message.completed', messageId: 'image-generated', role: 'assistant', parentToolCallId: 'parent',
+    blocks: [{ type: 'image', mimeType: 'image/png', url: `data:image/png;base64,${png.toString('base64')}` }],
+  })
+  for (const savedPath of [join(cwd, 'missing.png'), join(cwd, 'large.png')]) {
+    if (savedPath.endsWith('large.png')) writeFileSync(savedPath, Buffer.alloc(4 * 1024 * 1024 + 1))
+    const unavailable = completedItem({ ...item, savedPath }, cwd, 10, null)
+    assert.equal(unavailable.some((event) => event.type === 'message.completed'), false)
+    const tool = unavailable.find((event) => event.type === 'tool.completed')
+    assert.equal((tool as { output: { savedPath: string } }).output.savedPath, savedPath)
+  }
+})
+
+test('new Codex terminal errors keep stable translated codes', () => {
+  assert.equal(codexErrorCode('modelNotFound'), 'model_not_found')
+  assert.equal(codexErrorCode('policyCapacityUnavailable'), 'policy_capacity_unavailable')
+  assert.equal(codexErrorCode('inferenceHookDenied'), 'inference_hook_denied')
 })
 
 test('une image vue par Codex est jointe en base64, dans la forme du Read de Claude', () => {

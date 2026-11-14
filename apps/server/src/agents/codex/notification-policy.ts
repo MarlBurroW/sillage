@@ -7,6 +7,8 @@ export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore'
   'thread/status/changed': 'handled',
   // CLI read/unread state does not control Sillage journal state.
   'thread/readState/changed': 'ignore',
+  // Native sections do not control Sillage navigation.
+  'thread/section/changed': 'ignore',
   'thread/archived': 'notice',
   'thread/deleted': 'notice',
   'thread/unarchived': 'notice',

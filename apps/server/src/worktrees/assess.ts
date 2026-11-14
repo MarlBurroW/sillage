@@ -119,6 +119,13 @@ export async function defaultBase(repo: string): Promise<string | null> {
   return head.code === 0 && current && current !== 'HEAD' ? current : null
 }
 
+/** A fetched default branch supplements local merges without changing the checkout. */
+export async function remoteBase(repo: string, base: string | null): Promise<string | null> {
+  if (!base || base.startsWith('origin/')) return null
+  const ref = `refs/remotes/origin/${base}`
+  return (await git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).code === 0 ? ref : null
+}
+
 /** `merge-tree --merge-base` requires git 2.40. Debian 12 and therefore the Docker image use 2.39, as Apple's Command Line Tools have for a long time. Read once per process: versions do not change without restarting. */
 let mergeBaseSupport: Promise<boolean> | null = null
 
@@ -284,7 +291,7 @@ export async function assessWorktree(
   base: string,
   entry: Pick<WorktreeEntry, 'path' | 'head' | 'prunable'> & { branch?: string | null },
   /** Forces the pre-git-2.40 path in tests; otherwise inferred from installed version. */
-  options: { legacyGit?: boolean } = {},
+  options: { legacyGit?: boolean; mergedHead?: boolean } = {},
 ): Promise<WorktreeAssessment> {
   if (entry.prunable || !entry.head) return MISSING
   const dir = await stat(entry.path).catch(() => null)
@@ -299,9 +306,9 @@ export async function assessWorktree(
   const [behind = 0, ahead = 0] = counts.split('\t').map((n) => Number(n) || 0)
 
   // Commits: is their content already in the base?
-  let commitsInBase = ahead === 0
+  let commitsInBase = options.mergedHead === true || ahead === 0
   let conflicts = false
-  if (ahead > 0) {
+  if (!commitsInBase) {
     const merged = await mergedTree(repo, base, entry.head)
     conflicts = merged?.conflicts ?? false
     commitsInBase = merged !== null && !merged.conflicts && merged.tree === baseTree

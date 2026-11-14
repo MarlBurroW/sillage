@@ -1,6 +1,7 @@
-import { ExternalLink, Gauge, IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
+import * as Dialog from '@radix-ui/react-dialog'
+import { ExternalLink, Gauge, IdCard, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import type { ClaudeAccount, ClaudeLoginStatusDto } from '@sillage/protocol'
+import { claudeLoginExpiry, type ClaudeAccount, type ClaudeLoginStatusDto } from '@sillage/protocol'
 import {
   Badge,
   Banner,
@@ -12,6 +13,7 @@ import {
   ConfirmDialog,
   EmptyState,
   Field,
+  IconButton,
 } from '../components/ui'
 import { ListHeading, SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
@@ -19,14 +21,17 @@ import { locale, useTranslate } from '../lib/i18n'
 import {
   useCancelClaudeLogin,
   useClaudeAccounts,
+  useClaudeHostLogin,
   useClaudeLoginStatus,
   useCreateClaudeAccount,
   useDeleteClaudeAccount,
   useStartClaudeLogin,
   useSubmitClaudeLoginCode,
   useUpdateClaudeAccount,
+  useRefreshClaudeHostLogin,
 } from '../lib/claude-accounts'
 import { busiestWindows, useAgentUsage } from '../lib/usage'
+import { useCurrentUser } from '../lib/session'
 
 /**
  * Additional Claude accounts for the Sillage account.
@@ -66,6 +71,8 @@ export function ClaudeAccountsSettingsPage() {
         description={t('claudeAccounts.section.description')}
       />
 
+      <HostLoginCard onAdd={() => setAdding(true)} />
+
       <Banner tone="info">{t('claudeAccounts.banner')}</Banner>
 
       <section className="flex flex-col gap-2">
@@ -75,7 +82,15 @@ export function ClaudeAccountsSettingsPage() {
           action={accounts.length > 0 ? addButton : null}
         />
 
-        {adding ? <AddAccountCard onClose={() => setAdding(false)} /> : null}
+        <Dialog.Root open={adding} onOpenChange={setAdding}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+            <Dialog.Content aria-describedby={undefined} className="fixed top-1/2 left-1/2 z-50 max-h-[90dvh] w-[min(34rem,94vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg shadow-pop">
+              <Dialog.Title className="sr-only">{t('claudeAccounts.create.title')}</Dialog.Title>
+              <AddAccountCard onClose={() => setAdding(false)} />
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
 
         {accounts.length === 0 ? (
           adding ? null : (
@@ -92,6 +107,36 @@ export function ClaudeAccountsSettingsPage() {
       </section>
     </div>
   )
+}
+
+/** The shared host login stays distinct from secrets belonging to this account. */
+function HostLoginCard({ onAdd }: { onAdd: () => void }) {
+  const t = useTranslate()
+  const { data: user } = useCurrentUser()
+  const { data, isPending } = useClaudeHostLogin()
+  const refresh = useRefreshClaudeHostLogin()
+  if (!user?.isAdmin) return null
+  const expiry = claudeLoginExpiry(data?.loginExpiresAt)
+  const state = data?.state ?? 'unavailable'
+  return <Card>
+    <CardHeader title={t('claudeAccounts.host.title')} description={t('claudeAccounts.host.description')} icon={<KeyRound size={16} />} actions={
+      <IconButton label={t('claudeAccounts.host.refresh')} size="sm" disabled={isPending || refresh.isPending} onClick={() => refresh.mutate()}><RefreshCw size={15} /></IconButton>
+    } />
+    <CardBody className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={state === 'connected' ? 'positive' : 'neutral'}>{t(isPending ? 'claudeAccounts.host.checking' : `claudeAccounts.host.${state}`)}</Badge>
+        {data?.loginExpiresAt ? <span className="text-sm text-ink-soft">{t('claudeAccounts.host.expires', { date: new Date(data.loginExpiresAt).toLocaleString(locale()) })}</span> : null}
+      </div>
+      {expiry ? <Banner tone={expiry === 'soon' ? 'caution' : 'critical'}>{t(`claudeAccounts.host.${expiry}`)} {t('claudeAccounts.host.estimate')}</Banner> : null}
+      {state === 'connected' && !data?.loginExpiresAt ? <p className="text-xs text-ink-faint">{t('claudeAccounts.host.noDate')}</p> : null}
+      <p className="text-sm text-ink-soft">{t('claudeAccounts.host.addHint')}</p>
+      <Button size="sm" variant="secondary" icon={<Plus size={15} />} onClick={onAdd} className="self-start">{t('claudeAccounts.host.add')}</Button>
+      <details className="text-xs text-ink-faint">
+        <summary className="cursor-pointer">{t('claudeAccounts.host.renew')}</summary>
+        <p className="mt-2">{t('claudeAccounts.host.renewHint')} <code>claude auth login</code></p>
+      </details>
+    </CardBody>
+  </Card>
 }
 
 /**

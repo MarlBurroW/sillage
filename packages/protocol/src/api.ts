@@ -577,7 +577,18 @@ export interface WorktreeFileDto {
 /** How a conversation is associated with a worktree: its cwd or files it wrote there. */
 export type WorktreeLink = 'worktree' | 'edited'
 
+export interface WorktreePullRequest {
+  number: number
+  url: string
+  state: 'open' | 'draft' | 'closed' | 'merged'
+  /** Only this exact head has been merged; reused branches must keep new commits. */
+  head: string
+  base: string
+  checks: 'pending' | 'success' | 'failure' | null
+}
+
 export interface WorktreeStatusDto {
+  pullRequest?: WorktreePullRequest | null
   /** Null for a worktree known to git but not created by Sillage. */
   id: string | null
   /** Branch, or database entry name when the branch is missing. */
@@ -989,7 +1000,9 @@ export interface PushPayload {
    * What the notification announces, so the service worker can compose a title in the device
    * language; `title` remains the fallback.
    */
-  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall' | 'turnCompleted' | 'decision' | 'test' | 'usageLimit'
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall' | 'turnCompleted' | 'decision' | 'test' | 'usageLimit' | 'credentialExpiry'
+  /** Host CLI sign-in expiry, for a warning composed in the device language. */
+  loginExpiresAt?: string
   /** `usageLimit` only: when the limit lifts and when the session resumes, for a body composed in the device language. */
   resetsAt?: number | null
   resumeAt?: number | null

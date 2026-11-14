@@ -45,6 +45,15 @@ export function translateSignal(message: SDKMessage): SillageEvent | null {
   if (message.type !== 'system') return null
 
   switch (message.subtype) {
+    case 'session_writes_lost':
+      return notice(
+        'claude_session_writes_lost',
+        'Claude Code could not save session data. Resuming may miss part of the conversation; free disk space before continuing.',
+        'warning',
+        { errorCode: message.error_code, lost: message.lost },
+        'claude-session-writes-lost',
+      )
+
     case 'notification':
       // Repeated `key` values describe repeated states (credits exhausted, lost MCP):
       // rendering replaces notices rather than stacks duplicates,

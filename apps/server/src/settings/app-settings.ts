@@ -10,7 +10,6 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
   const days = readValue(db, 'autoArchiveDays')
   const schedule = readValue(db, 'autoArchiveSchedule')
   const maxSessions = readValue(db, 'maxConcurrentSessions')
-  const publicUrl = readValue(db, 'publicUrl')
 
   return {
     autoArchiveDays:
@@ -29,15 +28,16 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
       typeof maxSessions === 'number' && Number.isInteger(maxSessions) && maxSessions >= 1
         ? maxSessions
         : config.limits.maxConcurrentSessions,
-    // Empty database strings are deliberate choices: infer from each request again,
-    // even if the configuration file specifies an address.
-    publicUrl: typeof publicUrl === 'string' ? publicUrl : config.server.publicUrl,
+    publicUrl: publicUrlOf(db, config),
   }
 }
 
-/** Public root used in links, or empty to infer it from requests. Reread on every call like other settings: URLs configured in the tour or settings must appear immediately in subsequently copied webhook links. */
+/** Public root for links and browser-origin checks. Read only this setting on the HTTP hot path; changes in onboarding and settings must take effect immediately. */
 export function publicUrlOf(db: Db, config: Config): string {
-  return readAppSettings(db, config).publicUrl
+  const publicUrl = readValue(db, 'publicUrl')
+  // Empty database strings deliberately restore inference, including when the
+  // configuration file specifies an address.
+  return typeof publicUrl === 'string' ? publicUrl : config.server.publicUrl
 }
 
 export function writeAppSettings(db: Db, patch: Partial<AppSettings>): void {

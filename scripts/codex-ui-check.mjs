@@ -9,6 +9,7 @@ import { checkThreadPages } from './checks/thread-pages.mjs'
 import { checkJournalCache } from './checks/journal-cache.mjs'
 import { checkEventBodies, checkEventImages } from './checks/event-bodies.mjs'
 import { checkJournalLoading } from './checks/journal-loading.mjs'
+import { checkBoardPriorities } from './checks/board-priorities.mjs'
 
 // Check real components with a mocked API; no real conversation.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -54,6 +55,12 @@ try {
       await import('/src/styles/index.css')
       const React = (await import('/node_modules/.vite/deps/react.js')).default
       const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
+      const querySource = await (await fetch('/src/lib/tool-output.ts')).text()
+      const { QueryClient, QueryClientProvider } = await import(querySource.match(/from "([^"]*react-query[^"]*)"/)[1])
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const routerSource = await (await fetch('/src/routes/SettingsPage.tsx')).text()
+      const { MemoryRouter } = await import(routerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1])
+      const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
       const { isSillageTool } = await import('/src/lib/sillage-tools.ts')
       const { toolOrigin } = await import('/src/lib/tool-presentation.ts')
       const { translate } = await import('/src/lib/i18n/index.ts')
@@ -69,9 +76,11 @@ try {
       let seq = 0
       window.appendEvent = (event) => {
         state = applyEvent(state, ++seq, Date.now(), event)
-        root.render(React.createElement(React.Fragment, null,
+        root.render(React.createElement(QueryClientProvider, { client: queryClient },
+          React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null,
           React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
           state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
+          )),
         ))
       }
       window.appendEvent({ type: 'turn.started' })
@@ -97,7 +106,8 @@ try {
     assert.equal(await submit.isEnabled(), true)
     assert.equal(await page.getByText('Travail en cours', { exact: true }).isVisible(), true)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    await page.getByText('Détails', { exact: true }).click()
+    await page.locator('[data-agent-notices="info"] > summary').click()
+    await page.getByText('Détails techniques', { exact: true }).click()
     await page.getByText('"preserved": true', { exact: false }).waitFor()
     await Promise.all([
       page.waitForResponse((response) => response.url().includes('/questions/request')),
@@ -113,6 +123,7 @@ try {
     await checkThreadPages(page)
     await checkEventBodies(page)
     await checkEventImages(page)
+    await checkBoardPriorities(page)
     await page.close()
   }
 } finally {

@@ -68,6 +68,26 @@ export interface ClaudeAccountListDto {
   accounts: ClaudeAccount[]
 }
 
+/** Host CLI sign-in metadata only; no identity, access token or refresh token. */
+export interface ClaudeHostLoginDto {
+  state: 'connected' | 'disconnected' | 'unavailable'
+  /** Null for older CLIs, API keys, environment tokens, or an unreadable status. */
+  loginExpiresAt: string | null
+  checkedAt: number
+}
+
+export type ClaudeLoginExpiry = 'soon' | 'urgent' | 'expired'
+
+/** CLI dates can be estimates, with actual expiry up to three days earlier. */
+export function claudeLoginExpiry(date: string | null | undefined, now = Date.now()): ClaudeLoginExpiry | null {
+  if (!date) return null
+  const remaining = Date.parse(date) - now
+  if (!Number.isFinite(remaining)) return null
+  if (remaining <= 0) return 'expired'
+  if (remaining <= 3 * 86_400_000) return 'urgent'
+  return remaining <= 10 * 86_400_000 ? 'soon' : null
+}
+
 /**
  * Guided subscription login: Sillage runs `claude setup-token` in a pseudoterminal, shows the
  * authorization URL, accepts the code displayed by the page and captures the printed token. The

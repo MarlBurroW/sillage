@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_CODEX_CONFIG, isReservedMcpServerName, type McpServer } from '@sillage/protocol'
+import { DEFAULT_CODEX_CONFIG, isReservedMcpServerName, mcpServerStatusSchema, type McpServer } from '@sillage/protocol'
+import type { McpServerStatus as CodexMcpServerStatus } from '@sillage/codex-bindings/v2'
 import { builtinMcpServer } from '../src/agents/mcp-builtin.js'
 import { fromCodexMcpStatus, toCodexThreadConfig } from '../src/agents/codex/mcp.js'
 
@@ -14,6 +15,28 @@ test('Codex pre-authorizes only the built-in session naming tool', () => {
   assert.equal(overrides.sillage_builtin!.default_tools_approval_mode, undefined)
   assert.deepEqual(toCodexThreadConfig([]), { mcp_servers: {} })
   assert.equal(builtinMcpServer({ enabled: true, config: { ...DEFAULT_CODEX_CONFIG, sillageMcp: false }, databasePath: '/tmp/test.sqlite', projectId: 'project', conversationId: 'self', memoryDir: null }), null)
+})
+
+test('Codex distinguishes failed discovery from a healthy empty catalog and clears it on recovery', () => {
+  const inventory: CodexMcpServerStatus = {
+    name: 'catalog', authStatus: 'unsupported', tools: {}, resources: [], resourceTemplates: [],
+    runtimeStatus: null, pluginId: null, httpOrigin: null, serverInfo: null,
+    serverCapabilities: null, toolsError: 'tools/list: upstream unavailable',
+  }
+  const startup = new Map([['catalog', { status: 'ready', error: null }]])
+  const failed = fromCodexMcpStatus([inventory], [], startup)[0]!
+  assert.equal(failed.state, 'connected')
+  assert.equal(failed.error, null)
+  assert.equal(mcpServerStatusSchema.parse(failed).toolsError, inventory.toolsError)
+  const recovered = fromCodexMcpStatus([{ ...inventory, toolsError: null }], [], startup)[0]!
+  assert.equal(recovered.state, 'connected')
+  assert.equal(recovered.toolsError, null)
+  assert.deepEqual(recovered.tools, [])
+  const unauthenticated = fromCodexMcpStatus([{ ...inventory, authStatus: 'notLoggedIn' }], [], startup)[0]!
+  assert.equal(unauthenticated.state, 'needs-auth')
+  assert.equal(unauthenticated.toolsError, inventory.toolsError)
+  // Older journals and other CLIs do not report discovery errors.
+  assert.equal(mcpServerStatusSchema.parse({ name: 'old', state: 'connected' }).toolsError, undefined)
 })
 
 test('Codex keeps user HTTP servers separate from its built-in transport and inventory', () => {

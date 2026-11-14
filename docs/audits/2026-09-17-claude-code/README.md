@@ -487,6 +487,30 @@ No interface change: no Playwright path added for this bump. During a future
 authorized deployment, also install `claude install 2.1.301` through the supervised
 procedure; do not install the system CLI during preparation.
 
+## November 14, 2026 addendum: target 2.1.325
+
+Cards #63, #68, #70, #72, #73, #76, #80 and #81 are covered by one target/SDK
+bump. The installed host binary is **2.1.318**; verification uses the separately
+downloaded **2.1.325**, without updating the host or copying its credentials.
+
+| Native surface | Integration decision | Verification |
+| --- | --- | --- |
+| `setMcpServers` leaves omitted launch servers connected | Restart/resume when removing a launch server; keep additions and edits live | Runner regression and native control probe |
+| `canUseTool.suggestions` may be empty, suppressed, or change the entire permission mode | Only offer session approval for usable updates without a mode switch | Runner regression and native permission probe |
+| Permission updates can target repository settings | Rewrite session approval destinations to `session` | Two identical native Bash calls need one approval and create no settings file |
+| `applyFlagSettings` rejects invalid values atomically | Keep manager restart fallback; do not claim application after rejection | Runner regression and native control probe |
+| Fable alias now resolves to 5.2; fast-mode support is catalog-driven | Keep native catalog, preserve explicit model IDs | Native catalog probe |
+| New optional features (`reloadPlugins`, Code Mode, subscriber batching, subagent effort) | Deferred; existing launch/restart and stream paths remain | No new controls promised |
+
+The native SDK probes used an isolated Claude config and a local Messages fixture,
+without a real Anthropic model request. `supportedModels()` resolved Fable to
+`claude-fable-5-2` and advertised fast-mode support; account entitlement remains
+native. Regression tests also cover idle compaction and the new lost-session-write
+notice. Sillage warns when initialization reports a different permission mode.
+
+Server and Desktop use the same runner and permission semantics. OS-specific
+upstream fixes do not imply that Windows or macOS runtime was tested here.
+
 ## October 28, 2026 addendum: target 2.1.312
 
 Cards #49, #51, #52, #55, #56 and #57 (2.1.302 → 2.1.312) in one bump. CLI target

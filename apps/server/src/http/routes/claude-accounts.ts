@@ -10,8 +10,10 @@ import {
 } from '@sillage/protocol'
 import type { ClaudeLoginService } from '../../claude-accounts/login.js'
 import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
-import { HttpError, notFound } from '../errors.js'
+import type { ClaudeHostStatus } from '../../claude-accounts/host-status.js'
+import { forbidden, HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { canWriteScope } from '../scope-access.js'
 
 /**
  * Additional Claude accounts belonging to the current user.
@@ -27,10 +29,21 @@ export function registerClaudeAccountRoutes(
   app: FastifyInstance,
   accounts: ClaudeAccountStore,
   login: ClaudeLoginService,
+  hostStatus?: Pick<ClaudeHostStatus, 'read' | 'check'>,
 ): void {
   const taken = () =>
     new HttpError(409, 'claude_account_label_taken', 'Another account already has this name.')
   const unknownLogin = () => notFound('claude_login_not_found', 'Unknown sign-in.')
+
+  app.get('/api/claude-accounts/host-login', async (request) => {
+    const user = requireUser(request)
+    if (!canWriteScope(user, null)) throw forbidden('admin_only', 'Administrators only.')
+    if (!hostStatus) throw notFound('claude_host_login_unavailable', 'Host sign-in status is unavailable.')
+    const refresh = (request.query as { refresh?: string }).refresh === '1'
+    const status = await hostStatus.read(refresh)
+    if (refresh) await hostStatus.check()
+    return status
+  })
 
   app.get('/api/claude-accounts', async (request): Promise<ClaudeAccountListDto> => {
     const user = requireUser(request)

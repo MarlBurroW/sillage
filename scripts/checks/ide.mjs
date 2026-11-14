@@ -10,6 +10,7 @@ export async function checkIde({ page, context, base, project }) {
   const input = picker.getByRole('combobox', { name: 'Nom ou chemin du fichier', exact: true })
   const code = panel.locator('.cm-content')
   const openFile = async (path) => {
+    if (await code.isVisible()) await code.focus()
     await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
     await input.fill(path)
     await picker.getByRole('option', { name: path, exact: true }).click()
@@ -52,6 +53,7 @@ export async function checkIde({ page, context, base, project }) {
   await page.waitForFunction(() => document.querySelector('[data-panel="workspace"] .cm-content')?.textContent.includes('defineConfig'))
   assert.equal((await code.innerText()).trimEnd(), original.trimEnd(), 'Undo must survive changing files')
   await page.keyboard.press('Control+Shift+z')
+  await page.waitForFunction(() => document.querySelector('[data-panel="workspace"] .cm-content')?.textContent.includes('// Ligne 180'))
   await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
@@ -85,6 +87,9 @@ export async function checkIde({ page, context, base, project }) {
   await picker.waitFor({ state: 'hidden' })
   assert.equal(await panel.getAttribute('data-fullscreen'), 'true')
   await panel.getByRole('button', { name: 'Quitter le plein écran', exact: true }).focus()
+  await page.getByRole('tooltip').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('tooltip').waitFor({ state: 'hidden' })
   await page.keyboard.press('Escape')
   assert.equal(await panel.getAttribute('data-fullscreen'), null, 'Escape outside the editor exits full screen first')
   assert.equal(await panel.isVisible(), true)
@@ -115,6 +120,7 @@ export async function checkIde({ page, context, base, project }) {
   await page.getByRole('menuitem', { name: 'ui-check/package.json', exact: true }).click()
   await panel.locator('[data-editor-file="ui-check/package.json"]').waitFor()
 
+  await code.focus()
   await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
   await input.fill('zzzz-ui-no-such-file')
   await picker.getByText('Aucun fichier trouvé.', { exact: true }).waitFor()

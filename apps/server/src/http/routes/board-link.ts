@@ -15,16 +15,10 @@ import type { AppContext } from '../context.js'
 import { conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
+import { githubRepoFromRemote } from '../../git-credentials/github.js'
+export { githubRepoFromRemote } from '../../git-credentials/github.js'
+
 const execFileAsync = promisify(execFile)
-
-const GITHUB_REMOTE =
-  /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i
-
-/** `owner/name` from GitHub remote URLs in HTTPS, SSH and SCP forms. */
-export function githubRepoFromRemote(url: string): string | null {
-  const match = GITHUB_REMOTE.exec(url.trim())
-  return match ? `${match[1]}/${match[2]}` : null
-}
 
 /** Stored session configuration; unreadable rows mean 'project settings'. */
 function readSessionConfig(value: string | null): AgentConfig | null {

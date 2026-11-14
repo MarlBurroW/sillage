@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ClaudeAccount, ClaudeAccountListDto, ClaudeLoginStatusDto } from '@sillage/protocol'
+import type { ClaudeAccount, ClaudeAccountListDto, ClaudeHostLoginDto, ClaudeLoginStatusDto } from '@sillage/protocol'
 import { api } from './api'
+import { useCurrentUser } from './session'
 
 /**
  * Additional Claude accounts for the current user. As with Git credentials, no hook reads a token
@@ -9,6 +10,28 @@ import { api } from './api'
  */
 
 const ACCOUNTS_KEY = ['claude-accounts']
+const HOST_LOGIN_KEY = ['claude-host-login']
+
+/** A host login is instance-wide, so only administrators see its state. */
+export function useClaudeHostLogin() {
+  const { data: user } = useCurrentUser()
+  return useQuery({
+    queryKey: [...HOST_LOGIN_KEY, user?.id],
+    queryFn: () => api.get<ClaudeHostLoginDto>('/api/claude-accounts/host-login'),
+    enabled: Boolean(user?.isAdmin),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+  })
+}
+
+export function useRefreshClaudeHostLogin() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.get<ClaudeHostLoginDto>('/api/claude-accounts/host-login?refresh=1'),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: HOST_LOGIN_KEY }),
+  })
+}
 
 export function useClaudeAccounts(enabled = true) {
   return useQuery({

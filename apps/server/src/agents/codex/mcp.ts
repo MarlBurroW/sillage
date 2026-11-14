@@ -85,6 +85,7 @@ export function fromCodexMcpStatus(
       state,
       tools: Object.keys(status.tools ?? {}),
       error: latest?.error ?? null,
+      toolsError: status.toolsError ?? null,
       external: !ours.has(status.name) || BUILTIN_SERVERS.has(status.name),
     }
   })

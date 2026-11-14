@@ -60,6 +60,6 @@ export const itemEvent = (item: unknown, method = 'item/completed', threadId = '
 
 export const asyncMessage = {
   type: 'agentMessage' as const, id: 'question-message', text: '- Blue\n- Green', phase: 'commentary' as const,
-  memoryCitation: null, delivery: 'async' as const,
+  memoryCitation: null, moderation: null, delivery: 'async' as const,
   questions: [{ title: 'Which color?', options: ['Blue', 'Green'] }, { title: 'Any constraints?', options: null }],
 }

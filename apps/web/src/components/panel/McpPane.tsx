@@ -30,7 +30,7 @@ const STATE_LABELS: Record<McpServerState, MessageKey> = {
   disabled: 'panel.mcp.state.disabled',
 }
 
-/** Only failures and missing authentication require attention. */
+/** Discovery warnings override a connected server's otherwise healthy tone. */
 const STATE_TONES: Record<McpServerState, string> = {
   pending: 'text-ink-faint',
   configured: 'text-ink-faint',
@@ -84,6 +84,7 @@ export function McpPane({
     <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
       {servers.map((server) => {
         const attempt = attempts[server.name]
+        const discoveryWarning = server.state === 'connected' && !!server.toolsError
         const detail =
           attempt === 'pending'
             ? t('panel.mcp.reconnecting')
@@ -93,8 +94,8 @@ export function McpPane({
             key={server.name}
             className="flex items-center gap-2 rounded-md border border-line bg-surface-high px-2 py-1.5"
           >
-            <span className={`shrink-0 ${STATE_TONES[server.state]}`}>
-              {attempt === 'pending' ? <Loader size={13} /> : STATE_ICONS[server.state]}
+            <span className={`shrink-0 ${discoveryWarning ? 'text-caution' : STATE_TONES[server.state]}`}>
+              {attempt === 'pending' ? <Loader size={13} /> : discoveryWarning ? <CircleAlert size={13} /> : STATE_ICONS[server.state]}
             </span>
 
             <span className="min-w-0 flex-1">
@@ -103,6 +104,11 @@ export function McpPane({
                 {/* Errors replace status: the reason matters more than Failed already conveyed by icons. */}
                 {detail}
               </span>
+              {server.toolsError ? (
+                <span className="block wrap-anywhere text-[0.6875rem] text-caution">
+                  {t('panel.mcp.toolsError', { error: server.toolsError })}
+                </span>
+              ) : null}
             </span>
 
             {server.external ? (

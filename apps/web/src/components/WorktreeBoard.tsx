@@ -9,6 +9,7 @@ import { Badge, Button, Card, CardBody, CardHeader, cx } from './ui'
 import { WorktreeBulkCleanupDialog } from './WorktreeBulkCleanupDialog'
 import { WorktreeCleanupDialog } from './WorktreeCleanupDialog'
 import { WorktreeLeftoversDialog } from './WorktreeLeftoversDialog'
+import { WorktreePullRequest } from './WorktreePullRequest'
 import { WorktreeStateMark, WORKTREE_STATE_TONE } from './WorktreeTag'
 import { useConversations } from '../lib/conversations'
 import { useLiveStatus } from '../lib/conversation-status'
@@ -116,6 +117,7 @@ function WorktreeRow({
         {facts.length > 0 ? (
           <p className="mt-1 text-xs text-ink-faint">{facts.join(' · ')}</p>
         ) : null}
+        <WorktreePullRequest pull={tree.pullRequest} />
         <p className="mt-0.5 truncate text-[0.6875rem] text-ink-faint" title={tree.path}>
           {tree.path}
         </p>

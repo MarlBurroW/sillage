@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 // Search palette using real API and demo data. No CLI enabled.
+// --desktop uses the real Desktop profile and apps/web/dist, without Electron.
+const desktop = process.argv.includes('--desktop')
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -27,8 +29,8 @@ async function freePort() {
   return port
 }
 
-function run(args, cwd, env) {
-  const child = spawn(process.execPath, args, { cwd, env, stdio: 'pipe' })
+function run(args, cwd, env, stdio = 'pipe') {
+  const child = spawn(process.execPath, args, { cwd, env, stdio })
   processes.push(child)
   child.diagnostics = ''
   for (const stream of [child.stdout, child.stderr]) {
@@ -57,22 +59,36 @@ try {
     SILLAGE_HOST: '127.0.0.1',
     SILLAGE_CONFIG: config,
     SILLAGE_DATA_DIR: join(data, 'data'),
-    SILLAGE_WEB_ROOT: join(data, 'web'),
+    SILLAGE_WEB_ROOT: desktop ? join(webDir, 'dist') : join(data, 'web'),
+    SILLAGE_PROFILE: desktop ? 'desktop' : 'server',
+    ...(desktop ? { SILLAGE_HANDSHAKE_FD: '3' } : {}),
   }
-  const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
-  const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
-  const base = `http://127.0.0.1:${webPort}`
-  await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ready(base, vite)])
+  // Seed before startup so Desktop opens its launcher session for the seeded account.
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
+  const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env, desktop ? ['pipe', 'pipe', 'pipe', 'pipe'] : 'pipe')
+  const handshake = desktop ? new Promise((resolve, reject) => {
+    let buffer = ''
+    server.stdio[3].on('data', (chunk) => {
+      buffer += chunk
+      if (buffer.includes('\n')) resolve(JSON.parse(buffer.split('\n')[0]))
+    })
+    server.once('exit', () => reject(new Error(server.diagnostics)))
+  }) : null
+  const base = `http://127.0.0.1:${desktop ? apiPort : webPort}`
+  const vite = desktop ? null : run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
+  await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ...(vite ? [ready(base, vite)] : [])])
 
   if (shots) await mkdir(shots, { recursive: true })
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
-  const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
-  assert.ok(login.ok())
+  if (desktop) await context.addCookies([{ name: 'sillage_session', value: (await handshake).session, url: base }])
+  else {
+    const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
+    assert.ok(login.ok())
+  }
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
   const nimbus = projects.find((entry) => entry.name === 'Nimbus')
   const atlas = projects.find((entry) => entry.name === 'Atlas API')
@@ -109,8 +125,10 @@ try {
 
   await open(`/p/${nimbus.id}/c/${hero.id}`)
 
-  // Empty input: recent conversations, current project first, excluding the open one.
-  assert.equal((await groups())[0], 'Nimbus')
+  await palette.getByRole('option', { name: /Refactor settings storage/ }).waitFor()
+
+  // General commands precede recent conversations; the current project leads the projects.
+  assert.deepEqual((await groups()).slice(0, 2), ['Général', 'Nimbus'])
   assert.equal(await palette.getByRole('option', { name: /Add offline caching/ }).count(), 0)
 
   // All types under their project: conversation-worktree file, skill, tickets.
@@ -167,9 +185,12 @@ try {
   const rows = await palette.getByRole('option').allInnerTexts()
   const more = rows.findIndex((text) => text.includes('de plus'))
   assert.ok(more > 0, rows.join(' | '))
-  for (let index = 0; index < more; index++) await page.keyboard.press('ArrowDown')
+  for (let index = 0; index < more; index++) {
+    await page.keyboard.press('ArrowDown')
+    await page.waitForFunction((index) => document.querySelector('[role=option][aria-selected=true]') === document.querySelectorAll('[role=option]')[index], index + 1)
+  }
   await page.keyboard.press('Enter')
-  assert.ok((await palette.getByRole('option').count()) > rows.length)
+  await page.waitForFunction((count) => document.querySelectorAll('[role=dialog] [role=option]').length > count, rows.length)
   assert.equal(await palette.getByRole('option', { name: /de plus/ }).count(), 0)
 
   // A command executes in place.

@@ -26,6 +26,8 @@ import { fileURLToPath } from 'node:url'
 const root = join(fileURLToPath(import.meta.url), '../..')
 const target = join(root, 'packages/codex-bindings/src')
 const check = process.argv.includes('--check')
+// Version probes must not replace the CLI used by active sessions.
+const binary = process.env.CODEX_BIN || 'codex'
 
 /** Files authored by Sillage, preserved and excluded from comparison. */
 const HAND_WRITTEN = new Set(['README.md'])
@@ -44,7 +46,7 @@ function listFiles(dir, prefix = '') {
 
 function generateInto(dir) {
   try {
-    execFileSync('codex', ['app-server', 'generate-ts', '-o', dir], { stdio: 'pipe' })
+    execFileSync(binary, ['app-server', 'generate-ts', '-o', dir], { stdio: 'pipe' })
   } catch (err) {
     throw new Error(
       `La génération a échoué. Codex est-il installé et à jour ?\n${err instanceof Error ? err.message : String(err)}`,
@@ -52,7 +54,7 @@ function generateInto(dir) {
   }
 }
 
-const version = execFileSync('codex', ['--version'], { encoding: 'utf8' }).trim()
+const version = execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim()
 
 if (!check) {
   const staging = mkdtempSync(join(tmpdir(), 'sillage-codex-'))

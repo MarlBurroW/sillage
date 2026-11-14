@@ -14,6 +14,7 @@ import {
   useUnsubscribePush,
 } from '../lib/push'
 import { useUpdateNotificationPrefs, useUserSettings } from '../lib/user-settings'
+import { useCurrentUser } from '../lib/session'
 import { Badge, Banner, Button, Card, CardBody, IconButton, Select, Switch } from './ui'
 
 const SERVICES: Record<PushServiceKind, string> = {
@@ -232,11 +233,13 @@ const KINDS: Array<{ kind: NotificationKind; label: MessageKey; hint: MessageKey
   { kind: 'cliRequest', label: 'push.prefs.cliRequest', hint: 'push.prefs.cliRequest.hint' },
   { kind: 'turnCompleted', label: 'push.prefs.turnCompleted', hint: 'push.prefs.turnCompleted.hint' },
   { kind: 'usageLimit', label: 'push.prefs.usageLimit', hint: 'push.prefs.usageLimit.hint' },
+  { kind: 'credentialExpiry', label: 'push.prefs.credentialExpiry', hint: 'push.prefs.credentialExpiry.hint' },
 ]
 
 function Preferences() {
   const t = useTranslate()
   const { data: settings } = useUserSettings()
+  const { data: user } = useCurrentUser()
   const update = useUpdateNotificationPrefs()
   if (!settings) return null
   const prefs = settings.notifications
@@ -249,7 +252,7 @@ function Preferences() {
             <p className="text-xs text-ink-faint">{t('push.prefs.hint')}</p>
           </div>
           <ul className="flex flex-col divide-y divide-line">
-            {KINDS.map((entry) => (
+            {KINDS.filter((entry) => entry.kind !== 'credentialExpiry' || user?.isAdmin).map((entry) => (
               <li key={entry.kind} className="flex items-center gap-3 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-ink">{t(entry.label)}</p>

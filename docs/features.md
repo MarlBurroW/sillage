@@ -91,6 +91,13 @@ The periodic cleanup removes expired, revoked and orphaned files.
   every tree git knows, including those created from a shell, compared with the
   default branch: uncommitted work, commits to merge, merged, or folder missing, with
   the sessions working there. The sidebar shows each conversation's branch and state.
+  Delivery is checked against both the local default branch and its fetched origin ref.
+  Origin is refreshed in the background at most every two minutes while worktrees are
+  consulted, without pulling or changing local branches. A GitHub-linked board also
+  supplies PR state, link and checks. A merged PR proves delivery only for its exact
+  head commit and the default target branch; later commits and uncommitted files
+  remain visible. This also recognizes squash merges after subsequent edits on main.
+  Unavailable forge metadata falls back to Git. Server and Desktop share this behavior.
   Cleaning up a tree is one action that first says what would be lost.
   **Clean up all** removes every merged or missing tree in one confirmation: untick
   the ones to keep; trees where a session is working are left out, and each is

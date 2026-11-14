@@ -79,8 +79,13 @@ with an intact database. The PVCs the chart creates carry
 | `resources.limits.memory` | `3Gi` | ~110 MB daemon + 400–500 MB per session |
 | `ingress.className` | `nginx` | set it to match your controller |
 
-Behind an ingress, set `publicUrl` in `config`: without it, absolute links are
-derived from the `Host` header.
+Behind an ingress, set `[server] public_url = "https://sillage.example.com"` in
+`config` (or the Public URL in onboarding). It pins the public Host and browser
+Origin for WebSockets and writes, and fixes the root of generated links. Health
+probes can still use the listener's address. Without a public URL, browser origins
+must match the request Host and protocol, but hosts are not restricted: configure
+the public URL to reject unrecognised domains, including DNS rebinding. Reverse
+proxies must preserve Host and set X-Forwarded-Proto to the browser-facing protocol.
 
 Every other value is commented in `values.yaml`.
 

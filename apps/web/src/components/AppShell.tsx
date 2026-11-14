@@ -62,7 +62,8 @@ export function AppShell() {
 
   useEffect(() => {
     if (wide || !navOpen) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    // Making the page inert can already have moved focus to body; restore the visible trigger then.
+    const previous = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
     aside.current?.querySelector<HTMLButtonElement>('button')?.focus()
     return () => {
       const target = previous?.isConnected && !previous.closest('[inert]')

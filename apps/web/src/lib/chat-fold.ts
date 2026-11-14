@@ -99,6 +99,11 @@ export function activityOf(items: ChatItem[], thread: string | null): string | n
 
 
 export function noticeText(item: NoticeItem): string {
+  if (item.code === 'claude_session_writes_lost') return translate('claude.notice.sessionWritesLost')
+  if (item.code === 'claude_permission_mode_adjusted') {
+    const details = item.details as { requested?: string; actual?: string } | null
+    return translate('claude.notice.permissionModeAdjusted', { requested: details?.requested ?? '', actual: details?.actual ?? '' })
+  }
   if (item.code === 'project_move_fork') return translate('conversation.move.fork')
   if (item.code === 'project_move_failed') return translate('conversation.move.failed')
   if (item.code === 'project_moved' || item.code === 'project_move_pending') {

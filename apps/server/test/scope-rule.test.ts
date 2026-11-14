@@ -21,6 +21,9 @@ import { registerInstructionRoutes } from '../src/http/routes/instructions.js'
 import { registerMcpRoutes } from '../src/http/routes/mcp.js'
 import { registerMemoryRoutes } from '../src/http/routes/memory.js'
 import { registerSecretRoutes } from '../src/http/routes/secrets.js'
+import { registerClaudeAccountRoutes } from '../src/http/routes/claude-accounts.js'
+import type { ClaudeAccountStore } from '../src/claude-accounts/store.js'
+import type { ClaudeLoginService } from '../src/claude-accounts/login.js'
 import { SecretStore } from '../src/secrets/store.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 
@@ -66,6 +69,10 @@ async function harness(t: TestContext) {
   registerInstructionRoutes(app, ctx)
   registerMemoryRoutes(app, ctx)
   registerSecretRoutes(app, ctx, secrets)
+  registerClaudeAccountRoutes(app, {} as ClaudeAccountStore, {} as ClaudeLoginService, {
+    read: async () => ({ state: 'connected', loginExpiresAt: '2026-12-11T20:53:03.641Z', checkedAt: 1 }),
+    check: async () => {},
+  })
   t.after(() => app.close())
 
   const call = async (user: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) => {
@@ -86,6 +93,15 @@ async function harness(t: TestContext) {
 }
 
 const stdio = { type: 'stdio', command: 'true', args: [], env: {} }
+
+test('shared host sign-in status belongs to administrators, not project owners or members', async (t) => {
+  const { call } = await harness(t)
+  assert.equal((await call('admin', 'GET', '/api/claude-accounts/host-login')).status, 200)
+  for (const user of ['owner', 'member']) {
+    assert.equal((await call(user, 'GET', '/api/claude-accounts/host-login')).code, 'admin_only')
+    assert.equal((await call(user, 'GET', '/api/claude-accounts/host-login?refresh=1')).code, 'admin_only')
+  }
+})
 
 test('moving a session is work: its owner may choose a visible project, regardless of project ownership or admin role', async t => {
   const { db, dir } = await harness(t)

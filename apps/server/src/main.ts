@@ -47,6 +47,7 @@ import { backfillCommandPaths } from './worktrees/backfill.js'
 import { WorktreeCleanup } from './worktrees/cleanup.js'
 import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
+import { WorktreeRemoteStatus } from './worktrees/remote-status.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -100,7 +101,7 @@ async function main(): Promise<void> {
   const notifications = new Notifications(db, push)
   // Human decisions requested by autonomous sessions without blocking.
   // Project worktree progress invalidated at every turn completion.
-  const worktreeStatus = new WorktreeStatusService(db, log)
+  const worktreeStatus = new WorktreeStatusService(db, log, new WorktreeRemoteStatus(db, gitCredentials, config.paths))
   const decisions = new DecisionService({ db, config }, sessions, notifications)
   // Sessions stopped by a usage limit: one notification, and a resume after the reset when the
   // account allows it.

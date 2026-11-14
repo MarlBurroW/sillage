@@ -6,6 +6,10 @@
 [server]
 host = "127.0.0.1"
 port = 7317
+# Pin the public Host and browser Origin behind a reverse proxy. Empty infers
+# them from each request; the listener's local address always remains reachable.
+# The Public URL setting in onboarding overrides this value.
+public_url = ""
 
 [limits]
 # One Claude session costs 400–500 MB RSS. This limit matters most.

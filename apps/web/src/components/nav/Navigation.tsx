@@ -1,10 +1,11 @@
-import { conversationPath } from '@sillage/protocol'
+import { claudeLoginExpiry, conversationPath } from '@sillage/protocol'
 import type { ProjectDto } from '@sillage/protocol'
 import { X } from 'lucide-react'
 import { useMemo, useRef } from 'react'
 import { useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { activityTone, useActivity, type ActivityCounts } from '../../lib/activity'
 import { useCliUpdateNotice } from '../../lib/agents'
+import { useClaudeHostLogin } from '../../lib/claude-accounts'
 import { useAllConversations, useToggleFavorite } from '../../lib/conversations'
 import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
 import { useDecisions } from '../../lib/decisions'
@@ -55,6 +56,8 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
   const { data: decisions } = useDecisions('pending')
+  const { data: hostLogin } = useClaudeHostLogin()
+  const hostExpiry = hostLogin && claudeLoginExpiry(hostLogin.loginExpiresAt) ? hostLogin : null
   const toggleFavorite = useToggleFavorite()
   const reorderProjects = useReorderProjects()
   const logout = useLogout()
@@ -103,7 +106,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
     const waiting = pending.filter((decision) => decision.projectId === projectId).length
     return waiting ? { ...counts, awaiting: counts.awaiting + waiting } : counts
   }
-  const total: ActivityCounts = { awaiting: activity.awaiting.length + pending.length, running: activity.running.length, unread: activity.unread.length }
+  const total: ActivityCounts = { awaiting: activity.awaiting.length + pending.length + (hostExpiry ? 1 : 0), running: activity.running.length, unread: activity.unread.length }
   const hidden = (projects ?? []).filter((project) => !railProjects.includes(project)).map((project) => countsOf(project.id))
   // Running work elsewhere is not a reason to look: only waits and unread reach the "all" entry.
   const hiddenTone = activityTone({ awaiting: hidden.reduce((sum, counts) => sum + counts.awaiting, 0), running: 0, unread: hidden.reduce((sum, counts) => sum + counts.unread, 0) })
@@ -189,7 +192,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
               <span className="mt-1 flex items-center gap-1"><Button variant="ghost" size="sm" onClick={() => { if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables) }}>{t('editor.retry')}</Button><IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton></span>
             </Banner></div>}
             {listed === 'activity' ? (
-              <ActivityColumn awaiting={activity.awaiting} running={activity.running} unread={activity.unread} decisions={pending} favorites={favorites} projects={projects ?? []} toggleFavorite={toggleFavorite} />
+              <ActivityColumn awaiting={activity.awaiting} running={activity.running} unread={activity.unread} decisions={pending} hostExpiry={hostExpiry} favorites={favorites} projects={projects ?? []} toggleFavorite={toggleFavorite} />
             ) : listed === 'discussions' ? (
               <DiscussionsColumn conversations={conversations ?? []} toggleFavorite={toggleFavorite} />
             ) : listed === 'benchmarks' ? (

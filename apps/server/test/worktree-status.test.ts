@@ -14,6 +14,9 @@ import { assessWorktree, defaultBase, listWorktrees, parseWorktreeList } from '.
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
+import type { WorktreePullRequest } from '@sillage/protocol'
+import { githubRepoFromRemote as githubRepository } from '../src/git-credentials/github.js'
+import { selectPullRequest, WorktreeRemoteStatus } from '../src/worktrees/remote-status.js'
 
 /** Worktree progress: every card #46 state in a disposable repository. Isolate like `checkpoints.test.ts` so host git configuration cannot determine results. */
 const isolation = mkdtempSync(join(tmpdir(), 'sillage-worktree-isolation-'))
@@ -67,6 +70,107 @@ async function assess(repo: string, path: string, options: { legacyGit?: boolean
   assert.ok(entry, `arbre ${path} inconnu de git`)
   return assessWorktree(repo, 'main', entry, options)
 }
+
+test('remote merges and exact PR heads deliver work without hiding later commits or leftovers', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-pr-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const project = db.select().from(projects).get()!
+  const path = addTree(repo, trees, 'feat/pr')
+  write(path, 'src/app.ts', 'export const app = 2\n')
+  const head = commitAll(path, 'feature')
+  const pulls = new Map<string, WorktreePullRequest>()
+  const service = new WorktreeStatusService(db, new EventLog(db), { get: () => pulls, onRefreshed: () => {} })
+  const current = async () => {
+    service.invalidate(project.id)
+    return (await service.current(project)).worktrees.find((tree) => tree.path === path)!
+  }
+  assert.equal((await current()).state, 'unmerged')
+  // Remote main advances while local main remains behind.
+  git(repo, 'update-ref', 'refs/remotes/origin/main', head)
+  assert.equal((await current()).state, 'merged')
+  git(repo, 'update-ref', '-d', 'refs/remotes/origin/main')
+  // Squash followed by a conflicting edit: content comparison alone cannot prove delivery.
+  git(repo, 'merge', '--squash', 'feat/pr')
+  commitAll(repo, 'squash')
+  write(repo, 'src/app.ts', 'export const app = 3\n')
+  commitAll(repo, 'later edit')
+  assert.equal((await current()).state, 'unmerged')
+  pulls.set('feat/pr', { number: 42, url: 'https://github.com/example/repo/pull/42', state: 'merged', head, base: 'main', checks: null })
+  assert.equal((await current()).state, 'merged')
+  assert.equal((await current()).conflicts, false)
+  write(path, 'leftover.txt', 'keep this\n')
+  assert.equal((await current()).state, 'leftovers')
+  assert.ok((await current()).fingerprint)
+  rmSync(join(path, 'leftover.txt'))
+  // A merge into another target, or a closed unmerged PR, proves nothing about main.
+  pulls.set('feat/pr', { ...pulls.get('feat/pr')!, base: 'release' })
+  assert.equal((await current()).state, 'unmerged')
+  pulls.set('feat/pr', { ...pulls.get('feat/pr')!, base: 'main', state: 'closed' })
+  assert.equal((await current()).state, 'unmerged')
+  pulls.set('feat/pr', { ...pulls.get('feat/pr')!, state: 'merged' })
+  write(path, 'new-work.txt', 'new work\n')
+  commitAll(path, 'work after merge')
+  assert.equal((await current()).state, 'unmerged')
+})
+
+test('PR matching excludes unrelated repositories and prefers a reopened branch', () => {
+  assert.equal(githubRepository('git@github.com:Example/repo.git'), 'Example/repo')
+  assert.equal(githubRepository('https://github.com/Example/repo.git'), 'Example/repo')
+  assert.equal(githubRepository('ssh://git@github.com/Example/repo.git'), 'Example/repo')
+  assert.equal(githubRepository('https://github.com.attacker.test/Example/repo'), null)
+  const merged = { number: 1, html_url: 'https://github.com/upstream/repo/pull/1', state: 'closed' as const,
+    draft: false, merged_at: '2026-01-01', head: { sha: 'abc', ref: 'feat/pr', repo: { full_name: 'fork/repo' } },
+    base: { ref: 'main', repo: { full_name: 'upstream/repo' } } }
+  const open = { ...merged, number: 2, state: 'open' as const, merged_at: null }
+  assert.equal(selectPullRequest([merged, open], 'fork/repo', 'upstream/repo', 'feat/pr')?.number, 2)
+  assert.equal(selectPullRequest([merged], 'other/repo', 'upstream/repo', 'feat/pr'), undefined)
+  assert.equal(selectPullRequest([merged], 'fork/repo', 'other/repo', 'feat/pr'), undefined)
+})
+
+test('remote refresh runs in the background, preserves local branches and shares concurrent reads', async (t) => {
+  const { repo, trees } = repository(t)
+  const origin = join(trees, 'origin.git')
+  mkdirSync(trees, { recursive: true })
+  git(repo, 'clone', '--bare', repo, origin)
+  git(repo, 'remote', 'add', 'origin', origin)
+  const original = git(repo, 'rev-parse', 'main')
+  git(repo, 'commit', '--allow-empty', '-m', 'Local commit')
+  const localHead = git(repo, 'rev-parse', 'main')
+  git(repo, 'branch', 'must-stay', localHead)
+  // A repository can map fetched refs to local branches; the sidebar must ignore that mapping.
+  git(repo, 'config', 'remote.origin.fetch', '+refs/heads/main:refs/heads/must-stay')
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-remote-refresh-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'p', name: 'p', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const project = db.select().from(projects).get()!
+  const remote = new WorktreeRemoteStatus(db, { resolve: () => undefined }, { data: dir, database: join(dir, 'test.sqlite') })
+  let count = 0
+  let done: () => void = () => {}
+  const refreshed = new Promise<void>((resolve) => { done = resolve })
+  remote.onRefreshed = () => { count++; done() }
+  const first = remote.get(project, ['feat/test'])
+  assert.equal(first.size, 0)
+  assert.equal(remote.get(project, ['feat/test']), first)
+  await refreshed
+  assert.equal(count, 1)
+  assert.equal(git(repo, 'rev-parse', 'refs/remotes/origin/main'), original)
+  assert.equal(git(repo, 'rev-parse', 'main'), localHead)
+  assert.equal(git(repo, 'rev-parse', 'must-stay'), localHead)
+  assert.equal(git(repo, 'status', '--porcelain'), '')
+  remote.get(project, ['feat/test'])
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(count, 1)
+})
 
 test('les chemins Git Windows retrouvent le format des chemins enregistrés', () => {
   const raw = [

@@ -2,10 +2,11 @@
 
 Sillage starts one `opencode serve` per conversation and communicates over HTTP,
 with an SSE stream (`GET /event`). Bindings are generated from the OpenAPI the
-binary publishes at `GET /doc`, with **opencode 1.19.3**. Everything below was
-probed on that version (originally 1.18.25, rechecked on 1.19.0 then 1.19.3: the
-v1 API is unchanged; 1.19.3 only adds `reasoning_options` to `ProviderConfig`
-models, from which opencode derives variants the adapter already reads).
+binary publishes at `GET /doc`, checked with **opencode 1.19.5**. The generated
+v1 bindings are unchanged from 1.19.3. The observations below originated on
+1.18.25 and were checked on 1.19.0/1.19.3; the latest checks are listed under
+Verification. Version 1.19.3 adds `reasoning_options` to `ProviderConfig` models,
+from which opencode derives variants the adapter already reads.
 
 Changes in the 1.x line that matter to Sillage:
 
@@ -88,6 +89,15 @@ Signing in to providers from the interface (use `opencode auth login`), cumulati
 cost, importing sessions started in opencode, MCP elicitations.
 
 ## Verification
+
+On November 14, 2026, the downloaded **1.19.5** Linux executable passed the
+OpenAPI comparison and a real `opencode/big-pickle` turn: Read, Edit, answering a
+permission request, injected instructions and token reporting. Its data, config
+and cache directories were isolated; the host executable was not updated.
+`/session`, `/config` and `/doc` returned 401 without authentication and JSON 200
+with the per-process password. Version 2 remains rejected by the tested version
+guard. Server and Desktop share this adapter; Windows and macOS runtime were not
+tested in this pass.
 
 ```sh
 pnpm typecheck

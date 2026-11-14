@@ -18,6 +18,7 @@ const TITLES = {
     turnCompleted: "L'agent a terminé",
     decision: 'Décision à prendre',
     usageLimit: "Limite d'usage atteinte",
+    credentialExpiry: 'Connexion Claude à renouveler',
     test: 'Notification de test',
   },
   en: {
@@ -28,6 +29,7 @@ const TITLES = {
     turnCompleted: 'The agent has finished',
     decision: 'Decision to make',
     usageLimit: 'Usage limit reached',
+    credentialExpiry: 'Claude sign-in needs attention',
     test: 'Test notification',
   },
 }
@@ -54,6 +56,12 @@ function bodyOf(payload) {
         ? french ? `reprise à ${clock(payload.resumeAt)}` : `resumes at ${clock(payload.resumeAt)}`
         : french ? 'pas de reprise automatique' : 'no automatic resume'
     return [payload.body, [lifted, resume].filter(Boolean).join(' · ')].join('\n')
+  }
+  if (payload.kind === 'credentialExpiry' && typeof payload.loginExpiresAt === 'string') {
+    const date = new Date(payload.loginExpiresAt).toLocaleDateString(self.navigator.language || 'en')
+    return french
+      ? `La connexion de l'hôte expire vers le ${date}, parfois jusqu'à trois jours avant. Ouvre les comptes Claude dans Sillage.`
+      : `The host sign-in expires around ${date}, sometimes up to three days earlier. Open Claude accounts in Sillage.`
   }
   return payload.body
 }

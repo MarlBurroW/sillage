@@ -24,6 +24,7 @@ function emit(): void {
 function keyOf(notification: InAppNotification): string {
   if (notification.kind === 'decision') return `decision:${notification.decisionId}`
   if (notification.kind === 'usageLimit') return `limit:${notification.conversationId}`
+  if (notification.kind === 'credentialExpiry') return `expiry:${notification.agent}`
   return `cli:${notification.conversationId}`
 }
 

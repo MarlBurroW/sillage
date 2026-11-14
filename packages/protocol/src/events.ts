@@ -535,7 +535,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
    */
   z.object({
     type: z.literal('context.compacted'),
-    trigger: z.enum(['manual', 'auto', 'unknown']),
+    trigger: z.enum(['manual', 'auto', 'idle', 'unknown']),
     preTokens: z.number().nullable().default(null),
     postTokens: z.number().nullable().default(null),
   }),

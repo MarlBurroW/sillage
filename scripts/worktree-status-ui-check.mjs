@@ -139,6 +139,22 @@ try {
 
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
 
+  const pullUrl = 'https://github.com/example/nimbus/pull/62'
+  const withPullRequest = async (context) => context.route('**/api/projects/*/worktrees/status', async (route) => {
+    const response = await route.fetch()
+    const json = await response.json()
+    for (const tree of json.worktrees ?? []) {
+      if (tree.name === 'feat/offline-cache') tree.pullRequest = { number: 62, url: pullUrl, state: 'merged', checks: 'success' }
+    }
+    await route.fulfill({ response, json })
+  })
+  const checkPullRequest = async (scope) => {
+    const link = scope.getByRole('link', { name: 'PR nº 62', exact: true })
+    await link.waitFor()
+    assert.equal(await link.getAttribute('href'), pullUrl)
+    assert.match(await link.locator('..').innerText(), /Fusionnée.*Contrôles réussis/)
+  }
+
   const session = async (viewport, mobile) => {
     const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, locale: 'fr-FR', serviceWorkers: 'block' })
     await context.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
@@ -147,6 +163,7 @@ try {
     const projects = await (await context.request.get(`${base}/api/projects`)).json()
     const project = projects.find((entry) => entry.name === 'Nimbus')
     const status = await (await context.request.get(`${base}/api/projects/${project.id}/worktrees/status`)).json()
+    await withPullRequest(context)
     const page = await context.newPage()
     page.setDefaultTimeout(15000)
     const errors = []
@@ -264,6 +281,7 @@ try {
   const beforePreview = page.url()
   await offline.locator('[data-session-details]').click()
   await page.locator('.session-preview-popover').getByText('feat/offline-cache', { exact: true }).waitFor()
+  await checkPullRequest(page.locator('.session-preview-popover'))
   assert.equal(page.url(), beforePreview)
   await page.keyboard.press('Escape')
   await offline.locator('.sidebar-session-link').click()
@@ -286,6 +304,7 @@ try {
   await page.waitForURL(/#worktrees$/)
   const board = page.locator('#worktrees').locator('..')
   await board.getByRole('heading', { name: 'Chantiers' }).waitFor()
+  await checkPullRequest(board)
   const rows = board.locator('li', { has: page.locator('.font-mono') }).filter({ hasText: /^(feat|fix)\// })
   const names = await board.locator('li > div > div > span.font-mono').allInnerTexts()
   assert.deepEqual(names.filter((name) => name !== 'feat/banner'), ['feat/gone', 'feat/offline-cache', 'feat/radar-prefetch', 'fix/squashed-typo'], `ordre : ${names}`)
@@ -391,10 +410,13 @@ try {
   // Phone: row stays readable, view does not overflow.
   const phone = await session({ width: 390, height: 844 }, true)
   await phone.page.goto(`${base}/p/${project.id}/board`)
-  await phone.page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
+  await phone.page.locator('[data-navigation-trigger]').click()
   const phoneNav = phone.page.locator('[data-nav-column]')
   const phoneTag = row(phoneNav, 'Add offline caching for forecasts').locator('[data-session-details]')
   await phoneTag.waitFor()
+  await phoneTag.click()
+  await checkPullRequest(phone.page.locator('.session-preview-popover'))
+  await phone.page.keyboard.press('Escape')
   // Drawer slides: screenshot waits until it is in position.
   await delay(600)
   const tagBox = await phoneTag.boundingBox()
@@ -404,6 +426,7 @@ try {
   await phoneNav.getByRole('link', { name: /^Chantiers/ }).click()
   await phone.page.waitForURL(/#worktrees$/)
   await phone.page.getByRole('heading', { name: 'Chantiers' }).waitFor()
+  await checkPullRequest(phone.page.locator('#worktrees').locator('..'))
   await phone.page.locator('#worktrees').scrollIntoViewIfNeeded()
   await delay(600)
   assert.ok(await phone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Pas de défilement horizontal au téléphone')
@@ -439,7 +462,15 @@ try {
   const deskContext = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await deskContext.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
   await deskContext.addCookies([{ name: 'sillage_session', value: handshake.session, url: deskBase }])
+  await withPullRequest(deskContext)
   const deskPage = await deskContext.newPage()
+  await deskPage.goto(`${deskBase}/p/${project.id}/c/${offlineConversation.id}`)
+  await worktreeBar(deskPage).getByText('Non commité', { exact: true }).waitFor()
+  await deskPage.locator('[data-nav-column]').getByRole('link', { name: /^Chantiers/ }).click()
+  await checkPullRequest(deskPage.locator('#worktrees').locator('..'))
+  await deskPage.locator('[data-sidebar-session]').filter({ has: deskPage.getByText('Add offline caching for forecasts', { exact: true }) }).locator('[data-session-details]').click()
+  await checkPullRequest(deskPage.locator('.session-preview-popover'))
+  await deskPage.keyboard.press('Escape')
   await deskPage.goto(`${deskBase}/p/${project.id}/c/${offlineConversation.id}`)
   await worktreeBar(deskPage).getByText('Non commité', { exact: true }).waitFor()
   const instance = await (await deskContext.request.get(`${deskBase}/api/system/instance`)).json()

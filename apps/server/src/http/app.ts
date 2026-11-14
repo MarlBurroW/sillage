@@ -23,6 +23,8 @@ import type { AppContext } from './context.js'
 import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
 import { registerIdentityHook } from './identity.js'
 import { registerLocalOriginGuard } from './local-origin.js'
+import { registerServerOriginGuard } from './server-origin.js'
+import { publicUrlOf } from '../settings/app-settings.js'
 import { INSTANCE_PROFILE } from '../instance/profile.js'
 import { RemoteAccessService } from '../remote-access/service.js'
 import { SystemTailscaleCli } from '../remote-access/tailscale.js'
@@ -59,6 +61,7 @@ import { GitHubRepoCatalog } from '../git-credentials/github.js'
 import type { GitCredentialStore } from '../git-credentials/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
 import type { ClaudeLoginService } from '../claude-accounts/login.js'
+import { ClaudeHostStatus } from '../claude-accounts/host-status.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexLoginService } from '../codex-accounts/login.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
@@ -164,7 +167,7 @@ export async function buildApp(
   })
 
   registerErrorHandler(app)
-  // Desktop only: a server instance has no guard and no launcher-owned port to forward.
+  // Only Desktop has a launcher-owned port to forward through Tailscale Serve.
   const remoteAccess = INSTANCE_PROFILE === 'desktop' ? new RemoteAccessService(ctx.db, new SystemTailscaleCli(), app.log) : null
   app.decorate('remoteAccess', remoteAccess)
   if (remoteAccess) registerLocalOriginGuard(app, remoteAccess)
@@ -185,6 +188,7 @@ export async function buildApp(
   })
 
   registerIdentityHook(app, ctx)
+  if (!remoteAccess) registerServerOriginGuard(app, () => publicUrlOf(ctx.db, ctx.config))
 
   app.addHook('onRequest', async (request) => {
     if (!request.url.startsWith('/api/')) return
@@ -277,7 +281,10 @@ export async function buildApp(
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
-  registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
+  const claudeHostStatus = new ClaudeHostStatus(ctx.db, () => registry.adapter('claude').cli.executable(), notifications, undefined, ctx.config.agents.claude.enabled)
+  app.addHook('onReady', async () => { claudeHostStatus.start(app.log) })
+  app.addHook('onClose', async () => { claudeHostStatus.stop() })
+  registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin, claudeHostStatus)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerAntigravityAccountRoutes(app, antigravityAccounts.store, antigravityLogin)

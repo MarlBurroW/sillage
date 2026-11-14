@@ -5,7 +5,7 @@ the installed binary publishes at `GET /doc` (`pnpm opencode:types`). A separate
 package for the same reason as `@sillage/codex-bindings`: `@sillage/protocol`
 remains CLI-neutral.
 
-Generated with **opencode 1.19.3**.
+Generated with **opencode 1.19.5**.
 
 `src/openapi.d.ts` is generated and must not be edited. `src/index.ts` is handwritten:
 it gives short names to schemas used by the adapter, and stops compiling when

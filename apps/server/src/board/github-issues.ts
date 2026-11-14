@@ -39,6 +39,16 @@ export interface GitHubRepoInfo {
   permissions?: { push?: boolean; triage?: boolean }
 }
 
+export interface GitHubPullRequest {
+  number: number
+  html_url: string
+  state: 'open' | 'closed'
+  draft: boolean
+  merged_at: string | null
+  head: { sha: string; ref: string; repo: { full_name: string } | null }
+  base: { ref: string; repo: { full_name: string } }
+}
+
 /** Codes are translated by the interface; `transient` determines whether retries help. */
 export class BoardGitHubError extends Error {
   constructor(
@@ -62,6 +72,27 @@ export class GitHubIssues {
 
   repoInfo(): Promise<GitHubRepoInfo> {
     return this.call<GitHubRepoInfo>('GET', `/repos/${this.repo}`)
+  }
+
+  listPullRequests(head: string): Promise<GitHubPullRequest[]> {
+    return this.paginate<GitHubPullRequest>(`/repos/${this.repo}/pulls`, {
+      state: 'all', head, sort: 'updated', direction: 'desc',
+    })
+  }
+
+  async checks(sha: string): Promise<'pending' | 'success' | 'failure' | null> {
+    const [status, checks] = await Promise.all([
+      this.call<{ state: string; total_count: number }>('GET', `/repos/${this.repo}/commits/${sha}/status`),
+      this.call<{ total_count: number; check_runs: { status: string; conclusion: string | null }[] }>(
+        'GET', `/repos/${this.repo}/commits/${sha}/check-runs?per_page=100`,
+      ),
+    ])
+    if (!status.total_count && !checks.total_count) return null
+    if ((status.total_count && ['failure', 'error'].includes(status.state)) ||
+      checks.check_runs.some((check) => ['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale'].includes(check.conclusion ?? ''))) return 'failure'
+    if ((status.total_count && status.state === 'pending') || checks.total_count > checks.check_runs.length ||
+      checks.check_runs.some((check) => check.status !== 'completed')) return 'pending'
+    return 'success'
   }
 
   /** Issues excluding pull requests, oldest modification first. */

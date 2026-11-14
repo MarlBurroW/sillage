@@ -1,3 +1,4 @@
+import { focusEditorFile } from '../../lib/editor-focus'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Loader, Search, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
@@ -68,19 +69,7 @@ export function QuickOpen({ scope, workspaceLabel, open, onOpenChange, onSelect 
           const path = selected.current
           if (!path) return
           event.preventDefault()
-          const root = document.querySelector('[data-panel="workspace"]')
-          if (!root) return
-          // Network reads may finish after palette closure.
-          const focus = () => {
-            const file = Array.from(root.querySelectorAll<HTMLElement>('[data-editor-file]')).find((node) => node.dataset.editorFile === path)
-            if (!file) return false
-            ;(file.querySelector<HTMLElement>('.cm-content') ?? file).focus({ preventScroll: true })
-            return true
-          }
-          if (focus()) return
-          const observer = new MutationObserver(() => { if (focus()) { observer.disconnect(); clearTimeout(timer) } })
-          const timer = setTimeout(() => observer.disconnect(), 3000)
-          observer.observe(root, { childList: true, subtree: true })
+          focusEditorFile(path)
         }}>
         <Dialog.Title className="px-4 pt-3 text-sm font-semibold text-ink">{t('editor.quickOpen.title')}</Dialog.Title>
         <Dialog.Description className="px-4 pt-1 text-xs text-ink-faint"><span className="block truncate font-medium" title={workspaceLabel}>{workspaceLabel}</span>{t('editor.quickOpen.hint')}</Dialog.Description>

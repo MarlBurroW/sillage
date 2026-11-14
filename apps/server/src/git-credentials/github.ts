@@ -5,6 +5,15 @@ import { subsequenceGaps } from '../subsequence.js'
 
 export const GITHUB_HOST = 'github.com'
 
+const GITHUB_REMOTE =
+  /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i
+
+/** Shared by board linking and PR assessment: reject lookalike forge hosts. */
+export function githubRepoFromRemote(url: string): string | null {
+  const match = GITHUB_REMOTE.exec(url.trim())
+  return match ? `${match[1]}/${match[2]}` : null
+}
+
 /** One hundred is the API maximum; smaller pages multiply requests. */
 const PER_PAGE = 100
 

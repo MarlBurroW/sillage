@@ -15,6 +15,7 @@ import { SignalRow } from './chat/Signals'
 import { cx, IconButton, Popover } from './ui'
 import { Tooltip } from './ui/Tooltip'
 import { WORKTREE_STATE_TEXT, WorktreeStateIcon, type WorktreePreviewState } from './WorktreeTag'
+import { WorktreePullRequest } from './WorktreePullRequest'
 
 /** Keep Git details independent of navigation, including when opening them on a touch device. */
 export function SessionPreview({ conversation, metrics, signals, trigger, children, disabled = false }: {
@@ -89,6 +90,7 @@ export function SessionDetails({ conversation, metrics, signals }: {
       <h4>{t('shell.preview.worktree')}</h4>
       {git ? <><div data-preview-git={git} className={cx('flex items-center gap-2 font-medium', WORKTREE_STATE_TEXT[git])}><WorktreeStateIcon state={git} /><span>{t(`worktrees.state.${git}`)}</span></div><p>{t(`shell.preview.git.${git}`)}</p>{tree && tree.state === 'leftovers' && <LeftoverFiles tree={tree} />}{tree && tree.kept > 0 && <p className="text-ink-faint">{translate(tree.kept > 1 ? 'worktrees.kept.many' : 'worktrees.kept.one', { count: tree.kept })}</p>}{tree && <><code>{tree.branch || tree.name}</code><span className="mt-1 block break-all text-[0.625rem] text-ink-faint">{tree.path}</span></>}</> : <p>{t('shell.preview.mainTree')}</p>}
     </section>
+    <WorktreePullRequest pull={tree?.pullRequest} />
     <dl className="session-preview-facts">
       {metrics.model && <div><dt>{t('composer.setting.model')}</dt><dd className="break-words">{metrics.model}</dd></div>}
       <div><dt>{t('shell.preview.usage')}</dt><dd>{t('shell.conversation.turns', { count: metrics.turnCount })} · {formatBytes(metrics.journalBytes)}</dd></div>

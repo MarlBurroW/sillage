@@ -35,9 +35,11 @@ export async function checkMedia({ page, context, base, project }) {
   const panel = page.locator('[data-panel="workspace"]')
   const showTree = panel.getByRole('button', { name: "Afficher l'arborescence", exact: true })
   if (await showTree.count()) await showTree.click()
-  // Tree names entries with short name followed by git status letter (`?` for
-  // these untracked fixtures); directory expands once.
-  const open = (name) => panel.getByRole('button', { name: new RegExp(`^${name.replace('.', '\\.')}\\b`) }).first().click()
+  const open = async (name) => {
+    if (await showTree.count()) await showTree.click()
+    const path = name === 'media-check' ? name : `media-check/${name}`
+    await panel.locator(`[data-tree-path="${path}"]`).click()
+  }
   await open('media-check')
 
   await open('tone.wav')

@@ -79,11 +79,12 @@ export default defineConfig({
     proxy: {
       '/s/': {
         target: `http://127.0.0.1:${SERVER_PORT}`,
-        changeOrigin: true,
+        changeOrigin: false,
       },
       '/api': {
         target: `http://127.0.0.1:${SERVER_PORT}`,
-        changeOrigin: true,
+        // The server compares browser Origin with Host, including Vite's port.
+        changeOrigin: false,
         ws: true,
       },
     },

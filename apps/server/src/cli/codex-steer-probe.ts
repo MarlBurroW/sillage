@@ -127,7 +127,8 @@ async function probeRunner(): Promise<void> {
     assert.ok(steered, 'Le steer doit être parti pendant la réponse.')
     assert.equal(await steered, true, 'Le CLI doit accepter le steer.')
     const users = events.filter((e) => e.type === 'message.completed' && e.role === 'user')
-    assert.equal(users.length, 2, 'Le message initial et le steer, chacun une seule fois.')
+    // The manager journals the initial message before send; this runner-only probe sees the steer.
+    assert.equal(users.length, 1, 'Le steer est journalisé une seule fois.')
     const assistant = events.filter((e) => e.type === 'message.completed' && e.role === 'assistant')
     const texts = assistant.map((e) => (e.type === 'message.completed' ? e.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('') : ''))
     assert.ok(texts.some((t) => !t.includes(MARKER) && t.length > 0), 'La réponse coupée doit rester dans le fil.')

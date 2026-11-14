@@ -9,6 +9,7 @@ import { actionView, useActions, useRunAction } from '../lib/actions'
 import { useAllConversations } from '../lib/conversations'
 import { relativeDate } from '../lib/dates'
 import { openTab } from '../lib/editor-tabs'
+import { focusEditorFile } from '../lib/editor-focus'
 import { useTranslate } from '../lib/i18n'
 import { useMcpServers } from '../lib/mcp'
 import {
@@ -70,29 +71,6 @@ function layout(groups: readonly PaletteGroup[], expanded: ReadonlySet<string>):
     }
     return { group, rows }
   })
-}
-
-/**
- * Focus a file editor when it appears. The panel loads separately and files arrive over the
- * network; without waiting, focus stayed on Close and typing missed the chosen file.
- */
-function focusEditorFile(path: string): void {
-  const focus = () => {
-    const file = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-panel="workspace"] [data-editor-file]'),
-    ).find((node) => node.dataset.editorFile === path)
-    if (!file) return false
-    ;(file.querySelector<HTMLElement>('.cm-content') ?? file).focus({ preventScroll: true })
-    return true
-  }
-  if (focus()) return
-  const observer = new MutationObserver(() => {
-    if (!focus()) return
-    observer.disconnect()
-    clearTimeout(timer)
-  })
-  const timer = setTimeout(() => observer.disconnect(), 3000)
-  observer.observe(document.body, { childList: true, subtree: true })
 }
 
 /**

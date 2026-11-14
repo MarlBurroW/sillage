@@ -23,6 +23,7 @@ import {
   type ClaudeConfig,
   type ContentBlock,
   type McpServerStatus,
+  type PermissionOption,
   type PlanFollowUpOption,
 } from '@sillage/protocol'
 import { failedStatuses } from '../mcp-registry.js'
@@ -192,6 +193,8 @@ export class ClaudeRunner implements AgentRunner {
    * server per call, making redundant calls disconnect healthy connections.
    */
   private appliedMcpServers: Record<string, McpServerConfig> = {}
+  /** Omission from `setMcpServers` does not remove servers supplied at launch (SDK 0.3.325). */
+  private launchMcpNames = new Set<string>()
   /** Servers that failed to launch, added to CLI-reported inventory. */
   private mcpFailures: McpServerStatus[] = []
   /** Last inventory the CLI reported, so each turn knows which servers to retry. */
@@ -222,6 +225,7 @@ export class ClaudeRunner implements AgentRunner {
     const config = this.config
     const resolved = this.ctx.resolveMcpServers(config)
     this.appliedMcpServers = toSdkMcpServers(resolved.servers)
+    this.launchMcpNames = new Set(Object.keys(this.appliedMcpServers))
     this.mcpFailures = failedStatuses(resolved.failures)
 
     // Use system prompt, not initially tried `SessionStart` hook: hooks register in initialization
@@ -434,7 +438,7 @@ export class ClaudeRunner implements AgentRunner {
           this.ctx.emit(
             {
               type: 'context.compacted',
-              trigger: meta.trigger === 'manual' || meta.trigger === 'auto' ? meta.trigger : 'unknown',
+              trigger: ['manual', 'auto', 'idle'].includes(meta.trigger) ? meta.trigger as 'manual' | 'auto' | 'idle' : 'unknown',
               preTokens: meta.pre_tokens,
               postTokens: meta.post_tokens ?? null,
             },
@@ -535,6 +539,12 @@ export class ClaudeRunner implements AgentRunner {
             process.stderr.write(
               `[claude ${this.conversationId}] permission mode mismatch: requested=${toPermissionMode(this.config.permissionMode)} actual=${message.permissionMode} version=${message.claude_code_version}\n`,
             )
+            this.ctx.emit({
+              type: 'agent.notice', id: 'claude-permission-mode', code: 'claude_permission_mode_adjusted',
+              level: 'warning',
+              message: `Claude Code is using permission mode ${message.permissionMode} instead of ${toPermissionMode(this.config.permissionMode)}.`,
+              details: { requested: toPermissionMode(this.config.permissionMode), actual: message.permissionMode },
+            })
           }
           this.capabilities = message.capabilities ?? []
           const first = this.sessionId === null
@@ -856,11 +866,17 @@ export class ClaudeRunner implements AgentRunner {
         `[claude ${this.conversationId}] unexpected permission request: tool=${toolName} mode=bypassPermissions\n`,
       )
     }
-    /**
-     * CLI-proposed permission updates prevent repeat prompts. Without forwarding, “allow for
-     * session” allows only this call and asks identically next time.
-     */
-    const suggestions = options.suggestions ?? []
+    // Some calls cannot acquire rules at all, or would change the whole permission mode. A tool
+    // approval must neither switch modes nor persist in .claude/settings.local.json.
+    const nativeUpdates = options.suggestions ?? []
+    const updates = options.suppressAlwaysAllowRule || nativeUpdates.some((update) => update.type === 'setMode') ? [] : nativeUpdates.map(
+      (update) => ({ ...update, destination: 'session' as const }),
+    )
+    const suggestions: PermissionOption[] = [
+      { id: 'allow-once', label: 'Allow', scope: 'once', behavior: 'allow' },
+      ...(updates.length ? [{ id: 'allow-session', label: 'Allow for this session', scope: 'session' as const, behavior: 'allow' as const }] : []),
+      { id: 'deny', label: 'Deny', scope: 'once', behavior: 'deny' },
+    ]
 
     return new Promise<PermissionResult>((resolve) => {
       const requestId = this.interactions.requestPermission(
@@ -872,6 +888,7 @@ export class ClaudeRunner implements AgentRunner {
           title: options.title ?? null,
           description: options.description ?? null,
           displayName: options.displayName ?? null,
+          suggestions,
         },
         (decision) => {
           if (decision === null) {
@@ -881,7 +898,7 @@ export class ClaudeRunner implements AgentRunner {
             // only way to stop repeat prompts.
             resolve({
               behavior: 'allow',
-              ...(decision.scope === 'once' ? {} : { updatedPermissions: suggestions }),
+              ...(decision.scope === 'session' && updates.length ? { updatedPermissions: updates } : {}),
             })
           } else {
             resolve({ behavior: 'deny', message: 'Denied from Sillage.' })
@@ -1226,6 +1243,13 @@ export class ClaudeRunner implements AgentRunner {
     // Library plugins too. Compare actual received roots, not just toggle.
     if (JSON.stringify(this.ctx.skillRoots(config)) !== JSON.stringify(this.skillRoots)) return false
 
+    const resolved = this.ctx.resolveMcpServers(config)
+    const desired = toSdkMcpServers(resolved.servers)
+    // Keep launch-time MCP initialization, which also protects resumes with deferred calls.
+    // A removal needs a fresh process: otherwise the CLI retains the tools while Sillage claims
+    // they disappeared. The manager already defers restart/resume until an active turn ends.
+    if ([...this.launchMcpNames].some((name) => !(name in desired))) return false
+
     // The CLI default is stored as '': 2.1.312 rejects it as an unknown model id, which made every
     // live change fail and fall back to a restart. Undefined is the SDK's way to ask for the default.
     await this.session.setModel(this.cliModel(config.model) || undefined)
@@ -1234,8 +1258,6 @@ export class ClaudeRunner implements AgentRunner {
 
     // Compare resolved servers, not IDs: registry entries corrected meanwhile must restart even
     // with identical ID list.
-    const resolved = this.ctx.resolveMcpServers(config)
-    const desired = toSdkMcpServers(resolved.servers)
     if (JSON.stringify(desired) !== JSON.stringify(this.appliedMcpServers)) {
       await this.session.setMcpServers(desired)
       this.appliedMcpServers = desired

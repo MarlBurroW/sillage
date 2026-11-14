@@ -10,6 +10,20 @@ const base = { uuid: '00000000-0000-0000-0000-000000000000', session_id: 'sessio
 const message = (fields: Record<string, unknown>): SDKMessage =>
   ({ ...base, ...fields }) as unknown as SDKMessage
 
+test('lost native writes warn about incomplete resumes with a stable notice', () => {
+  const event = translateSignal(message({
+    type: 'system', subtype: 'session_writes_lost', error_code: 'EDQUOT',
+    lost: ['transcript'], transcript_session_ids: [base.session_id],
+  }))
+  assert.equal(event?.type, 'agent.notice')
+  if (event?.type !== 'agent.notice') return
+  assert.equal(event.code, 'claude_session_writes_lost')
+  assert.equal(event.id, 'claude-session-writes-lost')
+  assert.equal(event.level, 'warning')
+  assert.deepEqual(event.details, { errorCode: 'EDQUOT', lost: ['transcript'] })
+  sillageEventSchema.parse(event)
+})
+
 test('les signaux du CLI deviennent des avis valides, à repère stable quand ils se répètent', () => {
   const notification = translateSignal(
     message({ type: 'system', subtype: 'notification', key: 'fast_mode_credits', text: 'Fast mode disabled · usage credits exhausted', priority: 'high' }),

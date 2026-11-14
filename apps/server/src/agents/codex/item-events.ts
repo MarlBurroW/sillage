@@ -49,26 +49,28 @@ function tool(item: ThreadItem): { name: string; input: unknown; presentation?: 
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
 
 /**
- * imageView output in Claude image-Read tool_result shape: base64 image block then text path. Web
- * views already support it, displaying images rather than JSON paths. Deliberately synchronous to
+ * Shared by viewed images and generated images delivered as local files. Deliberately synchronous to
  * preserve tool.completed item ordering; reading a few local megabytes has negligible latency.
- * Missing, oversized, or unknown images return paths without errors because Codex already viewed
- * them.
+ * Missing, oversized, or unknown images keep their path in the tool output instead.
  */
-function imageViewOutput(cwd: string, path: string): unknown {
+function readImage(cwd: string, path: string): { mediaType: string; data: string } | null {
   const absolute = isAbsolute(path) ? path : resolve(cwd, path)
   const mediaType = VIEWABLE_IMAGE_TYPES[extname(absolute).slice(1).toLowerCase()]
-  if (!mediaType) return { path }
+  if (!mediaType) return null
   try {
-    if (statSync(absolute).size > MAX_INLINE_IMAGE_BYTES) return { path }
-    const data = readFileSync(absolute).toString('base64')
-    return [
-      { type: 'image', source: { type: 'base64', media_type: mediaType, data } },
-      { type: 'text', text: path },
-    ]
+    if (statSync(absolute).size > MAX_INLINE_IMAGE_BYTES) return null
+    return { mediaType, data: readFileSync(absolute).toString('base64') }
   } catch {
-    return { path }
+    return null
   }
+}
+
+function imageViewOutput(cwd: string, path: string): unknown {
+  const image = readImage(cwd, path)
+  return image ? [
+    { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } },
+    { type: 'text', text: path },
+  ] : { path }
 }
 
 export function startedItem(item: ThreadItem, parentToolCallId: string | null): SillageEvent[] {
@@ -121,13 +123,19 @@ function completedEvents(
       finish({ query: item.query, action: item.action, results: item.results }),
     ]
     case 'imageView': return [finish(imageViewOutput(cwd, item.path))]
-    case 'imageGeneration': return [
-      finish({ status: item.status, revisedPrompt: item.revisedPrompt, savedPath: item.savedPath, failure: item.failure }, item.failure != null || item.status === 'failed'),
-      ...(item.result && !item.failure ? [{
-        type: 'message.completed', messageId: `image-${item.id}`, role: 'assistant', parentToolCallId,
-        blocks: [{ type: 'image', mimeType: 'image/png', url: `data:image/png;base64,${item.result}` }],
-      } satisfies SillageEvent] : []),
-    ]
+    case 'imageGeneration': {
+      const failed = item.failure != null || item.status === 'failed'
+      const image = failed ? null : 'result' in item && item.result
+        ? { mediaType: 'image/png', data: item.result }
+        : item.savedPath ? readImage(cwd, item.savedPath) : null
+      return [
+        finish({ status: item.status, revisedPrompt: item.revisedPrompt, savedPath: item.savedPath, failure: item.failure }, failed),
+        ...(image ? [{
+          type: 'message.completed', messageId: `image-${item.id}`, role: 'assistant', parentToolCallId,
+          blocks: [{ type: 'image', mimeType: image.mediaType, url: `data:${image.mediaType};base64,${image.data}` }],
+        } satisfies SillageEvent] : []),
+      ]
+    }
     case 'sleep': return [finish({ durationMs: item.durationMs })]
     case 'functionCallOutput': return [finish(item.output)]
     case 'contextCompaction': return [{ type: 'context.compacted', trigger: 'unknown', preTokens: null, postTokens: null }]

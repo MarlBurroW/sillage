@@ -1,9 +1,9 @@
-import type { ConversationDto, DecisionDto, ProjectDto } from '@sillage/protocol'
-import { CircleHelp, History } from 'lucide-react'
+import type { ClaudeHostLoginDto, ConversationDto, DecisionDto, ProjectDto } from '@sillage/protocol'
+import { CircleHelp, History, KeyRound } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import type { ActivityEntry } from '../../lib/activity'
 import { openDecision } from '../../lib/decisions'
-import { useTranslate } from '../../lib/i18n'
+import { locale, useTranslate } from '../../lib/i18n'
 import { decisionQuestion } from '../decisions/decision-text'
 import { Tooltip } from '../ui/Tooltip'
 import { ColumnHead, ColumnHeading, useNavChrome } from './chrome'
@@ -14,11 +14,12 @@ import { SessionRow, type FavoriteMutation } from './SessionRow'
  * works, what changed unseen, and the sessions kept at hand. A new kind of attention becomes a row
  * here, never another counter elsewhere in the navigation.
  */
-export function ActivityColumn({ awaiting, running, unread, decisions, favorites, projects, toggleFavorite }: {
+export function ActivityColumn({ awaiting, running, unread, decisions, hostExpiry, favorites, projects, toggleFavorite }: {
   awaiting: ActivityEntry[]
   running: ActivityEntry[]
   unread: ActivityEntry[]
   decisions: DecisionDto[]
+  hostExpiry: ClaudeHostLoginDto | null
   /** Account bookmarks across projects, archived threads included: archiving must not hide them. */
   favorites: ConversationDto[]
   projects: ProjectDto[]
@@ -31,7 +32,7 @@ export function ActivityColumn({ awaiting, running, unread, decisions, favorites
   const rows = (entries: ConversationDto[]) => entries.map((conversation) => (
     <SessionRow key={conversation.id} conversation={conversation} project={projectOf(conversation)} toggleFavorite={toggleFavorite} draggable={false} onNavigate={onNavigate} />
   ))
-  const blocked = awaiting.length + decisions.length
+  const blocked = awaiting.length + decisions.length + (hostExpiry ? 1 : 0)
   const quiet = blocked === 0 && running.length === 0 && unread.length === 0
 
   return (
@@ -46,6 +47,15 @@ export function ActivityColumn({ awaiting, running, unread, decisions, favorites
         {blocked > 0 ? <section aria-label={t('shell.activity.awaiting')}>
           <ColumnHeading label={t('shell.activity.awaiting')} count={blocked} tone="caution" />
           <ul className="flex flex-col gap-px">
+            {hostExpiry?.loginExpiresAt ? <li className="sidebar-session sidebar-session-wide">
+              <NavLink to="/settings/comptes-claude" className="sidebar-session-link" onClick={onNavigate}>
+                <KeyRound size={16} className="text-caution" />
+                <span className="sidebar-session-text">
+                  <span className="sidebar-session-title">{t('claudeAccounts.host.attention')}</span>
+                  <span className="sidebar-session-project"><span>{t('claudeAccounts.host.expires', { date: new Date(hostExpiry.loginExpiresAt).toLocaleDateString(locale()) })}</span></span>
+                </span>
+              </NavLink>
+            </li> : null}
             {decisions.map((decision) => (
               <li key={decision.id} className="sidebar-session sidebar-session-wide">
                 <button type="button" className="sidebar-session-link" onClick={() => { openDecision(decision.id); onNavigate() }}>
