@@ -122,8 +122,9 @@ try {
   await page.getByRole('heading', { level: 1, name: /C’est prêt\.|All set\./ }).waitFor()
   await page.getByRole('button', { name: /Créer mon premier projet|Create my first project/ }).click()
   await page.waitForURL(/\/projects\/new$/)
-  // Application shell indicates the session is open.
-  await page.getByRole('link', { name: /Paramètres|Settings/ }).first().waitFor({ timeout: 60_000 })
+  // Application shell indicates the session is open: the rail's settings entry is a button that
+  // names its update state after the label.
+  await page.locator('[data-nav-rail]').getByRole('button', { name: /^(Paramètres|Settings)/ }).first().waitFor({ timeout: 60_000 })
   // Desktop has one account: project creation does not ask whether it is shared.
   await page.getByLabel(/^(Nom|Name)$/).first().waitFor()
   assert.equal(await page.getByText(/^(Visibilité|Visibility)$/).count(), 0, 'pas de choix privé/partagé en bureau')
