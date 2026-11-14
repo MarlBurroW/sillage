@@ -22,7 +22,6 @@ import {
   useUpdateSchedule,
   type ScheduleState,
 } from '../lib/schedules'
-import { useSidebarHidden } from '../lib/sidebar'
 
 const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'caution' | 'critical' | 'positive'> = {
   running: 'accent',
@@ -61,7 +60,6 @@ export function SchedulePage() {
   const { projectId } = useParams()
   const t = useTranslate()
   const navigate = useNavigate()
-  const sidebarHidden = useSidebarHidden()
   const { data: projects } = useProjects()
   const { data: schedules, isPending, isError } = useSchedules()
   const project = projects?.find((entry) => entry.id === projectId)
@@ -92,7 +90,6 @@ export function SchedulePage() {
       <header
         className={cx(
           'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6',
-          sidebarHidden && 'md:pl-14',
         )}
       >
         <MobileNavigationButton />

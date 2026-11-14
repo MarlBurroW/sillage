@@ -37,7 +37,6 @@ import { useLiveStatus } from '../lib/conversation-status'
 import { downloadText } from '../lib/download'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
-import { useSidebarHidden } from '../lib/sidebar'
 import { BENCHMARK_STATE_TONES } from './BenchmarksPage'
 
 const RUN_DOTS: Record<BenchmarkRunDto['status'], string> = {
@@ -66,7 +65,6 @@ export function BenchmarkPage() {
   const { id } = useParams()
   const t = useTranslate()
   const navigate = useNavigate()
-  const sidebarHidden = useSidebarHidden()
   const { data: benchmarks, isPending, isError } = useBenchmarks()
   const cancel = useCancelBenchmark()
   const remove = useDeleteBenchmark()
@@ -124,7 +122,7 @@ export function BenchmarkPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className={cx('flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6', sidebarHidden && 'md:pl-14')}>
+      <header className={'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6'}>
         <MobileNavigationButton />
         <Link to="/benchmarks"><IconButton label={t('benchmark.back')}><ArrowLeft size={18} /></IconButton></Link>
         <FlaskConical size={19} className="shrink-0 text-ink-faint" />

@@ -43,8 +43,7 @@ async function exercise(profile, base, handshake) {
   const workspace = workspaces.find(entry => entry.conversations.some(row => row.id === session.id))
   await writeFile(join(workspace.path, 'idea.md'), '# Idée\nUn carnet de lecture personnel.\n')
   await page.goto(`${base}/discussions/${session.id}`)
-  await page.getByRole('button', { name: 'Options des discussions', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Mémoire personnelle' }).click()
+  await page.locator('[data-nav-column="discussions"]').getByRole('link', { name: 'Mémoire personnelle' }).click()
   await page.getByRole('button', { name: 'Ajouter un souvenir' }).click()
   const note = `preference-${Date.now()}`
   await page.getByLabel('Nom du fichier de la note').fill(note)

@@ -1,26 +1,28 @@
-import { TooltipButton } from './ui/Tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Check, ChevronsUpDown, FolderPlus, Layers, Search, SlidersHorizontal, Star, X } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { ProjectDto } from '@sillage/protocol'
-import { useTranslate } from '../lib/i18n'
-import { projectViewPath, useProjectView } from '../lib/project-view'
-import { useTogglePin } from '../lib/projects'
-import { scoreMatch } from '../lib/search'
-import { ProjectAvatar } from './ProjectAvatar'
-import { cx, IconButton } from './ui'
+import { Check, FolderPlus, Pin, Search, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { activityTone, type ActivityCounts } from '../../lib/activity'
+import { useTranslate } from '../../lib/i18n'
+import { useTogglePin } from '../../lib/projects'
+import { scoreMatch } from '../../lib/search'
+import { ProjectAvatar } from '../ProjectAvatar'
+import { TooltipButton } from '../ui/Tooltip'
+import { cx, IconButton } from '../ui'
 
-export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, recent, userId, onNavigate, actions, nameEditor }: {
-  actions?: ReactNode
-  nameEditor?: ReactNode
+/**
+ * Every project, searchable: the rail holds only the pinned ones, this is where the others are
+ * reached and where pins are chosen.
+ */
+export function ProjectsDialog({ trigger, projects, selected, onSelect, recent, userId, countsOf, onNavigate }: {
+  trigger: ReactElement
   projects: ProjectDto[]
   selected?: ProjectDto
-  all: boolean
-  onAll: () => void
-  onSelect: (project: ProjectDto, fallback: string) => void
+  onSelect: (project: ProjectDto) => void
   recent: string[]
   userId: string
+  countsOf: (projectId: string) => ActivityCounts
   onNavigate: () => void
 }) {
   const t = useTranslate()
@@ -54,20 +56,11 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   ]
   return (
     <Dialog.Root open={open} onOpenChange={(value) => { setOpen(value); if (!value) setQuery('') }}>
-      <div className="flex min-h-12 items-center gap-1">
-      {nameEditor ?? <Dialog.Trigger asChild>
-        <button type="button" aria-label={t('shell.switcher.choose')} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 text-left hover:bg-surface-high">
-          {all ? <Layers size={16} /> : <ProjectAvatar project={selected} className="size-5" />}
-          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{all ? t('shell.switcher.all') : selected?.name ?? t('shell.switcher.choose')}</span></span>
-          <ChevronsUpDown size={14} className="shrink-0 text-ink-faint" />
-        </button>
-      </Dialog.Trigger>}
-      {actions ?? (!all && selected && <IconButton label={t('shell.project.settings')} onClick={() => { navigate(`/p/${selected.id}`); onNavigate() }}><SlidersHorizontal size={16} /></IconButton>)}
-      </div>
+      <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
         <Dialog.Content aria-describedby={undefined} className="fixed top-[10dvh] left-1/2 z-50 flex max-h-[80dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float">
-          <div className="flex items-center justify-between px-4 pt-3"><Dialog.Title className="text-sm font-semibold">{t('shell.switcher.choose')}</Dialog.Title><Dialog.Close asChild><IconButton label={t('common.close')}><X size={16} /></IconButton></Dialog.Close></div>
+          <div className="flex items-center justify-between px-4 pt-3"><Dialog.Title className="text-sm font-semibold">{t('shell.switcher.all')}</Dialog.Title><Dialog.Close asChild><IconButton label={t('common.close')}><X size={16} /></IconButton></Dialog.Close></div>
           <div className="m-3 flex items-center gap-2 rounded-md border border-line bg-sunken px-3"><Search size={16} className="text-ink-faint" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
               const first = list.current?.querySelector<HTMLButtonElement>('[data-project-choice]')
               if (event.key === 'ArrowDown') { event.preventDefault(); first?.focus() }
@@ -81,10 +74,23 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
             event.preventDefault()
             choices[(index + (event.key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length]?.focus()
           }}>
-            {!query.trim() && <button type="button" onClick={() => { onAll(); setOpen(false) }} className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-sm hover:bg-surface-high"><Layers size={15} /><span className="flex-1 text-left">{t('shell.switcher.all')}</span>{all && <Check size={15} />}</button>}
             {groups.map((group) => group.entries.length > 0 && <div key={group.label}>
               <p className="px-2 pt-3 pb-1 text-[0.6875rem] font-semibold text-ink-faint">{group.label}</p>
-              {group.entries.map((project) => <ProjectChoice key={project.id} project={project} selected={!all && selected?.id === project.id} pinned={project.pinned} onPin={() => togglePin.mutate({ id: project.id, pinned: !project.pinned })} onSelect={(fallback) => { onSelect(project, fallback); setOpen(false); setQuery('') }} />)}
+              {group.entries.map((project) => {
+                const tone = activityTone(countsOf(project.id))
+                const current = selected?.id === project.id
+                const pinLabel = t(project.pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })
+                return (
+                  <div key={project.id} className={cx('flex items-center rounded-md transition-colors', current ? 'bg-accent-wash' : 'hover:bg-surface-high')}>
+                    <button type="button" data-project-choice aria-current={current ? true : undefined} onClick={() => { onSelect(project); setOpen(false); setQuery('') }} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm">
+                      <ProjectAvatar project={project} /><span className="flex-1 truncate">{project.name}</span>
+                      {tone ? <span aria-hidden className={cx('nav-inline-dot', `nav-tone-${tone}`)} /> : null}
+                      {current && <Check size={14} className="shrink-0 text-accent" />}
+                    </button>
+                    <TooltipButton type="button" aria-label={pinLabel} aria-pressed={project.pinned} onClick={() => togglePin.mutate({ id: project.id, pinned: !project.pinned })} className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-accent"><Pin size={14} className={project.pinned ? 'fill-accent text-accent' : undefined} /></TooltipButton>
+                  </div>
+                )
+              })}
             </div>)}
             {matches.length === 0 && <p role="status" className="px-2 py-6 text-center text-sm text-ink-faint">{t('shell.switcher.empty')}</p>}
           </div>
@@ -93,13 +99,4 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
       </Dialog.Portal>
     </Dialog.Root>
   )
-}
-
-function ProjectChoice({ project, selected, pinned, onPin, onSelect }: { project: ProjectDto; selected: boolean; pinned: boolean; onPin: () => void; onSelect: (fallback: string) => void }) {
-  const t = useTranslate()
-  const view = useProjectView(project.id)
-  return <div className={cx('flex items-center rounded-md transition-colors', selected ? 'bg-accent-wash' : 'hover:bg-surface-high')}>
-    <button type="button" data-project-choice aria-current={selected ? true : undefined} onClick={() => onSelect(projectViewPath(project.id, view))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm"><ProjectAvatar project={project} /><span className="flex-1 truncate">{project.name}</span>{selected && <Check size={14} className="shrink-0 text-accent" />}</button>
-    <TooltipButton type="button" aria-label={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} title={t(pinned ? 'shell.switcher.unpin' : 'shell.switcher.pin', { name: project.name })} onClick={onPin} className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-accent"><Star size={14} className={pinned ? 'fill-accent text-accent' : undefined} /></TooltipButton>
-  </div>
 }

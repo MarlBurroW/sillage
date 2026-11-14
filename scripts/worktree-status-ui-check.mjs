@@ -205,7 +205,7 @@ try {
 
   // Merged with leftovers: told apart from uncommitted work, files named, kept in one gesture.
   await page.goto(`${base}/p/${project.id}/board`)
-  const leftNav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
+  const leftNav = page.locator('[data-nav-column]')
   const bannerRow = leftNav.locator('[data-sidebar-session]').filter({ has: page.getByText('Ship the forecast banner', { exact: true }) })
   await bannerRow.getByRole('button', { name: /Détails de .*Fusionné, fichiers restants/ }).waitFor()
   assert.match(await leftNav.getByRole('link', { name: /^Chantiers/ }).innerText(), /1 à trier/)
@@ -242,7 +242,7 @@ try {
 
   // Sidebar: worktree status stays visible; full branch details open without navigation.
   await page.goto(`${base}/p/${project.id}/board`)
-  const nav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
+  const nav = page.locator('[data-nav-column]')
   const row = (scope, title) => scope.locator('[data-sidebar-session]').filter({ has: scope.page().getByText(title, { exact: true }) })
   const offline = row(nav, 'Add offline caching for forecasts')
   await offline.waitFor()
@@ -392,7 +392,7 @@ try {
   const phone = await session({ width: 390, height: 844 }, true)
   await phone.page.goto(`${base}/p/${project.id}/board`)
   await phone.page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
-  const phoneNav = phone.page.getByRole('navigation').filter({ has: phone.page.getByRole('group', { name: 'Suivi des conversations' }) })
+  const phoneNav = phone.page.locator('[data-nav-column]')
   const phoneTag = row(phoneNav, 'Add offline caching for forecasts').locator('[data-session-details]')
   await phoneTag.waitFor()
   // Drawer slides: screenshot waits until it is in position.

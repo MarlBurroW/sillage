@@ -919,23 +919,44 @@ an alternative deployment mode, not per-conversation setting.
 
 ### 12.2 Screen structure
 
-Desktop: collapsible sidebar and conversation area. Conversations list under
-projects in manual rather than chronological order: both have a `position` column
-rewritten in bulk by drag/drop. Rewriting all positions avoids gaps/ties eventually
-caused by individual moves.
+Desktop: navigation in two levels beside the page. A **rail** of icons selects a
+*space*: Activity, the wall, discussions, benchmarks, each pinned project, services
+and settings. A **column** lists what the selected space holds, and nothing else.
+The single sidebar it replaces served as app menu, dashboard and session list at
+once, so every feature claimed a row and the session list shrank to what was left.
 
-Sidebar collapse persists across sessions (`localStorage`), leaving a top-left
-restore button. Initially it had a dedicated gutter, a column its width: a full-height
-empty strip for a 40 px button. Views with headers now reserve space inside their
-header, making it a toolbar control instead of floating object. Other views center
-content and let it pass.
+Where a feature goes follows from what it is, and `components/nav/Navigation.tsx`
+repeats the rule for whoever adds one:
 
-Collapse is published by a small store (`lib/sidebar.ts`) instead of context:
-views needing it are not in the sidebar branch, and prop drilling would cross
-the whole shell for a CSS class.
+- a place with its own list is a rail entry, and its column belongs to it;
+- a view of a project is a row in the project column's first block (five at most;
+  beyond that it goes on the project page);
+- something that needs the user's attention is a kind of row in Activity, never
+  a new counter elsewhere;
+- anything else lives in settings or on the project page, reachable from the palette.
 
-**Handle-adjustable width**, right edge, desktop only. Sidebar starts at window
-left, so pointer x *is* desired width: no initial gesture state needed. Value
+Spaces without a list (wall, services, settings) show no column: they carry their
+own navigation and a session list beside them would name another space. Activity
+has no page: it stays selected while the sessions it opens change the route, until
+another rail entry is chosen (`lib/nav-space.ts`).
+
+The rail shows pinned projects in the account's order, the current project, and
+otherwise the most recent ones; its last project entry opens every project with
+search and pins. A project's mark carries one state, the most pressing of its
+sessions: waiting on the user, working, unread. The same three colors mean the same
+thing wherever a state is marked.
+
+Conversations list in manual rather than chronological order, and so do projects:
+both have a `position` column rewritten in bulk by drag/drop. Rewriting all
+positions avoids gaps/ties eventually caused by individual moves.
+
+Pressing the current rail entry folds its column; the rail stays, so no view
+reserves room for a restore button. The fold persists across sessions
+(`localStorage`) through a small store (`lib/sidebar.ts`) rather than React state:
+the shell and the drawer render the navigation from separate branches.
+
+**Handle-adjustable width**, right edge, desktop only. The handle sizes the column:
+desired width is pointer x minus the column's left edge, the rail being fixed. Value
 writes to CSS variable rather than React state, like visual viewport height:
 drag emits an event per frame, and rerendering conversation list each time would
 make the handle sluggish. `localStorage` writes only on release. Left/right arrows
@@ -951,13 +972,13 @@ usually replacing an entire CLI-proposed title, while an end-of-line cursor forc
 manual deletion. First click still navigates because target is a link; opening
 what one renames is harmless.
 
-**Two levels, two typographic treatments.** Projects are bold/full ink;
-conversations smaller/muted. Same size/color left indentation as the only hierarchy
-cue, making navigation look flat. Open conversation returns to full ink because
-selection outranks hierarchy.
+**Rows that leave their project name it.** A project's own column lists sessions on
+one line; lists spanning projects (Activity) add the project under the title, since
+the list no longer says where a row lives.
 
-Mobile: no sidebar. Compact header with conversation name and a button opening
-fullscreen list. Thread metadata (model, worktree, provenance, usage) collapses
+Mobile: no persistent navigation. Compact header with conversation name and a button
+opening a fullscreen drawer that carries the rail and the column side by side. Over a
+page without a column, the drawer shows the last list and marks its entry. Thread metadata (model, worktree, provenance, usage) collapses
 behind chevron: four squeezed chips are unreadable at 390 px and consulted only
 occasionally.
 

@@ -42,7 +42,6 @@ import { translateError, useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
-import { useSidebarHidden } from '../lib/sidebar'
 import { useMediaQuery } from '../lib/viewport'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
@@ -125,7 +124,6 @@ export function BoardPage() {
   const [params, setParams] = useSearchParams()
   const t = useTranslate()
   const wide = useMediaQuery(WIDE)
-  const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
 
   const { data: projects } = useProjects()
@@ -293,7 +291,6 @@ export function BoardPage() {
         <header
           className={cx(
             'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-4',
-            sidebarHidden && 'md:pl-14',
           )}
         >
           <MobileNavigationButton />

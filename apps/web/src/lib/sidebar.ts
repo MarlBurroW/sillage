@@ -1,9 +1,8 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * Side navigation state shared outside React. Collapse is read by the shell and header-bearing
- * views: the restore button overlays their top-left corner and needs reserved space. Use a store
- * rather than context, as with theme, because these views are not in the sidebar's branch.
+ * Side navigation state shared outside React. Folding hides the column only: the rail stays, so
+ * its current entry reopens the list and no view has to reserve room for a restore button.
  */
 
 const HIDDEN_KEY = 'sillage.sidebarHidden'
@@ -26,7 +25,8 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export function useSidebarHidden(): boolean {
+/** Whether the column is folded on wide screens. The storage key predates the rail. */
+export function useNavColumnFolded(): boolean {
   return useSyncExternalStore(
     subscribe,
     () => hidden,
@@ -34,7 +34,7 @@ export function useSidebarHidden(): boolean {
   )
 }
 
-export function setSidebarHidden(next: boolean): void {
+export function setNavColumnFolded(next: boolean): void {
   if (next === hidden) return
   hidden = next
   localStorage.setItem(HIDDEN_KEY, next ? '1' : '0')

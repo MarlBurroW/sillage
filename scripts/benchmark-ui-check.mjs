@@ -98,9 +98,9 @@ try {
 
   // --- Empty state and sidebar section --------------------------------------------
   await page.goto(`${base}/benchmarks`)
-  const nav = page.getByRole('navigation', { name: 'Navigation', exact: true })
-  const section = nav.locator('[data-sidebar-benchmarks]')
-  await section.getByText('Benchmarks', { exact: true }).waitFor()
+  const nav = page.locator('[data-nav-column]')
+  const section = page.locator('[data-nav-column="benchmarks"]')
+  await section.getByRole('heading', { name: 'Benchmarks', exact: true }).waitFor()
   await page.getByText('Aucun benchmark', { exact: true }).first().waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmarks-empty-desktop.png') })
 
@@ -156,10 +156,11 @@ try {
   assert.equal(runThreads.length, 1)
   assert.equal(runThreads[0].projectId, null)
   assert.equal(runThreads[0].titleSetByUser, true)
-  const discussions = nav.locator('.sidebar-personal').first()
-  await discussions.getByRole('button', { name: 'Discussions', exact: true }).click()
-  await discussions.locator('ul').waitFor()
+  await page.locator('[data-nav-rail] [data-nav-space="discussions"]').click()
+  await page.locator('[data-nav-column="discussions"] .sidebar-personal ul').waitFor()
   assert.equal(await nav.getByText(runThreads[0].title, { exact: true }).count(), 0, 'runs are not listed among discussions')
+  await page.goBack()
+  await section.waitFor()
 
   // The first run's message carries the starting file as an attachment of its own.
   const firstThread = await api(`/api/conversations/${runThreads[0].id}/events?after=0`)

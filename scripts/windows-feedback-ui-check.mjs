@@ -131,12 +131,8 @@ try {
   await page.screenshot({ path: '/tmp/sillage-wf-context-conversation.png' })
   await page.keyboard.press('Escape')
   await page.getByRole('menuitem', { name: 'Renommer' }).waitFor({ state: 'detached' })
-  // Project context menus belong to the all-projects navigation.
-  await page.getByRole('button', { name: 'Changer de projet', exact: true }).click()
-  await page.getByRole('button', { name: 'Tous les projets', exact: true }).click()
-  // `force`: alone, the project is not draggable and dnd-kit sets aria-disabled on
-  // its header, which Playwright considers inactive.
-  await page.getByRole('link', { name: 'Nimbus', exact: true }).first().click({ button: 'right', force: true })
+  // A project's actions sit in its column heading.
+  await page.locator('[data-nav-column]').getByRole('button', { name: 'Actions du projet Nimbus', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Board' }).waitFor()
   await page.getByRole('menuitem', { name: 'Renommer' }).waitFor()
   await page.screenshot({ path: '/tmp/sillage-wf-context-project.png' })

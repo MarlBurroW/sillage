@@ -39,7 +39,6 @@ import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
 import { setPanelOpen, usePanelPresence } from '../lib/panel'
-import { useSidebarHidden } from '../lib/sidebar'
 import { useAgentUsage, usageAccountOf } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
@@ -158,7 +157,6 @@ export function DraftConversationPage() {
   const [params] = useSearchParams()
   const { data: conversations } = useAllConversations()
   const createConversation = useCreateConversation(projectId ?? null)
-  const sidebarHidden = useSidebarHidden()
   const concentration = useConcentration()
   const panel = usePanelPresence()
 
@@ -333,7 +331,6 @@ export function DraftConversationPage() {
           'flex shrink-0 items-center gap-2 border-b border-line px-2 py-2',
           // Space reserved for the show-navigation button in this corner when the
           // sidebar is collapsed.
-          sidebarHidden && !concentration && 'md:pl-14',
           concentration && 'sg-concentration-header',
         )}
       >

@@ -64,7 +64,6 @@ import { useCopy } from '../lib/clipboard'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { useSchedules, useUpdateSchedule } from '../lib/schedules'
-import { useSidebarHidden } from '../lib/sidebar'
 import { useUserSettings } from '../lib/user-settings'
 
 const CONFIG_SECTIONS = ['connection', 'trigger', 'prompt', 'agent', 'guards'] as const
@@ -154,7 +153,6 @@ export function AutomationPage() {
 
 function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: WebhookAutomationDto }) {
   const t = useTranslate()
-  const sidebarHidden = useSidebarHidden()
   const [params, setParams] = useSearchParams()
   const view = VIEWS.find((value) => value === params.get('view')) ?? 'configuration'
   const section = CONFIG_SECTIONS.find((value) => value === params.get('section')) ?? 'connection'
@@ -330,7 +328,7 @@ function AutomationEditor({ task, webhook }: { task: ScheduledTaskDto; webhook: 
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className={cx('flex shrink-0 items-center gap-2 border-b border-line px-3 py-3 sm:gap-3 md:px-6', sidebarHidden && 'md:pl-14')}>
+      <header className={'flex shrink-0 items-center gap-2 border-b border-line px-3 py-3 sm:gap-3 md:px-6'}>
         <MobileNavigationButton />
         <Link to={`/p/${task.projectId}/schedules`} className="grid size-9 shrink-0 place-items-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink" aria-label={t('automation.back')} title={t('automation.back')}>
           <ArrowLeft size={17} />

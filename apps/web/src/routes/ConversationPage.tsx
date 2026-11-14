@@ -83,7 +83,6 @@ import { columnLabel } from '../components/board/columns'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
-import { useSidebarHidden } from '../lib/sidebar'
 import { describeActivity, type MessageItem, type TurnCheckpoint } from '../lib/chat-fold'
 import { buildBackground, type BackgroundWork } from '../lib/background'
 import { WorkflowTasksContext, workflowTasksByToolCall } from '../lib/workflows'
@@ -406,7 +405,6 @@ export function ConversationPage() {
   const hasAnchor = Number.isInteger(anchorSeq) && anchorSeq > 0
   const anchored = useRef<number | null>(null)
   const activity = describeActivity(stream.state)
-  const sidebarHidden = useSidebarHidden()
   const concentration = useConcentration()
   const panel = usePanelPresence()
   const panelLayout = usePanelLayout()
@@ -965,7 +963,6 @@ export function ConversationPage() {
             'border-b border-line px-2 py-2 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
             // The show-navigation button occupies this corner: without reserved space,
             // it covers the CLI icon.
-            sidebarHidden && !concentration && 'md:pl-14',
             concentration && 'sg-concentration-header',
           )}
         >

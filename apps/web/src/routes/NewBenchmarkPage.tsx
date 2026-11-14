@@ -25,12 +25,11 @@ import {
 import { AttachmentTray } from '../components/chat/AttachmentTray'
 import { VariantEditor } from '../components/benchmark/VariantEditor'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { Banner, Button, Field, IconButton, Select, cx } from '../components/ui'
+import { Banner, Button, Field, IconButton, Select } from '../components/ui'
 import { useAgentAvailability } from '../lib/agents'
 import { discardAttachment, uploadAttachment } from '../lib/attachments'
 import { useCreateBenchmark } from '../lib/benchmarks'
 import { useTranslate } from '../lib/i18n'
-import { useSidebarHidden } from '../lib/sidebar'
 import { useUserSettings } from '../lib/user-settings'
 
 interface Draft {
@@ -45,7 +44,6 @@ interface Draft {
 export function NewBenchmarkPage() {
   const t = useTranslate()
   const navigate = useNavigate()
-  const sidebarHidden = useSidebarHidden()
   const promptId = useId()
   const { data: userSettings } = useUserSettings()
   const { data: availability } = useAgentAvailability()
@@ -134,7 +132,7 @@ export function NewBenchmarkPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className={cx('flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:px-6', sidebarHidden && 'md:pl-14')}>
+      <header className={'flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:px-6'}>
         <MobileNavigationButton />
         <Link to="/benchmarks"><IconButton label={t('benchmark.back')}><ArrowLeft size={18} /></IconButton></Link>
         <FlaskConical size={19} className="shrink-0 text-ink-faint" />

@@ -149,7 +149,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
   with the model, effort and permissions fixed on the task. The daemon fires it with
   nobody at the keyboard: the agent is told so, gets the date, link and last reply of
   the previous run, and is cut off after a maximum duration. Runs stay out of the
-  session list and sit under their task in the sidebar. An optional check script
+  session list and sit under their task on the project's automations page. An optional check script
   runs first, in any language: exit 0 wakes the agent with the script's output,
   exit 10 skips the run without opening a session, so a daily watch only costs
   tokens when something changed. Agents can schedule too, through `schedule_task`,
