@@ -36,18 +36,24 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor 
   const returnTo = useRef<HTMLElement | null>(null)
   const fallback = useRef(fallbackFocus)
   fallback.current = fallbackFocus
+  const shown = useRef(false)
 
   useEffect(() => {
     const node = container.current
     if (!node || !open) return
+    shown.current = true
     const previous = document.activeElement
     if (previous instanceof HTMLElement && previous !== document.body && !node.contains(previous)) returnTo.current = previous
     if (!node.contains(document.activeElement)) {
       node.querySelector<HTMLElement>('[data-panel-initial-focus]')?.focus({ preventScroll: true })
     }
     return () => {
+      shown.current = false
       // Let focus trapping and background deactivation finish.
       queueMicrotask(() => {
+        // StrictMode replays the effect at once in development: the panel is still open, and handing
+        // focus back would leave it on the control the panel has just replaced.
+        if (shown.current) return
         const focused = document.activeElement
         if (focused !== document.body && focused?.isConnected && !node.contains(focused)) return
         const candidates = [returnTo.current, ...document.querySelectorAll<HTMLElement>(fallback.current ?? '[data-navigation-trigger]')]

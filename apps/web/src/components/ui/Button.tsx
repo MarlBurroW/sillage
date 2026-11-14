@@ -60,6 +60,8 @@ interface IconButtonProps extends ComponentPropsWithRef<'button'> {
   label: string
   /** md meets 44px touch targets; sm is for dense lists. */
   size?: 'sm' | 'md'
+  /** A control that is on screen but stands down keeps its label and drops the tooltip. */
+  tooltipDisabled?: boolean
   children: ReactNode
 }
 

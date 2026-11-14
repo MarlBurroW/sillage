@@ -68,8 +68,16 @@ export async function checkDownloads({ page, context, base, project, hero, data 
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   const panel = page.locator('[data-panel="workspace"]')
   await panel.getByRole('button', { name: 'Afficher l’IDE en plein écran', exact: true }).click()
+  // The header only shows its quick-open button while the explorer is hidden: use the shortcut,
+  // which the panel takes from wherever focus sits inside it.
+  const quickOpen = async () => {
+    if (!(await panel.evaluate((node) => node.contains(document.activeElement)))) {
+      await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).focus()
+    }
+    await page.keyboard.press('Control+p')
+  }
   const openFile = async (path) => {
-    await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
+    await quickOpen()
     const picker = page.getByRole('dialog', { name: 'Ouvrir un fichier', exact: true })
     await picker.getByRole('combobox').fill(path)
     await picker.getByRole('option', { name: path, exact: true }).click()

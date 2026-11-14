@@ -20,7 +20,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowDownUp, Check, ChevronDown, ChevronRight, PanelRight, Plus, Search, Settings2, Tag, X } from 'lucide-react'
+import { ArrowDownUp, Check, ChevronDown, ChevronRight, Plus, Search, Settings2, Tag, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type BoardLinkDto, type BoardOrder, type CardColumn, type CardDto } from '@sillage/protocol'
@@ -39,11 +39,12 @@ import { useBoardOrder } from '../lib/user-settings'
 import { useBoardLink } from '../lib/board-link'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { translateError, useTranslate } from '../lib/i18n'
-import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
+import { PANEL_TRANSITION_MS, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { useMediaQuery } from '../lib/viewport'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { PanelToggle } from '../components/panel/PanelToggle'
 
 /** Same breakpoint as the shell: beyond it, sidebar and columns fit side by side. */
 const WIDE = '(min-width: 768px)'
@@ -290,7 +291,8 @@ export function BoardPage() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           className={cx(
-            'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-4',
+            // `pr-14` keeps every row clear of the pinned panel toggle.
+            'relative flex shrink-0 flex-wrap items-center gap-3 border-b border-line py-4 pr-14 pl-5',
           )}
         >
           <MobileNavigationButton />
@@ -349,13 +351,11 @@ export function BoardPage() {
            * entering a session.
            */}
           <ActionsLauncher projectId={projectId} size="sm" />
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            size="sm"
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
+          {/*
+           * Pinned to the corner instead of following the buttons: this header wraps on narrow
+           * screens, and the toggle must stay where the open panel puts its own.
+           */}
+          <PanelToggle page className="absolute top-1 right-1" />
         </header>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-3">

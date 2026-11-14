@@ -120,7 +120,8 @@ try {
   await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
   const phone = await mobile.newPage()
   await phone.goto(`${base}/p/${project.id}/c/${hero.id}`)
-  await phone.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).tap()
+  // The label gains « · Mise à jour disponible » once an update notice loads.
+  await phone.getByRole('button', { name: /^Ouvrir la navigation/ }).tap()
   await phone.getByRole('button', { name: 'Fermer la navigation', exact: true }).waitFor()
   assert.equal(await phone.getByRole('tooltip').count(), 0)
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth))

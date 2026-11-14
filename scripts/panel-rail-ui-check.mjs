@@ -97,14 +97,14 @@ try {
     const rail = panel.getByRole('navigation')
     await rail.waitFor()
     const buttons = rail.getByRole('button')
-    assert.equal(await buttons.count(), 7)
+    assert.equal(await buttons.count(), 8)
     const boxes = await buttons.evaluateAll((nodes) => nodes.map((node) => {
       const r = node.getBoundingClientRect()
       return { x: r.x, y: r.y, width: r.width, height: r.height }
     }))
     assert.ok(boxes.every((box) => box.x === boxes[0].x && box.width >= 44 && box.height >= 44))
     assert.ok(boxes.every((box, i) => !i || box.y > boxes[i - 1].y))
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 8; i++) {
       const button = buttons.nth(i)
       await button.click()
       assert.equal(await button.getAttribute('aria-pressed'), 'true')

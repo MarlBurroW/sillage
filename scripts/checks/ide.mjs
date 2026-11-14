@@ -9,9 +9,17 @@ export async function checkIde({ page, context, base, project }) {
   const picker = page.getByRole('dialog', { name: 'Ouvrir un fichier', exact: true })
   const input = picker.getByRole('combobox', { name: 'Nom ou chemin du fichier', exact: true })
   const code = panel.locator('.cm-content')
+  // The header only shows its quick-open button while the explorer is hidden: use the shortcut,
+  // which the panel takes from wherever focus sits inside it.
+  const quickOpen = async () => {
+    if (!(await panel.evaluate((node) => node.contains(document.activeElement)))) {
+      await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).focus()
+    }
+    await page.keyboard.press('Control+p')
+  }
   const openFile = async (path) => {
     if (await code.isVisible()) await code.focus()
-    await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
+    await quickOpen()
     await input.fill(path)
     await picker.getByRole('option', { name: path, exact: true }).click()
     await page.waitForFunction((path) => document.activeElement?.closest('[data-editor-file]')?.getAttribute('data-editor-file') === path, path)
@@ -121,7 +129,7 @@ export async function checkIde({ page, context, base, project }) {
   await panel.locator('[data-editor-file="ui-check/package.json"]').waitFor()
 
   await code.focus()
-  await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
+  await quickOpen()
   await input.fill('zzzz-ui-no-such-file')
   await picker.getByText('Aucun fichier trouvé.', { exact: true }).waitFor()
   const searchRoute = `**/api/projects/${project.id}/tree/search?q=ui-network-failure`
@@ -136,7 +144,7 @@ export async function checkIde({ page, context, base, project }) {
 
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
-    await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
+    await quickOpen()
     await input.fill('CityList')
     await picker.getByRole('option', { name: 'src/components/CityList.tsx', exact: true }).click()
     await panel.locator('[data-editor-file="src/components/CityList.tsx"]').waitFor()

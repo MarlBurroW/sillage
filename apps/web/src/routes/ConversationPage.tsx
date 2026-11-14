@@ -21,7 +21,6 @@ import {
   GitBranch,
   SquareKanban,
   Loader,
-  PanelRight,
   Search,
   Share2,
   Shrink,
@@ -102,6 +101,7 @@ import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useWorktrees } from '../lib/worktrees'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { PanelToggle } from '../components/panel/PanelToggle'
 
 /**
  * Lazy-loaded: the editor bundles CodeMirror, and including it initially would charge every
@@ -960,7 +960,9 @@ export function ConversationPage() {
         <header
           className={cx(
             'surface sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-1.5',
-            'border-b border-line px-2 py-2 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
+            // `py-1` around 44px controls gives the panel header's height: the two rules meet
+            // when the panel is docked, and the two panel toggles share one spot.
+            'border-b border-line px-2 py-1 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
             // The show-navigation button occupies this corner: without reserved space,
             // it covers the CLI icon.
             concentration && 'sg-concentration-header',
@@ -1029,9 +1031,12 @@ export function ConversationPage() {
            */}
           <SignalRow signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))} />
 
-          {/* Narrow threads keep full touch targets on a separate action row. */}
+          {/*
+           * Narrow threads keep full touch targets on a separate action row. `order-last` sends
+           * that row below the panel toggle, which stays in the heading's corner.
+           */}
           <TooltipProvider delayDuration={120}>
-            <div className="flex w-full shrink-0 items-center justify-start gap-0.5 overflow-x-auto @min-[56rem]/thread:justify-end @min-[56rem]/thread:w-auto" data-conversation-toolbar>
+            <div className="order-last flex w-full shrink-0 items-center justify-start gap-0.5 overflow-x-auto @min-[56rem]/thread:order-none @min-[56rem]/thread:justify-end @min-[56rem]/thread:w-auto" data-conversation-toolbar>
               <IconButton label={t('conversation.usage.title')} onClick={() => setUsageOpen(true)}>
                 <GaugeCircle size={18} />
               </IconButton>
@@ -1091,20 +1096,16 @@ export function ConversationPage() {
                 </IconButton>
               ) : null}
 
-              {/*
-               * At the far right edge, where the panel opens. The panel belongs to the conversation
-               * and reads this thread's working directory, including its worktree, not the
-               * project's.
-               */}
               {conversation.projectId ? <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} /> : null}
-              <IconButton
-                label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-                onClick={() => setPanelOpen(!panel.open)}
-              >
-                <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
-              </IconButton>
               <ConcentrationButton />
             </div>
+            {/*
+             * Outside the scrolling row and last: the far right corner, where the panel opens,
+             * whatever the width. The panel belongs to the conversation and reads this thread's
+             * working directory, including its worktree, not the project's. The negative margins
+             * leave 4px to the edge, as in the panel's header.
+             */}
+            <PanelToggle page replaced={panelLayout.docked && panel.mounted} className="-mr-1 @min-[44rem]/thread:-mr-3" />
           </TooltipProvider>
         </header>
         {!concentration && !conversation.projectId && allConversations?.some(entry => entry.handoffFromId === conversation.id && entry.projectId) ? <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-xs text-ink-soft">

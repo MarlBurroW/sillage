@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, FolderOpen, PanelLeft, Trash2 } from 'lucide-react'
+import { ArrowLeft, FolderOpen, FolderTree, Trash2 } from 'lucide-react'
 import { setPanelTree, usePanelTree } from '../lib/panel'
 import { useTranslate } from '../lib/i18n'
 import { useDeletePersonalWorkspace, usePersonalWorkspaces } from '../lib/discussions'
@@ -22,7 +22,7 @@ export function DiscussionFilesPage() {
       <MobileNavigationButton />
       {workspace ? <IconButton label={t('discussions.files.back')} onClick={() => setSelected(null)}><ArrowLeft size={18} /></IconButton> : null}
       <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">{workspace?.name ?? t('discussions.files')}</h1>
-      {workspace ? <IconButton label={t(treeOpen ? 'panel.tree.hide' : 'panel.tree.show')} onClick={() => setPanelTree(!treeOpen)}><PanelLeft size={18} /></IconButton> : null}
+      {workspace ? <IconButton label={t(treeOpen ? 'panel.tree.hide' : 'panel.tree.show')} onClick={() => setPanelTree(!treeOpen)}><FolderTree size={18} /></IconButton> : null}
     </header>
     {error || remove.error ? <Banner>{(error ?? remove.error)?.message}</Banner> : null}
     {workspace ? <FilesPane key={workspace.id} scope={personalWorkspaceScope(workspace.id)} /> : <div className="mx-auto w-full max-w-3xl overflow-y-auto p-4 md:p-8">

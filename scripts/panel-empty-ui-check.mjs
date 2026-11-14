@@ -109,7 +109,7 @@ try {
     await rail.waitFor()
     const modes = viewport.width === 1440 ? ['docked', 'expanded', 'fullscreen'] : ['default']
     for (const mode of modes) {
-      if (mode === 'expanded') await panel.getByRole('button', { name: 'Agrandir le panneau', exact: true }).click()
+      if (mode === 'expanded') await panel.getByRole('button', { name: 'Afficher par-dessus la conversation', exact: true }).click()
       if (mode === 'fullscreen') await panel.getByRole('button', { name: 'Afficher l’IDE en plein écran', exact: true }).click()
       for (const tab of ['Fichiers', 'Git', 'Historique', 'Terminaux', 'Actions', 'Sous-agents', 'MCP']) {
         await rail.getByRole('button', { name: tab, exact: true }).click()

@@ -4,17 +4,15 @@ import {
   FileCode,
   GitCompare,
   History,
-  Maximize2,
-  Expand,
-  Minimize2,
+  Layers2,
+  Maximize,
+  Minimize,
   Search,
   Columns2,
-  PanelLeft,
+  FolderTree,
   PlugZap,
-  RefreshCw,
   SquareKanban,
   SquareTerminal,
-  X,
   Zap,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -41,6 +39,7 @@ import { projectScope } from '../../lib/workspace-scope'
 import { resizeHandle } from '../../lib/resize-handle'
 import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
+import { PanelToggle } from './PanelToggle'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjects } from '../../lib/projects'
@@ -284,43 +283,54 @@ export function SidePanel({
           ) : null}
         </nav>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex min-h-[var(--header-height)] shrink-0 flex-wrap items-center gap-y-1 border-b border-line px-1.5 py-1">
+      {/* `pr-1` puts the toggle 4px from the edge, where page headers put theirs. */}
+      <header className="flex min-h-[var(--header-height)] shrink-0 flex-wrap items-center gap-y-1 border-b border-line py-1 pr-1 pl-1.5">
         <div className="min-w-0 flex-1 pl-2">
           <h2 className="truncate text-sm font-medium text-ink">{t(`panel.tab.${tab}`)}</h2>
           {fullscreen ? <p title={workspaceLabel} className="hidden truncate text-xs text-ink-faint md:block">{workspaceLabel}</p> : null}
         </div>
 
+        {/* The tab's own actions first, then how the panel sits in the window, then the way out. */}
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
+          {tab === 'files' ? (
+            <>
+              {/*
+               * The explorer carries its own search and refresh, so this bar repeats neither. Quick
+               * open only stands in while the explorer is put away, left of the toggle that hid it
+               * so that toggle does not move.
+               */}
+              {treeOpen ? null : (
+                <IconButton size="sm" label={t('editor.quickOpen.title')} aria-keyshortcuts="Control+P Meta+P" onClick={() => setQuickOpen(true)}><Search size={16} /></IconButton>
+              )}
+              <IconButton
+                label={treeOpen ? t('panel.tree.hide') : t('panel.tree.show')}
+                size="sm"
+                aria-pressed={treeOpen}
+                onClick={() => setPanelTree(!treeOpen)}
+              >
+                {/* Not a panel glyph: beside the panel toggle it read as a second one. */}
+                <FolderTree size={16} className={cx(treeOpen && 'text-accent')} />
+              </IconButton>
+              <span aria-hidden className="mx-1.5 h-4 w-px bg-line" />
+            </>
+          ) : null}
+          {/*
+           * Three glyph families for three different moves: panes for where the panel sits, corner
+           * brackets for full screen, and diagonal arrows left to the page's concentration mode.
+           */}
           {canDock && !fullscreen ? (
             <IconButton
               label={t(docked ? 'panel.expand' : 'panel.dock')}
               size="sm"
               onClick={() => setPanelExpanded(docked)}
             >
-              {docked ? <Maximize2 size={16} /> : <Columns2 size={16} />}
+              {docked ? <Layers2 size={16} /> : <Columns2 size={16} />}
             </IconButton>
           ) : null}
           {wide || fullscreen ? <IconButton size="sm" label={t(fullscreen ? 'panel.fullscreen.exit' : 'panel.fullscreen.enter')} onClick={() => setFullscreen((value) => !value)}>
-            {fullscreen ? <Minimize2 size={16} /> : <Expand size={16} />}
+            {fullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
           </IconButton> : null}
-          {tab === 'files' ? (
-            <>
-              <IconButton size="sm" label={t('editor.quickOpen.title')} aria-keyshortcuts="Control+P Meta+P" onClick={() => setQuickOpen(true)}><Search size={16} /></IconButton>
-              <IconButton
-                label={treeOpen ? t('panel.tree.hide') : t('panel.tree.show')}
-                size="sm"
-                onClick={() => setPanelTree(!treeOpen)}
-              >
-                <PanelLeft size={16} className={cx(treeOpen && 'text-accent')} />
-              </IconButton>
-              <IconButton label={t('panel.tree.refresh')} size="sm" onClick={refresh}>
-                <RefreshCw size={15} />
-              </IconButton>
-            </>
-          ) : null}
-          <IconButton data-panel-initial-focus label={t('panel.close')} size="sm" onClick={() => setPanelOpen(false)}>
-            <X size={17} />
-          </IconButton>
+          <PanelToggle data-panel-initial-focus />
         </div>
       </header>
 

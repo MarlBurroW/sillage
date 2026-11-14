@@ -1,5 +1,5 @@
 import { conversationPath } from '@sillage/protocol'
-import { EyeOff, History, PanelRight, SquareKanban, X } from 'lucide-react'
+import { EyeOff, History, SquareKanban, X } from 'lucide-react'
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -38,11 +38,12 @@ import { useAllConversations, useCreateConversation } from '../lib/conversations
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
-import { setPanelOpen, usePanelPresence } from '../lib/panel'
+import { usePanelPresence } from '../lib/panel'
 import { useAgentUsage, usageAccountOf } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { PanelToggle } from '../components/panel/PanelToggle'
 
 const SidePanel = lazy(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
@@ -328,7 +329,8 @@ export function DraftConversationPage() {
       ) : null}
       <header
         className={cx(
-          'flex shrink-0 items-center gap-2 border-b border-line px-2 py-2',
+          // `py-1` around the 44px toggle: the panel header's height, so both toggles share a spot.
+          'flex shrink-0 items-center gap-2 border-b border-line px-2 py-1',
           // Space reserved for the show-navigation button in this corner when the
           // sidebar is collapsed.
           concentration && 'sg-concentration-header',
@@ -362,16 +364,9 @@ export function DraftConversationPage() {
          * session exists.
          */}
         {projectId ? <ActionsLauncher projectId={projectId} size="sm" /> : null}
-        {projectId ? (
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            size="sm"
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
-        ) : null}
         <ConcentrationButton />
+        {/* Last, 4px from the edge: where the open panel puts its own toggle. */}
+        {projectId ? <PanelToggle page className="-mr-1" /> : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
