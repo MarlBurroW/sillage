@@ -10,7 +10,7 @@ export const KEY_HELP: Record<SessionQueryKey, MessageKey> = {
 }
 
 const IS_LABELS: Record<(typeof SESSION_QUERY_VALUES.is)[number], MessageKey> = {
-  running: 'wall.is.running', attention: 'wall.is.attention', idle: 'wall.is.idle', unread: 'wall.is.unread', favorite: 'wall.is.favorite',
+  running: 'wall.is.running', attention: 'wall.is.attention', error: 'wall.is.error', idle: 'wall.is.idle', unread: 'wall.is.unread', favorite: 'wall.is.favorite',
 }
 const SORT_LABELS: Record<(typeof SESSION_QUERY_VALUES.sort)[number], MessageKey> = {
   activity: 'wall.sort.activity', created: 'wall.sort.created', title: 'wall.sort.title',

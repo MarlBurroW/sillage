@@ -348,6 +348,7 @@ export function WallPage() {
 const HELP_ROWS = [
   ['is:running', 'wall.help.running'],
   ['is:attention', 'wall.help.attention'],
+  ['is:error', 'wall.help.error'],
   ['is:unread', 'wall.help.unread'],
   ['project:sillage,bardak', 'wall.help.project'],
   ['cli:claude', 'wall.help.cli'],

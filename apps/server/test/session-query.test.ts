@@ -33,6 +33,7 @@ const sessions = [
   session('board', { title: 'Board GitHub', projectName: 'bardak', state: 'idle', activityAt: NOW - 25 * MIN, worktree: 'merged', unread: true, createdAt: 3 }),
   session('helm', { title: 'Chart Helm', projectName: 'infra-k8s', agent: 'codex', state: 'attention', activityAt: NOW - 29 * MIN, createdAt: 2 }),
   session('audit', { title: 'Audit du défilement', agent: 'grok', state: 'idle', activityAt: NOW - 90 * MIN, worktree: undefined, createdAt: 1 }),
+  session('crash', { title: 'Migration interrompue', state: 'error', activityAt: NOW - 45 * MIN, unread: true, createdAt: 7 }),
   session('demo', { title: 'Déploiement démo', projectName: 'Client démo', state: 'running', activityAt: NOW - 2 * MIN, worktree: 'unmerged', createdAt: 6 }),
 ]
 const ids = (query: string) => evaluateSessionQuery(query, sessions, NOW).ids
@@ -53,6 +54,9 @@ test('the wall answers each question the user listed with one short query', () =
   assert.deepEqual(ids('worktree:dirty'), ['wall', 'latency'])
   // Needing my attention: waiting on a permission, a question, a plan or a decision.
   assert.deepEqual(ids('is:attention'), ['latency', 'helm'])
+  // Stopped on an error: not waiting on me, and not at rest either.
+  assert.deepEqual(ids('is:error'), ['crash'])
+  assert.equal(ids('is:idle').includes('crash'), false)
   // X unread sessions.
   assert.deepEqual(ids('is:unread limit:2'), ['wall', 'latency'])
 })
@@ -62,8 +66,9 @@ test('tokens combine with and, values with or, and a dash negates', () => {
   assert.deepEqual(ids('is:running is:unread'), ['wall'])
   assert.deepEqual(ids('-cli:codex is:attention'), [])
   assert.deepEqual(ids('cli:codex,grok sort:title'), ['audit', 'helm', 'latency'])
-  assert.deepEqual(ids('-active:30m'), ['audit'])
-  assert.deepEqual(ids('worktree:none'), ['helm'])
+  assert.deepEqual(ids('-active:30m'), ['crash', 'audit'])
+  assert.deepEqual(ids('worktree:none'), ['helm', 'crash'])
+  assert.deepEqual(ids('is:attention,error'), ['latency', 'helm', 'crash'])
   assert.deepEqual(ids('worktree:any sort:created'), ['demo', 'wall', 'latency', 'board'])
 })
 
@@ -89,7 +94,7 @@ test('invalid tokens are flagged and ignored rather than emptying the result', (
 })
 
 test('filter buttons only rewrite the text', () => {
-  // Running and attention share a token: either state.
+  // The states share a token: either one.
   let query = toggleQueryValue('', 'is', 'running', SESSION_STATES)
   query = toggleQueryValue(query, 'is', 'attention', SESSION_STATES)
   assert.equal(query, 'is:running,attention')
@@ -108,6 +113,7 @@ test('filter buttons only rewrite the text', () => {
   // Clearing keeps hand-typed negations.
   assert.equal(clearQueryKey('cli:claude -cli:codex is:running', 'cli'), '-cli:codex is:running')
   assert.equal(toggleQueryValue(query, 'is', 'running', SESSION_STATES), 'is:attention is:unread limit:8')
+  assert.equal(toggleQueryValue(query, 'is', 'error', SESSION_STATES), 'is:running,attention,error is:unread limit:8')
 })
 
 test('saved views belong to the account and replace the built-in ones only once edited', async (t) => {
