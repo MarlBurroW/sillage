@@ -37,6 +37,8 @@ export function SessionRow({
   onNavigate,
   draggable = true,
   project,
+  to,
+  current,
 }: {
   conversation: ConversationDto
   toggleFavorite: FavoriteMutation
@@ -48,6 +50,10 @@ export function SessionRow({
    * have no drop container.
    */
   draggable?: boolean
+  /** Where the row leads when not to the conversation itself: Activity brings its wall tile forward. */
+  to?: string
+  /** Marks the row when `to` decides what is open; the conversation route decides otherwise. */
+  current?: boolean
 }) {
   const t = useTranslate()
   const rename = useRenameConversation()
@@ -105,7 +111,7 @@ export function SessionRow({
     )
   }
 
-  const isActive = openMatch?.params.conversationId === conversation.id
+  const isActive = current ?? openMatch?.params.conversationId === conversation.id
   /*
    * Convey unread through ink and weight rather than a third dot: rows hold at most two, and
    * another would compete with current-state signals. New content simply promotes muted text to
@@ -120,7 +126,7 @@ export function SessionRow({
         data-sidebar-session={conversation.id}
         className={cx('group/row sidebar-session', project !== undefined && 'sidebar-session-wide', isDragging && 'relative z-10 bg-surface-high opacity-90', isActive && 'sidebar-current', unread && 'sidebar-unread')}>
         <SessionPreview conversation={conversation} metrics={metrics} signals={signals} disabled={menuOpen || contextOpen} trigger={
-          <NavLink to={conversationPath(conversation)} onClick={onNavigate}
+          <NavLink to={to ?? conversationPath(conversation)} onClick={onNavigate}
             onDoubleClick={event => { event.preventDefault(); if (conversation.isOwner) setEditing(true) }}
             className="sidebar-session-link">
             <AgentIcon agent={conversation.agent} size={16} />

@@ -7,6 +7,8 @@
 .wall-tabs { display: flex; align-self: stretch !important; min-width: 0; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 .wall-tab { display: flex; align-items: center; gap: 7px; max-width: 14rem; margin-bottom: -1px; padding: 0 10px; border-bottom: 2px solid transparent; font-size: 0.8125rem; color: var(--sg-ink-faint); white-space: nowrap; }
 .wall-tab:hover { color: var(--sg-ink); }
+/* Sections first, saved views after the rule. */
+.wall-tabs-rule { flex-shrink: 0; align-self: center; width: 1px; height: 16px; margin: 0 6px; background: var(--sg-line); }
 .wall-tab[aria-selected='true'] { border-bottom-color: var(--sg-accent); color: var(--sg-ink); }
 .wall-tab-count { padding: 0 6px; border-radius: 999px; background: var(--sg-sunken); font: 0.6875rem/1rem var(--font-mono); font-variant-numeric: tabular-nums; color: var(--sg-ink-faint); }
 .wall-tab-count-attention { background: color-mix(in oklch, var(--sg-caution) 20%, transparent); color: var(--sg-caution); }
@@ -127,3 +129,14 @@
 @media (prefers-reduced-motion: reduce) {
   .wall-tile { transition: none; }
 }
+
+/* New view dialog: the filters wrap instead of scrolling, and the result reads back below them. */
+.wall-compose { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.wall-compose-label { font-size: 0.875rem; font-weight: 500; color: var(--sg-ink-soft); }
+.wall-compose .wall-filters { flex-wrap: wrap; overflow: visible; }
+.wall-compose .wall-filters-separator { display: none; }
+.wall-compose-preview { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--sg-line); border-radius: 6px; background: var(--sg-sunken); font-size: 0.8125rem; }
+.wall-compose-preview b { color: var(--sg-ink); }
+.wall-compose-preview ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.wall-compose-preview li { display: flex; align-items: baseline; gap: 8px; min-width: 0; color: var(--sg-ink); }
+.wall-compose-project { flex-shrink: 0; font-size: 0.75rem; color: var(--sg-ink-faint); }

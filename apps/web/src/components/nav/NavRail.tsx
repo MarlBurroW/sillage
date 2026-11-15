@@ -3,7 +3,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { ProjectDto } from '@sillage/protocol'
-import { Activity, FlaskConical, LayoutGrid, LogOut, MessageSquare, MoreHorizontal, Search, Server, Settings } from 'lucide-react'
+import { Activity, FlaskConical, LogOut, MessageSquare, MoreHorizontal, Search, Server, Settings } from 'lucide-react'
 import { useState, type ComponentPropsWithRef, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { activityTone, type ActivityCounts } from '../../lib/activity'
 import { useTranslate, type translate } from '../../lib/i18n'
@@ -71,7 +71,6 @@ export function NavRail({ space, total, personal, projects, countsOf, hiddenTone
           <Activity size={18} />
           {total.awaiting > 0 ? <span className="nav-rail-badge">{total.awaiting}</span> : total.running > 0 ? <span className="nav-rail-dot nav-tone-running" /> : null}
         </RailEntry>
-        <RailEntry label={t('wall.nav')} detail={t('shell.rail.wallHint')} current={space === 'wall'} onClick={() => onSpace('wall')} data-nav-space="wall"><LayoutGrid size={18} /></RailEntry>
         <RailEntry label={t('discussions.title')} detail={countsLabel(personal, t) || t('shell.rail.discussionsHint')} current={space === 'discussions'} onClick={() => onSpace('discussions')} data-nav-space="discussions">
           <MessageSquare size={18} />
           {activityTone(personal) ? <span className={cx('nav-rail-dot', `nav-tone-${activityTone(personal)}`)} /> : null}

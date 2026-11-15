@@ -1,5 +1,6 @@
 import { PanelLeftClose, X } from 'lucide-react'
 import { createContext, useContext, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
 import { IconButton } from '../ui'
 
@@ -40,11 +41,23 @@ export function ColumnHead({ title, lead, actions }: { title: ReactNode; lead?: 
   )
 }
 
-/** List heading inside a column: a name, how many, and the list's own actions. */
-export function ColumnHeading({ label, count, tone, children }: { label: string; count?: number; tone?: 'caution'; children?: ReactNode }) {
+/**
+ * List heading inside a column: a name, how many, and the list's own actions. With `link`, the
+ * heading also opens its list as a page, and says when that page is the one shown.
+ */
+export function ColumnHeading({ label, count, tone, link, children }: {
+  label: string
+  count?: number
+  tone?: 'caution'
+  link?: { to: string; current: boolean; onClick?: () => void }
+  children?: ReactNode
+}) {
+  const content = <>{label}{count === undefined ? null : <span className={tone === 'caution' ? 'nav-count nav-count-caution' : 'nav-count'}>{count}</span>}</>
   return (
     <div className="sidebar-sessions-heading">
-      <span>{label}{count === undefined ? null : <span className={tone === 'caution' ? 'nav-count nav-count-caution' : 'nav-count'}>{count}</span>}</span>
+      {link
+        ? <Link to={link.to} onClick={link.onClick} aria-current={link.current ? 'page' : undefined} className="nav-heading-link">{content}</Link>
+        : <span>{content}</span>}
       {children}
     </div>
   )

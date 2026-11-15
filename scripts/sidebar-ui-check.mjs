@@ -208,15 +208,16 @@ try {
   assert.equal(await page.locator('[data-sidebar-restore]').count(), 0)
   await entry(`project:${project.id}`).click()
   await column.waitFor()
-  // Activity lists across projects and stays selected while a session it opens changes the page.
+  // Activity lists across projects beside its wall; a row brings its tile forward without leaving.
   await entry('activity').click()
   await column.locator('[data-nav-activity]').waitFor()
-  assert.equal(page.url(), `${base}/p/${project.id}/c/${hero.id}`)
+  await page.waitForURL('**/wall')
   await page.screenshot({ path: join(shots, 'activity.png') })
   const waiting = column.locator('[data-nav-activity] [data-sidebar-session]').first()
   const waitingId = await waiting.getAttribute('data-sidebar-session')
   await waiting.locator('.sidebar-session-link').click()
-  await page.waitForURL(`**/c/${waitingId}`)
+  await page.waitForURL(`**/wall?*tile=${waitingId}`)
+  await page.locator(`article.wall-tile-focused[data-conversation-id="${waitingId}"]`).waitFor()
   await current('activity')
   await listed('activity')
   // Tool pages carry their own navigation and take the column's place.
@@ -224,9 +225,9 @@ try {
   await page.waitForURL('**/settings/**')
   await column.waitFor({ state: 'detached' })
   await current('settings')
+  // The project comes back where it was left: the wall did not change its last session.
   await entry(`project:${project.id}`).click()
-  await page.waitForURL(`**/c/${waitingId}`)
-  await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
+  await page.waitForURL(`**/c/${hero.id}`)
   await row(hero.id).waitFor()
   await row(hero.id).hover()
   await row(hero.id).locator('.sidebar-session-menu').click()
@@ -251,6 +252,8 @@ try {
   // A row outside its project names it.
   await sidebar.locator('#sidebar-favorites .sidebar-session-project').filter({ hasText: 'Nimbus' }).waitFor()
   await entry(`project:${project.id}`).click()
+  // Leaving the wall is a navigation: the project's list replaces Activity's once it renders.
+  await listed(`project:${project.id}`)
   await row(hero.id).locator('.sidebar-session-menu').click()
   await page.getByRole('menuitem', { name: 'Retirer des favoris', exact: true }).click()
   await row(hero.id).locator('.sidebar-session-menu').click()

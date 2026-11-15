@@ -28,7 +28,7 @@ import { setPanelOpen, setPanelTab, setPanelTree, showTerminal } from '../lib/pa
 import { projectViewOf, projectViewPath } from '../lib/project-view'
 import { useProjects } from '../lib/projects'
 import { useSchedules } from '../lib/schedules'
-import { useSessionViews, viewName } from '../lib/session-views'
+import { shadowedBySection, useSessionViews, viewName } from '../lib/session-views'
 import { splitExcerpt, useMessageSearch } from '../lib/search'
 import { useInstance } from '../lib/instance'
 import { useCurrentUser } from '../lib/session'
@@ -172,7 +172,7 @@ export function CommandPalette({
   // Build only when opened: conversation lists change on every live event and closed palettes have
   // no use for updates.
   const { views: savedViews } = useSessionViews()
-  const wallViews = useMemo(() => savedViews.map((view) => ({ id: view.id, name: viewName(view, t) })), [savedViews, t])
+  const wallViews = useMemo(() => savedViews.filter((view) => !shadowedBySection(view)).map((view) => ({ id: view.id, name: viewName(view, t) })), [savedViews, t])
   const items = useMemo(
     () =>
       !open ? [] : [...(canConcentrate ? [{

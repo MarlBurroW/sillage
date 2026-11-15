@@ -107,10 +107,10 @@ try {
 
   // Rail entries are icons: the tooltip names them and says what they lead to.
   await page.mouse.move(700, 450)
-  await page.locator('[data-nav-rail] [data-nav-space="wall"]').hover()
+  await page.locator('[data-nav-rail] [data-nav-space="discussions"]').hover()
   // The menu button keeps focus and its own tooltip until this one replaces it.
-  await tooltip.filter({ hasText: 'Mur' }).waitFor()
-  assert.equal(await tooltip.textContent(), 'MurPlusieurs sessions côte à côte')
+  await tooltip.filter({ hasText: 'Discussions' }).waitFor()
+  assert.equal(await tooltip.textContent(), 'DiscussionsHors projet')
   const box = await tooltip.boundingBox()
   assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440)
   await page.screenshot({ path: '/tmp/sillage-tooltips-desktop.png' })

@@ -1,6 +1,8 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import type { ConversationDto, ConversationStatus } from '@sillage/protocol'
+import type { ConversationDto, ConversationStatus, DecisionDto } from '@sillage/protocol'
+import { useAllConversations } from './conversations'
 import { liveBackground, liveSeq, liveStatus, subscribeStatus } from './conversation-status'
+import { useDecisions } from './decisions'
 import { isUnread } from './reads'
 
 export type ActivityEntry = {
@@ -67,4 +69,56 @@ export function useActivity(conversations: ConversationDto[], openId: string | u
 /** The one mark a project or a group shows: waiting outranks working, which outranks unread. */
 export function activityTone(counts: ActivityCounts): 'awaiting' | 'running' | 'unread' | null {
   return counts.awaiting > 0 ? 'awaiting' : counts.running > 0 ? 'running' : counts.unread > 0 ? 'unread' : null
+}
+
+/** The lists Activity shows, in order. Each one is also a way to fill the wall beside it. */
+export const ACTIVITY_SECTIONS = ['awaiting', 'running', 'unread', 'favorites'] as const
+export type ActivitySection = (typeof ACTIVITY_SECTIONS)[number]
+
+const NO_DECISIONS: DecisionDto[] = []
+
+/**
+ * What the Activity space follows, for its list and for the wall beside it: both read this hook so
+ * a tile never disagrees with the row that stands for it.
+ */
+export function useFollowedActivity(openId: string | undefined) {
+  const { data: conversations } = useAllConversations()
+  const { data: decisions } = useDecisions('pending')
+  // Scheduled and benchmark runs are not followed sessions: their own pages report state.
+  const attended = useMemo(() => (conversations ?? []).filter((entry) => !entry.scheduleId && !entry.benchmarkId), [conversations])
+  const activity = useActivity(attended, openId)
+  /** Account bookmarks across projects, archived threads included: archiving must not hide them. */
+  const favorites = useMemo(() => (conversations ?? []).filter((entry) => entry.favorite), [conversations])
+  return useMemo(() => ({ ...activity, favorites, decisions: decisions ?? NO_DECISIONS }), [activity, favorites, decisions])
+}
+
+export type FollowedActivity = ReturnType<typeof useFollowedActivity>
+
+/** Sessions of one section in list order; without a section, what is live: waiting, then working. */
+export function activitySectionIds(followed: FollowedActivity, section: ActivitySection | null): string[] {
+  // A pending decision waits on the user like a permission does.
+  const awaiting = [...followed.decisions.map((decision) => decision.conversationId), ...followed.awaiting.map((entry) => entry.conversation.id)]
+  const running = followed.running.map((entry) => entry.conversation.id)
+  const ids = section === 'awaiting' ? awaiting
+    : section === 'running' ? running
+    : section === 'unread' ? followed.unread.map((entry) => entry.conversation.id)
+    : section === 'favorites' ? followed.favorites.map((entry) => entry.id)
+    : [...awaiting, ...running]
+  return [...new Set(ids)]
+}
+
+/** The section a wall address asks for, or null for the live one. */
+export function activitySectionOf(params: URLSearchParams): ActivitySection | null {
+  const value = params.get('show')
+  return ACTIVITY_SECTIONS.find((section) => section === value) ?? null
+}
+
+/** Address of the wall showing a section or a saved view, optionally with one tile brought forward. */
+export function activityWallPath({ section, view, tile }: { section?: ActivitySection | null; view?: string; tile?: string }): string {
+  const params = new URLSearchParams()
+  if (view) params.set('view', view)
+  else if (section) params.set('show', section)
+  if (tile) params.set('tile', tile)
+  const query = params.toString()
+  return query ? `/wall?${query}` : '/wall'
 }

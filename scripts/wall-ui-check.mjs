@@ -78,8 +78,12 @@ try {
   assert.ok(login.ok())
 
   // Real seeded conversations, so tiles load real threads; only their state is scripted.
-  const seeded = await (await context.request.get(`${base}/api/conversations`)).json()
-  assert.ok(seeded.length >= 4, 'the demo seeds enough conversations')
+  // Scheduled runs are not followed sessions: Activity leaves them out, so the scripted states go
+  // to the others first.
+  const followed = (entry) => !entry.scheduleId && !entry.benchmarkId
+  const listed = await (await context.request.get(`${base}/api/conversations`)).json()
+  const seeded = [...listed.filter(followed), ...listed.filter((entry) => !followed(entry))]
+  assert.ok(listed.filter(followed).length >= 7, 'the demo seeds enough followed conversations')
   const now = Date.now()
   const states = [
     { status: 'running', unread: true, ago: 0 },
@@ -117,32 +121,73 @@ try {
     t: 'status', conversationId: conversation.id, status, background: 0, warm: true, loops: 0,
     lastNotableSeq: conversation.lastNotableSeq, metrics: conversation.metrics,
   }))
-  // The query lives in the URL, updated after the click: wait for it rather than read at once.
+  // The selection lives in the URL, updated after the click: wait for it rather than read at once.
   const expectTiles = (count) => page.waitForFunction((expected) => document.querySelectorAll('article.wall-tile').length === expected, count)
   const expectQuery = (value) => page.waitForFunction((expected) => document.querySelector('.wall-query-input')?.value === expected, value)
+  const expectSearch = (search) => page.waitForFunction((expected) => location.pathname === '/wall' && location.search === expected, search)
   const queryField = page.getByRole('combobox', { name: 'Requête de sessions' }).or(page.getByLabel('Requête de sessions'))
+  const column = page.locator('[data-nav-column="activity"]')
+  const heading = (section) => column.locator(`[data-activity-section="${section}"] .nav-heading-link`)
+  const row = (section, id) => column.locator(`[data-activity-section="${section}"] [data-sidebar-session="${id}"]`)
+  const awaiting = byStatus('awaiting_input')
+  const running = byStatus('running')
+  const unread = fixtures.filter((entry) => entry.lastReadSeq === 0)
 
-  // Default view: sessions that need the user, waiting or failed.
+  // The wall is Activity's page: its rail entry is current, its list stands beside the tiles, and
+  // the live wall shows what waits and what works without any query.
   await page.goto(`${base}/wall`)
+  await page.locator('[data-nav-space="activity"][aria-current="page"]').waitFor()
+  assert.equal(await page.locator('[data-nav-space="wall"]').count(), 0, 'the wall is no longer a rail entry of its own')
+  await column.waitFor()
   const tabs = page.getByRole('tablist', { name: 'Vues enregistrées' })
-  await tabs.getByRole('tab', { name: /À débloquer/ }).waitFor()
-  for (const name of ['À débloquer', 'En cours', 'Non lues', 'Récentes']) await tabs.getByRole('tab', { name: new RegExp(name) }).waitFor()
-  await page.waitForFunction((count) => document.querySelectorAll('article.wall-tile').length === count, byStatus('awaiting_input').length + byStatus('error').length)
-  assert.equal(await queryField.inputValue(), 'is:attention')
+  await tabs.getByRole('tab', { name: /En direct/, selected: true }).waitFor()
+  for (const name of ['À débloquer', 'En cours', 'Non lues', 'Favoris', 'Récentes']) await tabs.getByRole('tab', { name: new RegExp(name) }).waitFor()
+  assert.equal(await tabs.getByRole('tab', { name: /À débloquer/ }).count(), 1, 'the built-in view a section answers is not offered twice')
+  await expectTiles(awaiting.length + running.length)
+  assert.equal(await page.locator('.wall-query-input').count(), 0, 'a section needs no query')
+  // Tiles come in the list's order: what waits first.
+  assert.equal(await page.locator('article.wall-tile').first().getAttribute('data-conversation-id'), awaiting[0].id)
   await page.locator('.wall-tile .wall-tile-thread').first().locator('[data-seq], .sg-tool').first().waitFor({ timeout: 15_000 })
-  await page.screenshot({ path: join(shots, 'wall-attention.png') })
+  await page.screenshot({ path: join(shots, 'wall-live.png') })
 
-  // Buttons only rewrite the text: running joins the state token, unread adds its own.
+  // A heading of the list fills the wall with its section; pressing it again returns to the live wall.
+  await heading('unread').click()
+  await expectSearch('?show=unread')
+  await expectTiles(unread.length)
+  assert.equal(await heading('unread').getAttribute('aria-current'), 'page')
+  await tabs.getByRole('tab', { name: /Non lues/, selected: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'wall-section.png') })
+  await heading('unread').click()
+  await expectSearch('')
+  await expectTiles(awaiting.length + running.length)
+
+  // A row brings its tile forward instead of leaving the space; the wall keeps what it shows when
+  // the session is already part of it.
+  await row('awaiting', awaiting[0].id).locator('a.sidebar-session-link').click()
+  await expectSearch(`?tile=${awaiting[0].id}`)
+  await page.locator(`article.wall-tile-focused[data-conversation-id="${awaiting[0].id}"] .wall-tile-composer input`).waitFor()
+  await page.waitForFunction((id) => document.querySelector(`[data-activity-section="awaiting"] [data-sidebar-session="${id}"]`)?.classList.contains('sidebar-current'), awaiting[0].id)
+  await expectTiles(awaiting.length + running.length)
+  await page.screenshot({ path: join(shots, 'wall-row-focus.png') })
+  // A session outside the wall's selection switches it to the row's own section.
+  const quietUnread = unread.find((entry) => entry.status === 'idle')
+  await row('unread', quietUnread.id).locator('a.sidebar-session-link').click()
+  await expectSearch(`?show=unread&tile=${quietUnread.id}`)
+  await page.locator(`article.wall-tile-focused[data-conversation-id="${quietUnread.id}"]`).waitFor()
+  await page.keyboard.press('Escape')
+  await page.locator('.wall-tile-focused').waitFor({ state: 'detached' })
+
+  // Queries are the advanced way in: a saved view shows its own, and buttons only rewrite the text.
+  await column.locator('[data-activity-views]').getByRole('link', { name: 'Récentes' }).click()
+  await expectSearch('?view=preset-recent')
+  await tabs.getByRole('tab', { name: /Récentes/, selected: true }).waitFor()
+  await expectQuery('active:30m limit:6')
+  await queryField.fill('is:attention')
+  // Suggestions cover the filters while the field holds focus.
+  await queryField.press('Escape')
   await page.getByRole('toolbar', { name: 'Filtres' }).getByRole('button', { name: 'En cours', exact: true }).click()
   await expectQuery('is:attention,running')
-  await page.getByRole('toolbar', { name: 'Filtres' }).getByRole('button', { name: 'Non lues', exact: true }).click()
-  await expectQuery('is:attention,running is:unread')
-  await expectTiles(fixtures.filter((entry) => ['running', 'awaiting_input', 'error'].includes(entry.status) && entry.lastReadSeq === 0).length)
   await page.getByRole('button', { name: 'Rétablir' }).waitFor()
-
-  // Typed query with a project menu, then an invalid token that is underlined and ignored.
-  await queryField.fill('limit:2')
-  await page.waitForFunction(() => document.querySelectorAll('article.wall-tile').length === 2)
   await queryField.fill('is:bogus limit:2')
   await page.locator('.wall-query-invalid').waitFor()
   await page.getByText('Ignoré, valeur invalide : is:bogus').waitFor()
@@ -155,7 +200,7 @@ try {
   await expectQuery('worktree:')
   await queryField.press('Escape')
 
-  // A view saved from the query comes back from the account settings.
+  // A view saved from the query comes back from the account settings, and joins the list's views.
   await queryField.fill('active:30m sort:activity')
   await page.getByRole('button', { name: 'Nouvelle vue depuis cette requête' }).click()
   const dialog = page.getByRole('dialog', { name: 'Nouvelle vue' })
@@ -167,28 +212,63 @@ try {
   assert.ok((await stored).ok())
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.ok(settings.sessionViews.some((view) => view.name === 'Revue du matin' && view.query === 'active:30m sort:activity'))
+  await column.locator('[data-activity-views]').getByRole('link', { name: 'Revue du matin' }).waitFor()
   await page.screenshot({ path: join(shots, 'wall-saved-view.png') })
+
+  // A view started from a section begins with the query the section stands for.
+  await tabs.getByRole('tab', { name: /En direct/ }).click()
+  await expectSearch('')
+  await page.getByRole('button', { name: 'Nouvelle vue', exact: true }).click()
+  const newView = page.getByRole('dialog', { name: 'Nouvelle vue' })
+  await newView.getByText('is:attention,running').waitFor()
+  // Nothing has to be typed: the filters write the query, and the dialog reads back what it shows.
+  const filters = newView.getByRole('toolbar', { name: 'Filtres' })
+  assert.equal(await filters.getByRole('button', { name: 'En cours', exact: true }).getAttribute('aria-pressed'), 'true')
+  const preview = newView.locator('[data-wall-compose-preview]')
+  // The query's « attention » also covers sessions stopped on an error, which Activity lists as unread.
+  await preview.getByText(`${awaiting.length + byStatus('error').length + running.length} sessions`).waitFor()
+  await filters.getByRole('button', { name: 'À débloquer', exact: true }).click()
+  await newView.getByText('is:running', { exact: true }).waitFor()
+  await preview.getByText(`${running.length} sessions`).waitFor()
+  await preview.getByText(running[0].title, { exact: true }).waitFor()
+  await filters.getByRole('button', { name: /^Projet/ }).click()
+  const projectName = (await (await context.request.get(`${base}/api/projects`)).json()).find((entry) => entry.id === running[0].projectId).name
+  await page.getByRole('menuitemcheckbox', { name: projectName, exact: true }).click()
+  await page.keyboard.press('Escape')
+  await preview.getByText(new RegExp(`projet ${projectName}`, 'i')).waitFor()
+  await page.screenshot({ path: join(shots, 'wall-new-view.png') })
+  await newView.getByLabel('Nom').fill('En cours ici')
+  await newView.getByRole('button', { name: 'Créer la vue' }).click()
+  await tabs.getByRole('tab', { name: /En cours ici/, selected: true }).waitFor()
+  await page.waitForFunction(() => /^is:running project:\S+$/.test(document.querySelector('.wall-query-input')?.value ?? ''))
+  await tabs.getByRole('tab', { name: /En direct/ }).click()
+  await expectSearch('')
 
   // Saved views are reachable from the command palette and open their own tab.
   await page.keyboard.press('Control+k')
   const palette = page.getByRole('dialog', { name: 'Rechercher', exact: true })
-  await palette.getByRole('combobox').fill('mur non lues')
-  await palette.getByRole('option', { name: /Mur : Non lues/ }).first().click()
-  await tabs.getByRole('tab', { name: /Non lues/, selected: true }).waitFor()
+  await palette.getByRole('combobox').fill('mur récentes')
+  await palette.getByRole('option', { name: /Mur : Récentes/ }).first().click()
+  await tabs.getByRole('tab', { name: /Récentes/, selected: true }).waitFor()
 
-  // A running session that finishes while unread keeps its slot, marked out of view.
-  await tabs.getByRole('tab', { name: /En cours/ }).click()
-  const finishing = byStatus('running').find((entry) => entry.lastReadSeq === 0)
-  // The new view replaces the previous one's tiles before anything else happens.
-  await page.waitForFunction((count) => document.querySelectorAll('article.wall-tile').length === count, byStatus('running').length)
+  // A running session that finishes while unread keeps its slot, marked out of view, while its row
+  // moves to the unread list.
+  // By its section: the view created above is also named « En cours … ».
+  await tabs.locator('[data-wall-section="running"]').click()
+  await expectSearch('?show=running')
+  const finishing = running.find((entry) => entry.lastReadSeq === 0)
+  // The new section replaces the previous tiles before anything else happens.
+  await expectTiles(running.length)
   pushStatus(finishing, 'idle')
   const awayTile = page.locator(`article[data-conversation-id="${finishing.id}"]`)
   await awayTile.locator('.wall-tile-away-tag').waitFor()
   await page.getByText(/1 hors vue/).waitFor()
+  await row('unread', finishing.id).waitFor()
+  assert.equal(await row('running', finishing.id).count(), 0)
   await page.screenshot({ path: join(shots, 'wall-away.png') })
 
   // Keyboard: 1 focuses the first tile and opens its composer; Escape leaves it.
-  await page.locator('body').click({ position: { x: 5, y: 5 } })
+  await page.locator('.wall-bar').click({ position: { x: 5, y: 5 } })
   await page.keyboard.press('1')
   const composer = page.locator('.wall-tile-focused .wall-tile-composer input')
   await composer.waitFor()
@@ -199,12 +279,29 @@ try {
   await page.locator('.wall-tile-focused').waitFor({ state: 'detached' })
   await page.waitForFunction((id) => !document.querySelector(`article[data-conversation-id="${id}"]`), finishing.id, { timeout: 10_000 })
 
+  // The tile's title opens the session where it lives: the rail follows to its project.
+  const opened = running.find((entry) => entry.id !== finishing.id)
+  await page.locator(`article[data-conversation-id="${opened.id}"] a.wall-tile-title`).click()
+  await page.waitForFunction((id) => location.pathname.endsWith(`/c/${id}`) || location.pathname.endsWith(`/discussions/${id}`), opened.id)
+  await page.locator(opened.projectId ? `[data-nav-space="project:${opened.projectId}"][aria-current="page"]` : '[data-nav-space="discussions"][aria-current="page"]').waitFor()
+  // Back through the rail: Activity opens its wall again.
+  await page.locator('[data-nav-space="activity"]').click()
+  await expectSearch('')
+  await column.waitFor()
+  // Pressing it again folds the list and leaves the wall its full width.
+  await page.locator('[data-nav-space="activity"]').click()
+  await column.waitFor({ state: 'detached' })
+  await page.locator('article.wall-tile').first().waitFor()
+  await page.screenshot({ path: join(shots, 'wall-folded.png') })
+  await page.locator('[data-nav-space="activity"]').click()
+  await column.waitFor()
+
   // Light theme and phone width.
   // The account's appearance wins over the browser copy.
   const light = await context.request.patch(`${base}/api/me/settings`, { data: { appearance: { theme: 'light', syntax: null, values: {} } } })
   assert.ok(light.ok())
   await page.evaluate(() => localStorage.setItem('sillage.theme', 'light'))
-  await page.goto(`${base}/wall?view=preset-unread`)
+  await page.goto(`${base}/wall?show=unread`)
   await page.locator('article.wall-tile').first().waitFor()
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light' || document.documentElement.classList.contains('light') || getComputedStyle(document.documentElement).colorScheme.includes('light'), null, { timeout: 5000 }).catch(() => {})
   await page.screenshot({ path: join(shots, 'wall-light.png') })
@@ -221,6 +318,18 @@ try {
   assert.equal(columns, 1)
   assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no sideways scrolling on phones')
   await mobile.screenshot({ path: join(shots, 'wall-phone.png') })
+  // A drawer covers the wall: rows open their conversation, headings lead to the wall.
+  await mobile.locator('[data-navigation-trigger]').first().click()
+  const drawer = mobile.locator('[data-nav-column="activity"]')
+  await drawer.waitFor()
+  const phoneRow = drawer.locator(`[data-activity-section="awaiting"] [data-sidebar-session="${awaiting[0].id}"] a.sidebar-session-link`)
+  assert.match(await phoneRow.getAttribute('href'), /\/c\/|\/discussions\//)
+  await drawer.getByRole('link', { name: 'Voir les sessions côte à côte' }).waitFor()
+  await mobile.screenshot({ path: join(shots, 'wall-phone-drawer.png') })
+  await drawer.locator('[data-activity-section="running"] .nav-heading-link').click()
+  await mobile.waitForFunction(() => location.pathname === '/wall' && location.search === '?show=running')
+  await mobile.locator('article.wall-tile').first().waitFor()
+  await mobile.waitForFunction(() => document.querySelector('aside')?.inert === true)
 
   assert.deepEqual(errors, [])
   console.log(`Wall check passed. Screenshots in ${shots}`)

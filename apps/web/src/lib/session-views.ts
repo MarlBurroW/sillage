@@ -17,6 +17,15 @@ export function viewName(view: SessionView, t: (key: MessageKey) => string = tra
   return view.name ?? (view.preset ? t(PRESET_NAMES[view.preset]) : view.query)
 }
 
+/**
+ * Built-in views that ask what an Activity section already answers. They stay stored, untouched,
+ * but are not offered a second time beside the sections.
+ */
+export function shadowedBySection(view: SessionView): boolean {
+  if (view.name !== null || view.preset === null || view.preset === 'recent' || view.pinned.length > 0) return false
+  return DEFAULT_SESSION_VIEWS.some((entry) => entry.preset === view.preset && entry.query === view.query)
+}
+
 /** Saved wall views, or the built-in ones until the account changes any. */
 export function useSessionViews(): { views: SessionView[]; loading: boolean } {
   const { data, isLoading } = useUserSettings()
