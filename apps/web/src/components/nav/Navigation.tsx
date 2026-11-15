@@ -1,17 +1,16 @@
 import { claudeLoginExpiry, conversationPath } from '@sillage/protocol'
 import type { ProjectDto } from '@sillage/protocol'
 import { X } from 'lucide-react'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useLocation, useMatch, useNavigate } from 'react-router-dom'
-import { activityTone, useActivity, type ActivityCounts } from '../../lib/activity'
+import { activityTone, useFollowedActivity, type ActivityCounts } from '../../lib/activity'
 import { useCliUpdateNotice } from '../../lib/agents'
 import { useClaudeHostLogin } from '../../lib/claude-accounts'
 import { useAllConversations, useToggleFavorite } from '../../lib/conversations'
 import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
-import { useDecisions } from '../../lib/decisions'
 import { useTranslate } from '../../lib/i18n'
 import { useCapability } from '../../lib/instance'
-import { hasColumn, projectOfSpace, useNavSpace, type NavSpace } from '../../lib/nav-space'
+import { hasColumn, projectOfSpace, routeSpace, useNavSpace, type NavSpace } from '../../lib/nav-space'
 import { projectViewOf, projectViewPath } from '../../lib/project-view'
 import { useProjectVisits } from '../../lib/project-visits'
 import { useProjects, useReorderProjects } from '../../lib/projects'
@@ -55,7 +54,6 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
-  const { data: decisions } = useDecisions('pending')
   const { data: hostLogin } = useClaudeHostLogin()
   const hostExpiry = hostLogin && claudeLoginExpiry(hostLogin.loginExpiresAt) ? hostLogin : null
   const toggleFavorite = useToggleFavorite()
@@ -73,15 +71,14 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
 
   const openProjectThread = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
   const openDiscussion = useMatch('/discussions/:conversationId')?.params.conversationId
-  // Scheduled and benchmark runs are not followed sessions: their own pages report state.
-  const attended = useMemo(() => (conversations ?? []).filter((entry) => !entry.scheduleId && !entry.benchmarkId), [conversations])
-  const activity = useActivity(attended, openProjectThread ?? openDiscussion)
-  const favorites = useMemo(() => (conversations ?? []).filter((entry) => entry.favorite), [conversations])
+  const activity = useFollowedActivity(openProjectThread ?? openDiscussion)
 
   const fallback: NavSpace | null = projects?.length
     ? `project:${(projects.find((project) => project.id === visits[0]?.projectId) ?? projects[0]!).id}`
     : null
   const { space, columnSpace, setActivity } = useNavSpace(fallback)
+  // Beside the page Activity is where its wall is; the drawer's sticky choice does not carry over.
+  useEffect(() => { if (wide) setActivity(false) }, [wide, setActivity])
   // A phone drawer covers the page: its rail marks the list it shows, even over a tool page.
   const marked = wide ? space : columnSpace ?? 'discussions'
   const listed = wide ? (space && hasColumn(space) && !folded ? space : null) : marked
@@ -100,7 +97,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
     return all.filter((project) => chosen.has(project.id))
   }, [projects, visits, currentProject])
 
-  const pending = decisions ?? []
+  const pending = activity.decisions
   const countsOf = (projectId: string): ActivityCounts => {
     const counts = activity.ofProject(projectId)
     const waiting = pending.filter((decision) => decision.projectId === projectId).length
@@ -124,19 +121,22 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
       const recent = conversations?.find((entry) => entry.projectId === null && !entry.benchmarkId && entry.archivedAt === null)
       return recent ? conversationPath(recent) : '/discussions/new'
     }
-    // Activity is a list to pick from: the page keeps what was open.
-    return target === 'activity' ? null : `/${target}`
+    // Beside the page, Activity opens its wall. A drawer covers the page: it keeps what was open.
+    if (target === 'activity') return wide ? '/wall' : null
+    return `/${target}`
   }
 
   const select = (target: NavSpace) => {
     const projectId = projectOfSpace(target)
     const root = projectId ? `/p/${projectId}` : `/${target}`
     // Already inside: keep the place (a settings section, a wall view) rather than reset it.
-    const inside = target === 'activity' ? space === 'activity' : pathname === root || pathname.startsWith(`${root}/`)
+    const inside = target === 'activity'
+      ? (wide ? routeSpace(pathname) === 'activity' : space === 'activity')
+      : pathname === root || pathname.startsWith(`${root}/`)
     // Pressing the current space again puts its column away, like an editor's activity bar.
     if (wide && inside && target === space && hasColumn(target)) { setNavColumnFolded(!folded); return }
     if (hasColumn(target)) setNavColumnFolded(false)
-    setActivity(target === 'activity')
+    setActivity(target === 'activity' && !wide)
     const path = inside ? null : pathOf(target)
     if (path) navigate(path)
     // Nothing to list: on a phone the drawer has no reason to stay over the page.
@@ -192,7 +192,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
               <span className="mt-1 flex items-center gap-1"><Button variant="ghost" size="sm" onClick={() => { if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables) }}>{t('editor.retry')}</Button><IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton></span>
             </Banner></div>}
             {listed === 'activity' ? (
-              <ActivityColumn awaiting={activity.awaiting} running={activity.running} unread={activity.unread} decisions={pending} hostExpiry={hostExpiry} favorites={favorites} projects={projects ?? []} toggleFavorite={toggleFavorite} />
+              <ActivityColumn awaiting={activity.awaiting} running={activity.running} unread={activity.unread} decisions={pending} hostExpiry={hostExpiry} favorites={activity.favorites} projects={projects ?? []} toggleFavorite={toggleFavorite} />
             ) : listed === 'discussions' ? (
               <DiscussionsColumn conversations={conversations ?? []} toggleFavorite={toggleFavorite} />
             ) : listed === 'benchmarks' ? (

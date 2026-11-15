@@ -123,8 +123,8 @@ try {
   // Waiting comes before running, and every row names its project.
   assert.match(await column.locator('[data-sidebar-session]').first().innerText(), /Valider les migrations|Attendre le choix utilisateur/)
   await section('En cours').locator('.sidebar-session-project').filter({ hasText: 'Autre projet' }).waitFor()
-  // Activity is a list to pick from: the page stays where it was.
-  assert.equal(new URL(page.url()).pathname, `/p/${project.id}/board`)
+  // Beside the page, Activity brings its wall: the list picks what the wall shows.
+  await page.waitForURL('**/wall')
   await page.screenshot({ path: join(shots, 'activity-column.png') })
   await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
   await page.screenshot({ path: join(shots, 'activity-column-light.png') })

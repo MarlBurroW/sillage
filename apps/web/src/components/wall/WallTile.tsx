@@ -35,7 +35,8 @@ export interface WallTileProps {
   onFocus: (id: string) => void
   /** Leave the tile, from Escape in its composer. */
   onLeave: () => void
-  onPin: (id: string) => void
+  /** Absent where there is no saved view to pin to. */
+  onPin?: (id: string) => void
   onDismiss: (id: string) => void
 }
 
@@ -89,9 +90,9 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
         {facts.unread ? <span className="wall-tile-unread-dot" role="img" aria-label={t('wall.tile.unread')} /> : null}
         {pinned ? <Tooltip label={t('wall.tile.pinned')}><span className="wall-tile-pinned"><Pin size={13} /></span></Tooltip> : null}
         <span className="wall-tile-actions">
-          <IconButton size="sm" label={pinned ? t('wall.tile.unpin') : t('wall.tile.pin')} aria-pressed={pinned} onClick={() => onPin(conversation.id)}>
+          {onPin ? <IconButton size="sm" label={pinned ? t('wall.tile.unpin') : t('wall.tile.pin')} aria-pressed={pinned} onClick={() => onPin(conversation.id)}>
             {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-          </IconButton>
+          </IconButton> : null}
           <Link to={conversationPath(conversation)} className="wall-tile-open" aria-label={t('wall.tile.open')} title={t('wall.tile.open')}>
             <SquareArrowOutUpRight size={14} />
           </Link>

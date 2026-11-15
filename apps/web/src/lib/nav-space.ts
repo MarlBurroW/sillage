@@ -7,7 +7,6 @@ import { useLocation } from 'react-router-dom'
  */
 export type NavSpace =
   | 'activity'
-  | 'wall'
   | 'discussions'
   | 'benchmarks'
   | 'services'
@@ -15,8 +14,8 @@ export type NavSpace =
   | `project:${string}`
 
 /**
- * Spaces that own a list get the column. Tool pages (wall, services, settings) keep the full
- * width: they carry their own navigation and a session list beside them would name another space.
+ * Spaces that own a list get the column. Tool pages (services, settings) keep the full width: they
+ * carry their own navigation and a session list beside them would name another space.
  */
 export function hasColumn(space: NavSpace): boolean {
   return space === 'activity' || space === 'discussions' || space === 'benchmarks' || space.startsWith('project:')
@@ -31,17 +30,18 @@ export function routeSpace(pathname: string): NavSpace | null {
   const project = /^\/p\/([\w-]+)/.exec(pathname)?.[1]
   if (project) return `project:${project}`
   const head = pathname.split('/')[1]
-  if (head === 'discussions' || head === 'benchmarks' || head === 'wall' || head === 'services') return head
+  if (head === 'discussions' || head === 'benchmarks' || head === 'services') return head
   // The skill editor is opened from the settings library and returns to it.
   if (head === 'settings' || head === 'skills') return 'settings'
-  if (head === 'decisions') return 'activity'
+  // Activity's own pages: the wall its list fills, and the decision history.
+  if (head === 'wall' || head === 'decisions') return 'activity'
   return null
 }
 
 /**
- * Current space and the column to show. Activity has no page of its own: it is a list to pick
- * from, so it stays selected while the sessions it opens change the route, until another rail
- * entry is chosen.
+ * Current space and the column to show. Beside the page, Activity is routed like any space: its
+ * list fills the wall. In a phone drawer it is only a list to pick from, so `activity` keeps it
+ * selected while the sessions it opens change the route, until another rail entry is chosen.
  */
 export function useNavSpace(fallback: NavSpace | null): {
   space: NavSpace | null
