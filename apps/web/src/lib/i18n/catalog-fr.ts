@@ -121,7 +121,7 @@ export const fr: Catalog = {
   'wall.help.title': 'Syntaxe des requêtes',
   'wall.help.intro': 'Les jetons s’additionnent. Une virgule veut dire « ou », un tiret devant exclut, un mot seul cherche dans les titres. Un jeton invalide est souligné et ignoré.',
   'wall.help.running': 'Sessions qui travaillent',
-  'wall.help.attention': 'T’attendent (permission, question, plan, décision) ou sont arrêtées sur une erreur',
+  'wall.help.attention': 'T’attendent (permission, question, plan, décision)',
   'wall.help.unread': 'Sessions non lues',
   'wall.help.project': 'Projet Sillage ou bardak, par leur nom sans accents ni espaces',
   'wall.help.cli': 'Un ou plusieurs CLI : claude, codex, opencode, grok, antigravity',

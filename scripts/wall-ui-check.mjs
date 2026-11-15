@@ -225,8 +225,9 @@ try {
   const filters = newView.getByRole('toolbar', { name: 'Filtres' })
   assert.equal(await filters.getByRole('button', { name: 'En cours', exact: true }).getAttribute('aria-pressed'), 'true')
   const preview = newView.locator('[data-wall-compose-preview]')
-  // The query's « attention » also covers sessions stopped on an error, which Activity lists as unread.
-  await preview.getByText(`${awaiting.length + byStatus('error').length + running.length} sessions`).waitFor()
+  // Same split as the Activity list: a session stopped on an error is not one that waits.
+  assert.ok(byStatus('error').length > 0)
+  await preview.getByText(`${awaiting.length + running.length} sessions`).waitFor()
   await filters.getByRole('button', { name: 'À débloquer', exact: true }).click()
   await newView.getByText('is:running', { exact: true }).waitFor()
   await preview.getByText(`${running.length} sessions`).waitFor()
@@ -250,6 +251,8 @@ try {
   await palette.getByRole('combobox').fill('mur récentes')
   await palette.getByRole('option', { name: /Mur : Récentes/ }).first().click()
   await tabs.getByRole('tab', { name: /Récentes/, selected: true }).waitFor()
+  // Outside « needs input », an errored session still says what happened to it.
+  await page.locator(`article.wall-tile-error[data-conversation-id="${byStatus('error')[0].id}"]`).getByText('Arrêtée sur une erreur').waitFor()
 
   // A running session that finishes while unread keeps its slot, marked out of view, while its row
   // moves to the unread list.

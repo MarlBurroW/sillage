@@ -127,7 +127,7 @@ export const en = {
   'wall.help.title': 'Query syntax',
   'wall.help.intro': 'Tokens add up. A comma means “or”, a leading dash excludes, a bare word searches titles. An invalid token is underlined and ignored.',
   'wall.help.running': 'Sessions working now',
-  'wall.help.attention': 'Waiting for you (permission, question, plan, decision) or stopped on an error',
+  'wall.help.attention': 'Waiting for you (permission, question, plan, decision)',
   'wall.help.unread': 'Unread sessions',
   'wall.help.project': 'Project Sillage or bardak, by name without accents or spaces',
   'wall.help.cli': 'One or more CLIs: claude, codex, opencode, grok, antigravity',
