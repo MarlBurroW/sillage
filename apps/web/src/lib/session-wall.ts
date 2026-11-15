@@ -13,9 +13,13 @@ import { conversationWorktree, worktreeStatusQuery } from './worktrees'
  */
 export const MAX_WALL_TILES = 16
 
-/** The three states the query knows, from the pushed status and running background work. */
+/**
+ * The three states the query knows, from the pushed status and running background work. Same split
+ * as the Activity list (`useActivity`): a session stopped on an error does not wait on the user, it
+ * is idle and shows up as unread.
+ */
 export function sessionState(status: ConversationStatus, background: boolean): SessionState {
-  if (status === 'awaiting_input' || status === 'error') return 'attention'
+  if (status === 'awaiting_input') return 'attention'
   if (status === 'running' || background) return 'running'
   return 'idle'
 }

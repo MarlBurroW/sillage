@@ -74,10 +74,12 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
 
   const state = facts.state
   const worktreeLabel = tree ? t(`worktrees.state.${tree.state}`) : null
+  // An error is not a wait: the tile says so wherever a view shows it, without joining « needs input ».
+  const failed = state === 'idle' && conversation.status === 'error'
   return (
     <article
       className={cx('wall-tile', focused && 'wall-tile-focused', away && 'wall-tile-away', facts.unread && 'wall-tile-unread',
-        state === 'attention' && (conversation.status === 'error' ? 'wall-tile-error' : 'wall-tile-attention'))}
+        state === 'attention' ? 'wall-tile-attention' : failed && 'wall-tile-error')}
       data-conversation-id={conversation.id}
       aria-label={conversation.title}
       tabIndex={0}
@@ -130,7 +132,8 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
 
       <footer className="wall-tile-foot">
         {activity ? <TurnActivity label={activity} />
-          : state === 'attention' ? <span className={conversation.status === 'error' ? 'text-critical' : 'text-caution'}>{t(conversation.status === 'error' ? 'wall.tile.error' : 'wall.tile.waiting')}</span>
+          : state === 'attention' ? <span className="text-caution">{t('wall.tile.waiting')}</span>
+          : failed ? <span className="text-critical">{t('wall.tile.error')}</span>
           : <span>{t('wall.tile.idle', { when: relativeDate(facts.activityAt) })}</span>}
         {index < 9 ? <kbd className="wall-tile-key" title={t('wall.tile.shortcut', { key: index + 1 })}>{index + 1}</kbd> : null}
       </footer>

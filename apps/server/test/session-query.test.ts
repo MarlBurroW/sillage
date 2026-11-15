@@ -51,7 +51,7 @@ test('the wall answers each question the user listed with one short query', () =
   assert.deepEqual(ids('active:30m'), ['wall', 'demo', 'latency', 'board', 'helm'])
   // Uncommitted worktree.
   assert.deepEqual(ids('worktree:dirty'), ['wall', 'latency'])
-  // Needing my attention: waiting on a decision or in error.
+  // Needing my attention: waiting on a permission, a question, a plan or a decision.
   assert.deepEqual(ids('is:attention'), ['latency', 'helm'])
   // X unread sessions.
   assert.deepEqual(ids('is:unread limit:2'), ['wall', 'latency'])
