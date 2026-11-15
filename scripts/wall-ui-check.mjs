@@ -228,6 +228,13 @@ try {
   // Same split as the Activity list: a session stopped on an error is not one that waits.
   assert.ok(byStatus('error').length > 0)
   await preview.getByText(`${awaiting.length + running.length} sessions`).waitFor()
+  // Errors have a button of their own, in the same « either » group as the other states.
+  const errored = filters.getByRole('button', { name: 'En erreur', exact: true })
+  await errored.click()
+  await newView.getByText('is:attention,running,error', { exact: true }).waitFor()
+  await preview.getByText(`${awaiting.length + running.length + byStatus('error').length} sessions`).waitFor()
+  await errored.click()
+  await newView.getByText('is:attention,running', { exact: true }).waitFor()
   await filters.getByRole('button', { name: 'À débloquer', exact: true }).click()
   await newView.getByText('is:running', { exact: true }).waitFor()
   await preview.getByText(`${running.length} sessions`).waitFor()

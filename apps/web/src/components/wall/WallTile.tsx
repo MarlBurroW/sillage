@@ -74,8 +74,7 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
 
   const state = facts.state
   const worktreeLabel = tree ? t(`worktrees.state.${tree.state}`) : null
-  // An error is not a wait: the tile says so wherever a view shows it, without joining « needs input ».
-  const failed = state === 'idle' && conversation.status === 'error'
+  const failed = state === 'error'
   return (
     <article
       className={cx('wall-tile', focused && 'wall-tile-focused', away && 'wall-tile-away', facts.unread && 'wall-tile-unread',

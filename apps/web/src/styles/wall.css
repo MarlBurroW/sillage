@@ -38,6 +38,8 @@
 .wall-query-suggestion-hint { margin-left: auto; font-size: 0.75rem; color: var(--sg-ink-faint); }
 
 .wall-filters { display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+/* A wide screen wraps the chips rather than hiding the last ones past the edge; a phone keeps one swipeable row. */
+@media (min-width: 768px) { .wall-filters { flex-wrap: wrap; overflow: visible; } }
 .wall-chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--sg-line); border-radius: 999px; font-size: 0.75rem; color: var(--sg-ink-soft); white-space: nowrap; }
 .wall-chip > svg:first-child { color: var(--sg-ink-faint); }
 .wall-chip:hover { border-color: var(--sg-line-strong); color: var(--sg-ink); }

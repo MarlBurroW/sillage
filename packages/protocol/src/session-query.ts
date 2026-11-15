@@ -15,7 +15,7 @@ import { foldForMatch } from './fuzzy.js'
  */
 
 /** Exclusive activity states: a session is in exactly one, so values combine with “or”. */
-export const SESSION_STATES = ['running', 'attention', 'idle'] as const
+export const SESSION_STATES = ['running', 'attention', 'error', 'idle'] as const
 export type SessionState = (typeof SESSION_STATES)[number]
 
 export const SESSION_QUERY_VALUES = {
@@ -196,7 +196,7 @@ function quoted(value: string): string {
 
 /**
  * The positive token a button edits for `key`. `group` narrows it when one key carries several
- * independent buttons: running and attention share a token (“or”), unread keeps its own (“and”).
+ * independent buttons: the states share a token (“or”), unread keeps its own (“and”).
  */
 function editable(tokens: QueryToken[], key: SessionQueryKey, group?: readonly string[]): QueryToken | undefined {
   return tokens.find((token) => token.key === key && !token.negated && (!group || token.values.every((value) => group.includes(value))))

@@ -14,14 +14,14 @@ import { conversationWorktree, worktreeStatusQuery } from './worktrees'
 export const MAX_WALL_TILES = 16
 
 /**
- * The three states the query knows, from the pushed status and running background work. Same split
- * as the Activity list (`useActivity`): a session stopped on an error does not wait on the user, it
- * is idle and shows up as unread.
+ * The states the query knows, from the pushed status and running background work. Same split as
+ * the Activity list (`useActivity`): a session stopped on an error does not wait on the user, so
+ * it has a state of its own instead of joining « needs input ».
  */
 export function sessionState(status: ConversationStatus, background: boolean): SessionState {
   if (status === 'awaiting_input') return 'attention'
   if (status === 'running' || background) return 'running'
-  return 'idle'
+  return status === 'error' ? 'error' : 'idle'
 }
 
 /** Current time, refreshed often enough for sliding windows such as `active:30m`. */
@@ -83,7 +83,9 @@ export function useWallSources(now: number): WallSources {
     conversations.forEach((conversation, index) => {
       const [status, background, unread, pushedAt] = (states[index] ?? '').split(':')
       const state = sessionState((status ?? conversation.status) as ConversationStatus, background === '1')
-      if (conversation.archivedAt && state === 'idle') return
+      // Stopped, cleanly or on an error: nothing is going on in it any more.
+      const stopped = state === 'idle' || state === 'error'
+      if (conversation.archivedAt && stopped) return
       const projectName = conversation.projectId ? projects.get(conversation.projectId)?.name ?? null : null
       const data = conversation.projectId ? treesByProject.get(conversation.projectId) : null
       const tree = data ? conversationWorktree(data, conversation.id) : null
@@ -98,7 +100,7 @@ export function useWallSources(now: number): WallSources {
         favorite: conversation.favorite,
         worktree: data === undefined ? undefined : tree?.state ?? null,
         // A session working right now is active now, even inside a long silent tool call.
-        activityAt: state === 'idle' ? Math.max(conversation.updatedAt, Number(pushedAt) || 0) : now,
+        activityAt: stopped ? Math.max(conversation.updatedAt, Number(pushedAt) || 0) : now,
         createdAt: conversation.createdAt,
       })
     })

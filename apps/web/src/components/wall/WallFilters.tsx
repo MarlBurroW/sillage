@@ -1,5 +1,5 @@
 import { clearQueryKey, parseSessionQuery, queryValues, SESSION_STATES, toggleQueryValue, type ProjectDto, type SessionQueryKey } from '@sillage/protocol'
-import { ArrowDownUp, Bot, ChevronDown, CircleAlert, Clock, Folder, GitBranch, Hash, Inbox, Play, X } from 'lucide-react'
+import { ArrowDownUp, Bot, ChevronDown, CircleAlert, CircleX, Clock, Folder, GitBranch, Hash, Inbox, Play, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
@@ -8,10 +8,11 @@ import { MenuHint } from '../ui/Menu'
 import { WorktreeStateIcon } from '../WorktreeTag'
 import { KEY_HELP, keyValues } from './query-vocabulary'
 
-/** Running and attention share one token (“either”); unread keeps its own (“and”). */
-const TOGGLES: { value: string; group: readonly string[]; icon: ReactNode; label: 'wall.filter.running' | 'wall.filter.attention' | 'wall.filter.unread' }[] = [
+/** The states share one token (“either”); unread keeps its own (“and”). */
+const TOGGLES: { value: string; group: readonly string[]; icon: ReactNode; label: 'wall.filter.running' | 'wall.filter.attention' | 'wall.filter.error' | 'wall.filter.unread' }[] = [
   { value: 'running', group: SESSION_STATES, icon: <Play size={13} />, label: 'wall.filter.running' },
   { value: 'attention', group: SESSION_STATES, icon: <CircleAlert size={13} />, label: 'wall.filter.attention' },
+  { value: 'error', group: SESSION_STATES, icon: <CircleX size={13} />, label: 'wall.filter.error' },
   { value: 'unread', group: ['unread'], icon: <Inbox size={13} />, label: 'wall.filter.unread' },
 ]
 
