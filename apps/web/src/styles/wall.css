@@ -63,17 +63,15 @@
 /* Tile: a narrow window on the real thread. */
 .wall-tile { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--sg-line); border-radius: 8px; background: var(--sg-surface); outline: none; transition: border-color 0.15s, opacity 0.3s; }
 .wall-tile:hover { border-color: var(--sg-line-strong); }
-.wall-tile-attention { border-color: color-mix(in oklch, var(--sg-caution) 45%, var(--sg-line)); }
-.wall-tile-error { border-color: color-mix(in oklch, var(--sg-critical) 45%, var(--sg-line)); }
 .wall-tile:focus-visible, .wall-tile-focused { border-color: var(--sg-accent); box-shadow: 0 0 0 1px var(--sg-accent); }
 .wall-tile-away { opacity: 0.6; }
 .wall-tile-away:hover, .wall-tile-away.wall-tile-focused { opacity: 1; }
 
-.wall-tile-head { display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-width: 0; padding: 8px 6px 0 12px; }
+.wall-tile-head { display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-width: 0; min-height: 38px; padding: 4px 6px 0 12px; }
 .wall-tile-agent { display: grid; flex-shrink: 0; place-items: center; width: 18px; height: 18px; color: var(--sg-ink); }
-.wall-tile-title { min-width: 0; overflow: hidden; font-size: 0.8125rem; font-weight: 500; color: var(--sg-ink-soft); text-overflow: ellipsis; white-space: nowrap; }
-.wall-tile-title:hover { color: var(--sg-ink); text-decoration: underline; }
-.wall-tile-unread .wall-tile-title { font-weight: 650; color: var(--sg-ink); }
+.wall-tile-title { min-width: 0; overflow: hidden; font-size: 0.8125rem; font-weight: 500; color: var(--sg-ink); text-overflow: ellipsis; white-space: nowrap; }
+.wall-tile-title:hover { text-decoration: underline; }
+.wall-tile-unread .wall-tile-title { font-weight: 650; }
 .wall-tile-unread-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--sg-accent); }
 .wall-tile-pinned { display: grid; flex-shrink: 0; color: var(--sg-accent); }
 .wall-tile-actions { display: flex; flex-shrink: 0; align-items: center; gap: 1px; margin-left: auto; opacity: 0; transition: opacity 0.12s; }
@@ -81,26 +79,35 @@
 .wall-tile-open { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 5px; color: var(--sg-ink-soft); }
 .wall-tile-open:hover { background: var(--sg-surface-high); color: var(--sg-ink); }
 
-.wall-tile-meta { display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-width: 0; padding: 1px 12px 8px 38px; font-size: 0.6875rem; color: var(--sg-ink-faint); white-space: nowrap; }
+.wall-tile-meta { display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-width: 0; min-height: 18px; padding: 0 12px 10px 38px; border-bottom: 1px solid var(--sg-line); font-size: 0.6875rem; color: var(--sg-ink-faint); white-space: nowrap; }
 .wall-tile-tree { display: inline-flex; flex-shrink: 1; align-items: center; gap: 4px; min-width: 0; }
 .wall-tile-tree svg { width: 12px; height: 12px; }
-.wall-tile-away-tag { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; margin-left: auto; padding: 0 6px; border: 1px dashed var(--sg-line-strong); border-radius: 4px; color: var(--sg-ink-soft); }
+.wall-tile-away-tag { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 0 6px; border: 1px dashed var(--sg-line-strong); border-radius: 4px; color: var(--sg-ink-soft); }
+/* The state closes the line: colour and a dot for the two states that call for a look, plain text at rest. */
+.wall-tile-state { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 62%; margin-left: auto; }
+.wall-tile-attention .wall-tile-state { font-weight: 600; color: var(--sg-caution); }
+.wall-tile-error .wall-tile-state { font-weight: 600; color: var(--sg-critical); }
+.wall-tile-attention .wall-tile-state::before, .wall-tile-error .wall-tile-state::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.wall-tile-state > div { min-width: 0; padding: 0; font-size: inherit; color: var(--sg-ink-soft); }
+.wall-tile-state > div > span { overflow: hidden; text-overflow: ellipsis; }
+.wall-tile-state .sg-typing-indicator { width: 16px !important; height: 16px !important; }
 
-/* The thread keeps the conversation's components at a denser reading size. Newest at the bottom,
-   older content fading out at the top. */
-.wall-tile-thread { --sg-read-size: 0.8125; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 12px 8px; border-top: 1px solid var(--sg-line); display: flex; flex-direction: column; gap: 8px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 36px); mask-image: linear-gradient(to bottom, transparent 0, #000 36px); }
-.wall-tile-thread > :first-child { margin-top: auto; }
-.wall-tile-note { margin: auto 0 0; font-size: 0.75rem; color: var(--sg-ink-faint); }
+/* The thread keeps the conversation's components at a denser reading size, and follows its end.
+   Its top fades only once it has scrolled: a short thread reads sharp from its first line, and the
+   rule under the header sits on the meta line so the fade does not take it away. */
+.wall-tile-thread { --sg-read-size: 0.8125; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; }
+.wall-tile-thread[data-scrolled] { mask-image: linear-gradient(to bottom, transparent 0, #000 20px); }
+.wall-tile-thread-body { display: flex; flex-direction: column; gap: 8px; }
+.wall-tile-note { margin: 0; font-size: 0.75rem; color: var(--sg-ink-faint); }
+/* A tile is a glance: the time of each message and its actions stay in the conversation. */
+.wall-tile-thread .sg-message-footer { display: none; }
+.wall-tile-thread .sg-user-bubble { box-shadow: none; }
 
 .wall-tile-decision { display: flex; flex-shrink: 0; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 7px 10px; border-left: 2px solid var(--sg-caution); background: color-mix(in oklch, var(--sg-caution) 9%, var(--sg-surface)); font-size: 0.75rem; color: var(--sg-ink); text-align: left; }
 .wall-tile-decision > svg { flex-shrink: 0; color: var(--sg-caution); }
 .wall-tile-decision-cta { flex-shrink: 0; margin-left: auto; font-weight: 600; color: var(--sg-caution); }
 
-.wall-tile-foot { display: flex; flex-shrink: 0; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border-top: 1px solid var(--sg-line); font-size: 0.6875rem; color: var(--sg-ink-faint); }
-.wall-tile-foot > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wall-tile-foot .sg-typing-indicator { width: 16px !important; height: 16px !important; }
-.wall-tile-key { margin-left: auto; padding: 0 5px; border: 1px solid var(--sg-line-strong); border-bottom-width: 2px; border-radius: 4px; font: 0.625rem/1rem var(--font-mono); opacity: 0; transition: opacity 0.12s; }
-.wall-tile:hover .wall-tile-key, .wall-tile-focused .wall-tile-key { opacity: 1; }
+.wall-tile-key { margin-right: 4px; padding: 0 5px; border: 1px solid var(--sg-line-strong); border-bottom-width: 2px; border-radius: 4px; font: 0.625rem/1rem var(--font-mono); color: var(--sg-ink-faint); }
 
 .wall-tile-composer { position: relative; display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 6px 6px 6px 12px; border-top: 1px solid var(--sg-line); border-radius: 0 0 7px 7px; background: var(--sg-sunken); }
 .wall-tile-composer input { flex: 1; min-width: 0; height: 30px; border: 0; background: none; font-size: 0.8125rem; color: var(--sg-ink); outline: none; }

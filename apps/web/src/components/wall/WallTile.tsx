@@ -54,11 +54,25 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
   const activity = facts.state === 'running' ? describeActivity(stream.state) ?? t('wall.tile.working') : null
 
   const scroller = useRef<HTMLDivElement>(null)
+  const body = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
+  const lastTop = useRef(0)
+  // Follow the end whenever the tile or its content changes size, not only on new rows: a block
+  // that settles late, a relaid grid or the composer opening would leave the last lines under the edge.
   useLayoutEffect(() => {
     const node = scroller.current
-    if (node && stuck.current) node.scrollTop = node.scrollHeight
-  }, [rows, activity])
+    if (!node || !body.current) return
+    const follow = () => {
+      if (!stuck.current) return
+      node.scrollTop = node.scrollHeight
+      lastTop.current = node.scrollTop
+    }
+    const observer = new ResizeObserver(follow)
+    observer.observe(node)
+    observer.observe(body.current)
+    follow()
+    return () => observer.disconnect()
+  }, [])
 
   const focus = (event: MouseEvent<HTMLElement>) => {
     // Clicks on links, buttons and fields keep their own meaning.
@@ -91,6 +105,7 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
         {facts.unread ? <span className="wall-tile-unread-dot" role="img" aria-label={t('wall.tile.unread')} /> : null}
         {pinned ? <Tooltip label={t('wall.tile.pinned')}><span className="wall-tile-pinned"><Pin size={13} /></span></Tooltip> : null}
         <span className="wall-tile-actions">
+          {index < 9 ? <kbd className="wall-tile-key" title={t('wall.tile.shortcut', { key: index + 1 })}>{index + 1}</kbd> : null}
           {onPin ? <IconButton size="sm" label={pinned ? t('wall.tile.unpin') : t('wall.tile.pin')} aria-pressed={pinned} onClick={() => onPin(conversation.id)}>
             {pinned ? <PinOff size={14} /> : <Pin size={14} />}
           </IconButton> : null}
@@ -112,15 +127,28 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
             <span className="wall-tile-away-tag"><EyeOff size={11} />{t('wall.tile.away')}</span>
           </Tooltip>
         ) : null}
+        {/* The state sits with the title, where the eye lands, not in a strip under the thread. */}
+        <span className="wall-tile-state">
+          {activity ? <TurnActivity label={activity} />
+            : <span className="truncate">{state === 'attention' ? t('wall.tile.waiting') : failed ? t('wall.tile.error') : t('wall.tile.idle', { when: relativeDate(facts.activityAt) })}</span>}
+        </span>
       </div>
 
       <div ref={scroller} className="wall-tile-thread" onScroll={(event) => {
         const node = event.currentTarget
-        stuck.current = node.scrollHeight - node.scrollTop - node.clientHeight < STICK_PX
+        // Only a move up lets go of the end. Content that grows under a tile at its end also ends
+        // up away from it, and its scroll event can arrive before the observer that catches up.
+        if (node.scrollHeight - node.scrollTop - node.clientHeight < STICK_PX) stuck.current = true
+        else if (node.scrollTop < lastTop.current) stuck.current = false
+        lastTop.current = node.scrollTop
+        // Styling only, and scrolling fires often: an attribute rather than a render.
+        node.toggleAttribute('data-scrolled', node.scrollTop > 0)
       }}>
-        {stream.loading && rows.length === 0 ? <p className="wall-tile-note">{t('wall.tile.loading')}</p> : null}
-        {stream.error ? <p className="wall-tile-note text-critical">{stream.error}</p> : null}
-        <ChatThread rows={rows} conversationId={conversation.id} canDecide={conversation.isOwner} mayCollapseTools />
+        <div ref={body} className="wall-tile-thread-body">
+          {stream.loading && rows.length === 0 ? <p className="wall-tile-note">{t('wall.tile.loading')}</p> : null}
+          {stream.error ? <p className="wall-tile-note text-critical">{stream.error}</p> : null}
+          <ChatThread rows={rows} conversationId={conversation.id} canDecide={conversation.isOwner} mayCollapseTools />
+        </div>
       </div>
 
       {decision ? (
@@ -128,14 +156,6 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
           <MessageCircleQuestion size={14} /><span className="truncate">{decision.question}</span><span className="wall-tile-decision-cta">{t('wall.tile.decide')}</span>
         </button>
       ) : null}
-
-      <footer className="wall-tile-foot">
-        {activity ? <TurnActivity label={activity} />
-          : state === 'attention' ? <span className="text-caution">{t('wall.tile.waiting')}</span>
-          : failed ? <span className="text-critical">{t('wall.tile.error')}</span>
-          : <span>{t('wall.tile.idle', { when: relativeDate(facts.activityAt) })}</span>}
-        {index < 9 ? <kbd className="wall-tile-key" title={t('wall.tile.shortcut', { key: index + 1 })}>{index + 1}</kbd> : null}
-      </footer>
 
       {focused ? <ReadTracker conversationId={conversation.id} lastSeq={Math.max(conversation.lastSeq, stream.state.lastSeq)} /> : null}
       {focused && conversation.isOwner ? <TileComposer conversationId={conversation.id} running={state === 'running'} onLeave={onLeave} /> : null}
