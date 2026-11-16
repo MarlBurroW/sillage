@@ -109,7 +109,12 @@ const metrics = (durationMs, costUsd, model) => JSON.stringify({
 async function seed(dataDir) {
   const require = createRequire(join(serverDir, 'package.json'))
   const Database = require('better-sqlite3')
-  const { deliverableKind } = await import(pathToFileURL(join(root, 'packages/protocol/dist/index.js')).href)
+  // A clean tree has no compiled protocol yet, and this script runs outside tsx.
+  const protocolDir = join(root, 'packages/protocol')
+  const compile = run([join(root, 'node_modules/typescript/bin/tsc'), '-b'], protocolDir, process.env)
+  const [compileCode] = await once(compile, 'exit')
+  assert.equal(compileCode, 0, compile.diagnostics)
+  const { deliverableKind } = await import(pathToFileURL(join(protocolDir, 'dist/index.js')).href)
   // What the runner records when a run ends: the list the outputs tab reads.
   const listed = (files) => JSON.stringify(Object.entries(files)
     .map(([path, content]) => ({ path, sizeBytes: Buffer.byteLength(content), kind: deliverableKind(path) }))
