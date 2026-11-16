@@ -244,6 +244,16 @@ export function defaultVariantLabel(config: AgentConfig): string {
   return effort ? `${model} · ${effort}` : model
 }
 
+/**
+ * A label left at its default names what was configured, often a CLI alias ("sonnet") or no
+ * model at all ("default"). Once a run announced the model that answered, name that one:
+ * it is the fact a reader compares. A label the user wrote is theirs and stays.
+ */
+export function announcedVariantLabel(variant: { label: string; config: AgentConfig }, announcedModel: string | null): string {
+  if (!announcedModel || variant.label !== defaultVariantLabel(variant.config)) return variant.label
+  return defaultVariantLabel({ ...variant.config, model: announcedModel })
+}
+
 export function variantAgent(variant: { config: AgentConfig }): AgentKind {
   return variant.config.agent
 }

@@ -17,6 +17,7 @@ import {
   benchmarkInputsSchema,
   benchmarkSeriesRoot,
   benchmarkVariantsSchema,
+  announcedVariantLabel,
   defaultVariantLabel,
   variantEffort,
   type BenchmarkCheckResult,
@@ -88,6 +89,16 @@ export function runToDto(row: BenchmarkRunRow): BenchmarkRunDto {
   }
 }
 
+/** Model the CLI reported at session start, from the first of the variant's runs that has one. */
+function announcedModel(runs: BenchmarkRunRow[], benchmarkId: string, variantId: string): string | null {
+  for (const run of runs) {
+    if (run.benchmarkId !== benchmarkId || run.variantId !== variantId || !run.metrics) continue
+    const model = (JSON.parse(run.metrics) as BenchmarkRunMetrics).model
+    if (model) return model
+  }
+  return null
+}
+
 export function benchmarksToDto(db: Db, rows: BenchmarkRow[]): BenchmarkDto[] {
   if (rows.length === 0) return []
   const runs = db
@@ -117,7 +128,10 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[]): BenchmarkDto[] {
     id: row.id,
     name: row.name,
     prompt: row.prompt,
-    variants: readVariants(row.variants),
+    variants: readVariants(row.variants).map((variant) => ({
+      ...variant,
+      label: announcedVariantLabel(variant, announcedModel(runs, row.id, variant.id)),
+    })),
     repetitions: row.repetitions,
     concurrency: row.maxConcurrentRuns ?? (row.concurrency === 'parallel' ? 4 : 1),
     maxDurationMinutes: row.maxDurationMinutes,

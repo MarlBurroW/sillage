@@ -436,10 +436,10 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   )
 }
 
-/** Model reported at session start when it adds to the configured value. */
+/** Model reported at session start when it adds to the configured value and to the label. */
 function announcedModel(runs: BenchmarkRunDto[], variant: BenchmarkVariant): string | null {
   const model = runs.map((run) => run.metrics?.model ?? null).find((value) => value !== null) ?? null
-  return model && model !== variant.config.model ? model : null
+  return model && model !== variant.config.model && !variant.label.includes(model) ? model : null
 }
 
 /** CLI release shared by a variant's runs; the first one known when they differ. */

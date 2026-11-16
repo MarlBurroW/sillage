@@ -431,3 +431,27 @@ test('benchmark API: legacy snapshots are repaired once and exclude post-benchma
   assert.deepEqual((await app.inject({ url: '/api/benchmarks' })).json()[0].runs, result.runs)
   assert.equal(db.select().from(benchmarkRuns).where(eq(benchmarkRuns.id, 'run')).get()!.metrics, stored)
 })
+
+test('default labels name the model a run announced, written labels stay', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-bench-labels-'))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  t.after(() => { sqlite.close(); rmSync(dir, { recursive: true, force: true }) })
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', isAdmin: false, createdAt: 1 }).run()
+  const claude = (model: string) => ({ agent: 'claude', model, effort: 'medium', permissionMode: 'bypassPermissions' })
+  const variants = JSON.stringify([
+    { id: 'alias', label: 'sonnet · medium', config: claude('sonnet') },
+    { id: 'unset', label: 'default · medium', config: claude('default') },
+    { id: 'named', label: 'My pick', config: claude('haiku') },
+    { id: 'waiting', label: 'haiku · medium', config: claude('haiku') },
+  ])
+  db.insert(benchmarkTable).values({ id: 'b', userId: 'owner', name: 'b', prompt: 'test', variants, concurrency: 'sequential', maxDurationMinutes: 20, createdAt: 1, updatedAt: 1 }).run()
+  const announced = { alias: 'claude-sonnet-5-5', unset: 'claude-opus-5-5', named: 'claude-haiku-5-5', waiting: null }
+  for (const [variantId, model] of Object.entries(announced)) {
+    db.insert(benchmarkRuns).values({ id: variantId, benchmarkId: 'b', variantId, repetition: 1, status: 'running', metrics: model ? JSON.stringify({ model }) : null }).run()
+  }
+  const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
+  const runner = new BenchmarkRunner(ctx, { assertCliEnabled: () => undefined } as never, {} as never, {} as never, {} as never)
+  const labels = Object.fromEntries(runner.list('owner')[0]!.variants.map((variant) => [variant.id, variant.label]))
+  assert.deepEqual(labels, { alias: 'claude-sonnet-5-5 · medium', unset: 'claude-opus-5-5 · medium', named: 'My pick', waiting: 'haiku · medium' })
+})
