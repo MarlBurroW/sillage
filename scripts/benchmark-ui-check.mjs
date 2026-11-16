@@ -214,7 +214,8 @@ try {
   // Outputs: the answer and the built page side by side, the page rendered in its sandbox.
   await page.getByRole('tab', { name: 'Productions', exact: true }).click()
   const outputs = page.locator('[data-benchmark-deliverables]')
-  await outputs.getByText('index.html', { exact: true }).waitFor()
+  // Each variant's lane names the file it shows.
+  await outputs.getByText('index.html', { exact: true }).first().waitFor()
   const frames = outputs.locator('iframe[title="index.html"]')
   assert.equal(await frames.count(), 2)
   await outputs.frameLocator('iframe[title="index.html"]').first().locator('h1').getByText('HIBOU').waitFor()
@@ -228,7 +229,8 @@ try {
   assert.equal(await page.getByRole('tab', { name: 'Mesures', exact: true }).count(), 0)
   const headings = blindView.locator('[data-output-column]')
   assert.deepEqual(await headings.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-output-column'))), ['Variante A', 'Variante B'])
-  assert.equal(await headings.locator('svg').count(), 0, 'no CLI icon gives a variant away')
+  // The lanes carry their own controls: only a CLI mark, the one icon with a role, would tell.
+  assert.equal(await blindView.locator('svg[role="img"]').count(), 0, 'no CLI icon gives a variant away')
   await blindView.getByRole('radiogroup', { name: 'Note de Variante A', exact: true }).getByRole('radio', { name: '5 sur 5', exact: true }).click()
   await blindView.getByRole('radiogroup', { name: 'Note de Variante B', exact: true }).getByRole('radio', { name: '2 sur 5', exact: true }).click()
   await blindView.getByRole('textbox', { name: 'Commentaire sur cette note', exact: true }).first().fill('Titre net')
@@ -241,8 +243,9 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-blind-desktop.png') })
   await page.getByRole('button', { name: 'Révéler les variantes', exact: true }).click()
   await page.getByRole('tab', { name: 'Productions', exact: true }).waitFor()
+  // Default labels name the model the CLI announced rather than the "default" that was asked for.
   const revealed = await page.locator('[data-output-column]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-output-column')))
-  assert.ok(revealed.every((name) => /^[AB] · default · (medium|low)$/.test(name ?? '')), JSON.stringify(revealed))
+  assert.ok(revealed.every((name) => /^[AB] · [\w.-]+ · (medium|low)$/.test(name ?? '')), JSON.stringify(revealed))
 
   // Ratings join the measures, as a column of their own.
   await page.getByRole('tab', { name: 'Mesures', exact: true }).click()
