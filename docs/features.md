@@ -57,8 +57,10 @@ The periodic cleanup removes expired, revoked and orphaned files.
   Sillage Desktop opens itself to your own devices through Tailscale from
   **Settings › Remote access**, with no password to type on them.
   [Desktop remote access](desktop.md#remote-access).
-- **A session wall.** Follow several sessions side by side on one screen, chosen by a
-  GitHub-style query, and save the views you come back to.
+- **A session wall.** Follow several sessions side by side on one screen. The
+  Activity list sits beside it: a heading fills the wall with what waits on you,
+  what is working or what is unread, and a row brings its session forward. Save
+  the views you come back to by picking filters, or with a GitHub-style query.
 - **A queue, and steering.** Write while a turn runs. The message waits on the
   server and can be withdrawn, or goes straight into the turn already in flight.
 - **One grammar for every CLI.** Claude Code, Codex, OpenCode, Grok Build and Google Antigravity are translated

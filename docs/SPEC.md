@@ -920,8 +920,8 @@ an alternative deployment mode, not per-conversation setting.
 ### 12.2 Screen structure
 
 Desktop: navigation in two levels beside the page. A **rail** of icons selects a
-*space*: Activity, the wall, discussions, benchmarks, each pinned project, services
-and settings. A **column** lists what the selected space holds, and nothing else.
+*space*: Activity, discussions, benchmarks, each pinned project, services and
+settings. A **column** lists what the selected space holds, and nothing else.
 The single sidebar it replaces served as app menu, dashboard and session list at
 once, so every feature claimed a row and the session list shrank to what was left.
 
@@ -935,10 +935,37 @@ repeats the rule for whoever adds one:
   a new counter elsewhere;
 - anything else lives in settings or on the project page, reachable from the palette.
 
-Spaces without a list (wall, services, settings) show no column: they carry their
-own navigation and a session list beside them would name another space. Activity
-has no page: it stays selected while the sessions it opens change the route, until
-another rail entry is chosen (`lib/nav-space.ts`).
+Spaces without a list (services, settings) show no column: they carry their own
+navigation and a session list beside them would name another space.
+
+**Activity's page is the wall.** The two were separate rail entries at first, and
+Activity then looked like a wall with a sidebar whose rows did not even open it.
+Now the Activity list is the column and the wall beside it shows what the list
+names (`/wall`, `lib/nav-space.ts`):
+
+- no parameter: what is live, sessions waiting on the user and sessions working;
+- `?show=awaiting|running|unread|favorites`: one section of the list, opened by
+  its heading. Sections take their sessions from the same hook as the list
+  (`useFollowedActivity`), so both always agree;
+- `?view=<id>`: a saved view, the only mode with the query bar and its filters;
+- `&tile=<id>`: the tile a row of the list brings forward. The tile's title opens
+  the session in its project.
+
+A saved view is created through a dialog, not by typing: a name, the filter
+buttons, a plain-words reading of the query with the sessions it matches, and the
+query itself shown as what gets saved. The query language stays available inside
+the view. Its states are exclusive: working, waiting on the user, stopped on an
+error, at rest. An errored session does not wait on anyone, so it is not part of
+"needs input", in the list or on the wall.
+
+A tile is a glance at the end of a thread, rendered by the conversation's own
+components so a prompt can be answered in place. Its state sits on the header's
+second line; the time of each message and its actions stay in the conversation. A
+tile follows the end of its thread through resizes and lets go only when the
+reader scrolls up.
+
+In a phone drawer Activity is only a list to pick from: it stays selected while
+the sessions it opens change the route, until another rail entry is chosen.
 
 The rail shows pinned projects in the account's order, the current project, and
 otherwise the most recent ones; its last project entry opens every project with
