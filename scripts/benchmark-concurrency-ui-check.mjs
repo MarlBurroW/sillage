@@ -76,7 +76,7 @@ async function checkResults(page, base, profile) {
   }))
   for (const [size, viewport] of [['desktop', { width: 1600, height: 1100 }], ['mobile', { width: 390, height: 844 }]]) {
     await page.setViewportSize(viewport)
-    await page.evaluate(() => localStorage.removeItem('sillage.benchmark.blind.comparison'))
+    await page.evaluate(() => { localStorage.removeItem('sillage.benchmark.blind.comparison'); localStorage.removeItem('sillage.benchmark.outputs') })
     await page.goto(base + '/benchmarks/comparison')
     const facts = page.locator('dl').filter({ hasText: 'Exécutions simultanées' })
     await facts.waitFor()
@@ -131,12 +131,13 @@ async function checkResults(page, base, profile) {
     const a = await index.boundingBox(), b = await piano.boundingBox()
     assert.ok(Math.abs(a.y - b.y) < 2, 'different filenames of the same kind share a row')
     assert.ok(b.x > a.x + a.width, 'variants occupy neighboring columns')
-    assert.ok(await outputs.locator('iframe[title="about.html"]').boundingBox().then((box) => box.y > a.y), 'additional pages keep their own row')
+    // A card shows one thing at a time: the other pages of a variant are in its own menu.
+    await outputs.locator('[data-output-column]').first().getByRole('button', { name: 'Choisir ce que montre cette carte' }).click()
+    await page.getByRole('menuitem', { name: /about\.html/ }).waitFor()
+    await page.keyboard.press('Escape')
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal scrolling stays inside the comparison')
     await page.screenshot({ path: join(shots, `${profile}-${size}-outputs.png`) })
-    const repetition = outputs.getByRole('combobox')
-    await repetition.click()
-    await page.getByRole('option').nth(1).click()
+    await outputs.getByRole('radio', { name: 'Run 2', exact: true }).click()
     assert.match(await piano.getAttribute('src'), /preview-v1-2/)
 
     await page.getByRole('button', { name: 'Évaluer à l’aveugle', exact: true }).click()

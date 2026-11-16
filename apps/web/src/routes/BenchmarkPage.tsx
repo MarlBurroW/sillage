@@ -1,12 +1,12 @@
-import { Pencil, ArrowDown, ArrowLeft, ArrowUp, Check, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Square, Trash2, X } from 'lucide-react'
-import { Fragment, useMemo, useState } from 'react'
+import { Pencil, ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Share2, Square, Trash2, X } from 'lucide-react'
+import { Fragment, Suspense, lazy, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { benchmarkConcurrencySchema, benchmarkPath, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { ConcurrencyField } from '../components/benchmark/ConcurrencyField'
 import { BenchmarkChart } from '../components/benchmark/BenchmarkChart'
-import { DeliverablesGrid } from '../components/benchmark/DeliverablesGrid'
+import { OutputsViewer } from '../components/benchmark/OutputsViewer'
 import { SeriesComparison } from '../components/benchmark/SeriesComparison'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, Tabs, cx } from '../components/ui'
 import {
@@ -39,17 +39,10 @@ import { useLiveStatus } from '../lib/conversation-status'
 import { downloadText } from '../lib/download'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
-import { BENCHMARK_STATE_TONES } from './BenchmarksPage'
+import { BENCHMARK_STATE_TONES, RUN_TONES } from './BenchmarksPage'
 
-const RUN_DOTS: Record<BenchmarkRunDto['status'], string> = {
-  pending: 'bg-line-strong',
-  running: 'bg-accent animate-pulse',
-  checking: 'bg-accent animate-pulse',
-  succeeded: 'bg-positive',
-  failed: 'bg-critical',
-  timed_out: 'bg-caution',
-  cancelled: 'bg-line-strong',
-}
+// Only people who share pay for the window: it stays out of the page's chunk.
+const BenchmarkShareDialog = lazy(() => import('../components/benchmark/BenchmarkShareDialog'))
 
 type Tab = 'measures' | 'chart' | 'outputs' | 'history'
 
@@ -74,6 +67,7 @@ export function BenchmarkPage() {
   const [concurrency, setConcurrency] = useState('1')
   const remove = useDeleteBenchmark()
   const [confirming, setConfirming] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [sort, setSort] = useState<Sort | null>(null)
   const [tab, setTab] = useState<Tab>('measures')
   const benchmark = benchmarks?.find((entry) => entry.id === id)
@@ -169,6 +163,12 @@ export function BenchmarkPage() {
             {t('benchmark.rerun')}
           </Button>
         ) : null}
+        {/* Nothing to show before a first run settles. */}
+        {progress.done > 0 ? (
+          <Button size="sm" variant="secondary" icon={<Share2 size={14} />} onClick={() => setSharing(true)} title={t('benchmark.share.hint')} data-benchmark-share-open>
+            {t('benchmark.share.action')}
+          </Button>
+        ) : null}
         <Menu trigger={<IconButton label={t('benchmark.export')}><Download size={16} /></IconButton>}>
           <MenuItem icon={<FileText size={14} />} onSelect={() => { const file = benchmarkCsv(benchmark); downloadText(file.filename, file.content, 'text/csv') }}>
             {t('benchmark.export.csv')}
@@ -181,36 +181,34 @@ export function BenchmarkPage() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-        <div className="mx-auto flex max-w-6xl flex-col gap-5">
+        {/* Full width: outputs are compared side by side, and every pixel of a wide screen is a wider page. */}
+        <div className="flex flex-col gap-5">
           {error ? <Banner>{error.message}</Banner> : null}
 
-          <details className="rounded-lg border border-line">
-            <summary className="cursor-pointer px-4 py-2.5 text-sm text-ink-soft">{t('benchmark.form.prompt')}</summary>
-            <p className="border-t border-line px-4 py-3 text-sm whitespace-pre-wrap text-ink-soft">{benchmark.prompt}</p>
-          </details>
-
-          <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-ink-soft">
-            <Fact label={t('benchmark.form.repetitions')}>{benchmark.repetitions}</Fact>
-            <Fact label={t('benchmark.form.concurrency')}>{benchmark.concurrency}
-              <IconButton label={t('benchmark.concurrency.edit')} onClick={() => {
-                setConcurrency(String(benchmark.concurrency))
-                updateConcurrency.reset()
-                setEditingConcurrency(true)
-              }}><Pencil size={13} /></IconButton></Fact>
-            <Fact label={t('schedule.form.maxDuration')}>{benchmark.maxDurationMinutes}</Fact>
-            {benchmark.inputs.length ? (
-              <Fact label={t('benchmark.form.inputs')}>
-                {benchmark.inputs.map((input) => `${input.filename} (${formatBytes(input.sizeBytes)})`).join(', ')}
-              </Fact>
+          <section className="grid gap-x-8 gap-y-3 rounded-lg border border-line px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto]" data-benchmark-brief>
+            <Prompt text={benchmark.prompt} />
+            <dl className="flex flex-wrap content-start items-center gap-x-6 gap-y-1 text-xs text-ink-soft lg:max-w-md lg:justify-end">
+              <Fact label={t('benchmark.form.repetitions')}>{benchmark.repetitions}</Fact>
+              <Fact label={t('benchmark.form.concurrency')}>{benchmark.concurrency}
+                <IconButton size="sm" label={t('benchmark.concurrency.edit')} onClick={() => {
+                  setConcurrency(String(benchmark.concurrency))
+                  updateConcurrency.reset()
+                  setEditingConcurrency(true)
+                }}><Pencil size={13} /></IconButton></Fact>
+              <Fact label={t('schedule.form.maxDuration')}>{benchmark.maxDurationMinutes}</Fact>
+              {benchmark.inputs.length ? (
+                <Fact label={t('benchmark.form.inputs')}>
+                  {benchmark.inputs.map((input) => `${input.filename} (${formatBytes(input.sizeBytes)})`).join(', ')}
+                </Fact>
+              ) : null}
+            </dl>
+            {benchmark.checkScript ? (
+              <details className="col-span-full border-t border-line pt-2">
+                <summary className="cursor-pointer text-xs text-ink-faint hover:text-ink">{t('benchmark.form.check')}</summary>
+                <pre className="mt-2 overflow-x-auto rounded bg-sunken px-3 py-2 font-mono text-xs text-ink-soft">{benchmark.checkScript}</pre>
+              </details>
             ) : null}
-          </dl>
-
-          {benchmark.checkScript ? (
-            <details className="rounded-lg border border-line">
-              <summary className="cursor-pointer px-4 py-2.5 text-sm text-ink-soft">{t('benchmark.form.check')}</summary>
-              <pre className="overflow-x-auto border-t border-line px-4 py-3 font-mono text-xs text-ink-soft">{benchmark.checkScript}</pre>
-            </details>
-          ) : null}
+          </section>
 
           {blind.active ? (
             // Blind review shows outputs only: measures, costs and CLI names would give variants away.
@@ -219,7 +217,7 @@ export function BenchmarkPage() {
               <div>
                 <Button size="sm" icon={<Eye size={14} />} onClick={() => blind.reveal()}>{t('benchmark.blind.reveal')}</Button>
               </div>
-              <DeliverablesGrid benchmark={benchmark} order={blind.order} nameOf={nameOf} blind />
+              <OutputsViewer benchmark={benchmark} order={blind.order} nameOf={nameOf} blind />
             </section>
           ) : (
           <Tabs label={t('benchmark.title')} value={shown} onChange={setTab} tabs={tabs}>
@@ -231,7 +229,7 @@ export function BenchmarkPage() {
               {blind.revealed ? <Button size="sm" variant="ghost" onClick={() => blind.reset()}>{t('benchmark.blind.forget')}</Button> : null}
               <span className="text-xs text-ink-faint">{t('benchmark.blind.hint')}</span>
             </div>
-            <DeliverablesGrid benchmark={benchmark} order={blind.order} nameOf={nameOf} blind={false} />
+            <OutputsViewer benchmark={benchmark} order={blind.order} nameOf={nameOf} blind={false} />
           </div> : shown === 'chart' ? (
             <BenchmarkChart
               metrics={metricKeys}
@@ -357,6 +355,8 @@ export function BenchmarkPage() {
         </div>
       </div>
 
+      {sharing ? <Suspense fallback={null}><BenchmarkShareDialog benchmark={benchmark} onClose={() => setSharing(false)} /></Suspense> : null}
+
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -389,9 +389,41 @@ function RunStatus({ run }: { run: BenchmarkRunDto }) {
   }
   return (
     <span className="inline-flex items-center gap-1.5" title={run.error ?? undefined}>
-      <span aria-hidden className={cx('size-1.5 rounded-full', RUN_DOTS[run.status])} />
+      <span aria-hidden className={cx('size-1.5 rounded-full', RUN_TONES[run.status])} />
       {t(RUN_STATUS_LABELS[run.status])}
     </span>
+  )
+}
+
+/**
+ * The prompt, three lines of it: enough to recognise the task, short enough to leave the screen
+ * to the results. The toggle only exists when something is actually cut.
+ */
+function Prompt({ text }: { text: string }) {
+  const t = useTranslate()
+  const ref = useRef<HTMLParagraphElement>(null)
+  const [open, setOpen] = useState(false)
+  const [clipped, setClipped] = useState(false)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element || open) return
+    const measure = () => setClipped(element.scrollHeight > element.clientHeight + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [text, open])
+  return (
+    <div className="min-w-0">
+      <h2 className="text-xs text-ink-faint">{t('benchmark.form.prompt')}</h2>
+      <p ref={ref} className={cx('mt-1 max-w-[90ch] text-sm whitespace-pre-wrap text-ink-soft', open ? null : 'line-clamp-3')}>{text}</p>
+      {clipped || open ? (
+        <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline">
+          {t(open ? 'benchmark.prompt.less' : 'benchmark.prompt.more')}
+          <ChevronDown size={12} className={cx('transition-transform', open && 'rotate-180')} />
+        </button>
+      ) : null}
+    </div>
   )
 }
 

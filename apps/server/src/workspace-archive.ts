@@ -19,7 +19,7 @@ const STORED = new Set([
   'ogg', 'png', 'rar', 'tgz', 'webm', 'webp', 'woff', 'woff2', 'xz', 'zip', 'zst',
 ])
 
-interface ArchiveItem {
+export interface ArchiveItem {
   /** Archive name relative to the selection's common directory. */
   name: string
   absolute: string

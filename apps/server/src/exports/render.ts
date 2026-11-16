@@ -6,7 +6,7 @@ import { toolCategory, type ExportDocument } from './source.js'
 
 export const EXPORT_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
 export const EXPORT_SANDBOX = 'sandbox allow-popups allow-popups-to-escape-sandbox'
-const agents: Record<AgentKind, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
+export const agents: Record<AgentKind, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, value => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[value]!)
 }

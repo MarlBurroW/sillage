@@ -7,7 +7,11 @@ import {
   variantEffort,
   type BenchmarkDto,
   type BenchmarkRunDto,
+  type BenchmarkShareDto,
+  type BenchmarkShareOptions,
+  type BenchmarkShareStateDto,
   type CreateBenchmarkBody,
+  type PublishBenchmarkShareBody,
   type RateBenchmarkRunBody,
 } from '@sillage/protocol'
 import { api } from './api'
@@ -365,4 +369,80 @@ export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; conte
 export function benchmarkJson(benchmark: BenchmarkDto): { filename: string; content: string } {
   const runs = benchmark.runs.map(({ previewToken: _token, ...run }) => run)
   return { filename: `${exportStem(benchmark)}.json`, content: JSON.stringify({ ...benchmark, runs }, null, 2) }
+}
+
+const shareKey = (benchmarkId: string) => ['benchmark-share', benchmarkId]
+
+/**
+ * What of a benchmark can leave Sillage: one verdict per run, and the public links already made.
+ * Asked only while the share window is open: the verdict walks every run folder.
+ */
+export function useBenchmarkShare(benchmarkId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: shareKey(benchmarkId),
+    queryFn: () => api.get<BenchmarkShareStateDto>(`/api/benchmarks/${benchmarkId}/share`),
+    enabled,
+    staleTime: 0,
+  })
+}
+
+export function usePublishBenchmarkShare(benchmarkId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: PublishBenchmarkShareBody) => api.post<BenchmarkShareDto>(`/api/benchmarks/${benchmarkId}/share`, body),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: shareKey(benchmarkId) }),
+  })
+}
+
+export function useRevokeBenchmarkShare(benchmarkId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (shareId: string) => api.delete<void>(`/api/benchmarks/${benchmarkId}/share/${shareId}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: shareKey(benchmarkId) }),
+  })
+}
+
+/** The same page as a public link, as a zip to send or host anywhere. A plain link: the browser downloads it. */
+export function benchmarkArchiveUrl(benchmarkId: string, options: BenchmarkShareOptions): string {
+  return `/api/benchmarks/${benchmarkId}/archive?options=${encodeURIComponent(JSON.stringify(options))}`
+}
+
+/** Median of one measure over a variant's settled runs, for summaries that name a winner. */
+export function variantMedian(benchmark: BenchmarkDto, variantId: string, key: MetricKey): number | null {
+  return median(benchmark.runs.filter((run) => run.variantId === variantId && run.status === 'succeeded').map((run) => metricValue(run, key)))
+}
+
+/**
+ * How the outputs of a benchmark are laid out, remembered per device: comparing is a matter of
+ * screen size and taste, and the choice should survive moving from one benchmark to the next.
+ */
+export interface OutputsLayout {
+  /** All variants at once, or one at a time to flip between. */
+  mode: 'grid' | 'focus'
+  /** Cards per row; 0 lets the width decide. */
+  columns: 0 | 1 | 2 | 3 | 4
+  height: 'compact' | 'medium' | 'tall'
+  /** Width pages are rendered at; wider than the card, they are scaled down to fit. */
+  viewport: 'fit' | 'desktop' | 'tablet' | 'phone'
+  /** What every card shows unless one picked something else. */
+  show: 'outputs' | 'responses'
+}
+
+const DEFAULT_OUTPUTS_LAYOUT: OutputsLayout = { mode: 'grid', columns: 0, height: 'medium', viewport: 'fit', show: 'outputs' }
+const OUTPUTS_LAYOUT_KEY = 'sillage.benchmark.outputs'
+
+export function useOutputsLayout(): [OutputsLayout, (change: Partial<OutputsLayout>) => void] {
+  const [layout, setLayout] = useState<OutputsLayout>(() => {
+    try {
+      return { ...DEFAULT_OUTPUTS_LAYOUT, ...(JSON.parse(localStorage.getItem(OUTPUTS_LAYOUT_KEY) ?? '{}') as Partial<OutputsLayout>) }
+    } catch {
+      return DEFAULT_OUTPUTS_LAYOUT
+    }
+  })
+  const update = useCallback((change: Partial<OutputsLayout>) => setLayout((current) => {
+    const next = { ...current, ...change }
+    try { localStorage.setItem(OUTPUTS_LAYOUT_KEY, JSON.stringify(next)) } catch { /* private mode: the choice lasts for the page */ }
+    return next
+  }), [])
+  return [layout, update]
 }

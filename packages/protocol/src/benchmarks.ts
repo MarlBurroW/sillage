@@ -267,3 +267,77 @@ export type RateBenchmarkRunBody = z.input<typeof rateBenchmarkRunBodySchema>
 export function benchmarkSeriesRoot(benchmark: { id: string; seriesId: string | null }): string {
   return benchmark.seriesId ?? benchmark.id
 }
+
+// --- Sharing -----------------------------------------------------------------------
+
+/**
+ * How much of a run can be shown outside Sillage. `page`: a static page that works from plain
+ * files. `files`: no page, but media or text a browser displays. `none`: nothing to embed, the
+ * measurements and the final response still go on the shared page.
+ */
+export type BenchmarkExportMode = 'page' | 'files' | 'none'
+
+/**
+ * Why a run's production is left out. `build`: sources that need a bundler or dev server.
+ * `server`: needs a backend running. `empty`: the folder holds nothing a browser displays.
+ * `missing`: the run's folder or thread is gone. `too_large`: over the snapshot limits.
+ * `unfinished`: the run has not settled.
+ */
+export type BenchmarkExportBlocker = 'build' | 'server' | 'empty' | 'missing' | 'too_large' | 'unfinished'
+
+export interface BenchmarkRunExportability {
+  runId: string
+  mode: BenchmarkExportMode
+  reason: BenchmarkExportBlocker | null
+  /** Page opened first, relative to the run folder; null unless `mode` is `page`. */
+  entry: string | null
+  /** Files and bytes a snapshot would copy. */
+  files: number
+  bytes: number
+}
+
+/** A snapshot stays small enough to copy on every publication and to send to a friend's phone. */
+export const MAX_BENCHMARK_SHARE_RUN_FILES = 2000
+export const MAX_BENCHMARK_SHARE_RUN_BYTES = 150 * 1024 * 1024
+/** Across all runs of one publication or archive. */
+export const MAX_BENCHMARK_SHARE_BYTES = 500 * 1024 * 1024
+export const MAX_BENCHMARK_SHARE_NOTE_CHARS = 2000
+
+export const benchmarkShareOptionsSchema = z.object({
+  title: z.string().trim().min(1).max(MAX_BENCHMARK_NAME_CHARS),
+  /** Free introduction shown under the title. */
+  note: z.string().trim().max(MAX_BENCHMARK_SHARE_NOTE_CHARS).default(''),
+  includePrompt: z.boolean().default(true),
+  includeResponses: z.boolean().default(true),
+  includeMetrics: z.boolean().default(true),
+  includeRatings: z.boolean().default(false),
+  /** Variants shown as letters until the reader reveals them: a guessing game, not a secret. */
+  blind: z.boolean().default(false),
+  locale: z.enum(['en', 'fr']).default('en'),
+})
+export type BenchmarkShareOptions = z.infer<typeof benchmarkShareOptionsSchema>
+
+export const publishBenchmarkShareBodySchema = benchmarkShareOptionsSchema.extend({
+  /** Null for a link that never expires. */
+  expiresAt: z.number().int().positive().nullable(),
+})
+export type PublishBenchmarkShareBody = z.input<typeof publishBenchmarkShareBodySchema>
+
+export interface BenchmarkShareDto {
+  id: string
+  title: string
+  /** Null when the instance no longer has a public address. */
+  url: string | null
+  createdAt: number
+  expiresAt: number | null
+}
+
+export interface BenchmarkShareStateDto {
+  /** Public links need the Server edition and a public address; the archive always works. */
+  canPublish: boolean
+  runs: BenchmarkRunExportability[]
+  shares: BenchmarkShareDto[]
+}
+
+/** Public prefix of shared benchmarks, under the `/s/` space already excluded from the app shell. */
+export const BENCHMARK_SHARE_PREFIX = '/s/b/'

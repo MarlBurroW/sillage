@@ -12,7 +12,7 @@ import type { AppContext } from '../http/context.js'
 import { HttpError, badRequest, forbidden, notFound } from '../http/errors.js'
 import { readableConversation } from '../conversations/access.js'
 import type { EventLog } from '../events/event-log.js'
-import { publicUrlOf } from '../settings/app-settings.js'
+import { publicShareRoot } from './public-root.js'
 import { instanceCapabilities, INSTANCE_PROFILE } from '../instance/profile.js'
 import { captureEntries, entryDto, selectDocument, describeSelection, type ExportDocument, type ExportEntry } from './source.js'
 import { freezeImage } from './images.js'
@@ -56,16 +56,7 @@ export class ConversationExports {
     return conversation
   }
 
-  private root(): string {
-    if (!this.publicSharing) return ''
-    const value = publicUrlOf(this.ctx.db, this.ctx.config)
-    try {
-      const url = new URL(value)
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return ''
-      if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return ''
-      return url.href.replace(/\/$/, '')
-    } catch { return '' }
-  }
+  private root(): string { return publicShareRoot(this.ctx, this.publicSharing) }
 
   private draft(id: string, userId: string): Draft {
     const draft = this.drafts.get(id)

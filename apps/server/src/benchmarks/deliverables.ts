@@ -6,7 +6,7 @@ import { deliverableKind, type BenchmarkDeliverable } from '@sillage/protocol'
  * Directories an agent creates as tooling rather than output. Listing a `node_modules` would bury
  * the one page it built under thousands of files.
  */
-const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', '.venv', 'venv', '__pycache__', '.cache', '.next', '.turbo'])
+export const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', '.venv', 'venv', '__pycache__', '.cache', '.next', '.turbo'])
 
 /** Enough for any deliverable a prompt asks for; the folder stays reachable from the run's conversation. */
 export const MAX_DELIVERABLES = 300

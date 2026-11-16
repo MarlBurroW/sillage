@@ -15,6 +15,7 @@ export {
   MenuSwatchRow,
 } from './Menu'
 export { Popover } from './Popover'
+export { Segmented, type Segment } from './Segmented'
 export { Select, type SelectOption } from './Select'
 export { Switch } from './Switch'
 export { Tabs } from './Tabs'

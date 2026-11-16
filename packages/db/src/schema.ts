@@ -1958,6 +1958,21 @@ export const threadProjectionRows = sqliteTable('thread_projection_rows', {
   index('idx_thread_projection_kind').on(t.conversationId, t.itemKind, t.position),
 ])
 
+/**
+ * A published snapshot of a benchmark: the rendered page and a copy of the static productions,
+ * under the data directory. Frozen at publication so later runs, ratings or cleanups of the run
+ * folders never change what a friend was sent.
+ */
+export const benchmarkShares = sqliteTable('benchmark_shares', {
+  id: text('id').primaryKey(),
+  benchmarkId: text('benchmark_id').notNull().references(() => benchmarks.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  expiresAt: timestamp('expires_at'),
+  revokedAt: timestamp('revoked_at'),
+}, (t) => [index('idx_benchmark_shares_benchmark').on(t.benchmarkId)])
+
 export type AntigravityAccountRow = typeof antigravityAccounts.$inferSelect
 
 /** Published artifacts contain only the reviewed HTML. The journal remains the private source. */
