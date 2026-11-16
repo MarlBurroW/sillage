@@ -1985,3 +1985,50 @@ export const conversationShares = sqliteTable('conversation_shares', {
   expiresAt: timestamp('expires_at'),
   revokedAt: timestamp('revoked_at'),
 }, (t) => [index('idx_conversation_shares_conversation').on(t.conversationId)])
+
+/**
+ * Tokens consumed by one turn, one row per model: a turn also runs auxiliary models and
+ * subagents on other models, each priced on its own.
+ *
+ * Deliberately without foreign keys, with the account, project and CLI copied in: deleting a
+ * conversation or a project does not give its tokens back, and a session moved to another
+ * project spent them where it was. Prices are not stored: the dashboard applies the current
+ * catalog on read, so a corrected price also corrects the past.
+ */
+export const turnUsage = sqliteTable('turn_usage', {
+  conversationId: text('conversation_id').notNull(),
+  /** Journal sequence of the `turn.completed` event the row was read from. */
+  seq: integer('seq').notNull(),
+  /** Model identifier as the CLI names it; empty when the CLI never said. */
+  model: text('model').notNull(),
+  ts: timestamp('ts').notNull(),
+  userId: text('user_id').notNull(),
+  projectId: text('project_id'),
+  agent: text('agent').$type<AgentKind>().notNull(),
+  /** Input processed outside the cache, as in the journal. */
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+  /** Cache writes at the default lifetime; one-hour writes are priced apart. */
+  cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
+  cacheWrite1hTokens: integer('cache_write_1h_tokens').notNull().default(0),
+  /** API-equivalent cost announced by the CLI for this turn and model; null when it gave none. */
+  reportedCostUsd: real('reported_cost_usd'),
+}, (t) => [
+  primaryKey({ columns: [t.conversationId, t.seq, t.model] }),
+  index('idx_turn_usage_ts').on(t.ts),
+])
+
+export type TurnUsageRow = typeof turnUsage.$inferSelect
+
+/** Public price lists, reduced to what pricing needs, one row per source. */
+export const priceCatalogs = sqliteTable('price_catalogs', {
+  source: text('source').primaryKey(),
+  /** JSON: model key to prices in dollars per million tokens. */
+  data: text('data').notNull(),
+  etag: text('etag'),
+  /** When `data` last changed, as opposed to the last time the source was asked. */
+  fetchedAt: timestamp('fetched_at').notNull(),
+  /** Last time the source answered, changed or not: what spaces out the checks. */
+  checkedAt: timestamp('checked_at').notNull(),
+})

@@ -3,7 +3,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { ProjectDto } from '@sillage/protocol'
-import { Activity, FlaskConical, LogOut, MessageSquare, MoreHorizontal, Search, Server, Settings } from 'lucide-react'
+import { Activity, ChartColumn, FlaskConical, LogOut, MessageSquare, MoreHorizontal, Search, Server, Settings } from 'lucide-react'
 import { useState, type ComponentPropsWithRef, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { activityTone, type ActivityCounts } from '../../lib/activity'
 import { useTranslate, type translate } from '../../lib/i18n'
@@ -95,6 +95,7 @@ export function NavRail({ space, total, personal, projects, countsOf, hiddenTone
         <span className="nav-rail-rule" />
         <div className="sidebar-utilities">
           <RailEntry label={t('services.title')} current={space === 'services'} onClick={() => onSpace('services')} data-nav-space="services"><Server size={18} /></RailEntry>
+          <RailEntry label={t('consumption.title')} detail={t('consumption.rail.hint')} current={space === 'consumption'} onClick={() => onSpace('consumption')} data-nav-space="consumption"><ChartColumn size={18} /></RailEntry>
           <RailEntry label={t('shell.settings.label')} detail={updateNotice} current={space === 'settings'} onClick={() => onSpace('settings')} data-nav-space="settings">
             <span className="relative"><Settings size={18} />{updateNotice ? <UpdateDot /> : null}</span>
           </RailEntry>

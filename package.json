@@ -78,7 +78,8 @@
     "test:news-ui": "node scripts/news-ui-check.mjs",
     "test:disabled-cli-ui": "node scripts/disabled-cli-ui-check.mjs",
     "test:exports-ui": "node scripts/conversation-export-ui-check.mjs",
-    "test:benchmark-ui": "node scripts/benchmark-ui-check.mjs"
+    "test:benchmark-ui": "node scripts/benchmark-ui-check.mjs",
+    "test:consumption-ui": "node scripts/consumption-ui-check.mjs"
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0",

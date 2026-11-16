@@ -3,6 +3,8 @@ import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
+import type { PriceCatalog } from '../pricing/catalog.js'
+import { runCostUsd } from './cost.js'
 import {
   benchmarkRuns,
   benchmarks,
@@ -99,7 +101,8 @@ function announcedModel(runs: BenchmarkRunRow[], benchmarkId: string, variantId:
   return null
 }
 
-export function benchmarksToDto(db: Db, rows: BenchmarkRow[]): BenchmarkDto[] {
+/** With `prices`, each run's cost is recomputed at today's public prices (see `runCostUsd`); without, the stored one stands. */
+export function benchmarksToDto(db: Db, rows: BenchmarkRow[], prices: PriceCatalog | null = null): BenchmarkDto[] {
   if (rows.length === 0) return []
   const runs = db
     .select()
@@ -141,7 +144,10 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[]): BenchmarkDto[] {
     seriesId: row.seriesId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    runs: runs.filter((run) => run.benchmarkId === row.id).map(runToDto),
+    runs: runs.filter((run) => run.benchmarkId === row.id).map((run) => {
+      const dto = runToDto(run)
+      return prices && dto.metrics ? { ...dto, metrics: { ...dto.metrics, costUsd: runCostUsd(db, prices, run, dto.metrics) } } : dto
+    }),
   }))
 }
 
@@ -161,6 +167,8 @@ export class BenchmarkRunner {
     private readonly registry: AgentRegistry,
     private readonly log: EventLog,
     private readonly attachments: AttachmentStore,
+    /** Absent in tests that do not look at costs. */
+    private readonly prices: PriceCatalog | null = null,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -626,7 +634,12 @@ export class BenchmarkRunner {
 
   list(userId: string): BenchmarkDto[] {
     const rows = this.ctx.db.select().from(benchmarks).where(eq(benchmarks.userId, userId)).orderBy(desc(benchmarks.createdAt)).all()
-    return benchmarksToDto(this.ctx.db, rows)
+    return benchmarksToDto(this.ctx.db, rows, this.prices)
+  }
+
+  /** One benchmark as the interface, the exports and the share pages read it. */
+  dto(row: BenchmarkRow): BenchmarkDto {
+    return benchmarksToDto(this.ctx.db, [row], this.prices)[0]!
   }
 
   load(id: string, userId: string): BenchmarkRow {

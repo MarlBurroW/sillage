@@ -210,7 +210,7 @@ export const exportFr: Record<keyof typeof exportEn, string> = {
   "export.bench.col.check": "Vérification",
   "export.bench.col.rating": "Note",
   "export.bench.checkPassed": "{passed} sur {total} réussis",
-  "export.bench.costNote": "Le coût est l’équivalent API annoncé par chaque CLI, pas forcément ce qui a été facturé.",
+  "export.bench.costNote": "Le coût est un équivalent API aux prix publics du jour où cette page a été publiée, pas forcément ce qui a été facturé.",
   "export.bench.responses": "Ce qu’ils ont répondu",
   "export.bench.noResponse": "Pas de message final.",
   "export.bench.download": "Télécharger",

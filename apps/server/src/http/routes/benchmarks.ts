@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { BENCHMARK_PREVIEW_PREFIX, BENCHMARK_SHARE_PREFIX, benchmarkShareOptionsSchema, publishBenchmarkShareBodySchema, createBenchmarkBodySchema, updateBenchmarkConcurrencyBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto } from '@sillage/protocol'
 import { PREVIEW_POLICY, previewType } from '../../benchmarks/deliverables.js'
-import { benchmarksToDto, type BenchmarkRunner } from '../../benchmarks/runner.js'
+import type { BenchmarkRunner } from '../../benchmarks/runner.js'
 import { BenchmarkShares } from '../../benchmarks/share.js'
 import { SHARE_PAGE_CSP, renderShareUnavailable } from '../../benchmarks/share-page.js'
 import { streamArchive } from '../../workspace-archive.js'
@@ -29,13 +29,13 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     const user = requireUser(request)
     const body = createBenchmarkBodySchema.parse(request.body)
     const row = await runner.create(user.id, body)
-    return reply.status(201).send(benchmarksToDto(ctx.db, [row])[0])
+    return reply.status(201).send(runner.dto(row))
   })
 
   app.get('/api/benchmarks/:id', async (request): Promise<BenchmarkDto> => {
     const user = requireUser(request)
     const row = runner.load((request.params as { id: string }).id, user.id)
-    return benchmarksToDto(ctx.db, [row])[0]!
+    return runner.dto(row)
   })
 
   app.put('/api/benchmarks/:id/concurrency', async (request): Promise<BenchmarkDto> => {
@@ -43,20 +43,20 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     const row = runner.load((request.params as { id: string }).id, user.id)
     const body = updateBenchmarkConcurrencyBodySchema.parse(request.body)
     runner.setConcurrency(row.id, body.concurrency)
-    return benchmarksToDto(ctx.db, [runner.load(row.id, user.id)])[0]!
+    return runner.dto(runner.load(row.id, user.id))
   })
 
   app.post('/api/benchmarks/:id/cancel', async (request): Promise<BenchmarkDto> => {
     const user = requireUser(request)
     const row = runner.load((request.params as { id: string }).id, user.id)
     await runner.cancel(row.id)
-    return benchmarksToDto(ctx.db, [runner.load(row.id, user.id)])[0]!
+    return runner.dto(runner.load(row.id, user.id))
   })
 
   app.post('/api/benchmarks/:id/rerun', async (request, reply) => {
     const user = requireUser(request)
     const row = await runner.rerun((request.params as { id: string }).id, user.id)
-    return reply.status(201).send(benchmarksToDto(ctx.db, [row])[0])
+    return reply.status(201).send(runner.dto(row))
   })
 
   app.put('/api/benchmarks/:id/runs/:runId/rating', async (request): Promise<BenchmarkDto> => {
@@ -65,7 +65,7 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     const row = runner.load(id, user.id)
     const body = rateBenchmarkRunBodySchema.parse(request.body)
     runner.rate(row.id, runId, body.rating, body.note)
-    return benchmarksToDto(ctx.db, [row])[0]!
+    return runner.dto(row)
   })
 
   app.delete('/api/benchmarks/:id', async (request, reply) => {

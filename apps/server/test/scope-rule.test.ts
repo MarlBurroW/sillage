@@ -22,6 +22,9 @@ import { registerMcpRoutes } from '../src/http/routes/mcp.js'
 import { registerMemoryRoutes } from '../src/http/routes/memory.js'
 import { registerSecretRoutes } from '../src/http/routes/secrets.js'
 import { registerClaudeAccountRoutes } from '../src/http/routes/claude-accounts.js'
+import { registerConsumptionRoutes } from '../src/http/routes/consumption.js'
+import { TurnUsageRecorder } from '../src/consumption/recorder.js'
+import { PriceCatalog } from '../src/pricing/catalog.js'
 import type { ClaudeAccountStore } from '../src/claude-accounts/store.js'
 import type { ClaudeLoginService } from '../src/claude-accounts/login.js'
 import { SecretStore } from '../src/secrets/store.js'
@@ -73,6 +76,8 @@ async function harness(t: TestContext) {
     read: async () => ({ state: 'connected', loginExpiresAt: '2026-12-11T20:53:03.641Z', checkedAt: 1 }),
     check: async () => {},
   })
+  // Prices never leave the test: what is checked is who may ask for them.
+  registerConsumptionRoutes(app, ctx, new PriceCatalog(db, async () => { throw new Error('offline') }), new TurnUsageRecorder(db))
   t.after(() => app.close())
 
   const call = async (user: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) => {
@@ -100,6 +105,15 @@ test('shared host sign-in status belongs to administrators, not project owners o
   for (const user of ['owner', 'member']) {
     assert.equal((await call(user, 'GET', '/api/claude-accounts/host-login')).code, 'admin_only')
     assert.equal((await call(user, 'GET', '/api/claude-accounts/host-login?refresh=1')).code, 'admin_only')
+  }
+})
+
+test('consumption is read by every account; the instance price list is refreshed by administrators', async (t) => {
+  const { call } = await harness(t)
+  for (const user of ['admin', 'owner', 'member']) assert.equal((await call(user, 'GET', '/api/consumption')).status, 200)
+  assert.equal((await call('admin', 'POST', '/api/consumption/prices/refresh')).status, 200)
+  for (const user of ['owner', 'member']) {
+    assert.deepEqual(await call(user, 'POST', '/api/consumption/prices/refresh').then(({ status, code }) => [status, code]), [403, 'admin_only'])
   }
 })
 

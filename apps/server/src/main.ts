@@ -23,6 +23,8 @@ import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
 import { TaskScheduler } from './scheduler/task-scheduler.js'
 import { BenchmarkRunner } from './benchmarks/runner.js'
+import { TurnUsageRecorder } from './consumption/recorder.js'
+import { PriceCatalog } from './pricing/catalog.js'
 import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
@@ -85,7 +87,10 @@ async function main(): Promise<void> {
   const antigravityStore = new AntigravityAccountStore(db)
   const antigravityAccounts = { store: antigravityStore, homes: new AntigravityAccountHomes(config.paths.antigravityAccounts, (id) => antigravityStore.ownerOf(id)) }
   const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
-  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts)
+  // What each turn consumed, and the public prices the dashboard applies to it.
+  const turnUsage = new TurnUsageRecorder(db)
+  const prices = new PriceCatalog(db)
+  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts, turnUsage)
   const antigravityLogin = new AntigravityLoginService(antigravityAccounts.homes, antigravityAccounts.store, () => registry.adapter('antigravity').cli.executable(), (id) => sessions.stopAntigravityAccount(id))
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
@@ -118,7 +123,7 @@ async function main(): Promise<void> {
   // User- or agent-scheduled tasks executed in fresh sessions.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
   // Model benchmarks: fresh personal sessions measured from their journals.
-  const benchmarkRunner = new BenchmarkRunner({ db, config }, sessions, registry, log, attachments)
+  const benchmarkRunner = new BenchmarkRunner({ db, config }, sessions, registry, log, attachments, prices)
 
   // Otherwise uploads never sent would accumulate indefinitely.
   const orphans = await attachments.purgeOrphans()
@@ -158,6 +163,8 @@ async function main(): Promise<void> {
     worktreeStatus,
     worktreeCleanup,
     benchmarkRunner,
+    prices,
+    turnUsage,
   )
   push.setLogger(app.log)
   automations.setLogger(app.log)
@@ -183,8 +190,11 @@ async function main(): Promise<void> {
   board.start(app.log)
   decisions.start(app.log)
   usageLimits.start(app.log)
+  prices.start()
 
   await app.listen({ host: config.server.host, port: config.server.port })
+  // After listening: reading years of journals must not delay the first page.
+  void turnUsage.importHistory().catch((err: unknown) => app.log.warn({ err }, 'Turn usage history import failed'))
 
   // Desktop waits for this announcement before opening windows: servers already
   // respond and user sessions are ready for cookies.

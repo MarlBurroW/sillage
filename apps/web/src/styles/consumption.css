@@ -1,0 +1,25 @@
+/*
+ * One color per CLI, in a fixed order (codex, claude, opencode, grok, antigravity): the first five
+ * slots of the data-visualization reference palette, checked for color-blind separation between
+ * neighbors in the stack, with its own steps on dark surfaces.
+ */
+.consumption-viz {
+  --series-codex: #2a78d6;
+  --series-claude: #eb6834;
+  --series-opencode: #1baf7a;
+  --series-grok: #eda100;
+  --series-antigravity: #e87ba4;
+}
+
+[data-theme='dark'] .consumption-viz,
+[data-theme='dark-contrast'] .consumption-viz {
+  --series-codex: #3987e5;
+  --series-claude: #d95926;
+  --series-opencode: #199e70;
+  --series-grok: #c98500;
+  --series-antigravity: #d55181;
+}
+
+/* Marks touch: the surface between them does the separating, not a stroke. */
+.consumption-segment { margin-top: 2px; min-height: 1px; }
+.consumption-segment:first-child { margin-top: 0; border-radius: 4px 4px 0 0; }

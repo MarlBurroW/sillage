@@ -15,6 +15,7 @@ import {
   ShieldQuestion,
   Square,
   SquareTerminal,
+  ChartColumn,
   Server,
   SlidersHorizontal,
   SquareKanban,
@@ -329,6 +330,7 @@ function generalItems(sources: PaletteSources): PaletteItem[] {
   const commands = [
     command('new-project', t('shell.projects.add'), <FolderPlus size={ICON} />, { type: 'navigate', to: '/projects/new' }),
     command('services', t('services.title'), <Server size={ICON} />, { type: 'navigate', to: '/services' }),
+    command('consumption', t('consumption.title'), <ChartColumn size={ICON} />, { type: 'navigate', to: '/consumption' }),
     command('wall', t('wall.title'), <LayoutGrid size={ICON} />, { type: 'navigate', to: '/wall' }),
     ...sources.wallViews.map((view) => command(`wall:${view.id}`, t('wall.palette.view', { name: view.name }), <LayoutGrid size={ICON} />, {
       type: 'navigate',

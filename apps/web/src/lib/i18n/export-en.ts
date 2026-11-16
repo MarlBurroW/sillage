@@ -208,7 +208,7 @@ export const exportEn = {
   "export.bench.col.check": "Check",
   "export.bench.col.rating": "Rating",
   "export.bench.checkPassed": "{passed} of {total} passed",
-  "export.bench.costNote": "Cost is the API-equivalent price each CLI reports, not necessarily what was charged.",
+  "export.bench.costNote": "Cost is an API equivalent at the public list prices on the day this page was published, not necessarily what was charged.",
   "export.bench.responses": "What they said",
   "export.bench.noResponse": "No final message.",
   "export.bench.download": "Download",

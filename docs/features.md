@@ -204,10 +204,22 @@ The periodic cleanup removes expired, revoked and orphaned files.
   Compare measurements, outputs and pass rates, rate runs blind, chart a measure,
   export CSV or JSON, and rerun a benchmark to follow it over time. Input tokens
   include cache reads and writes across requests; cache columns are subsets of that
-  total. Reported auxiliary model usage is included. Unreported costs stay blank,
-  and Claude's cumulative costs are counted only once. Existing measurements are
+  total. Reported auxiliary model usage is included. Cost applies today's public API
+  prices to the tokens of every CLI, as on the Consumption page, and stays blank for a
+  model without a public price; a published share page keeps the prices of its day. Existing measurements are
   refreshed from their journals up to the run's finish time. Outputs of the same
   kind align side by side even when agents choose different filenames.
+- **Consumption, at API prices.** The **Consumption** entry of the rail shows the
+  tokens the instance processed and what the same work would cost through the public
+  APIs: totals for a period, a chart per day or month by CLI, and one breakdown at a
+  time by CLI, model, project, account or session. Every turn records what each model
+  consumed, auxiliary models and subagents included; turns from before the dashboard
+  are read once from the journals. Prices come from the public lists of LiteLLM and
+  models.dev, checked daily and on an administrator's request, with a copy shipped in
+  each release for an instance that has not reached the network. They are applied when
+  the page is read, so a corrected price also corrects the past. The figure is an
+  equivalent, not an invoice: standard list rates, without long-context tiers, priority
+  processing or per-request tools. Every account sees the whole instance.
 - **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, with global and
   project skills managed from the interface, with visible progress while searching,
   installing or updating. [Skill library](skill-library.md).

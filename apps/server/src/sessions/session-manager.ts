@@ -75,6 +75,7 @@ import {
 } from '../checkpoints.js'
 import { serialized } from '../git-workflow.js'
 import { linkedWorktreePaths } from '../worktrees/linked.js'
+import type { TurnUsageRecorder } from '../consumption/recorder.js'
 
 /** Message written during a turn, waiting for its completion. */
 interface QueuedMessage {
@@ -198,6 +199,8 @@ export class SessionManager {
     private readonly codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
     private readonly antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
+    /** Absent in tests that do not look at consumption. */
+    private readonly usage: TurnUsageRecorder | null = null,
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -1022,7 +1025,8 @@ export class SessionManager {
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {
-        this.log.append(conversationId, event, raw, adapter.rawFormat)
+        const entry = this.log.append(conversationId, event, raw, adapter.rawFormat)
+        this.usage?.observe(conversationId, entry, raw)
         if (event.type === 'turn.completed' && conversation.projectId === null && !conversation.benchmarkId) {
           void readPersonalMemory(this.db, personalMemoryDir(this.config.paths.memory, conversation.userId), conversation.userId, conversationId).catch(err => console.warn('Personal memory refresh failed', err))
         }
@@ -1810,6 +1814,7 @@ export class SessionManager {
     }
 
     this.runners.delete(conversationId)
+    this.usage?.forget(conversationId)
     this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
     await managed.runner.stop()

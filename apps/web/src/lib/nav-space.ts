@@ -10,11 +10,12 @@ export type NavSpace =
   | 'discussions'
   | 'benchmarks'
   | 'services'
+  | 'consumption'
   | 'settings'
   | `project:${string}`
 
 /**
- * Spaces that own a list get the column. Tool pages (services, settings) keep the full width: they
+ * Spaces that own a list get the column. Tool pages (services, consumption, settings) keep the full width: they
  * carry their own navigation and a session list beside them would name another space.
  */
 export function hasColumn(space: NavSpace): boolean {
@@ -30,7 +31,7 @@ export function routeSpace(pathname: string): NavSpace | null {
   const project = /^\/p\/([\w-]+)/.exec(pathname)?.[1]
   if (project) return `project:${project}`
   const head = pathname.split('/')[1]
-  if (head === 'discussions' || head === 'benchmarks' || head === 'services') return head
+  if (head === 'discussions' || head === 'benchmarks' || head === 'services' || head === 'consumption') return head
   // The skill editor is opened from the settings library and returns to it.
   if (head === 'settings' || head === 'skills') return 'settings'
   // Activity's own pages: the wall its list fills, and the decision history.

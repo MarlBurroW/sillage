@@ -64,6 +64,7 @@ import {
   UNANSWERED_CAPABILITY,
 } from './prompts.js'
 import { describeFastMode, describePluginErrors, translateSignal } from './signals.js'
+import { claudeTurnCost } from '../../consumption/turn-usage.js'
 
 /**
  * Native messages intentionally ignored: internal progress (session state changes) adds nothing to
@@ -178,6 +179,8 @@ export class ClaudeRunner implements AgentRunner {
   private stopped = false
   /** True from turn opening until closing `result`. */
   private turnOpen = false
+  /** Last `total_cost_usd` the CLI process reported. */
+  private processCostUsd = 0
   /** Forced-closure deadline armed when no `result` is expected. */
   private turnWatchdog: ReturnType<typeof setTimeout> | null = null
   /** Tracks live changes unlike frozen `ctx.config`. */
@@ -724,11 +727,14 @@ export class ClaudeRunner implements AgentRunner {
             message,
           )
         }
+        // The CLI's total covers its whole process: the journal wants this turn's share.
+        const turnCost = claudeTurnCost(message, this.processCostUsd)
+        this.processCostUsd = message.total_cost_usd
         this.ctx.emit(
           {
             type: 'turn.completed',
             stopReason: message.subtype,
-            costUsd: message.total_cost_usd,
+            costUsd: turnCost,
             inputTokens: message.usage.input_tokens,
             outputTokens: message.usage.output_tokens,
             // CLI context mostly uses cache: without both fields displayed totals do not reflect

@@ -164,7 +164,11 @@ export interface BenchmarkRunMetrics {
   outputTokens: number | null
   cacheReadTokens: number | null
   cacheCreationTokens: number | null
-  /** API-equivalent cost computed by the CLI; on a subscription it is not a charge. */
+  /**
+   * API-equivalent cost at public list prices as they stand when the benchmark is read, the
+   * same computation as the consumption dashboard; null when a model has no public price. On a
+   * subscription it is not a charge. The stored snapshot keeps what the CLI announced.
+   */
   costUsd: number | null
   toolCalls: number
   /** Calls per tool name, sub-agent calls included. */

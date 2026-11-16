@@ -20,7 +20,7 @@ import { HttpError, badRequest, notFound } from '../http/errors.js'
 import { INSTANCE_PROFILE, instanceCapabilities } from '../instance/profile.js'
 import type { ArchiveItem } from '../workspace-archive.js'
 import { assessRunFolder, type RunAssessment } from './exportability.js'
-import { benchmarksToDto, type BenchmarkRunner } from './runner.js'
+import type { BenchmarkRunner } from './runner.js'
 import { renderBenchmarkShare, type SharePage, type SharePageRun } from './share-page.js'
 
 /** Text shown inline for a run without a page: enough to read a short file, not a whole log. */
@@ -59,7 +59,7 @@ export class BenchmarkShares {
   }
 
   private benchmark(id: string, userId: string): BenchmarkDto {
-    return benchmarksToDto(this.ctx.db, [this.runner.load(id, userId)])[0]!
+    return this.runner.dto(this.runner.load(id, userId))
   }
 
   private async assess(benchmark: BenchmarkDto): Promise<Map<string, RunAssessment>> {
