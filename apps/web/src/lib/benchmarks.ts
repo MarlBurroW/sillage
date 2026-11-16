@@ -55,6 +55,15 @@ export function useCreateBenchmark() {
   })
 }
 
+export function useUpdateBenchmarkConcurrency() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: ({ id, concurrency }: { id: string; concurrency: number }) =>
+      api.put<BenchmarkDto>(`/api/benchmarks/${id}/concurrency`, { concurrency }),
+    onSuccess: invalidate,
+  })
+}
+
 export function useCancelBenchmark() {
   const invalidate = useInvalidate()
   return useMutation({

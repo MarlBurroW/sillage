@@ -14,7 +14,6 @@ import {
   type Db,
 } from '@sillage/db'
 import {
-  MAX_PARALLEL_BENCHMARK_RUNS,
   benchmarkInputsSchema,
   benchmarkSeriesRoot,
   benchmarkVariantsSchema,
@@ -103,7 +102,7 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[]): BenchmarkDto[] {
     prompt: row.prompt,
     variants: readVariants(row.variants),
     repetitions: row.repetitions,
-    concurrency: row.concurrency,
+    concurrency: row.maxConcurrentRuns ?? (row.concurrency === 'parallel' ? 4 : 1),
     maxDurationMinutes: row.maxDurationMinutes,
     inputs: readInputs(row.inputs).map(({ filename, mimeType, sizeBytes }) => ({ filename, mimeType, sizeBytes })),
     checkScript: row.checkScript,
@@ -207,7 +206,8 @@ export class BenchmarkRunner {
       prompt: body.prompt,
       variants: JSON.stringify(variants),
       repetitions: body.repetitions,
-      concurrency: body.concurrency,
+      concurrency: body.concurrency > 1 ? 'parallel' : 'sequential',
+      maxConcurrentRuns: body.concurrency,
       maxDurationMinutes: body.maxDurationMinutes,
       inputs: JSON.stringify(inputs),
       checkScript: body.checkScript,
@@ -282,6 +282,16 @@ export class BenchmarkRunner {
   }
 
   /** Records a human rating. Allowed before settlement too: a page can be judged while the check runs. */
+  setConcurrency(benchmarkId: string, concurrency: number): void {
+    this.ctx.db.update(benchmarks).set({
+      maxConcurrentRuns: concurrency,
+      concurrency: concurrency > 1 ? 'parallel' : 'sequential',
+      updatedAt: Date.now(),
+    }).where(eq(benchmarks.id, benchmarkId)).run()
+    // Lowering the limit only delays pending runs; active runs keep their slots.
+    this.kick()
+  }
+
   rate(benchmarkId: string, runId: string, rating: number | null, note: string | null): void {
     const result = this.ctx.db
       .update(benchmarkRuns)
@@ -366,7 +376,7 @@ export class BenchmarkRunner {
 
     for (const { run, benchmark } of pending) {
       if (this.launching.has(run.id)) continue
-      const limit = benchmark.concurrency === 'parallel' ? MAX_PARALLEL_BENCHMARK_RUNS : 1
+      const limit = benchmark.maxConcurrentRuns ?? (benchmark.concurrency === 'parallel' ? 4 : 1)
       if ((active.get(benchmark.id) ?? 0) >= limit) continue
       active.set(benchmark.id, (active.get(benchmark.id) ?? 0) + 1)
       // Do not await: CLI startup takes seconds and other benchmarks must not wait for it.

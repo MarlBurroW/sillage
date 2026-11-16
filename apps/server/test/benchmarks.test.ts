@@ -244,3 +244,65 @@ test('benchmark rerun: same configuration and files, in the original series; rat
   assert.equal(existsSync(join(dir, 'benchmarks', second.id)), false)
   assert.equal(runner.list('owner').some((entry) => entry.id === 'original'), true)
 })
+
+test('benchmark concurrency: numeric validation and compatibility with legacy clients', async () => {
+  const { createBenchmarkBodySchema, updateBenchmarkConcurrencyBodySchema } = await import('@sillage/protocol')
+  const body = { name: 'test', prompt: 'test', variants: [{ config: { agent: 'claude', model: 'default', effort: 'low', permissionMode: 'bypassPermissions' } }] }
+  for (const [input, expected] of [[undefined, 1], ['sequential', 1], ['parallel', 4], [7, 7], [60, 60]] as const) {
+    assert.equal(createBenchmarkBodySchema.parse({ ...body, concurrency: input }).concurrency, expected)
+  }
+  for (const concurrency of [0, -1, 1.5, 61, '', null]) {
+    assert.equal(updateBenchmarkConcurrencyBodySchema.safeParse({ concurrency }).success, false)
+  }
+})
+
+test('benchmark concurrency: per-benchmark slots, live changes, legacy rows and reruns', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-concurrency-'))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  t.after(() => { sqlite.close(); rmSync(dir, { recursive: true, force: true }) })
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', isAdmin: false, createdAt: 1 }).run()
+  const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
+  const runner = new BenchmarkRunner(ctx, { assertCliEnabled: () => undefined } as never, {} as never, {} as never, {} as never)
+  runner.kick = () => undefined
+  const variants = JSON.stringify([{ id: 'v', label: 'test', config: { agent: 'claude', model: 'default', effort: 'low', permissionMode: 'bypassPermissions' } }])
+  for (const [id, concurrency, maxConcurrentRuns] of [['one', 'sequential', null], ['four', 'parallel', null], ['seven', 'parallel', 7]] as const) {
+    db.insert(benchmarkTable).values({ id, userId: 'owner', name: id, prompt: 'test', variants, concurrency, maxConcurrentRuns, maxDurationMinutes: 20, createdAt: 1, updatedAt: 1 }).run()
+    for (let i = 0; i < 9; i++) db.insert(benchmarkRuns).values({ id: id + i, benchmarkId: id, variantId: 'v', repetition: i + 1, status: 'pending' }).run()
+  }
+  // Stub CLI startup only: exercise the real database-backed scheduler, including slow starts.
+  const scheduler = runner as unknown as {
+    launchPending(): Promise<void>
+    launch(run: { id: string }): Promise<void>
+    launching: Set<string>
+  }
+  scheduler.launch = async (run) => { scheduler.launching.add(run.id) }
+  await scheduler.launchPending()
+  const count = (id: string) => [...scheduler.launching].filter((key) => key.startsWith(id)).length
+  assert.deepEqual(['one', 'four', 'seven'].map(count), [1, 4, 7])
+  await scheduler.launchPending()
+  assert.deepEqual(['one', 'four', 'seven'].map(count), [1, 4, 7], 'slow startups do not oversubscribe slots')
+  runner.setConcurrency('one', 3)
+  runner.setConcurrency('seven', 2)
+  await scheduler.launchPending()
+  assert.deepEqual(['one', 'four', 'seven'].map(count), [3, 4, 7], 'lowering leaves existing runs alone')
+  assert.equal(runner.list('owner').find((row) => row.id === 'four')!.concurrency, 4)
+  assert.equal(runner.list('owner').find((row) => row.id === 'seven')!.concurrency, 2)
+  const copy = await runner.rerun('seven', 'owner')
+  assert.equal(copy.maxConcurrentRuns, 2)
+
+  const app = Fastify()
+  registerErrorHandler(app)
+  app.addHook('preHandler', async (request) => {
+    Object.assign(request, { user: { id: request.headers['x-owner'] ?? 'owner' } })
+  })
+  registerBenchmarkRoutes(app, ctx, runner)
+  t.after(() => app.close())
+  const update = (concurrency: unknown, owner = 'owner') => app.inject({
+    method: 'PUT', url: '/api/benchmarks/one/concurrency', headers: { 'x-owner': owner }, payload: { concurrency },
+  })
+  assert.equal((await update(5)).statusCode, 200)
+  assert.equal((await update(0)).statusCode, 400)
+  assert.equal((await update(8, 'stranger')).statusCode, 404)
+  assert.equal(runner.load('one', 'owner').maxConcurrentRuns, 5)
+})

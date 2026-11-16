@@ -1,0 +1,1 @@
+ALTER TABLE `benchmarks` ADD `max_concurrent_runs` integer;

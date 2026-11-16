@@ -697,6 +697,8 @@ export const benchmarks = sqliteTable(
     repetitions: integer('repetitions').notNull().default(1),
     /** `sequential` keeps latencies comparable; `parallel` finishes sooner at the cost of contention. */
     concurrency: text('concurrency').$type<'sequential' | 'parallel'>().notNull().default('sequential'),
+    // Null preserves the legacy mode's limit (1 or 4) for existing benchmarks.
+    maxConcurrentRuns: integer('max_concurrent_runs'),
     /** Runs still working beyond this are terminated: a wandering agent must not block the queue. */
     maxDurationMinutes: integer('max_duration_minutes').notNull(),
     /**

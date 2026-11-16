@@ -13,19 +13,19 @@ import {
   MAX_BENCHMARK_PROMPT_CHARS,
   MAX_BENCHMARK_REPETITIONS,
   MAX_BENCHMARK_VARIANTS,
-  MAX_PARALLEL_BENCHMARK_RUNS,
   MIN_BENCHMARK_DURATION_MINUTES,
   benchmarkPath,
+  benchmarkConcurrencySchema,
   defaultConfigFor,
   type AgentConfig,
   type AgentKind,
   type AttachmentDto,
-  type BenchmarkConcurrency,
 } from '@sillage/protocol'
 import { AttachmentTray } from '../components/chat/AttachmentTray'
+import { ConcurrencyField } from '../components/benchmark/ConcurrencyField'
 import { VariantEditor } from '../components/benchmark/VariantEditor'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { Banner, Button, Field, IconButton, Select } from '../components/ui'
+import { Banner, Button, Field, IconButton } from '../components/ui'
 import { useAgentAvailability } from '../lib/agents'
 import { discardAttachment, uploadAttachment } from '../lib/attachments'
 import { useCreateBenchmark } from '../lib/benchmarks'
@@ -57,7 +57,7 @@ export function NewBenchmarkPage() {
   const [prompt, setPrompt] = useState('')
   const [variants, setVariants] = useState<Draft[]>([])
   const [repetitions, setRepetitions] = useState('1')
-  const [concurrency, setConcurrency] = useState<BenchmarkConcurrency>('sequential')
+  const [concurrency, setConcurrency] = useState('1')
   const [maxDuration, setMaxDuration] = useState(String(DEFAULT_BENCHMARK_DURATION_MINUTES))
   const [nextKey, setNextKey] = useState(1)
   const [inputs, setInputs] = useState<AttachmentDto[]>([])
@@ -109,7 +109,7 @@ export function NewBenchmarkPage() {
   const durationValid = Number.isInteger(duration) && duration >= MIN_BENCHMARK_DURATION_MINUTES && duration <= MAX_BENCHMARK_DURATION_MINUTES
   const timeout = Number(checkTimeout)
   const timeoutValid = !checkScript.trim() || (Number.isInteger(timeout) && timeout >= MIN_CHECK_TIMEOUT_SECONDS && timeout <= MAX_CHECK_TIMEOUT_SECONDS)
-  const valid = Boolean(name.trim() && prompt.trim() && variants.length > 0 && repsValid && durationValid && timeoutValid && uploading === 0)
+  const valid = Boolean(name.trim() && prompt.trim() && variants.length > 0 && repsValid && benchmarkConcurrencySchema.safeParse(Number(concurrency)).success && durationValid && timeoutValid && uploading === 0)
   const total = variants.length * (repsValid ? reps : 0)
 
   const submit = () => {
@@ -120,7 +120,7 @@ export function NewBenchmarkPage() {
         prompt: prompt.trim(),
         variants: variants.map((variant) => ({ config: variant.config })),
         repetitions: reps,
-        concurrency,
+        concurrency: Number(concurrency),
         maxDurationMinutes: duration,
         attachmentIds: inputs.map((input) => input.id),
         checkScript: checkScript.trim() ? checkScript : null,
@@ -213,15 +213,7 @@ export function NewBenchmarkPage() {
               value={repetitions}
               onChange={(event) => setRepetitions(event.target.value)}
             />
-            <Select
-              label={t('benchmark.form.concurrency')}
-              value={concurrency}
-              onChange={setConcurrency}
-              options={[
-                { value: 'sequential', label: t('benchmark.form.concurrency.sequential'), hint: t('benchmark.form.concurrency.sequentialHint') },
-                { value: 'parallel', label: t('benchmark.form.concurrency.parallel'), hint: t('benchmark.form.concurrency.parallelHint', { max: MAX_PARALLEL_BENCHMARK_RUNS }) },
-              ]}
-            />
+            <ConcurrencyField value={concurrency} onChange={setConcurrency} />
             <Field
               label={t('schedule.form.maxDuration')}
               hint={t('benchmark.form.maxDurationHint')}

@@ -22,14 +22,17 @@ export const MIN_BENCHMARK_DURATION_MINUTES = 1
 export const MAX_BENCHMARK_DURATION_MINUTES = 4 * 60
 /** A benchmark prompt is a bounded task: an agent still busy after this is wandering. */
 export const DEFAULT_BENCHMARK_DURATION_MINUTES = 20
-/**
- * Simultaneous sessions a parallel benchmark may keep open. Twelve CLIs at once would starve
- * each other on one machine and distort every duration they report.
- */
-export const MAX_PARALLEL_BENCHMARK_RUNS = 4
-
-export const benchmarkConcurrencySchema = z.enum(['sequential', 'parallel'])
+// A benchmark cannot contain more runs than this, so a higher limit has no effect.
+export const MAX_BENCHMARK_CONCURRENCY = MAX_BENCHMARK_VARIANTS * MAX_BENCHMARK_REPETITIONS
+export const benchmarkConcurrencySchema = z.number().int().min(1).max(MAX_BENCHMARK_CONCURRENCY)
 export type BenchmarkConcurrency = z.infer<typeof benchmarkConcurrencySchema>
+
+// Older clients used mode names. Preserve their meaning at the input boundary.
+const benchmarkConcurrencyInputSchema = z.union([
+  benchmarkConcurrencySchema,
+  z.enum(['sequential', 'parallel']).transform((mode) => mode === 'parallel' ? 4 : 1),
+])
+export const updateBenchmarkConcurrencyBodySchema = z.object({ concurrency: benchmarkConcurrencySchema })
 
 export const benchmarkRunStatusSchema = z.enum(['pending', 'running', 'checking', 'succeeded', 'failed', 'timed_out', 'cancelled'])
 export type BenchmarkRunStatus = z.infer<typeof benchmarkRunStatusSchema>
@@ -46,7 +49,7 @@ export const createBenchmarkBodySchema = z.object({
   prompt: z.string().trim().min(1).max(MAX_BENCHMARK_PROMPT_CHARS),
   variants: z.array(benchmarkVariantInputSchema).min(1).max(MAX_BENCHMARK_VARIANTS),
   repetitions: z.number().int().min(1).max(MAX_BENCHMARK_REPETITIONS).default(1),
-  concurrency: benchmarkConcurrencySchema.default('sequential'),
+  concurrency: benchmarkConcurrencyInputSchema.default(1),
   maxDurationMinutes: z
     .number()
     .int()

@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { BENCHMARK_PREVIEW_PREFIX, createBenchmarkBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto } from '@sillage/protocol'
+import { BENCHMARK_PREVIEW_PREFIX, createBenchmarkBodySchema, updateBenchmarkConcurrencyBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto } from '@sillage/protocol'
 import { PREVIEW_POLICY, previewType } from '../../benchmarks/deliverables.js'
 import { benchmarksToDto, type BenchmarkRunner } from '../../benchmarks/runner.js'
 import { resolveRealInside } from '../../workspace.js'
@@ -29,6 +29,14 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     const user = requireUser(request)
     const row = runner.load((request.params as { id: string }).id, user.id)
     return benchmarksToDto(ctx.db, [row])[0]!
+  })
+
+  app.put('/api/benchmarks/:id/concurrency', async (request): Promise<BenchmarkDto> => {
+    const user = requireUser(request)
+    const row = runner.load((request.params as { id: string }).id, user.id)
+    const body = updateBenchmarkConcurrencyBodySchema.parse(request.body)
+    runner.setConcurrency(row.id, body.concurrency)
+    return benchmarksToDto(ctx.db, [runner.load(row.id, user.id)])[0]!
   })
 
   app.post('/api/benchmarks/:id/cancel', async (request): Promise<BenchmarkDto> => {

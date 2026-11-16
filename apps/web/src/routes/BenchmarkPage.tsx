@@ -1,9 +1,10 @@
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Square, Trash2, X } from 'lucide-react'
+import { Pencil, ArrowDown, ArrowLeft, ArrowUp, Check, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Square, Trash2, X } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { benchmarkPath, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
+import { benchmarkConcurrencySchema, benchmarkPath, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
+import { ConcurrencyField } from '../components/benchmark/ConcurrencyField'
 import { BenchmarkChart } from '../components/benchmark/BenchmarkChart'
 import { DeliverablesGrid } from '../components/benchmark/DeliverablesGrid'
 import { SeriesComparison } from '../components/benchmark/SeriesComparison'
@@ -27,6 +28,7 @@ import {
   useBenchmarks,
   useBlindReview,
   useCancelBenchmark,
+  useUpdateBenchmarkConcurrency,
   useDeleteBenchmark,
   useRerunBenchmark,
   type MetricKey,
@@ -67,6 +69,9 @@ export function BenchmarkPage() {
   const navigate = useNavigate()
   const { data: benchmarks, isPending, isError } = useBenchmarks()
   const cancel = useCancelBenchmark()
+  const updateConcurrency = useUpdateBenchmarkConcurrency()
+  const [editingConcurrency, setEditingConcurrency] = useState(false)
+  const [concurrency, setConcurrency] = useState('1')
   const remove = useDeleteBenchmark()
   const [confirming, setConfirming] = useState(false)
   const [sort, setSort] = useState<Sort | null>(null)
@@ -122,6 +127,19 @@ export function BenchmarkPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <ConfirmDialog
+        open={editingConcurrency}
+        onOpenChange={setEditingConcurrency}
+        title={t('benchmark.concurrency.edit')}
+        confirmLabel={t('benchmark.concurrency.save')}
+        busy={updateConcurrency.isPending}
+        confirmDisabled={!benchmarkConcurrencySchema.safeParse(Number(concurrency)).success}
+        onConfirm={() => updateConcurrency.mutate({ id: benchmark.id, concurrency: Number(concurrency) }, { onSuccess: () => setEditingConcurrency(false) })}
+      >
+        <ConcurrencyField value={concurrency} onChange={setConcurrency} />
+        <p>{t('benchmark.concurrency.liveHint')}</p>
+        {updateConcurrency.error ? <Banner>{updateConcurrency.error.message}</Banner> : null}
+      </ConfirmDialog>
       <header className={'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6'}>
         <MobileNavigationButton />
         <Link to="/benchmarks"><IconButton label={t('benchmark.back')}><ArrowLeft size={18} /></IconButton></Link>
@@ -173,7 +191,12 @@ export function BenchmarkPage() {
 
           <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-ink-soft">
             <Fact label={t('benchmark.form.repetitions')}>{benchmark.repetitions}</Fact>
-            <Fact label={t('benchmark.form.concurrency')}>{t(benchmark.concurrency === 'parallel' ? 'benchmark.form.concurrency.parallel' : 'benchmark.form.concurrency.sequential')}</Fact>
+            <Fact label={t('benchmark.form.concurrency')}>{benchmark.concurrency}
+              <IconButton label={t('benchmark.concurrency.edit')} onClick={() => {
+                setConcurrency(String(benchmark.concurrency))
+                updateConcurrency.reset()
+                setEditingConcurrency(true)
+              }}><Pencil size={13} /></IconButton></Fact>
             <Fact label={t('schedule.form.maxDuration')}>{benchmark.maxDurationMinutes}</Fact>
             {benchmark.inputs.length ? (
               <Fact label={t('benchmark.form.inputs')}>
