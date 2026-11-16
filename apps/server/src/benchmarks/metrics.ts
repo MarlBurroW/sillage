@@ -1,5 +1,29 @@
-import type { BenchmarkRunMetrics, JournalEntry } from '@sillage/protocol'
+import type { AgentKind, BenchmarkRunMetrics, JournalEntry } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
+
+export const RUN_METRICS_VERSION = 2
+
+type MetricEntry = JournalEntry & { raw?: unknown }
+
+/** Native Claude costs are cumulative; per-result model usage also includes auxiliary models. */
+function claudeResult(raw: unknown) {
+  if (!raw || typeof raw !== 'object' || !('type' in raw) || raw.type !== 'result') return null
+  const result = raw as Record<string, unknown>
+  const totalCost = typeof result.total_cost_usd === 'number' && Number.isFinite(result.total_cost_usd) && result.total_cost_usd >= 0 ? result.total_cost_usd : null
+  const usage = result.model_usage_since_last_result
+  if (!usage || typeof usage !== 'object') return { totalCost, usage: null }
+  const models = Object.values(usage) as Record<string, unknown>[]
+  const keys = ['inputTokens', 'outputTokens', 'cacheReadInputTokens', 'cacheCreationInputTokens', 'costUSD'] as const
+  if (!models.length || models.some((model) => !model || keys.some((key) => typeof model[key] !== 'number' || !Number.isFinite(model[key]) || (model[key] as number) < 0))) {
+    return { totalCost, usage: null }
+  }
+  const sum = (key: typeof keys[number]) => models.reduce((total, model) => total + (model[key] as number), 0)
+  return { totalCost, usage: {
+    inputTokens: sum('inputTokens'), outputTokens: sum('outputTokens'),
+    cacheReadTokens: sum('cacheReadInputTokens'), cacheCreationTokens: sum('cacheCreationInputTokens'),
+    costUsd: sum('costUSD'),
+  } }
+}
 
 /**
  * Folds a run's journal into its measurements.
@@ -8,7 +32,7 @@ import type { EventLog } from '../events/event-log.js'
  * vocabulary, so one fold serves Claude, Codex, Grok and the ACP agents alike; what a CLI never
  * reports stays null rather than becoming a zero that would rank it first.
  */
-export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics {
+export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): BenchmarkRunMetrics {
   let startedAt: number | null = null
   let completedAt: number | null = null
   let firstTextAt: number | null = null
@@ -18,35 +42,44 @@ export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics 
   let cacheReadTokens = 0
   let cacheCreationTokens = 0
   let costUsd = 0
+  let previousClaudeCost = 0
+  let costReported = false
   let toolCalls = 0
   const toolsByName: Record<string, number> = {}
   let toolErrors = 0
   let toolDurationMs = 0
+  const startedTools = new Set<string>()
+  const completedTools = new Set<string>()
   const assistantIds = new Set<string>()
   let outputChars = 0
   let contextTokens: number | null = null
   let model: string | null = null
   // Requests waiting for a human, by id: their open time is not the model's.
-  const waiting = new Map<string, number>()
+  const waiting = new Set<string>()
   let waitingMs = 0
+  let waitingSince: number | null = null
   let lastTs: number | null = null
 
-  for (const { ts, event } of entries) {
+  for (const { ts, event, raw } of entries) {
     lastTs = ts
     switch (event.type) {
       case 'permission.requested':
       case 'question.requested':
       case 'plan.review_requested':
       case 'elicitation.requested':
-        waiting.set(event.requestId, ts)
+        if (event.type === 'question.requested' && event.blocking === false) break
+        if (waiting.size === 0) waitingSince = ts
+        waiting.add(event.requestId)
         break
       case 'permission.resolved':
       case 'question.resolved':
       case 'plan.review_resolved':
       case 'elicitation.resolved': {
-        const since = waiting.get(event.requestId)
-        if (since !== undefined) waitingMs += ts - since
         waiting.delete(event.requestId)
+        if (waiting.size === 0 && waitingSince !== null) {
+          waitingMs += Math.max(0, ts - waitingSince)
+          waitingSince = null
+        }
         break
       }
       case 'message.started':
@@ -72,27 +105,43 @@ export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics 
         }
         break
       case 'tool.started':
+        if (startedTools.has(event.toolCallId)) break
+        startedTools.add(event.toolCallId)
         toolCalls += 1
         toolsByName[event.name] = (toolsByName[event.name] ?? 0) + 1
         break
       case 'tool.completed':
+        if (completedTools.has(event.toolCallId)) break
+        completedTools.add(event.toolCallId)
         if (event.isError) toolErrors += 1
         toolDurationMs += event.durationMs
         break
-      case 'turn.completed':
+      case 'turn.completed': {
         completedAt = ts
-        usageReported = usageReported || event.inputTokens > 0 || event.outputTokens > 0 || event.cacheReadTokens > 0 || event.cacheCreationTokens > 0
-        inputTokens += event.inputTokens
-        outputTokens += event.outputTokens
-        cacheReadTokens += event.cacheReadTokens
-        cacheCreationTokens += event.cacheCreationTokens
-        costUsd += event.costUsd
+        const native = agent === 'claude' ? claudeResult(raw) : null
+        const usage = native?.usage ?? event
+        usageReported ||= usage.inputTokens > 0 || usage.outputTokens > 0 || usage.cacheReadTokens > 0 || usage.cacheCreationTokens > 0
+        // Journal input counts exclude cache. Benchmarks compare all processed input, with
+        // cache columns describing subsets rather than additional consumption.
+        inputTokens += usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens
+        outputTokens += usage.outputTokens
+        cacheReadTokens += usage.cacheReadTokens
+        cacheCreationTokens += usage.cacheCreationTokens
+        costReported ||= (native !== null && (native.usage !== null || native.totalCost !== null)) || event.costUsd > 0
+        if (native?.usage) costUsd += native.usage.costUsd
+        else if (native && typeof native.totalCost === 'number') {
+          costUsd += Math.max(0, native.totalCost >= previousClaudeCost ? native.totalCost - previousClaudeCost : native.totalCost)
+        } else costUsd += event.costUsd
+        if (native && typeof native.totalCost === 'number') previousClaudeCost = native.totalCost
         break
+      }
       case 'usage.updated':
-        usageReported = usageReported || event.inputTokens > 0 || event.outputTokens > 0
+        // These are context snapshots, not turn totals. Never manufacture zero consumption
+        // from an interrupted run that emitted snapshots but no final usage.
         if (event.context) contextTokens = event.context.usedTokens
         break
       case 'session.started':
+        agent = event.agent
         model = event.model
         break
       default:
@@ -101,10 +150,11 @@ export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics 
   }
 
   // A request still open when the run was cut off waited until the journal's last word.
-  for (const since of waiting.values()) if (lastTs !== null) waitingMs += lastTs - since
+  if (waitingSince !== null && lastTs !== null) waitingMs += Math.max(0, lastTs - waitingSince)
 
   const elapsed = (end: number | null) => (startedAt !== null && end !== null && end >= startedAt ? end - startedAt : null)
   return {
+    version: RUN_METRICS_VERSION,
     durationMs: elapsed(completedAt),
     waitingMs,
     firstTextMs: elapsed(firstTextAt),
@@ -112,8 +162,9 @@ export function computeRunMetrics(entries: JournalEntry[]): BenchmarkRunMetrics 
     outputTokens: usageReported ? outputTokens : null,
     cacheReadTokens: usageReported ? cacheReadTokens : null,
     cacheCreationTokens: usageReported ? cacheCreationTokens : null,
-    // A cost without any token report is a CLI default, not a measurement.
-    costUsd: usageReported || costUsd > 0 ? costUsd : null,
+    // Zero is also the journal default for CLIs with no cost report (including Codex).
+    // Without an explicit price, it cannot establish that a run was free.
+    costUsd: costReported ? costUsd : null,
     toolCalls,
     toolsByName,
     toolErrors,
@@ -136,6 +187,8 @@ const METRIC_EVENT_TYPES = [
   'elicitation.requested',
   'elicitation.resolved',
   'session.started',
+  'session.ended',
+  'error',
   'turn.started',
   'turn.completed',
   'message.started',
@@ -147,14 +200,20 @@ const METRIC_EVENT_TYPES = [
 ]
 
 /** Pages the replay projection: large tool outputs are already trimmed there, so a long run stays cheap to fold. */
-export function readRunMetrics(log: EventLog, conversationId: string): BenchmarkRunMetrics {
-  const entries: JournalEntry[] = []
+export function readRunMetrics(log: EventLog, conversationId: string, agent?: AgentKind, throughTs = Infinity): BenchmarkRunMetrics {
+  const entries: MetricEntry[] = []
   let after = 0
   for (;;) {
     const page = log.readForReplay(conversationId, after, { rows: 2000, bytes: 8 * 1024 * 1024, unfiltered: true, onlyTypes: METRIC_EVENT_TYPES })
-    entries.push(...page.entries)
+    for (const entry of page.entries) {
+      if (entry.ts > throughTs) return computeRunMetrics(entries, agent)
+      if (entry.event.type === 'session.started') agent = entry.event.agent
+      entries.push(entry.event.type === 'turn.completed' && agent === 'claude'
+        ? { ...entry, raw: log.lastRawOfType(conversationId, 'turn.completed', entry.seq) }
+        : entry)
+    }
     if (page.nextAfter <= after) break
     after = page.nextAfter
   }
-  return computeRunMetrics(entries)
+  return computeRunMetrics(entries, agent)
 }

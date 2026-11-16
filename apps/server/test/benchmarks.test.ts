@@ -14,8 +14,9 @@ import { registerBenchmarkRoutes } from '../src/http/routes/benchmarks.js'
 import { runScript } from '../src/scheduler/check.js'
 import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync } from 'node:fs'
-import { benchmarkRuns, benchmarks as benchmarkTable, openDatabase, runMigrations, users } from '@sillage/db'
+import { benchmarkRuns, benchmarks as benchmarkTable, conversations, events, openDatabase, runMigrations, users } from '@sillage/db'
 import { BenchmarkRunner, benchmarkInputDir } from '../src/benchmarks/runner.js'
+import { eq } from 'drizzle-orm'
 import type { AppContext } from '../src/http/context.js'
 
 /** Journal entries at the given millisecond offsets, in order. */
@@ -48,7 +49,7 @@ test('benchmark metrics: durations run from the user message, tokens add up acro
 
   assert.equal(metrics.durationMs, 8000)
   assert.equal(metrics.firstTextMs, 800)
-  assert.equal(metrics.inputTokens, 11)
+  assert.equal(metrics.inputTokens, 716)
   assert.equal(metrics.outputTokens, 22)
   assert.equal(metrics.cacheCreationTokens, 5)
   assert.equal(metrics.cacheReadTokens, 700)
@@ -305,4 +306,128 @@ test('benchmark concurrency: per-benchmark slots, live changes, legacy rows and 
   assert.equal((await update(0)).statusCode, 400)
   assert.equal((await update(8, 'stranger')).statusCode, 404)
   assert.equal(runner.load('one', 'owner').maxConcurrentRuns, 5)
+})
+
+const completed = (inputTokens: number, outputTokens: number, cacheReadTokens = 0, cacheCreationTokens = 0, costUsd = 0): SillageEvent & { type: 'turn.completed' } => ({
+  type: 'turn.completed', stopReason: 'completed', inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd,
+})
+
+test('benchmark metrics: actual Claude 2.1.318 and Codex 0.163.0 counters include cache, not context snapshots', () => {
+  // Numeric usage from the reported benchmark; no prompt, response or account data.
+  for (const [input, output, read, written, expected] of [
+    [4, 9944, 38462, 22512, 60978],
+    [6, 11313, 73058, 24564, 97628],
+    [4, 9362, 36627, 22749, 59380],
+    [20003, 4523, 161024, 0, 181027],
+    [21818, 2720, 41472, 0, 63290],
+  ]) {
+    const metrics = computeRunMetrics(journal([
+      [0, { type: 'turn.started' }],
+      [5, { type: 'usage.updated', inputTokens: 35000, outputTokens: 200, costUsd: 0 }],
+      [10, completed(input!, output!, read!, written!)],
+    ]))
+    assert.equal(metrics.inputTokens, expected)
+    assert.equal(metrics.outputTokens, output)
+    assert.equal(metrics.cacheReadTokens, read)
+    assert.equal(metrics.cacheCreationTokens, written)
+    assert.equal(metrics.costUsd, null, 'unreported cost must not rank as free')
+  }
+  const interrupted = computeRunMetrics(journal([
+    [0, { type: 'turn.started' }],
+    [5, { type: 'usage.updated', inputTokens: 1000, outputTokens: 200, costUsd: 0, context: { usedTokens: 1000, maxTokens: 10000, ratio: 0.1 } }],
+    [10, completed(0, 0)],
+  ]))
+  assert.equal(interrupted.inputTokens, null, 'a context snapshot cannot establish turn consumption')
+  assert.equal(interrupted.outputTokens, null)
+  assert.equal(interrupted.contextTokens, 1000)
+})
+
+test('benchmark metrics: Claude native per-result usage includes auxiliary models and avoids cumulative cost double counting', () => {
+  const entries = journal([[0, { type: 'turn.started' }], [10, completed(4, 9944, 38462, 22512, 0.3868893)]])
+  const first = {
+    type: 'result', total_cost_usd: 0.3868893,
+    model_usage_since_last_result: {
+      main: { inputTokens: 4, outputTokens: 9944, cacheReadInputTokens: 38462, cacheCreationInputTokens: 22512, costUSD: 0.3866844 },
+      auxiliary: { inputTokens: 1259, outputTokens: 158, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0.0002049 },
+    },
+  }
+  const metrics = computeRunMetrics(entries.map((entry) => ({ ...entry, raw: entry.event.type === 'turn.completed' ? first : undefined })), 'claude')
+  assert.equal(metrics.inputTokens, 62237)
+  assert.equal(metrics.outputTokens, 10102)
+  assert.ok(Math.abs(metrics.costUsd! - 0.3868893) < 1e-9)
+
+  const turns = journal([[0, completed(10, 20, 30, 40, 2)], [10, completed(1, 2, 3, 4, 5)]])
+  const cumulative = turns.map((entry, i) => ({ ...entry, raw: { type: 'result', total_cost_usd: i ? 5 : 2 } }))
+  assert.equal(computeRunMetrics(cumulative, 'claude').costUsd, 5)
+  assert.equal(computeRunMetrics([{ ...turns[0]!, raw: { type: 'result', total_cost_usd: 0 } }], 'claude').costUsd, 0,
+    'an explicitly reported zero differs from a missing cost')
+  const perResult = cumulative.map((entry, i) => ({ ...entry, raw: { ...entry.raw, model_usage_since_last_result: {
+    main: { inputTokens: 1, outputTokens: 2, cacheReadInputTokens: 3, cacheCreationInputTokens: 4, costUSD: i ? 3 : 2 },
+  } } }))
+  assert.equal(computeRunMetrics(perResult, 'claude').costUsd, 5)
+  assert.equal(computeRunMetrics(perResult, 'claude').inputTokens, 16)
+})
+
+test('benchmark metrics: overlapping human waits form a union; async questions do not stop the clock', () => {
+  const metrics = computeRunMetrics(journal([
+    [0, { type: 'turn.started' }],
+    [10, { type: 'question.requested', requestId: 'async', questions: [], blocking: false }],
+    [20, { type: 'question.requested', requestId: 'a', questions: [] }],
+    [30, { type: 'question.requested', requestId: 'b', questions: [] }],
+    [40, { type: 'question.requested', requestId: 'a', questions: [] }],
+    [50, { type: 'question.resolved', requestId: 'a', status: 'answered', answers: {}, decidedBy: null }],
+    [60, { type: 'question.resolved', requestId: 'b', status: 'answered', answers: {}, decidedBy: null }],
+    [70, { type: 'question.requested', requestId: 'cut', questions: [] }],
+    [90, { type: 'session.ended', reason: 'interrupted' }],
+  ]))
+  assert.equal(metrics.waitingMs, 60)
+})
+
+test('benchmark metrics: repeated tool notifications do not inflate counts or time', () => {
+  const start: SillageEvent = { type: 'tool.started', toolCallId: 'tool', name: 'Bash', input: {}, parentToolCallId: null }
+  const end: SillageEvent = { type: 'tool.completed', toolCallId: 'tool', output: '', isError: true, durationMs: 25 }
+  const metrics = computeRunMetrics(journal([[0, start], [1, start], [25, end], [26, end]]))
+  assert.equal(metrics.toolCalls, 1)
+  assert.equal(metrics.toolErrors, 1)
+  assert.equal(metrics.toolDurationMs, 25)
+  assert.deepEqual(metrics.toolsByName, { Bash: 1 })
+})
+
+test('benchmark API: legacy snapshots are repaired once and exclude post-benchmark conversation turns', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-metrics-'))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  t.after(() => { sqlite.close(); rmSync(dir, { recursive: true, force: true }) })
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(benchmarkTable).values({ id: 'bench', userId: 'owner', name: 'test', prompt: 'test',
+    variants: JSON.stringify([{ id: 'v', label: 'Codex', config: { agent: 'codex', model: 'test', reasoningEffort: 'medium', askForApproval: 'never', sandbox: 'danger-full-access' } }]),
+    maxDurationMinutes: 10, createdAt: 1, updatedAt: 1 }).run()
+  db.insert(conversations).values({ id: 'c', userId: 'owner', title: 'run', agent: 'codex', status: 'idle', config: '{}', createdAt: 1, updatedAt: 1, lastSeq: 4 }).run()
+  const entries = journal([[0, { type: 'turn.started' }], [100, completed(4, 50, 30, 20)], [500, { type: 'turn.started' }], [900, completed(999, 999, 999)]])
+  for (const entry of entries) db.insert(events).values({ conversationId: 'c', seq: entry.seq, ts: entry.ts, type: entry.event.type, payload: JSON.stringify(entry.event) }).run()
+  const legacy = { ...computeRunMetrics([]), version: undefined, inputTokens: 4, outputTokens: 50, cacheReadTokens: 30, cacheCreationTokens: 20, costUsd: 0 }
+  db.insert(benchmarkRuns).values([
+    { id: 'run', benchmarkId: 'bench', variantId: 'v', conversationId: 'c', repetition: 1, status: 'succeeded', finishedAt: 1_000_200, metrics: JSON.stringify(legacy) },
+    { id: 'deleted', benchmarkId: 'bench', variantId: 'v', repetition: 2, status: 'succeeded', finishedAt: 1_000_200, metrics: JSON.stringify(legacy) },
+  ]).run()
+  const ctx = { db, config: {} } as AppContext
+  const runner = new BenchmarkRunner(ctx, {} as never, {} as never, {} as never, {} as never)
+  const app = Fastify()
+  registerErrorHandler(app)
+  app.addHook('preHandler', async (request) => { Object.assign(request, { user: { id: 'owner' } }) })
+  registerBenchmarkRoutes(app, ctx, runner)
+  t.after(() => app.close())
+  const response = await app.inject({ url: '/api/benchmarks/bench' })
+  assert.equal(response.statusCode, 200, response.body)
+  const result = response.json()
+  for (const run of result.runs) {
+    assert.equal(run.metrics.inputTokens, 54)
+    assert.equal(run.metrics.costUsd, null)
+    assert.equal(run.metrics.version, 2)
+  }
+  assert.equal(result.runs.find((run: { id: string }) => run.id === 'run').metrics.durationMs, 100)
+  const stored = db.select().from(benchmarkRuns).where(eq(benchmarkRuns.id, 'run')).get()!.metrics
+  db.delete(events).where(eq(events.conversationId, 'c')).run()
+  assert.deepEqual((await app.inject({ url: '/api/benchmarks' })).json()[0].runs, result.runs)
+  assert.equal(db.select().from(benchmarkRuns).where(eq(benchmarkRuns.id, 'run')).get()!.metrics, stored)
 })

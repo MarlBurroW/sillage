@@ -123,6 +123,7 @@ export function BenchmarkChart({ rows, metrics }: { rows: ChartRow[]; metrics: M
         </div>
       )}
       <p className="text-xs text-ink-faint">{t('benchmark.chart.legend')}</p>
+      <p className="text-xs text-ink-faint">{t('benchmark.measures.explanation')}</p>
     </section>
   )
 }

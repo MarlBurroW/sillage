@@ -202,7 +202,12 @@ The periodic cleanup removes expired, revoked and orphaned files.
   and CLIs, with optional starting files and a check script. Runs start without
   personal memory or platform prompt, so every variant receives the same text.
   Compare measurements, outputs and pass rates, rate runs blind, chart a measure,
-  export CSV or JSON, and rerun a benchmark to follow it over time.
+  export CSV or JSON, and rerun a benchmark to follow it over time. Input tokens
+  include cache reads and writes across requests; cache columns are subsets of that
+  total. Reported auxiliary model usage is included. Unreported costs stay blank,
+  and Claude's cumulative costs are counted only once. Existing measurements are
+  refreshed from their journals up to the run's finish time. Outputs of the same
+  kind align side by side even when agents choose different filenames.
 - **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, with global and
   project skills managed from the interface, with visible progress while searching,
   installing or updating. [Skill library](skill-library.md).

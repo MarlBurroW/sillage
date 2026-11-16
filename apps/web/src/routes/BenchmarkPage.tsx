@@ -189,7 +189,7 @@ export function BenchmarkPage() {
             <p className="border-t border-line px-4 py-3 text-sm whitespace-pre-wrap text-ink-soft">{benchmark.prompt}</p>
           </details>
 
-          <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-ink-soft">
+          <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-ink-soft">
             <Fact label={t('benchmark.form.repetitions')}>{benchmark.repetitions}</Fact>
             <Fact label={t('benchmark.form.concurrency')}>{benchmark.concurrency}
               <IconButton label={t('benchmark.concurrency.edit')} onClick={() => {
@@ -251,6 +251,7 @@ export function BenchmarkPage() {
             <SeriesComparison series={series} current={benchmark.id} />
           ) : <>
 
+          <p className="text-xs text-ink-faint">{t('benchmark.measures.explanation')}</p>
           <div className="overflow-x-auto rounded-lg border border-line" data-benchmark-results>
             <table className="w-full min-w-max border-collapse text-sm">
               <thead>
@@ -396,9 +397,9 @@ function RunStatus({ run }: { run: BenchmarkRunDto }) {
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex gap-1.5">
+    <div className="flex items-center gap-1.5">
       <dt className="text-ink-faint">{label}</dt>
-      <dd className="font-medium text-ink">{children}</dd>
+      <dd className="flex items-center gap-1.5 font-medium text-ink">{children}</dd>
     </div>
   )
 }

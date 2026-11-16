@@ -147,6 +147,8 @@ export const benchmarkVariantsSchema = z.array(benchmarkVariantSchema)
  * journal itself is the source.
  */
 export interface BenchmarkRunMetrics {
+  /** Version of the persisted measurement fold; absent on legacy snapshots. */
+  version?: number
   /**
    * From the first user message to the last completed turn; null if the turn never completed.
    * Wall time: it includes `waitingMs`, the time a request for permission or an answer stayed open.
@@ -156,7 +158,9 @@ export interface BenchmarkRunMetrics {
   waitingMs: number
   /** From the first user message to the first assistant text; null if none arrived. */
   firstTextMs: number | null
+  /** Total input across requests, including cache reads and writes (subsets below). */
   inputTokens: number | null
+  /** Includes reasoning tokens when the CLI includes them in its usage. */
   outputTokens: number | null
   cacheReadTokens: number | null
   cacheCreationTokens: number | null

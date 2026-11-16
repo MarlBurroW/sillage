@@ -1,17 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { Download, ExternalLink } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import {
   benchmarkPreviewUrl,
   variantAgent,
   type BenchmarkDeliverable,
   type BenchmarkDeliverableKind,
   type BenchmarkDto,
-  type BenchmarkRunDto,
 } from '@sillage/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { isOpenRun } from '../../lib/benchmarks'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { Markdown } from '../chat/Markdown'
 import { RatingInput } from './RatingInput'
@@ -20,13 +19,18 @@ import { Select, cx } from '../ui'
 /** Rows people compare first: what renders, then what plays, then what reads. */
 const KIND_ORDER: Record<BenchmarkDeliverableKind, number> = { page: 0, image: 1, video: 2, audio: 3, pdf: 4, text: 5, other: 6 }
 
+const OUTPUT_KIND_LABELS: Record<BenchmarkDeliverableKind, MessageKey> = {
+  page: 'benchmark.outputs.page', image: 'benchmark.outputs.image', video: 'benchmark.outputs.video',
+  audio: 'benchmark.outputs.audio', pdf: 'benchmark.outputs.pdf', text: 'benchmark.outputs.text', other: 'benchmark.outputs.other',
+}
+
 /** Enough source to judge a file side by side; the whole file opens in a tab. */
 const TEXT_PREVIEW_BYTES = 64 * 1024
 
 /**
  * What each variant produced, aligned: one column per variant, one row for the final answer and
- * one per file path any run wrote. The same path in two columns is the same deliverable, so a
- * page, an image or a clip sits next to its counterparts. Repetitions are shown one at a time.
+ * one per output of the same kind. Agents choose different filenames for the same task, so
+ * matching paths would scatter comparable pages across rows. Repetitions are shown one at a time.
  */
 export function DeliverablesGrid({
   benchmark,
@@ -54,12 +58,18 @@ export function DeliverablesGrid({
     [benchmark, order, repetition],
   )
 
-  const paths = useMemo(() => {
-    const byPath = new Map<string, BenchmarkDeliverableKind>()
-    for (const { run } of columns) for (const file of run?.files ?? []) byPath.set(file.path, file.kind)
-    return [...byPath.entries()]
-      .sort((a, b) => KIND_ORDER[a[1]] - KIND_ORDER[b[1]] || a[0].localeCompare(b[0]))
-      .map(([path]) => path)
+  const outputRows = useMemo(() => {
+    const kinds = Object.keys(KIND_ORDER) as BenchmarkDeliverableKind[]
+    return kinds.flatMap((kind) => {
+      const files = columns.map(({ run }) => (run?.files ?? [])
+        .filter((file) => file.kind === kind)
+        .sort((a, b) => a.path.split('/').length - b.path.split('/').length
+          || Number(/(?:^|\/)index\.html?$/i.test(b.path)) - Number(/(?:^|\/)index\.html?$/i.test(a.path))
+          || a.path.localeCompare(b.path)))
+      return Array.from({ length: Math.max(0, ...files.map((list) => list.length)) }, (_, index) => ({
+        kind, index, files: files.map((list) => list[index] ?? null),
+      }))
+    })
   }, [columns])
 
   return (
@@ -110,31 +120,28 @@ export function DeliverablesGrid({
             </Cell>
           ))}
 
-          {paths.map((path) => (
-            <Row key={path} path={path} columns={columns} />
+          {outputRows.map((row) => (
+            <Fragment key={`${row.kind}-${row.index}`}>
+              <RowLabel>{t(OUTPUT_KIND_LABELS[row.kind])}{row.index > 0 ? ` · ${row.index + 1}` : ''}</RowLabel>
+              {columns.map(({ variant, run }, index) => {
+                const file = row.files[index]
+                return (
+                  <Cell key={variant.id}>
+                    {file && run?.previewToken ? <>
+                      <p className="mb-2 truncate font-mono text-xs text-ink-soft" title={file.path}>{file.path}</p>
+                      <Deliverable file={file} token={run.previewToken} />
+                    </> : <Missing />}
+                  </Cell>
+                )
+              })}
+            </Fragment>
           ))}
         </div>
       </div>
-      {paths.length === 0 && columns.every(({ run }) => run && !isOpenRun(run)) ? (
+      {outputRows.length === 0 && columns.every(({ run }) => run && !isOpenRun(run)) ? (
         <p className="text-xs text-ink-faint">{t('benchmark.outputs.noFiles')}</p>
       ) : null}
     </div>
-  )
-}
-
-function Row({ path, columns }: { path: string; columns: { variant: { id: string }; run: BenchmarkRunDto | null }[] }) {
-  return (
-    <>
-      <RowLabel><span className="font-mono">{path}</span></RowLabel>
-      {columns.map(({ variant, run }) => {
-        const file = run?.files.find((entry) => entry.path === path)
-        return (
-          <Cell key={variant.id}>
-            {file && run?.previewToken ? <Deliverable file={file} token={run.previewToken} /> : <Missing />}
-          </Cell>
-        )
-      })}
-    </>
   )
 }
 

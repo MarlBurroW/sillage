@@ -34,13 +34,13 @@ import { isInlineImage, type AttachmentStore } from '../attachments/store.js'
 import { createConversation } from '../conversations/create.js'
 import { deleteConversation } from '../conversations/delete.js'
 import { createPersonalWorkspace } from '../conversations/personal-workspaces.js'
-import type { EventLog } from '../events/event-log.js'
+import { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
 import { badRequest, notFound } from '../http/errors.js'
 import { runScript } from '../scheduler/check.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { listDeliverables } from './deliverables.js'
-import { readRunMetrics } from './metrics.js'
+import { readRunMetrics, RUN_METRICS_VERSION } from './metrics.js'
 
 /**
  * Executes benchmarks: opens one fresh personal session per run, waits for it to settle, runs the
@@ -96,6 +96,23 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[]): BenchmarkDto[] {
     .where(inArray(benchmarkRuns.benchmarkId, rows.map((row) => row.id)))
     .orderBy(asc(benchmarkRuns.variantId), asc(benchmarkRuns.repetition))
     .all()
+  // Repair persisted measurements once, so existing benchmarks and exports benefit too.
+  // Bound the journal at settlement: later discussion turns are outside the benchmark.
+  let log: EventLog | undefined
+  for (const run of runs) {
+    if (!run.metrics || run.finishedAt === null) continue
+    const metrics = JSON.parse(run.metrics) as BenchmarkRunMetrics
+    if ((metrics.version ?? 0) >= RUN_METRICS_VERSION) continue
+    const benchmark = rows.find((row) => row.id === run.benchmarkId)!
+    const agent = readVariants(benchmark.variants).find((variant) => variant.id === run.variantId)?.config.agent
+    const updated = run.conversationId
+      ? readRunMetrics(log ??= new EventLog(db), run.conversationId, agent, run.finishedAt)
+      : { ...metrics, version: RUN_METRICS_VERSION,
+          inputTokens: metrics.inputTokens === null ? null : metrics.inputTokens + (metrics.cacheReadTokens ?? 0) + (metrics.cacheCreationTokens ?? 0),
+          costUsd: metrics.costUsd === 0 ? null : metrics.costUsd }
+    run.metrics = JSON.stringify(updated)
+    db.update(benchmarkRuns).set({ metrics: run.metrics }).where(eq(benchmarkRuns.id, run.id)).run()
+  }
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -563,12 +580,14 @@ export class BenchmarkRunner {
     error: string | null = outcome.error,
     check: BenchmarkCheckResult | null = null,
   ): Promise<void> {
+    // Cancellation/timeout can emit final usage while terminate() is awaited after the sweep.
+    now = Math.max(now, Date.now())
     let metrics: string | null = null
     let response: string | null = null
     let files: string | null = null
     if (run.conversationId) {
       try {
-        metrics = JSON.stringify(readRunMetrics(this.log, run.conversationId))
+        metrics = JSON.stringify(readRunMetrics(this.log, run.conversationId, undefined, now))
         const text = this.log.lastAssistantText(run.conversationId)
         response = text ? text.slice(0, MAX_RESPONSE_CHARS) : null
         const folder = this.runFolder(run.conversationId)
