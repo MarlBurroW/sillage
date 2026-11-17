@@ -1,6 +1,7 @@
-import { readFile, copyFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { renderSiteSocialImage } from './site-social-image.mjs'
 
 const root = new URL('../', import.meta.url)
 const target = (name) => fileURLToPath(new URL(name, root))
@@ -42,7 +43,7 @@ try {
   </svg>`
   await render('apps/desktop/resources/icon.png', 1024, 1024, desktop)
 
-  // A shared social visual avoids leaving the old brand on the site.
+  // The app keeps its own card; the marketing site previews the product interface.
   const og = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
     <rect width="1200" height="630" fill="#0b0d1c"/>
     <g transform="translate(85 145) scale(1.5)" fill="#8f9bff">${paths}</g>
@@ -54,7 +55,7 @@ try {
     </g>
   </svg>`
   await render('apps/web/public/og.png', 1200, 630, og)
-  await copyFile(target('apps/web/public/og.png'), target('site/og.png'))
+  await renderSiteSocialImage(browser)
 } finally {
   await browser.close()
 }

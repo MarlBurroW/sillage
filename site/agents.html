@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agents: Sillage</title>
+  <meta name="description" content="How Sillage works with Claude Code, Codex, OpenCode, Grok Build and Google Antigravity: accounts, models, shared context and handing a conversation from one agent to another.">
+  <link rel="canonical" href="https://marlburrow.github.io/sillage/agents.html">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=selection-1">
+  <meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Five coding agents, one workspace">
+  <meta property="og:description" content="How Sillage works with Claude Code, Codex, OpenCode, Grok Build and Google Antigravity: accounts, models, shared context and handing a conversation from one agent to another.">
+  <meta property="og:url" content="https://marlburrow.github.io/sillage/agents.html">
+  <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script>try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
+  <script src="main.js?v=gallery-1" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="nav-inner wrap">
+      <a class="brand" href="index.html" aria-label="Sillage home"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <nav id="site-nav" aria-label="Main navigation">
+        <a href="index.html">Overview</a>
+        <a href="features.html">Features</a>
+        <a href="agents.html" aria-current="page">Agents</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-button theme-toggle" data-theme-toggle type="button" hidden aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+        <a class="button button-small button-primary" href="download.html">Get Sillage</a>
+        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+<section class="page-intro wrap">
+      <h1>Five coding agents, each driven through its own CLI.</h1>
+      <p class="lede">Sillage installs and runs the vendors’ tools on your machine. Their models, tools and account rules stay theirs; the projects, context and interface around them are shared.</p>
+    </section>
+
+    <section class="agent-tabs wrap" data-tabs aria-label="The five integrations">
+      <div class="tabs" role="tablist" aria-label="Choose a coding agent">
+        <button id="agent-tab-claude" type="button" role="tab" aria-controls="agent-claude" aria-selected="true" disabled><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" /></svg><span>Claude Code</span></button>
+        <button id="agent-tab-codex" type="button" role="tab" aria-controls="agent-codex" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" /></svg><span>Codex</span></button>
+        <button id="agent-tab-opencode" type="button" role="tab" aria-controls="agent-opencode" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M4 1h16v22H4V1zm4 4v14h8V5H8z" /><path d="M8 10h8v9H8z" opacity="0.3" /></svg><span>OpenCode</span></button>
+        <button id="agent-tab-grok" type="button" role="tab" aria-controls="agent-grok" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815" /></svg><span>Grok Build</span></button>
+        <button id="agent-tab-antigravity" type="button" role="tab" aria-controls="agent-antigravity" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"/></svg><span>Google Antigravity</span></button>
+      </div>
+
+      <article class="agent-panel" id="agent-claude" role="tabpanel" aria-labelledby="agent-tab-claude">
+        <div class="agent-summary">
+          <p class="agent-maker" id="claude"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" /></svg>Anthropic</p>
+          <h2>Claude Code, with its plans, subagents and permissions.</h2>
+          <p>Work through a plan, follow tool calls and subagents, and review the files Claude changes. You keep the native agent, with your projects and conversations gathered around it.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md#claude-code">Claude Code integration guide</a>
+        </div>
+        <div>
+          <div class="facts">
+            <div><h3>Accounts</h3><p>Use the CLI’s sign-in, connect another Claude subscription or add an Anthropic API key.</p></div>
+            <div><h3>Controls</h3><p>Choose among the available models, effort levels and permission modes. Answer Claude’s questions and permission requests in the conversation.</p></div>
+            <div><h3>Shared context</h3><p>Sillage supplies shared instructions, project memory, skills and MCP tools alongside Claude’s native capabilities.</p></div>
+          </div>
+          <p class="facts-note">Model availability and subscription limits come from your Claude account.</p>
+        </div>
+      </article>
+
+      <article class="agent-panel" id="agent-codex" role="tabpanel" aria-labelledby="agent-tab-codex">
+        <div class="agent-summary">
+          <p class="agent-maker" id="codex"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" /></svg>OpenAI</p>
+          <h2>Codex threads you can resume.</h2>
+          <p>Keep the coding conversation, its tools and the branch it changes in the same view. Resume a thread, choose its model and effort, and inspect the result as you go.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md#codex">Codex integration guide</a>
+        </div>
+        <div>
+          <div class="facts">
+            <div><h3>Accounts</h3><p>Connect a ChatGPT subscription through device-code sign-in or configure an API key. Pick the account for each conversation.</p></div>
+            <div><h3>Controls</h3><p>Model catalogs follow the selected account. Effort levels and permission controls stay in the composer.</p></div>
+            <div><h3>Shared context</h3><p>Use your Sillage project instructions, memory, skills and MCP servers. Continue a conversation with another agent when the next step calls for it.</p></div>
+          </div>
+          <p class="facts-note">Model access and supported controls depend on the installed CLI and the selected account.</p>
+        </div>
+      </article>
+
+      <article class="agent-panel" id="agent-opencode" role="tabpanel" aria-labelledby="agent-tab-opencode">
+        <div class="agent-summary">
+          <p class="agent-maker" id="opencode"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M4 1h16v22H4V1zm4 4v14h8V5H8z" /><path d="M8 10h8v9H8z" opacity="0.3" /></svg>Open source</p>
+          <h2>OpenCode, with the model providers you configured.</h2>
+          <p>Bring OpenCode’s provider choices into the same workspace as your other agents. The conversation, files and tasks stay together whichever model answers.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/features.md#instructions-and-memory">How OpenCode receives shared context</a>
+        </div>
+        <div>
+          <div class="facts">
+            <div><h3>Providers</h3><p>Use the providers configured in OpenCode, including local models when the provider supports them.</p></div>
+            <div><h3>Controls</h3><p>Read streamed responses and tool activity, manage permissions and keep project files beside the thread.</p></div>
+            <div><h3>Shared context</h3><p>Instructions and the memory index accompany each message. Skills, MCP tools and conversation handoffs connect the rest of your workflow.</p></div>
+          </div>
+          <p class="facts-note">Available models and media support are determined by your OpenCode provider configuration.</p>
+        </div>
+      </article>
+
+      <article class="agent-panel" id="agent-grok" role="tabpanel" aria-labelledby="agent-tab-grok">
+        <div class="agent-summary">
+          <p class="agent-maker" id="grok"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815" /></svg>xAI</p>
+          <h2>Grok Build, xAI’s coding agent.</h2>
+          <p>Use xAI’s native coding agent from the same workspace. Follow its changes, respond to its questions and keep the conversation with the work it belongs to.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md">Accounts guide</a>
+        </div>
+        <div>
+          <div class="facts">
+            <div><h3>Accounts</h3><p>Use a Grok subscription or an xAI API key and choose the account for the conversation.</p></div>
+            <div><h3>Controls</h3><p>Follow tools and responses in the same conversation view, with the options the native agent exposes.</p></div>
+            <div><h3>Shared context</h3><p>Project instructions and memory enter the session when it is created. The same board, worktrees, skills and MCP tools remain close by.</p></div>
+          </div>
+          <p class="facts-note">Grok receives shared instructions at session creation; an existing session keeps the context it started with.</p>
+        </div>
+      </article>
+
+      <article class="agent-panel" id="agent-antigravity" role="tabpanel" aria-labelledby="agent-tab-antigravity">
+        <div class="agent-summary">
+          <p class="agent-maker" id="antigravity"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"/></svg>Google</p>
+          <h2>Antigravity, Google’s own agent for Gemini.</h2>
+          <p>Run Google’s official Antigravity agent with its native tools and permissions. Choose among its models and thinking levels while keeping the same Sillage project workflow.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/antigravity-integration.md">Antigravity integration guide</a>
+        </div>
+        <div>
+          <div class="facts">
+            <div><h3>Accounts and models</h3><p>Use the account choices, commands, history import and model-specific thinking levels Antigravity exposes.</p></div>
+            <div><h3>Shared context</h3><p>Share project instructions, memory, skills and MCP tools. Transfer conversations in both directions with the other agents.</p></div>
+            <div><h3>Limits</h3><p>Forks create a new session with portable context. Manual compaction and live steering are unavailable; messages can wait in the queue.</p></div>
+          </div>
+          <p class="facts-note">The protocol does not expose native forks, manual compaction or live steering, and Sillage shows that rather than hiding it.</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="section band" aria-labelledby="shared-title">
+      <div class="wrap">
+      <div class="split">
+        <div class="split-text">
+          <h2 id="shared-title">What stays the same when you change agent</h2>
+          <p>Sillage runs the native agents on your machine. The parts around them don’t move.</p>
+        </div>
+        <div class="facts">
+          <div><h3>The conversation view</h3><p>Messages, tool activity, questions and files are laid out the same way for every agent.</p></div>
+          <div><h3>The project context</h3><p>Shared instructions, memory and skills carry your working conventions.</p></div>
+          <div><h3>The workspace</h3><p>The board, Git worktrees, file explorer and code review stay next to the task.</p></div>
+        </div>
+      </div>
+      <div class="pair">
+          <figure><div class="shot crop" data-narrow style="--a:0.6250;--ratio:800/400;--w:0.5;--x:0.35;--y:0.09;--nratio:480/317;--nw:0.3;--nx:0.3781;--ny:0.125"><picture><source srcset="screenshots/hero-dark.webp 1600w, screenshots/hero-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.333), calc(min(100vw, 1240px) * 1.274)" media="(prefers-color-scheme: dark)"><img src="screenshots/hero-light.webp" srcset="screenshots/hero-light.webp 1600w, screenshots/hero-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.333), calc(min(100vw, 1240px) * 1.274)" width="1600" height="1000" alt="A Claude Code conversation in Sillage: grouped tools, the turn’s changes and the agent’s summary" loading="lazy" decoding="async"></picture></div><figcaption class="caption">A Claude Code conversation.</figcaption></figure>
+          <figure><div class="shot crop" data-narrow style="--a:0.6250;--ratio:800/400;--w:0.5;--x:0.35;--y:0.06;--nratio:500/330;--nw:0.3125;--nx:0.3875;--ny:0.07"><picture><source srcset="screenshots/codex-dark.webp 1600w, screenshots/codex-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.16), calc(min(100vw, 1240px) * 1.274)" media="(prefers-color-scheme: dark)"><img src="screenshots/codex-light.webp" srcset="screenshots/codex-light.webp 1600w, screenshots/codex-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.16), calc(min(100vw, 1240px) * 1.274)" width="1600" height="1000" alt="A Codex conversation in Sillage, laid out the same way: request, tool calls and the answer" loading="lazy" decoding="async"></picture></div><figcaption class="caption">A Codex conversation, in the same view.</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="handoff" aria-labelledby="handoff-title">
+      <div class="split wrap">
+        <div class="split-text">
+          <h2 id="handoff-title">Hand a conversation to another agent</h2>
+          <p>Choose another agent and a context budget. A new conversation opens with the selected history, in the same worktree and on the same task card. The original stays available, with a link back from the new one.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/cli-handoff.md">Handoff guide</a>
+        </div>
+        <div class="handoff-detail">
+          <figure class="split-figure"><div class="shot crop" style="--a:0.6250;--ratio:444/742;--w:0.2775;--x:0.3613;--y:0.129"><picture><source srcset="screenshots/handoff-dark.webp 1600w, screenshots/handoff-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.216), calc(min(100vw, 1240px) * 1.265)" media="(prefers-color-scheme: dark)"><img src="screenshots/handoff-light.webp" srcset="screenshots/handoff-light.webp 1600w, screenshots/handoff-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.216), calc(min(100vw, 1240px) * 1.265)" width="1600" height="1000" alt="The Continue in another CLI dialog: Codex selected among four agents, a model and a 16k-token context budget" loading="lazy" decoding="async"></picture></div><figcaption class="caption">The dialog, opened from a Claude Code conversation.</figcaption></figure>
+          <div>
+          <div class="facts">
+            <div><h3>The original request</h3><p>Your first message gives the next agent the starting point for the work.</p></div>
+            <div><h3>The latest exchanges</h3><p>Recent messages keep their text, order and roles, up to the selected budget.</p></div>
+            <div><h3>Relevant tool activity</h3><p>Recent tool inputs and outputs accompany those exchanges, with length limits.</p></div>
+            <div><h3>References to earlier history</h3><p>The next agent can read omitted exchanges from the original conversation when it needs them.</p></div>
+          </div>
+          <p class="footnote">Reasoning, attachments and native tool state are not transferred. You write the next request in the new conversation.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section closing">
+      <div class="next-step wrap">
+        <div><h2>Start with the agent you already use.</h2><p>Install the CLIs from Sillage’s settings and sign in with your own accounts.</p></div>
+        <a class="button button-primary" href="download.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Download Sillage</a>
+      </div>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="footer-inner wrap">
+      <div>
+        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+        <p>Free and open source under the MIT license. Independent, and not affiliated with the agent providers.</p>
+      </div>
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="agents.html">Agents</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/features.md">Documentation</a>
+        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+        <a href="https://github.com/MarlBurroW/sillage/issues">Report an issue</a>
+        <a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">License</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>
