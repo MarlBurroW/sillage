@@ -1,4 +1,4 @@
-import { Pencil, ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Share2, Square, Trash2, X } from 'lucide-react'
+import { Pencil, ArrowDown, ArrowUp, Check, ChevronDown, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Share2, Square, Trash2, X } from 'lucide-react'
 import { Fragment, Suspense, lazy, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { benchmarkConcurrencySchema, benchmarkPath, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
@@ -25,6 +25,8 @@ import {
   passRate,
   spread,
   visibleMetricKeys,
+  BENCHMARK_STATE_TONES,
+  RUN_TONES,
   useBenchmarks,
   useBlindReview,
   useCancelBenchmark,
@@ -39,7 +41,6 @@ import { useLiveStatus } from '../lib/conversation-status'
 import { downloadText } from '../lib/download'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
-import { BENCHMARK_STATE_TONES, RUN_TONES } from './BenchmarksPage'
 
 // Only people who share pay for the window: it stays out of the page's chunk.
 const BenchmarkShareDialog = lazy(() => import('../components/benchmark/BenchmarkShareDialog'))
@@ -136,7 +137,6 @@ export function BenchmarkPage() {
       </ConfirmDialog>
       <header className={'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6'}>
         <MobileNavigationButton />
-        <Link to="/benchmarks"><IconButton label={t('benchmark.back')}><ArrowLeft size={18} /></IconButton></Link>
         <FlaskConical size={19} className="shrink-0 text-ink-faint" />
         {/* A floor on the title's width lets the actions wrap below it on a phone instead of crushing it. */}
         <div className="min-w-[12rem] flex-1">

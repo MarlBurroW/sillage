@@ -15,6 +15,7 @@ import {
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
+import { NavColumnUnfoldButton } from '../components/MobileNavigation'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -128,8 +129,10 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 border-b border-line bg-surface px-4 pt-4 md:px-8 md:pt-6">
         <header className="mx-auto grid w-full max-w-4xl grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pb-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {/* The shell's own bar carries the phone drawer here: only the folded column needs a way back. */}
+            <NavColumnUnfoldButton />
+            <h1 className="flex min-w-0 items-center gap-2.5 text-lg font-semibold tracking-tight">
               <ProjectAvatar project={project} className="size-7 shrink-0" />
               <span className="truncate">{project.name}</span>
             </h1>

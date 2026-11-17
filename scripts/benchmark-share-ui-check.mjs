@@ -181,29 +181,50 @@ const WIDE = { width: 1440, height: 900 }
 async function checkPages(page, base, profile) {
   const shot = (name) => page.screenshot({ path: join(shots, `${profile}-${name}.png`) })
 
-  // List: each row is a scoreboard, one line per variant.
+  // Index: the navigation column is the list, the space opens its most recent benchmark.
   await page.setViewportSize(WIDE)
   await page.goto(base + '/benchmarks')
-  const row = page.locator('[data-benchmark="Page d’accueil d’un café"]')
-  await row.waitFor({ timeout: 10_000 }).catch(async (error) => {
+  const links = page.locator('[data-sidebar-benchmarks] a')
+  await page.waitForURL((url) => /^\/benchmarks\/[\w-]+$/.test(url.pathname), { timeout: 10_000 }).catch(async (error) => {
     await shot('failure')
     const api = await page.evaluate(() => fetch('/api/benchmarks').then(async (response) => `${response.status} ${(await response.text()).slice(0, 1500)}`))
     throw new Error(`${error.message}\n${page.url()}\n${api}`)
   })
-  assert.equal(await row.locator('[data-benchmark-line]').count(), 4)
-  assert.equal(await page.locator('[data-benchmark]').count(), 3)
-  await shot('wide-list')
+  assert.equal(await links.count(), 3)
+  // A folded column leaves a visible way back, first in the page's header.
+  await page.getByRole('button', { name: 'Replier la liste' }).click()
+  await page.locator('[data-nav-column]').waitFor({ state: 'detached' })
+  await shot('wide-folded')
+  assert.ok(await page.locator('[data-nav-unfold]').evaluate((button) => {
+    const first = [...button.closest('header').querySelectorAll('button, a')].find((entry) => entry.getClientRects().length > 0)
+    return first === button
+  }), 'the way back leads the header')
+  await page.locator('[data-nav-unfold]').click()
+  await page.locator('[data-nav-column="benchmarks"]').waitFor()
+  assert.equal(await page.locator('[data-nav-unfold]').count(), 0)
+  assert.equal(await links.first().getAttribute('aria-current'), 'page', 'the index opens the first benchmark of the column')
+  assert.equal(await page.getByRole('link', { name: 'Back to benchmarks' }).count() + await page.getByRole('link', { name: 'Retour aux benchmarks' }).count(), 0, 'no way back to a list that no longer exists')
+  await shot('wide-index')
+  // The column filters like the session list: by name, prompt or variant.
+  await page.locator('[data-nav-column="benchmarks"]').getByRole('button', { name: 'Filtrer les benchmarks' }).click()
+  await page.getByRole('searchbox', { name: 'Rechercher un benchmark' }).fill('webgl')
+  assert.equal(await links.count(), 1)
+  await page.getByRole('searchbox', { name: 'Rechercher un benchmark' }).fill('introuvable')
+  await page.locator('[data-nav-column="benchmarks"]').getByText('Aucun benchmark ne correspond.').waitFor()
+  await shot('wide-filter')
+  await page.keyboard.press('Escape')
+  assert.equal(await links.count(), 3)
   // Loaded at phone size: shrinking a wide window leaves the navigation drawer mid-way.
   await page.setViewportSize(PHONE)
-  await page.reload()
-  await row.waitFor()
+  await page.goto(base + '/benchmarks')
+  await page.locator('[data-benchmark-brief]').waitFor()
   await page.waitForTimeout(300)
-  await shot('phone-list')
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'the list does not overflow a phone')
+  await shot('phone-index')
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'the opened benchmark does not overflow a phone')
 
   // Detail: the page uses the whole width.
   await page.setViewportSize(WIDE)
-  await row.click()
+  await page.goto(base + '/benchmarks/cafe')
   const brief = page.locator('[data-benchmark-brief]')
   await brief.waitFor()
   const briefBox = await brief.boundingBox()

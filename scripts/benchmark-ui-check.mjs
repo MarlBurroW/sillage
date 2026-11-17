@@ -316,15 +316,18 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'history scrolls inside its frame')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-history-mobile.png') })
   await page.setViewportSize({ width: 1440, height: 900 })
+  // The index opens the most recent benchmark: the rerun, marked as such in the column.
   await page.goto(`${base}/benchmarks`)
-  await page.locator(`[data-benchmark="Effort faible contre moyen"]`).getByText('Relance', { exact: true }).waitFor()
+  await page.waitForURL((url) => url.pathname.endsWith(rerunId))
+  await page.locator('[data-sidebar-benchmarks] a[aria-current="page"]').getByLabel('Relance', { exact: true }).waitFor()
 
   // --- Deletion removes the runs' conversations -----------------------------------
   for (const target of [rerunId, benchmark.id]) {
     await page.goto(`${base}/benchmarks/${target}`)
     await page.getByRole('button', { name: 'Supprimer le benchmark', exact: true }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
-    await page.waitForURL((url) => url.pathname === '/benchmarks')
+    // Leaving a deleted benchmark lands on the next one, or on the empty index.
+    await page.waitForURL((url) => !url.pathname.endsWith(target))
   }
   await page.getByText('Aucun benchmark', { exact: true }).first().waitFor()
   const remaining = await api('/api/conversations')

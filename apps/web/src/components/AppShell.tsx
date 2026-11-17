@@ -163,7 +163,7 @@ export function AppShell() {
             'border-b border-line bg-canvas/85 backdrop-blur-md md:hidden',
           )}
         >
-          <MobileNavigationButton />
+          <MobileNavigationButton drawerOnly />
           <Logo size={18} className="text-accent" />
           <span className="font-medium">Sillage</span>
         </header>

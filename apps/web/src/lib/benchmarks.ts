@@ -77,10 +77,16 @@ export function useCancelBenchmark() {
 }
 
 export function useDeleteBenchmark() {
+  const queryClient = useQueryClient()
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (id: string) => api.delete<void>(`/api/benchmarks/${id}`),
-    onSuccess: invalidate,
+    onSuccess: (_, id) => {
+      // The index opens the first benchmark of the list: drop this one before the refetch answers,
+      // or leaving the deleted page would lead straight back to it.
+      queryClient.setQueryData<BenchmarkDto[]>(BENCHMARKS_KEY, (list) => list?.filter((benchmark) => benchmark.id !== id))
+      invalidate()
+    },
   })
 }
 
@@ -189,6 +195,13 @@ export const BENCHMARK_STATE_LABELS: Record<BenchmarkState, MessageKey> = {
   cancelled: 'benchmark.state.cancelled',
 }
 
+export const BENCHMARK_STATE_TONES: Record<BenchmarkState, 'neutral' | 'accent' | 'positive' | 'critical'> = {
+  running: 'accent',
+  done: 'positive',
+  failed: 'critical',
+  cancelled: 'neutral',
+}
+
 export function benchmarkState(benchmark: BenchmarkDto): BenchmarkState {
   const runs = benchmark.runs
   if (runs.some(isOpenRun)) return 'running'
@@ -211,6 +224,17 @@ export const RUN_STATUS_LABELS: Record<BenchmarkRunDto['status'], MessageKey> = 
   failed: 'benchmark.run.failed',
   timed_out: 'benchmark.run.timedOut',
   cancelled: 'benchmark.run.cancelled',
+}
+
+/** The colour of a run wherever it shows as a dot. */
+export const RUN_TONES: Record<BenchmarkRunDto['status'], string> = {
+  pending: 'bg-line-strong',
+  running: 'bg-accent animate-pulse',
+  checking: 'bg-accent animate-pulse',
+  succeeded: 'bg-positive',
+  failed: 'bg-critical',
+  timed_out: 'bg-caution',
+  cancelled: 'bg-line-strong',
 }
 
 /** Measurements shown as table columns, in reading order. Each reads one number from the metrics. */

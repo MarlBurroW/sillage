@@ -54,6 +54,8 @@ img.nav-project-mark { background: none; }
 .sidebar-session-filter { display: flex; align-items: center; gap: 7px; flex-shrink: 0; margin: 0 4px 6px; padding: 2px 3px 2px 8px; border: 1px solid var(--sg-line-strong); border-radius: 5px; color: var(--sg-ink-faint); }
 .sidebar-session-filter:focus-within { border-color: var(--sg-accent); }
 .sidebar-session-filter input { width: 100%; min-width: 0; border: 0; background: none; outline: none; font-size: 12px; color: var(--sg-ink); }
+/* The field has its own clear button: the browser's would sit beside it as a second cross. */
+.sidebar-session-filter input::-webkit-search-cancel-button { display: none; }
 .sidebar-session { display: flex; align-items: center; gap: 2px; min-height: 45px; padding: 0 3px 0 9px; border-left: 2px solid transparent; border-radius: 0 5px 5px 0; color: var(--sg-ink-soft); }
 .sidebar-session-link { display: flex; align-items: center; gap: 8px; align-self: stretch; min-width: 0; flex: 1; padding: 6px 0; font-size: 12px; }
 .sidebar-session-link > svg { flex-shrink: 0; }
