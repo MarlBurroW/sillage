@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { forkSession } from '@anthropic-ai/claude-agent-sdk'
 import {
   AGENT_CAPABILITIES,
@@ -56,7 +57,9 @@ export class ClaudeAdapter implements AgentAdapter {
     // Both SDK probes need conversation-resolved absolute paths;
     // otherwise `agents.claude.binary` would be ignored
     // and SDKs would select unbundled binaries.
-    this.catalog = new ClaudeModelCatalog(() => this.cli.executable())
+    this.catalog = new ClaudeModelCatalog(() => this.cli.executable(), {
+      storePath: join(config.paths.data, 'claude-model-catalog.json'),
+    })
     this.commandCatalog = new ClaudeCommandCatalog(() => this.cli.executable())
     this.usageReader = new ClaudeUsageReader(() => this.cli.executable())
   }

@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { dirname } from 'node:path'
 import type {
   AccountInfo,
   AgentInfo,
@@ -21,15 +24,23 @@ import { claudeAuthEnv } from './credential.js'
  * Models and subscription type follow the authentication: additional accounts probe under their
  * own token, one cache entry per credential (empty for the CLI's own login).
  *
- * The same CLI under the same login answers with one of two lists (probed 2.1.318): the catalog
- * Anthropic serves, or a shorter compiled one when the server-side flag `tengu_delegated_quail` is
- * off for that process, or when the download misses the CLI's 1.5 s headless wait. The flag flips
- * several times a day and the SDK does not say which list it returned, so a scheduled probe that
- * comes back reduced does not replace the fuller list already seen: the model selector would lose
- * most of its rows until someone pressed refresh.
+ * The same CLI under the same login answers with one of two lists (probed 2.1.318 and 2.1.325):
+ * the catalog Anthropic serves, or a shorter compiled one when the flag `tengu_delegated_quail`
+ * reads off at startup, or when the download misses the CLI's 1.5 s headless wait. The flag is
+ * cached in `~/.claude.json`, which every Claude Code on the machine shares: an older CLI run by
+ * another tool (2.1.257 here) writes "off" there and the next process starts on the compiled
+ * list. The SDK does not say which list it returned, so an answer that is a reduced view of a
+ * fuller list already seen does not replace it, on a refresh either: the refresh would land on
+ * the same stale flag. The fuller list is kept on disk because a restart would otherwise forget it.
  */
 
 const CACHE_TTL_MS = 60 * 60 * 1000
+
+/**
+ * How long a fuller list outlives its last confirmation by the CLI. Anthropic can withdraw a model
+ * from the served catalog, which also looks like a reduced answer: it then lingers this long.
+ */
+const KEPT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface Listing {
   models: ModelInfo[]
@@ -67,10 +78,28 @@ export function isReducedCatalog(
   return next.models.every((model) => offered.has(modelId(model)))
 }
 
+/** Fullest list a credential answered with, and when the CLI last answered with it. */
+interface Kept extends Pick<Listing, 'models' | 'account' | 'cliVersion'> {
+  confirmedAt: number
+}
+
+/** Credentials are tokens: the file on disk names them by digest only. */
+const keptKey = (credential: string | undefined): string =>
+  createHash('sha256').update(credential ?? '').digest('hex').slice(0, 16)
+
+interface CatalogOptions {
+  /** Replaced in tests, which cannot start a CLI. */
+  probe?: (credential?: string) => Promise<Listing>
+  /** File the kept lists survive restarts in; memory only when absent. */
+  storePath?: string
+  now?: () => number
+}
+
 export class ClaudeModelCatalog {
-  /** Fullest models each credential answered with since the last explicit refresh. */
-  private readonly fullest = new Map<string, Pick<Listing, 'models' | 'account' | 'cliVersion'>>()
+  private readonly fullest = new Map<string, Kept>()
   private readonly cached: CachedProbeMap<Listing>
+  private readonly storePath: string | undefined
+  private readonly now: () => number
 
   /**
    * Resolve binary per probe, never at construction: honors Sillage-installed CLI prefix and
@@ -78,27 +107,35 @@ export class ClaudeModelCatalog {
    */
   constructor(
     private readonly executable: () => Promise<string>,
-    /** Replaced in tests, which cannot start a CLI. */
-    probe: (credential?: string) => Promise<Listing> = (credential) => this.probe(credential),
+    options: CatalogOptions = {},
   ) {
+    const probe = options.probe ?? ((credential) => this.probe(credential))
     this.cached = new CachedProbeMap<Listing>(CACHE_TTL_MS, (credential) => probe(credential || undefined))
+    this.storePath = options.storePath
+    this.now = options.now ?? Date.now
+    this.load()
   }
 
+  /** After a CLI installation: lists kept from the previous version prove nothing. */
   invalidate(): void {
     this.cached.invalidate()
     this.fullest.clear()
+    this.save()
   }
 
-  /**
-   * `force` is the user's refresh: it takes whatever the CLI answers, so a model Anthropic really
-   * withdrew does not linger past a click.
-   */
   async list(credential?: string, force = false): Promise<Listing & { fetchedAt: number }> {
-    const key = credential ?? ''
-    const listing = await this.cached.read(key, force)
+    const listing = await this.cached.read(credential ?? '', force)
+    const key = keptKey(credential)
     const kept = this.fullest.get(key)
-    if (!force && kept && isReducedCatalog(listing, kept)) return { ...listing, models: kept.models }
-    this.fullest.set(key, { models: listing.models, account: listing.account, cliVersion: listing.cliVersion })
+    if (kept && this.now() - kept.confirmedAt < KEPT_TTL_MS && isReducedCatalog(listing, kept)) {
+      return { ...listing, models: kept.models }
+    }
+    // One write per probe: reads served from the probe cache change nothing.
+    if (!kept || kept.confirmedAt !== listing.fetchedAt || kept.models !== listing.models) {
+      const { models, account, cliVersion } = listing
+      this.fullest.set(key, { models, account, cliVersion, confirmedAt: listing.fetchedAt })
+      this.save()
+    }
     return listing
   }
 
@@ -107,8 +144,34 @@ export class ClaudeModelCatalog {
    * read. Never probes: sessions ask at launch, where a CLI start would delay the first message.
    */
   defaultModel(credential?: string): string | null {
-    const row = this.fullest.get(credential ?? '')?.models.find((model) => model.value === 'default')
+    const row = this.fullest.get(keptKey(credential))?.models.find((model) => model.value === 'default')
     return row?.resolvedModel ?? null
+  }
+
+  /** An unreadable file only costs the kept lists: the next probes rebuild them. */
+  private load(): void {
+    if (!this.storePath) return
+    try {
+      const stored = JSON.parse(readFileSync(this.storePath, 'utf8')) as Record<string, Kept>
+      for (const [key, kept] of Object.entries(stored)) {
+        if (Array.isArray(kept?.models) && typeof kept.confirmedAt === 'number') this.fullest.set(key, kept)
+      }
+    } catch {
+      // Absent on first start.
+    }
+  }
+
+  private save(): void {
+    if (!this.storePath) return
+    try {
+      mkdirSync(dirname(this.storePath), { recursive: true })
+      // Account e-mails inside: owner only, and renamed into place so a crash leaves no half file.
+      const pending = `${this.storePath}.tmp`
+      writeFileSync(pending, JSON.stringify(Object.fromEntries(this.fullest)), { mode: 0o600 })
+      renameSync(pending, this.storePath)
+    } catch (err) {
+      console.warn('Could not store the Claude model catalog', err)
+    }
   }
 
   private probe(credential?: string): Promise<Listing> {

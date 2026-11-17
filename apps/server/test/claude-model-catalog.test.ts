@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk'
 import { claudeCredential, claudeCredentialOfEnv } from '../src/agents/claude/credential.js'
@@ -36,45 +39,68 @@ test('another CLI, another plan or a new model is a real change', () => {
   assert.equal(isReducedCatalog(listing([...COMPILED.slice(1), row('claude-new-6', 'claude-new-6')]), served), false)
 })
 
-/** Catalog answering with the given lists in turn; every read is forced past the cache by invalidation or `force`. */
-function catalogAnswering(...answers: ModelInfo[][]) {
+/** Catalog answering with the given lists in turn, one per probe. */
+function catalogAnswering(answers: ModelInfo[][], options: { storePath?: string; now?: () => number } = {}) {
   let calls = 0
-  return new ClaudeModelCatalog(async () => 'claude', async () => listing(answers[Math.min(calls++, answers.length - 1)]!))
+  return new ClaudeModelCatalog(async () => 'claude', {
+    ...options,
+    probe: async () => listing(answers[Math.min(calls++, answers.length - 1)]!),
+  })
 }
 
-test('a scheduled probe that comes back reduced keeps the fuller list', async () => {
-  const catalog = catalogAnswering(SERVED, COMPILED, SERVED)
-  assert.equal((await catalog.list()).models.length, SERVED.length)
-  // Expire the probe cache only: `invalidate` would also forget the kept list.
-  const cached = (catalog as unknown as { cached: { invalidate(): void } }).cached
-  cached.invalidate()
-  const reduced = await catalog.list()
-  assert.deepEqual(reduced.models.map((model) => model.value), SERVED.map((model) => model.value))
+/** Expire the probe cache only: `invalidate` would also forget the kept list. */
+const expireProbes = (catalog: ClaudeModelCatalog) =>
+  (catalog as unknown as { cached: { invalidate(): void } }).cached.invalidate()
+
+const values = (models: ModelInfo[]) => models.map((model) => model.value)
+
+test('a probe that comes back reduced keeps the fuller list, on a refresh too', async () => {
+  const catalog = catalogAnswering([SERVED, COMPILED, COMPILED])
+  assert.deepEqual(values((await catalog.list()).models), values(SERVED))
+  expireProbes(catalog)
+  assert.deepEqual(values((await catalog.list()).models), values(SERVED))
+  // The refresh would start a CLI on the same stale flag.
+  assert.deepEqual(values((await catalog.list(undefined, true)).models), values(SERVED))
 })
 
-test('an explicit refresh takes the CLI answer, and the fuller list returns with the next probe', async () => {
-  const catalog = catalogAnswering(SERVED, COMPILED, SERVED)
+test('the fuller list survives a restart, named by a digest of the credential', async () => {
+  const storePath = join(mkdtempSync(join(tmpdir(), 'sillage-catalog-')), 'catalog.json')
+  await catalogAnswering([SERVED], { storePath }).list('oauth:secret-token')
+  assert.equal(readFileSync(storePath, 'utf8').includes('secret-token'), false)
+
+  const restarted = catalogAnswering([COMPILED], { storePath })
+  assert.equal(restarted.defaultModel('oauth:secret-token'), 'claude-fable-5-1')
+  assert.deepEqual(values((await restarted.list('oauth:secret-token')).models), values(SERVED))
+})
+
+test('a fuller list the CLI has not confirmed for a week gives way', async () => {
+  let now = Date.now()
+  const catalog = catalogAnswering([SERVED, COMPILED], { now: () => now })
   await catalog.list()
-  assert.equal((await catalog.list(undefined, true)).models.length, COMPILED.length)
-  assert.equal((await catalog.list()).models.length, COMPILED.length)
-  assert.equal((await catalog.list(undefined, true)).models.length, SERVED.length)
+  now += 8 * 24 * 60 * 60 * 1000
+  expireProbes(catalog)
+  assert.deepEqual(values((await catalog.list()).models), values(COMPILED))
+})
+
+test('a CLI installation forgets the kept lists', async () => {
+  const catalog = catalogAnswering([SERVED, COMPILED])
+  await catalog.list()
+  catalog.invalidate()
+  assert.deepEqual(values((await catalog.list()).models), values(COMPILED))
 })
 
 test('accounts keep separate lists', async () => {
-  const catalog = catalogAnswering(SERVED, COMPILED)
+  const catalog = catalogAnswering([SERVED, COMPILED])
   await catalog.list()
   assert.equal((await catalog.list('oauth:other')).models.length, COMPILED.length)
 })
 
 test('the default model is the one the shown list announces, per account, without probing', async () => {
-  const catalog = catalogAnswering(SERVED, COMPILED)
+  const catalog = catalogAnswering([SERVED, COMPILED])
   assert.equal(catalog.defaultModel(), null)
   await catalog.list()
   assert.equal(catalog.defaultModel(), 'claude-fable-5-1')
   assert.equal(catalog.defaultModel('oauth:other'), null)
-  // After an explicit refresh the selector shows the compiled list, so its default applies.
-  await catalog.list(undefined, true)
-  assert.equal(catalog.defaultModel(), 'claude-opus-5-5')
 })
 
 test('a launch environment names its account credential', () => {
