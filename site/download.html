@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Download: Sillage</title>
+  <meta name="description" content="Download Sillage Desktop for macOS, Windows or Linux, or install Sillage Server on a host you control with one command.">
+  <link rel="canonical" href="https://marlburrow.github.io/sillage/download.html">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=selection-1">
+  <meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Download Sillage">
+  <meta property="og:description" content="Download Sillage Desktop for macOS, Windows or Linux, or install Sillage Server on a host you control with one command.">
+  <meta property="og:url" content="https://marlburrow.github.io/sillage/download.html">
+  <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script>try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
+  <script src="main.js?v=gallery-1" defer></script>
+  <script src="pages.js?v=wake-8" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="nav-inner wrap">
+      <a class="brand" href="index.html" aria-label="Sillage home"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <nav id="site-nav" aria-label="Main navigation">
+        <a href="index.html">Overview</a>
+        <a href="features.html">Features</a>
+        <a href="agents.html">Agents</a>
+        <a href="download.html" aria-current="page">Download</a>
+        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-button theme-toggle" data-theme-toggle type="button" hidden aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+        <a class="button button-small button-primary" href="download.html">Get Sillage</a>
+        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+<section class="page-intro wrap">
+      <h1>Download Sillage</h1>
+      <p class="lede">Desktop is an app on your computer. Server is a service on a host you control, reachable from any device. Both are free; you bring your own agent accounts.</p>
+      <p class="page-intro-meta"><a class="link release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Latest release notes</a></p>
+    </section>
+
+    <section class="editions wrap" data-tabs aria-label="Choose your Sillage edition">
+      <div class="tabs" role="tablist" aria-label="Sillage editions">
+        <button type="button" role="tab" id="edition-desktop-tab" aria-controls="install-desktop" aria-selected="true" disabled><span>Desktop <small>an app on your computer</small></span></button>
+        <button type="button" role="tab" id="edition-server-tab" aria-controls="install" aria-selected="false" tabindex="-1" disabled><span>Server <small>a service on your host</small></span></button>
+      </div>
+
+      <article class="edition-panel" id="install-desktop" role="tabpanel" aria-labelledby="edition-desktop-tab">
+        <div class="edition-intro">
+          <h2>Sillage Desktop</h2>
+          <p>A native window, guided setup and in-app updates. The app includes its own server and Node runtime, so there is no server to configure.</p>
+        </div>
+        <div class="platform-filter" data-platform-filter hidden role="group" aria-label="Filter desktop downloads">
+          <button type="button" data-platform="all" aria-pressed="true">All downloads</button><button type="button" data-platform="mac" aria-pressed="false">macOS</button><button type="button" data-platform="windows" aria-pressed="false">Windows</button><button type="button" data-platform="linux" aria-pressed="false">Linux</button>
+        </div>
+        <div class="download-options package-grid">
+          <section class="package-group" data-platform-group="mac" aria-labelledby="package-mac-title">
+            <div class="package-heading"><h3 id="package-mac-title">macOS</h3><p>Apple Silicon only</p></div>
+            <a class="package-link" data-asset="mac-arm64.dmg" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg"><span><strong>Download for Apple Silicon</strong><small>.dmg</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
+          </section>
+          <section class="package-group" data-platform-group="windows" aria-labelledby="package-windows-title">
+            <div class="package-heading"><h3 id="package-windows-title">Windows</h3><p>x64 PCs</p></div>
+            <a class="package-link" data-asset="win-x64.exe" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe"><span><strong>Download for Windows x64</strong><small>.exe installer</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
+          </section>
+          <section class="package-group" data-platform-group="linux" aria-labelledby="package-linux-title">
+            <div class="package-heading"><h3 id="package-linux-title">Linux</h3><p>Pick your distribution and processor</p></div>
+            <a class="package-link" data-asset="linux-amd64.deb" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-amd64.deb"><span><strong>Debian and Ubuntu, x64</strong><small>.deb</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
+            <a class="package-link" data-asset="linux-arm64.deb" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.deb"><span><strong>Debian and Ubuntu, arm64</strong><small>.deb</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
+            <a class="package-link" data-asset="linux-x86_64.AppImage" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-x86_64.AppImage"><span><strong>Other distributions, x64</strong><small>AppImage</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
+            <a class="package-link" data-asset="linux-arm64.AppImage" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.AppImage"><span><strong>Other distributions, arm64</strong><small>AppImage</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></a>
+          </section>
+        </div>
+        <div class="first-launch">
+          <div>
+            <h3>Before the first launch</h3>
+            <p>The apps are not signed yet, and Sillage needs Git. Each system has one or two things to know.</p>
+          </div>
+          <div class="rows">
+            <details><summary>macOS: Git and the first-open permission</summary><p>Move Sillage from the disk image to Applications. Install Apple’s Command Line Tools if Git is missing. The app is not notarized yet; macOS may require <strong>System Settings › Privacy &amp; Security › Open Anyway</strong> on first launch.</p><a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md#macos">macOS setup guide</a></details>
+            <details><summary>Windows: Git and SmartScreen</summary><p>Install Git for Windows, then run the Sillage installer. Installation is per user. The app is not signed yet, so SmartScreen may show a first-run warning; the guide explains the <strong>More info › Run anyway</strong> step.</p><a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md#windows">Windows setup guide</a></details>
+            <details><summary>Linux: choosing the package</summary><p>On Debian or Ubuntu, use the .deb package: it installs Git and the AppArmor profile Chromium’s sandbox needs on recent Ubuntu versions. AppImage is there for other distributions. Choose x64 or arm64 to match your processor.</p><a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md#linux">Linux setup guide</a></details>
+            <details><summary>Reaching Desktop from your phone</summary><p>Enable private Tailscale access in Desktop’s Remote access settings. The app must remain open and the computer awake.</p><a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md#remote-access">Remote access for Desktop</a></details>
+          </div>
+        </div>
+      </article>
+
+      <article class="edition-panel" id="install" role="tabpanel" aria-labelledby="edition-server-tab">
+        <div class="edition-intro">
+          <h2>Sillage Server</h2>
+          <p>Install Sillage on a host you control. The background service keeps agents working when you close the browser, as long as the host stays awake.</p>
+        </div>
+        <div class="server-install">
+          <div class="server-command">
+            <p>For Linux with systemd, or macOS on Apple Silicon. Run it in the host’s terminal.</p>
+            <div class="command">
+              <pre><code id="install-command">curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
+              <button class="copy-button" type="button" data-copy="#install-command" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><span data-copy-label>Copy</span></button>
+            </div>
+            <p id="copy-status" class="sr-only" role="status" aria-live="polite"></p>
+            <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/install.sh">Read the installer before running it</a>
+          </div>
+          <div class="server-steps">
+            <ol class="steps">
+              <li><h3>Install on your host</h3><p>The installer prepares the runtime and the background service.</p></li>
+              <li><h3>Open your workspace</h3><p>The first-run tour creates your account and connects your agents.</p></li>
+              <li><h3>Connect your devices</h3><p>Use Tailscale or a protected HTTPS address, following the remote access guide.</p></li>
+            </ol>
+          </div>
+        </div>
+        <div class="guides">
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/install.md">Installation and updates</a>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Remote access</a>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/install.md#docker">Docker</a>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">Windows with WSL2</a>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/deploy/helm/sillage/README.md">Kubernetes</a>
+        </div>
+      </article>
+    </section>
+
+    <section class="section band" id="compare" aria-labelledby="comparison-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="comparison-title">Desktop or Server</h2>
+          <p>The workspace is the same. What differs is where it runs and how you reach it.</p>
+        </div>
+        <p class="table-help">Scroll sideways to compare both editions.</p>
+        <div class="table-scroll comparison-scroll" tabindex="0" role="region" aria-label="Desktop and Server comparison">
+          <table>
+            <thead><tr><th scope="col">How you work</th><th scope="col">Desktop</th><th scope="col">Server</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Projects, agents, board and Git</th><td>Included</td><td>Included</td></tr>
+              <tr><th scope="row">Where it runs</th><td>Inside the desktop app</td><td>A background service</td></tr>
+              <tr><th scope="row">What needs to stay open</th><td>The app and its computer</td><td>Only the host</td></tr>
+              <tr><th scope="row">Access from other devices</th><td>Private Tailscale access</td><td>Tailscale or protected HTTPS</td></tr>
+              <tr><th scope="row">User accounts</th><td>One personal workspace</td><td>Accounts for people you trust</td></tr>
+              <tr><th scope="row">Push notifications and installable web app</th><td>Not available</td><td>Available over HTTPS</td></tr>
+              <tr><th scope="row">Webhook automations from the internet</th><td>Not available</td><td>With a reachable address</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="footnote">Desktop and Server keep separate workspace data. Your coding agents still use their configured AI providers; hosting Sillage does not make those models local.</p>
+      </div>
+    </section>
+
+    <section class="section closing">
+      <div class="next-step wrap">
+        <div><h2>See what it does once installed.</h2><p>The feature list has 56 entries, each with what it does and where it works.</p></div>
+        <a class="button button-secondary" href="features.html">Browse the features</a>
+      </div>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="footer-inner wrap">
+      <div>
+        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+        <p>Free and open source under the MIT license. Independent, and not affiliated with the agent providers.</p>
+      </div>
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="agents.html">Agents</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/features.md">Documentation</a>
+        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+        <a href="https://github.com/MarlBurroW/sillage/issues">Report an issue</a>
+        <a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">License</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

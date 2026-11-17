@@ -2,625 +2,302 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Sillage · A workspace for coding agents</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A workspace for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, on a server you reach from any device or as a desktop app on your workstation. Connect GitHub issues, automate tasks and choose the account for each session.">
+  <title>Sillage: one workspace for your coding agents</title>
+  <meta name="description" content="Sillage runs Claude Code, Codex, OpenCode, Grok Build and Google Antigravity in one self-hosted workspace, with your own accounts. Review their changes beside the conversation, from your desk or your phone.">
+  <link rel="canonical" href="https://marlburrow.github.io/sillage/">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <!-- Change ?v= whenever style.css/main.js changes: GitHub Pages caches them for
-     ten minutes, and a new page with an old stylesheet breaks. -->
-  <link rel="stylesheet" href="style.css?v=v021">
-  <meta name="theme-color" content="#faf7fb" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f0b11" media="(prefers-color-scheme: dark)">
-  <meta property="og:title" content="Sillage">
-  <meta property="og:description" content="Native coding agents, GitHub issues, scheduled work and webhook automations, in one self-hosted workspace.">
-  <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
+  <link rel="preload" href="fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=selection-1">
+  <meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
-  <noscript><style>.tab-panel[hidden], .shots-panels [hidden] { display: block !important; } .shots-nav, .tabs { display: none; } .shots-panels figure { margin-bottom: 2rem; }</style></noscript>
-  <script>
-    // Read before first paint: main.js loads too late to avoid a flash of the
-    // system theme for someone who picked the other one.
-    try {
-      const saved = localStorage.getItem('sillage-site-theme')
-      if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved
-    } catch { /* private mode denies storage; the system theme is a fine answer */ }
-  </script>
+  <meta property="og:title" content="Sillage: one workspace for your coding agents">
+  <meta property="og:description" content="Sillage runs Claude Code, Codex, OpenCode, Grok Build and Google Antigravity in one self-hosted workspace, with your own accounts. Review their changes beside the conversation, from your desk or your phone.">
+  <meta property="og:url" content="https://marlburrow.github.io/sillage/">
+  <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script>try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
+  <script src="main.js?v=gallery-1" defer></script>
+  <script src="wake.js?v=wake-8" defer></script>
 </head>
 <body>
-  <!-- Three ribbons extend the logo without entering page content. -->
-  <div class="site-background" aria-hidden="true">
-    <svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false">
-      <defs>
-        <path id="background-ribbon" d="M-360 780H-160C460 780 260 80 880 80H1880V150H950C330 150 530 850-90 850H-360Z"/>
-      </defs>
-      <g id="background-pattern">
-        <g class="background-ribbons">
-          <use href="#background-ribbon"/>
-          <use href="#background-ribbon" transform="translate(180 100)"/>
-          <use href="#background-ribbon" transform="translate(360 200)"/>
-        </g>
-        <g class="background-threads">
-          <path d="M-360 815H-125C495 815 295 115 915 115H1880"/>
-          <path d="M-180 915H55C675 915 475 215 1095 215H2060"/>
-          <path d="M0 1015H235C855 1015 655 315 1275 315H2240"/>
-        </g>
-      </g>
-    </svg>
-  </div>
-  <a class="skip" href="#main">Skip to content</a>
-
+  <a class="skip-link" href="#main">Skip to content</a>
   <header class="topbar">
-    <a class="brand" href="#top">
-      <svg viewBox="0 0 100 100" width="26" height="26" fill="currentColor" aria-hidden="true">
-        <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/>
-        <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/>
-        <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/>
-      </svg>
-      <span>Sillage</span>
-    </a>
-    <nav aria-label="Sections">
-      <a href="#overview">How it works</a>
-      <a href="#projects">Projects</a>
-      <a href="#coordination">Coordination</a>
-      <a href="#context">Instructions &amp; memory</a>
-      <a href="#schedules">Automations</a>
-      <a href="#tour">Product tour</a>
-      <a href="#editions">Install</a>
-      <a class="repo" href="https://github.com/MarlBurroW/sillage">GitHub</a>
-      <button class="theme-toggle" type="button" data-theme-toggle hidden>
-        <svg data-icon="moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/>
-        </svg>
-        <svg data-icon="sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="4.2"/>
-          <path d="M12 2.4v2.2M12 19.4v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.4 12h2.2M19.4 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>
-        </svg>
-      </button>
-    </nav>
+    <div class="nav-inner wrap">
+      <a class="brand" href="index.html" aria-label="Sillage home"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <nav id="site-nav" aria-label="Main navigation">
+        <a href="index.html" aria-current="page">Overview</a>
+        <a href="features.html">Features</a>
+        <a href="agents.html">Agents</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-button theme-toggle" data-theme-toggle type="button" hidden aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+        <a class="button button-small button-primary" href="download.html">Get Sillage</a>
+        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      </div>
+    </div>
   </header>
-
   <main id="main">
-    <section class="hero" id="top">
-      <p class="kicker">Open source / Self-hosted / Built around native CLIs</p>
-      <div class="hero-heading">
-        <h1>Keep your work<br>within reach.</h1>
-        <div>
-          <p class="lede">A workspace for your coding agents.<br>Continue from your phone. Turn issues and events into work. Keep the decisions within reach.</p>
-          <p class="hero-detail">Claude Code, Codex, OpenCode, Grok Build and Google Antigravity run with their native tools and your accounts. Run Sillage on a server you reach from any device, or as a desktop app on your workstation.</p>
-          <p class="actions">
-            <a class="btn primary" href="#editions">Install Sillage <span aria-hidden="true">↗</span></a>
-            <a class="text-link" data-desktop-download hidden href="#install-desktop">Download Sillage Desktop <span aria-hidden="true">↓</span></a>
-            <a class="text-link" href="https://github.com/MarlBurroW/sillage">Explore the source <span aria-hidden="true">↗</span></a>
-          </p>
+    <section class="hero" aria-labelledby="hero-title">
+      <canvas class="wake" data-wake aria-hidden="true"></canvas>
+      <div class="hero-inner wrap">
+        <h1 id="hero-title">Your coding agents,<br> in one workspace.</h1>
+        <p class="lede">Run Claude Code, Codex, OpenCode, Grok Build and Antigravity with your own accounts. Review their changes and pick up any session from your browser.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="download.html#install-desktop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Download app</a>
+          <a class="button button-secondary" href="download.html#install">Install on a server</a>
         </div>
+        <p class="hero-terms">Free and open source. macOS, Windows and Linux.</p>
       </div>
-      <div class="hero-meta"><span>Claude Code + Codex + OpenCode + Grok Build</span><span>Server: Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><span>Desktop: macOS · Windows · Linux</span><a class="release" id="version-badge" href="https://github.com/MarlBurroW/sillage/releases/latest">Releases ↗</a></div>
-      <figure class="hero-shot hero-film" id="film">
-        <div class="film-frame">
-          <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film>
-            <source src="film/sillage-film.mp4" type="video/mp4">
-            <a href="film/sillage-film.mp4">Download the film (MP4, 54 s)</a>
-          </video>
-          <button type="button" class="film-play" data-film-play hidden aria-label="Play the 54-second film about Sillage, with sound">
-            <span class="film-play-icon" aria-hidden="true"></span>
-            <span class="film-play-label" aria-hidden="true">Watch the film<small>0:54 · sound on</small></span>
-          </button>
-        </div>
-        <figcaption>Sillage in 54 seconds: one session followed from desk to phone, a project board, shared skills and MCP servers, and two agents working it out together.</figcaption>
-      </figure>
+      <p class="wake-note"><i>Sillage</i> is French for the wake a boat leaves on the water.</p>
     </section>
 
-    <nav class="chapter-nav" aria-label="What Sillage does">
-      <a href="#anywhere"><span>01 / Continuity</span>Pick up where you left off ↗</a>
-      <a href="#projects"><span>02 / Projects</span>Keep track of the work ↗</a>
-      <a href="#coordination"><span>03 / Session awareness</span>Let agents coordinate ↗</a>
-      <a href="#agents"><span>04 / Multi-CLI</span>Choose the right harness ↗</a>
-      <a href="#context"><span>05 / Shared context</span>One set of instructions, one memory ↗</a>
-      <a href="#schedules"><span>06 / Automations</span>Run on a schedule or an event ↗</a>
-    </nav>
-
-    <section class="overview" id="overview" aria-labelledby="overview-title">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="overview-heading">
-        <h2 id="overview-title">Your idea. A shared workspace.<br>Agents that get to work.</h2>
-        <p>You steer from your browser. Everything comes together on your machine.</p>
+    <div class="soundings">
+    <section id="gallery" class="gallery wrap" data-tabs aria-label="Sillage in five screens">
+      <div class="gallery-index">
+        <div class="tabs" role="tablist" aria-label="Choose a screen">
+          <button id="tab-conversation" type="button" role="tab" aria-controls="preview-conversation" aria-selected="true" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 4h16v12H9l-5 4z"/></svg>Conversation</button>
+          <button id="tab-board" type="button" role="tab" aria-controls="preview-board" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3 4h18v16H3z M9 4v16 M15 4v16"/></svg>Board</button>
+          <button id="tab-code" type="button" role="tab" aria-controls="preview-code" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M7 8v9 M17 8c0 5-10 3-10 9 M7 3a2.5 2.5 0 1 0 .01 0 M17 3a2.5 2.5 0 1 0 .01 0 M7 17a2.5 2.5 0 1 0 .01 0"/></svg>Git and diffs</button>
+          <button id="tab-activity" type="button" role="tab" aria-controls="preview-activity" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2 13h4l3-8 5 14 3-8 2 2h3"/></svg>Activity</button>
+          <button id="tab-usage" type="button" role="tab" aria-controls="preview-usage" aria-selected="false" tabindex="-1" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 4v16h17 M8 16v-4 M13 16V8 M18 16V5"/></svg>Consumption</button>
+        </div>
+        <a class="film-link" href="#film" data-film-open><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="m10 8.4 5.6 3.6-5.6 3.6z" fill="currentColor" stroke="none"/></svg>Watch the film <small>54 s</small></a>
       </div>
-      <figure class="architecture" aria-label="How Sillage connects you, your agents and your projects">
-        <div class="arch-you"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="11" rx="2"/><path d="M5 20h10M10 15v5"/><rect x="17" y="10" width="5" height="10" rx="1"/></svg><div><strong>You, anywhere</strong><span>Ask, review, approve</span></div></div>
-        <div class="arch-connector"><span>Messages &amp; live updates</span></div>
-        <div class="arch-machine">
-          <span class="arch-boundary">Your computer or server</span>
-          <div class="arch-hub">
-            <div class="arch-brand"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><strong>Sillage</strong><span>Your work, kept together</span></div>
-            <div class="arch-functions">
-              <a href="#anywhere"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11a8 8 0 0 1-8 8H5l-3 3V11a8 8 0 0 1 8-8h3a8 8 0 0 1 8 8Z"/><path d="M7 9h9M7 13h6"/></svg><strong>Conversations</strong><span>Live updates &amp; notifications</span></a>
-              <a href="#projects"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2"/></svg><strong>Projects</strong><span>Tasks, files &amp; branches</span></a>
-              <a href="#coordination"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="19" r="3"/><path d="m6 9 4 7m8-7-4 7M8 6h8"/></svg><strong>Coordination</strong><span>Agents share the context</span></a>
-              <a href="#tour"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6M10 6v4l3 2"/></svg><strong>History &amp; search</strong><span>Find past work &amp; decisions</span></a>
-              <a href="#features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3H4v6H2a3 3 0 0 0 0 6h2v6h6v-2a3 3 0 0 1 6 0v2h5v-6h-2a3 3 0 0 1 0-6h2V3h-6v2a3 3 0 0 1-6 0V3Z"/></svg><strong>Skills &amp; tools</strong><span>Shared skills &amp; MCP connections</span></a>
-              <a href="#features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 10-13h-7l1-7Z"/></svg><strong>Task API</strong><span>Connect your own workflows</span></a>
+      <div id="preview-conversation" role="tabpanel" aria-labelledby="tab-conversation" tabindex="0">
+        <figure>
+          <button class="shot crop" data-narrow style="--a:0.6250;--ratio:1600/1000;--w:1;--x:0;--y:0;--nratio:480/560;--nw:1;--nx:0;--ny:0" type="button" data-zoom disabled aria-label="Enlarge the conversation capture"><picture>
+            <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="screenshots/hero-mobile-dark.webp, screenshots/hero-mobile-2x-dark.webp 2x">
+            <source media="(max-width: 600px)" srcset="screenshots/hero-mobile-light.webp, screenshots/hero-mobile-2x-light.webp 2x">
+            <source srcset="screenshots/hero-dark.webp 1600w, screenshots/hero-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.333), calc(min(100vw, 1240px) * 1.3)" media="(prefers-color-scheme: dark)"><img src="screenshots/hero-light.webp" srcset="screenshots/hero-light.webp 1600w, screenshots/hero-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.333), calc(min(100vw, 1240px) * 1.3)" width="1600" height="1000" alt="Claude Code reporting changes to offline caching in Nimbus" loading="eager" decoding="async" fetchpriority="high"></picture></button>
+          <figcaption class="caption">Claude Code edits the offline cache for Nimbus, then reports which tests passed.</figcaption>
+        </figure>
+      </div>
+      <div id="preview-board" role="tabpanel" aria-labelledby="tab-board" tabindex="0">
+        <figure>
+          <button class="shot crop" data-narrow style="--a:0.5978;--ratio:1840/1100;--w:1;--x:0;--y:0;--nratio:570/665;--nw:0.3098;--nx:0.1832;--ny:0.1364" type="button" data-zoom disabled aria-label="Enlarge the board capture"><picture><source srcset="screenshots/board-dark.webp 1840w, screenshots/board-2x-dark.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.196), calc(min(100vw, 1240px) * 1.3)" media="(prefers-color-scheme: dark)"><img src="screenshots/board-light.webp" srcset="screenshots/board-light.webp 1840w, screenshots/board-2x-light.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.196), calc(min(100vw, 1240px) * 1.3)" width="1840" height="1100" alt="The Nimbus project board with cards organized by progress" loading="lazy" decoding="async"></picture></button>
+          <figcaption class="caption">The project board. A card keeps the branch and the sessions that work on it.</figcaption>
+        </figure>
+      </div>
+      <div id="preview-code" role="tabpanel" aria-labelledby="tab-code" tabindex="0">
+        <figure>
+          <button class="shot crop" data-narrow style="--a:0.5978;--ratio:1840/1100;--w:1;--x:0;--y:0;--nratio:560/653;--nw:0.3043;--nx:0.4609;--ny:0.1782" type="button" data-zoom disabled aria-label="Enlarge the Git capture"><picture><source srcset="screenshots/panel-git-dark.webp 1840w, screenshots/panel-git-2x-dark.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.272), calc(min(100vw, 1240px) * 1.3)" media="(prefers-color-scheme: dark)"><img src="screenshots/panel-git-light.webp" srcset="screenshots/panel-git-light.webp 1840w, screenshots/panel-git-2x-light.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.272), calc(min(100vw, 1240px) * 1.3)" width="1840" height="1100" alt="Git history and a file diff beside a Sillage conversation" loading="lazy" decoding="async"></picture></button>
+          <figcaption class="caption">Uncommitted changes, their diff and the branch history, docked beside the conversation.</figcaption>
+        </figure>
+      </div>
+      <div id="preview-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0">
+        <figure>
+          <button class="shot crop" data-narrow style="--a:0.6250;--ratio:1600/1000;--w:1;--x:0;--y:0;--nratio:480/560;--nw:0.3;--nx:0.1981;--ny:0.06" type="button" data-zoom disabled aria-label="Enlarge the activity capture"><picture><source srcset="screenshots/wall-dark.webp 1600w, screenshots/wall-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.333), calc(min(100vw, 1240px) * 1.3)" media="(prefers-color-scheme: dark)"><img src="screenshots/wall-light.webp" srcset="screenshots/wall-light.webp 1600w, screenshots/wall-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 4.333), calc(min(100vw, 1240px) * 1.3)" width="1600" height="1000" alt="Sillage Activity showing two project conversations side by side" loading="lazy" decoding="async"></picture></button>
+          <figcaption class="caption">Two sessions side by side in Activity. The one on the left is waiting for a permission.</figcaption>
+        </figure>
+      </div>
+      <div id="preview-usage" role="tabpanel" aria-labelledby="tab-usage" tabindex="0">
+        <figure>
+          <button class="shot crop" data-narrow style="--a:0.6250;--ratio:1600/1000;--w:1;--x:0;--y:0;--nratio:540/630;--nw:0.3375;--nx:0.1969;--ny:0.072" type="button" data-zoom disabled aria-label="Enlarge the consumption capture"><picture><source srcset="screenshots/consumption-dark.webp 1600w, screenshots/consumption-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.852), calc(min(100vw, 1240px) * 1.3)" media="(prefers-color-scheme: dark)"><img src="screenshots/consumption-light.webp" srcset="screenshots/consumption-light.webp 1600w, screenshots/consumption-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.852), calc(min(100vw, 1240px) * 1.3)" width="1600" height="1000" alt="The consumption dashboard with 30 days of illustrative token usage" loading="lazy" decoding="async"></picture></button>
+          <figcaption class="caption">Token consumption by agent, model and project. The figures in this capture are illustrative.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section band" aria-labelledby="agents-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="agents-title">The agents stay themselves.</h2>
+          <p>Sillage doesn’t wrap a model behind its own agent. It drives each vendor’s CLI, so plans, permissions, models and limits are the ones you know.</p>
+        </div>
+        <div class="agent-table">
+          <a class="agent-row" href="agents.html#agent-claude"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" /></svg><span class="agent-name">Claude Code<small>Anthropic</small></span><span class="agent-what">Plans, subagents, questions and permission requests, with a Claude subscription or an API key.</span><span class="agent-more">Details</span></a>
+          <a class="agent-row" href="agents.html#agent-codex"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" /></svg><span class="agent-name">Codex<small>OpenAI</small></span><span class="agent-what">Threads you can resume, with a model and effort per conversation. ChatGPT sign-in or an API key.</span><span class="agent-more">Details</span></a>
+          <a class="agent-row" href="agents.html#agent-opencode"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M4 1h16v22H4V1zm4 4v14h8V5H8z" /><path d="M8 10h8v9H8z" opacity="0.3" /></svg><span class="agent-name">OpenCode<small>Open source</small></span><span class="agent-what">The providers you configured in OpenCode, local models included when the provider supports them.</span><span class="agent-more">Details</span></a>
+          <a class="agent-row" href="agents.html#agent-grok"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815" /></svg><span class="agent-name">Grok Build<small>xAI</small></span><span class="agent-what">xAI’s coding agent, with a Grok subscription or an xAI API key.</span><span class="agent-more">Details</span></a>
+          <a class="agent-row" href="agents.html#agent-antigravity"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"/></svg><span class="agent-name">Antigravity<small>Google</small></span><span class="agent-what">Google’s official agent for Gemini, with its models and thinking levels.</span><span class="agent-more">Details</span></a>
+        </div>
+      </div>
+    </section>
+
+    </div>
+
+    <section class="section" aria-label="What Sillage adds">
+      <div class="stories wrap">
+        <article class="story">
+          <div class="story-text">
+            <h2>Read the diff while the agent is still working.</h2>
+            <p>The panel beside the conversation holds the files, the branches and the commit history. You see what a turn changed without switching to a terminal.</p>
+            <ul>
+              <li>Stage, commit and push from the same panel</li>
+              <li>An optional checkpoint before and after every turn</li>
+              <li>A file explorer, an editor and terminals next to the thread</li>
+            </ul>
+          </div>
+          <div class="shot crop" data-narrow style="--a:0.5978;--ratio:1522/662;--w:0.8272;--x:0.1728;--y:0;--nratio:560/500;--nw:0.3043;--nx:0.4609;--ny:0.1782"><picture><source srcset="screenshots/panel-git-dark.webp 1840w, screenshots/panel-git-2x-dark.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.272), calc(min(100vw, 1240px) * 1.572)" media="(prefers-color-scheme: dark)"><img src="screenshots/panel-git-light.webp" srcset="screenshots/panel-git-light.webp 1840w, screenshots/panel-git-2x-light.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.272), calc(min(100vw, 1240px) * 1.572)" width="1840" height="1100" alt="A conversation with the Git panel beside it: a file diff and the commit history of the branch" loading="lazy" decoding="async"></picture></div>
+        </article>
+        <article class="story">
+          <div class="story-text">
+            <h2>Run several tasks, each in its own worktree.</h2>
+            <p>Start a session on a branch Sillage creates for it. Activity lines the sessions up side by side and brings forward the ones that are waiting for you.</p>
+            <ul>
+              <li>Sessions grouped by state: needs input, running, unread</li>
+              <li>Each worktree says whether its branch has been merged</li>
+              <li>A board card keeps the sessions that work on it</li>
+            </ul>
+          </div>
+          <div class="shot crop" data-narrow style="--a:0.6250;--ratio:1283/558;--w:0.8019;--x:0.1981;--y:0;--nratio:570/470;--nw:0.3563;--nx:0.1981;--ny:0.06"><picture><source srcset="screenshots/wall-dark.webp 1600w, screenshots/wall-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" media="(prefers-color-scheme: dark)"><img src="screenshots/wall-light.webp" srcset="screenshots/wall-light.webp 1600w, screenshots/wall-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" width="1600" height="1000" alt="Two sessions side by side in Activity, one waiting for a permission" loading="lazy" decoding="async"></picture></div>
+        </article>
+        <article class="story">
+          <div class="story-text">
+            <h2>Answer from your phone.</h2>
+            <p>A permission request doesn’t have to wait until you are back at your desk. Open the same conversation on a phone, read what the agent did, then allow, deny or reply.</p>
+            <ul>
+              <li>Server keeps sessions running after you close the browser</li>
+              <li>Push notifications when a session needs you, on Server over HTTPS</li>
+              <li>Desktop can be reached privately through Tailscale while the app is open</li>
+            </ul>
+          </div>
+          <div class="devices">
+            <div class="shot crop" style="--a:0.6250;--ratio:1040/612;--w:0.65;--x:0.1981;--y:0"><picture><source srcset="screenshots/permission-dark.webp 1600w, screenshots/permission-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 2), calc(min(100vw, 1240px) * 1.54)" media="(prefers-color-scheme: dark)"><img src="screenshots/permission-light.webp" srcset="screenshots/permission-light.webp 1600w, screenshots/permission-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 2), calc(min(100vw, 1240px) * 1.54)" width="1600" height="1000" alt="A permission request for a shell command, with Allow, Allow for the session and Deny" loading="lazy" decoding="async"></picture></div>
+            <div class="shot"><picture><source srcset="screenshots/hero-mobile-dark.webp 390w, screenshots/hero-mobile-2x-dark.webp 780w" sizes="(max-width: 600px) calc(100vw * 0.91), calc(min(100vw, 1240px) * 0.273)" media="(prefers-color-scheme: dark)"><img src="screenshots/hero-mobile-light.webp" srcset="screenshots/hero-mobile-light.webp 390w, screenshots/hero-mobile-2x-light.webp 780w" sizes="(max-width: 600px) calc(100vw * 0.91), calc(min(100vw, 1240px) * 0.273)" width="390" height="844" alt="The same Sillage conversation on a phone" loading="lazy" decoding="async"></picture></div>
+          </div>
+        </article>
+        <article class="story">
+          <div class="story-text">
+            <h2>Leave the routine to a schedule.</h2>
+            <p>Run a prompt at an interval, on a cron schedule, or when a webhook fires. A small check script can decide whether there is anything to do before an agent starts.</p>
+            <ul>
+              <li>An unattended agent can leave you a question and pick up your answer</li>
+              <li>Work resumes after a subscription limit resets</li>
+              <li>Webhook triggers need Server and a reachable address</li>
+            </ul>
+          </div>
+          <div class="shot crop" data-narrow style="--a:0.6250;--ratio:1283/558;--w:0.8019;--x:0.1981;--y:0;--nratio:570/340;--nw:0.3563;--nx:0.35;--ny:0.128"><picture><source srcset="screenshots/schedule-dark.webp 1600w, screenshots/schedule-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" media="(prefers-color-scheme: dark)"><img src="screenshots/schedule-light.webp" srcset="screenshots/schedule-light.webp 1600w, screenshots/schedule-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" width="1600" height="1000" alt="An automation that checks for new CLI releases every Monday, with its run history" loading="lazy" decoding="async"></picture></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section band band-left" id="film" aria-labelledby="film-title">
+      <div class="film wrap">
+        <div class="film-text">
+          <h2 id="film-title">Sillage in 54 seconds.</h2>
+          <p>From a conversation on a computer to a decision taken on a phone. The film has sound.</p>
+        </div>
+        <div class="film-stage">
+          <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film aria-label="Sillage product film, 54 seconds"><source src="film/sillage-film.mp4" type="video/mp4"><a href="film/sillage-film.mp4">Download the product film</a></video>
+          <a class="film-poster shot" data-film-open href="#film" aria-label="Play the Sillage film, 54 seconds, with sound">
+            <picture><source srcset="film/poster-dark.jpg" media="(prefers-color-scheme: dark)"><img src="film/poster-light.jpg" width="1920" height="1080" alt="" loading="lazy" decoding="async"></picture>
+            <span class="film-play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="m10 8.4 5.6 3.6-5.6 3.6z" fill="currentColor" stroke="none"/></svg>Play the film</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="chapters-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="chapters-title">56 features, each one written down.</h2>
+          <p>The feature list is a plain catalog you can search, with what works in Desktop, in Server or in both.</p>
+        </div>
+        <div class="chapters">
+          <a class="chapter" href="features.html#conversations"><strong>Conversations</strong><span>Queue and steer messages, search, references, dictation</span><b>11</b></a>
+          <a class="chapter" href="features.html#code"><strong>Code and worktrees</strong><span>Explorer, editor, Git, checkpoints, terminals</span><b>10</b></a>
+          <a class="chapter" href="features.html#projects"><strong>Projects and planning</strong><span>Boards, GitHub issues, linked cards and sessions</span><b>5</b></a>
+          <a class="chapter" href="features.html#context"><strong>Context and tools</strong><span>Shared instructions, memory, skills, MCP servers</span><b>7</b></a>
+          <a class="chapter" href="features.html#automation"><strong>Automation</strong><span>Schedules, webhooks, decisions, an API for tasks</span><b>8</b></a>
+          <a class="chapter" href="features.html#insights"><strong>Activity and insights</strong><span>Activity wall, consumption, model benchmarks</span><b>5</b></a>
+          <a class="chapter" href="features.html#sharing"><strong>Export and sharing</strong><span>Offline exports, masked secrets, public links</span><b>4</b></a>
+          <a class="chapter" href="features.html#editions"><strong>Editions and access</strong><span>Desktop, Server, remote access, notifications</span><b>6</b></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section band band-left" id="get" aria-labelledby="get-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="get-title">Two ways to run it.</h2>
+          <p>Both have the same projects, agents, board and Git tools. They keep separate data, and you can use either or both.</p>
+        </div>
+        <div class="install">
+          <div class="install-way">
+            <h3>Desktop, on your computer</h3>
+            <p>An app with its own server and Node runtime. Nothing to configure; it updates itself.</p>
+            <div class="install-list">
+              <a data-asset="mac-arm64.dmg" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg"><span>macOS</span><span>Apple Silicon, .dmg</span></a>
+              <a data-asset="win-x64.exe" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe"><span>Windows</span><span>x64, .exe</span></a>
+              <a href="download.html#install-desktop"><span>Linux</span><span>.deb or AppImage, x64 or arm64</span></a>
             </div>
-            <a class="arch-memory" href="#context"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5C8 2 4 3 2 4v15c4-2 7-1 10 1 3-2 6-3 10-1V4c-2-1-6-2-10 1Zm0 0v15"/></svg><span>Shared instructions &amp; memory</span></a>
+            <a class="link" href="download.html#install-desktop">All packages and first-launch notes</a>
           </div>
-          <div class="arch-connector"><span>Starts &amp; follows your agents</span></div>
-          <!-- Logos repris de AgentIcon.tsx : Claude (Simple Icons, CC0), OpenAI et Grok (LobeHub, MIT), OpenCode. -->
-          <div class="arch-agents" aria-label="Choose an agent for each conversation">
-            <div><span class="arch-agent-logo arch-agent-claude"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" /></svg></span><strong>Claude Code</strong></div>
-            <div><span class="arch-agent-logo arch-agent-codex"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" /></svg></span><strong>Codex</strong></div>
-            <div><span class="arch-agent-logo arch-agent-opencode"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M4 1h16v22H4V1zm4 4v14h8V5H8z" /><path d="M8 10h8v9H8z" opacity="0.3" /></svg></span><strong>OpenCode</strong></div>
-            <div><span class="arch-agent-logo arch-agent-grok"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815" /></svg></span><strong>Grok Build</strong></div>
-          </div>
-          <p class="arch-models">Your accounts &amp; AI models <span aria-hidden="true">↔</span> Your agents</p>
-          <div class="arch-connector"><span>Read, edit &amp; run</span></div>
-          <div class="arch-repo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="m10 11-3 3 3 3m4-6 3 3-3 3"/></svg><div><strong>Your project files</strong><span>Code, Git branches &amp; terminal</span></div></div>
-        </div>
-        <figcaption>The browser can close. Your agents keep working while their host stays awake.</figcaption>
-      </figure>
-    </section>
-
-    <section class="editorial" id="anywhere">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="section-label">01 / Continuity</div>
-      <div class="section-body">
-        <h2>Switch devices.<br>Keep the session.</h2>
-        <p class="section-lede">Your agents have a home. Follow their work from any device.</p>
-        <div class="prose-columns">
-          <p>Run Sillage on an always-on server, connect through your VPN, and pick up on your phone. Close your browser mid-turn: the agent keeps working, and the event journal brings the conversation back when you reconnect.</p>
-          <p>Answer a permission request, review a diff or send a correction. Install Sillage as a PWA for push notifications on your other devices. Questions and decisions also appear as in-app toasts; a conversation already in view stays quiet.</p>
-        </div>
-        <p class="technical-note">Switching devices takes Sillage Server, on a machine that stays on and online: a server, or your own computer if it stays awake. <a href="#editions">Sillage Desktop</a> keeps the work in one window on your workstation, with no access from other devices.</p>
-        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Set up remote access &amp; agent preview links ↗</a>
-        <p>Concentration mode keeps the conversation in view while hiding surrounding navigation. Direct icon actions and inline workspace images are available in both Server and Desktop.</p>
-        <ul class="inline-facts"><li>Persistent sessions</li><li>Message queue &amp; steering</li><li>Project-aware dictation</li></ul>
-      </div>
-    </section>
-
-    <section class="project-section" id="projects">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="editorial-heading"><div class="section-label">02 / Projects</div><div><h2>A project lasts longer<br>than a conversation.</h2><p class="section-lede">Give the work a place to live, from the first task to the next handover.</p></div></div>
-      <figure class="product-shot">
-        <button type="button" data-zoom aria-label="Enlarge the project board screenshot"><picture>
-          <source srcset="screenshots/board-dark.png" media="(prefers-color-scheme: dark)">
-          <img src="screenshots/board-light.png" width="3680" height="2200" loading="lazy" alt="Sillage project board, with tasks organised into workflow columns">
-        </picture></button>
-        <figcaption>The project board. Cards keep the task and its conversations together.</figcaption>
-      </figure>
-      <div class="project-details">
-        <div><h3>Cards with a history</h3><p>Descriptions, attachments, linked sessions and notes. Start a conversation from a card; the next agent can read what came before.</p></div>
-        <div><h3>GitHub issues, on your board</h3><p>Link a repository and keep its issues alongside local cards. Comments and issue state sync with GitHub; labels map to your columns. You choose whether new cards stay local or become issues. Tags sort the cards, and each conversation can be attached to its card.</p></div>
-        <div><h3>Maintenance on your terms</h3><p>Let a new issue or comment start work with your instructions, CLI and permissions. Each issue keeps its own session, and later comments join it. Choose a separate worktree or the project root.</p></div>
-        <div><h3>Worktrees, followed to the end</h3><p>Use the project root, an existing worktree or a new branch. The project page compares every tree git knows with the default branch: uncommitted, to merge, merged. Clean up a merged tree in one step, after a look at what would be lost. Stray files left in a merged tree are named rather than mistaken for work in progress. Clean up every finished tree at once, or let agents remove the ones they created.</p></div>
-        <div><h3>The repository at hand</h3><p>Read and edit files, stage changes, commit, follow branches and merges on a graph, or open a terminal beside the conversation. Move several files together, and use the command palette to find projects, sessions and past messages.</p></div>
-        <div><h3>Commands worth keeping</h3><p>Turn tests, dev servers and debug scripts into project actions. Run them from the header, panel or command palette, follow their output and open a service's preview link. Review commands proposed by agents before launching them from the interface.</p></div>
-      </div>
-    </section>
-
-    <section class="editorial coordination" id="coordination">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="section-label">03 / Session awareness</div>
-      <div class="section-body">
-        <h2>Your agents should know<br>who else is working.</h2>
-        <p class="section-lede">Two sessions can share a repository without sharing context. Sillage gives them tools to find that context.</p>
-        <p>Through the built-in MCP server, every agent can discover active sessions, read earlier decisions, identify who edited a file, contact another session and start a new one. The same project history is available to all of them.</p>
-        <dl class="tool-reference">
-          <div><dt>Before starting work</dt><dd>See active sessions, branches and worktrees.<code>list_sessions</code></dd></div>
-          <div><dt>Before undoing a change</dt><dd>Find the session that edited a file and check what it is doing.<code>find_file_edits</code></dd></div>
-          <div><dt>When a decision already exists</dt><dd>Search earlier conversations and read the reasoning.<code>search_history · read_conversation</code></dd></div>
-          <div><dt>When work overlaps</dt><dd>Message another session, announce a shared change or ask to be notified when it finishes.<code>send_session_message · broadcast_session_message · notify_when_done</code></dd></div>
-          <div><dt>When handing work over</dt><dd>Read the task and leave a note for the next session.<code>read_card · add_card_note</code></dd></div>
-          <div><dt>When work belongs elsewhere</dt><dd>Open a card for a bug found along the way. When you ask, start a new session with its own CLI, model, effort and worktree, then get notified when it finishes.<code>create_card · start_session · list_models</code></dd></div>
-        </dl>
-        <p class="technical-note">These tools help agents coordinate; they do not lock files or prevent merge conflicts. Use separate worktrees when changes need isolation.</p>
-        <p><strong>Bring your own MCP client.</strong> A CLI outside Sillage can read history, boards, instructions and memory across projects, and launch new work. Connect over HTTP with a scoped API token, or use stdio on the host or over SSH. Messaging between sessions remains available to agents running inside Sillage.</p>
-        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/mcp.md">Connect an external CLI to Sillage ↗</a>
-      </div>
-    </section>
-
-    <section class="editorial" id="agents">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="section-label">04 / Multi-CLI by design</div>
-      <div class="section-body">
-        <h2>Native harnesses.<br>A shared workspace.</h2>
-        <p class="section-lede">Choose Claude Code, Codex, OpenCode, Grok Build or Google Antigravity for each conversation. Keep the project around it.</p>
-        <div class="prose-columns"><p>Sillage drives the native CLIs: their tools, permission requests and agent behaviour. Each adapter translates its events into a common format for the interface, history and search.</p><p>The board and coordination tools belong to the project, so a Codex session can look up a decision made in a Claude Code conversation. Additional CLIs need their own adapter; Claude Code, Codex, OpenCode, Grok Build and Google Antigravity are supported today. OpenCode brings any provider and model it can reach, including local ones; Grok Build is driven through the Agent Client Protocol.</p></div>
-        <dl class="tool-reference">
-          <div><dt>Choose the account, too</dt><dd>Add Claude, Codex, Grok Build and Google subscriptions or API keys from the interface, then choose an account for each conversation. Subscription usage helps you choose, and the model list follows the account's plan. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md">Account setup and limits ↗</a></dd></div>
-          <div><dt>Google Gemini</dt><dd>Use Google’s official Antigravity agent with Google sign-in or a Gemini API key, model-specific thinking levels, skills and MCP. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/antigravity-integration.md">Integration and limitations ↗</a></dd></div>
-          <div><dt>Keep your settings close</dt><dd>Model and effort sit in one chip under the message box, with a slider for supported effort levels. Pin the other controls you use next to it, from permissions and account to speed or advisor when the CLI supports them, in the order you want. Each CLI keeps its own composer layout.</dd></div>
-          <div><dt>Continue in another CLI</dt><dd>Hand a conversation from Claude Code to Codex, OpenCode, Grok Build or Google Antigravity, and back. The new agent receives a budgeted selection of the thread, full messages rather than a summary, with references it can read back through Sillage's MCP server. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/cli-handoff.md">How the handoff is built ↗</a></dd></div>
-        </dl>
-        <div class="agent-links"><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/claude">Claude Code adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/codex">Codex adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/opencode">OpenCode adapter ↗</a><a href="https://github.com/MarlBurroW/sillage/tree/main/apps/server/src/agents/grok">Grok Build adapter ↗</a></div>
-      </div>
-    </section>
-
-    <section class="editorial coordination" id="context">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="section-label">05 / Shared context</div>
-      <div class="section-body">
-        <h2>One set of instructions.<br>One memory.</h2>
-        <p class="section-lede">Claude Code reads <code>CLAUDE.md</code> and keeps its memory under <code>~/.claude</code>. Codex reads <code>AGENTS.md</code>, OpenCode and Grok Build either one. Sillage gives the agents the same shared context.</p>
-        <div class="prose-columns"><p><strong>Instructions</strong> are the rules you set, in a <code>SILLAGE.md</code> with a global part and one per project. They are added to each CLI's prompt: when a session starts for Claude Code and Codex, when it is created for Grok Build, with every message for OpenCode. A project can keep them in Sillage, and the repository's <code>CLAUDE.md</code> and <code>AGENTS.md</code> are then hidden from agents so nothing arrives twice, or keep them in its repository, edited from the same panel.</p><p><strong>Memory</strong> is what agents learn while working: one per project, in the format Claude Code already uses. Claude writes it as its native memory, pointed at Sillage's folder; Codex, OpenCode and Grok Build get the index and write through Sillage's tools. What one CLI learns, the others know, and you can read and correct every note.</p></div>
-        <dl class="tool-reference">
-          <div><dt>When you change the rules</dt><dd>Ask an agent to revise the instructions; it edits them like a file.<code>read_instructions · edit_instructions · write_instructions</code></dd></div>
-          <div><dt>When something is worth remembering</dt><dd>Codex, OpenCode and Grok Build note it in the project memory; Claude does it natively in the same folder.<code>read_memory · write_memory · delete_memory</code></dd></div>
-        </dl>
-        <p class="technical-note">Claude Code and Codex read this context at session start, Grok Build when its session is created; OpenCode receives it with each message. Existing projects keep their repository files until you move them into Sillage.</p>
-        <a class="text-link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/sillage-md.md">How it works in detail ↗</a>
-      </div>
-    </section>
-
-    <section class="editorial" id="schedules">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="section-label">06 / Automations</div>
-      <div class="section-body">
-        <h2>Some work should happen<br>while you are away.</h2>
-        <p class="section-lede">A release watch every Monday. An issue labeled for an agent. A failing CI run to investigate. Start work on a schedule or when an event arrives.</p>
-        <figure class="product-shot">
-          <button type="button" data-zoom aria-label="Enlarge the automations page screenshot"><picture>
-            <source srcset="screenshots/schedule-dark.png" media="(prefers-color-scheme: dark)">
-            <img src="screenshots/schedule-light.png" width="3200" height="2000" loading="lazy" alt="Sillage automations page, with a weekly task, its next run and the history of past runs">
-          </picture></button>
-          <figcaption>Scheduled tasks and webhooks live under Automations, with settings and a history for each task.</figcaption>
-        </figure>
-        <div class="prose-columns"><p><strong>On a schedule.</strong> Run a prompt at an interval, with a cron expression or on a single date. Each run gets a fresh session of Claude Code, Codex, OpenCode, Grok Build or Google Antigravity, the task's model and permissions, and the previous run's last reply. Set a maximum duration and decide whether overlapping runs wait or are skipped.</p><p><strong>On an event.</strong> Connect a webhook, inspect its payload, and use its fields in conditions and prompts. Start from GitHub templates for labeled issues, comment commands, new pull requests or failed CI, or connect another service. Simulate a delivery to check what would run; deduplication and hourly limits bound the launches.</p></div>
-        <dl class="tool-reference">
-          <div><dt>Check before waking the agent</dt><dd>An optional script can check whether anything changed. Exit 0 starts the session with its output; exit 10 skips it without spending model tokens. Scripts written by an agent wait for your review.</dd></div>
-          <div><dt>Keep decisions within reach</dt><dd>Enable decision requests for a schedule, webhook or GitHub maintenance rule. The agent can leave a question in Decisions, with a deadline and an optional fallback. Your answer goes back to its session. This is off by default and separate from native CLI permissions.</dd></div>
-          <div><dt>Set it up from a conversation</dt><dd>Ask an agent to create a schedule or a webhook automation, then adjust it in the interface. Runs stay grouped under their task instead of filling the main session list.<code>schedule_task · create_automation</code></dd></div>
-        </dl>
-        <p class="technical-note">Runs use the project's default permissions unless the task says otherwise: a run that asks for a permission waits until its time is up. Pick a mode that fits what the task has to do on its own.</p>
-        <p class="technical-note">Webhooks need Sillage Server: the desktop app has no address the Internet can reach. It runs schedules while it is open, and a run that came due during sleep starts on wake.</p>
-      </div>
-    </section>
-
-    <section class="tour" id="tour" aria-labelledby="tour-title">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="tour-head">
-        <h2 id="tour-title">A closer look at the workspace</h2>
-        <p>Chat is the middle of it. The repository, the history and the work in flight stay one panel away.</p>
-      </div>
-
-      <div class="shots-nav">
-        <div role="tablist" aria-label="Screenshots">
-          <button role="tab" aria-selected="true" aria-controls="shot-0" id="tab-0">Diffs</button>
-          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-1" id="tab-1">Files</button>
-          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-2" id="tab-2">Board</button>
-          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-3" id="tab-3">Cards</button>
-            <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-8" id="tab-8">Worktrees</button>
-          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-4" id="tab-4">Search</button>
-          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-5" id="tab-5">Permissions</button>
-          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-6" id="tab-6">Codex</button>
-          <button role="tab" aria-selected="false" tabindex="-1" aria-controls="shot-7" id="tab-7">MCP</button>
-        </div>
-        <div class="shots-arrows">
-          <button type="button" data-shot-prev aria-label="Previous screenshot">
-            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M10 2 4 8l6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button type="button" data-shot-next aria-label="Next screenshot">
-            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="m6 2 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="shots-panels">
-        <figure id="shot-0" role="tabpanel" aria-labelledby="tab-0">
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/panel-git-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/panel-git-light.png" width="3680" height="2200" loading="lazy"
-                   alt="The Git panel open beside a conversation, showing the branch graph and uncommitted changes">
-            </picture>
-          </button>
-          <figcaption>The branch graph and the uncommitted changes, beside the agent that produced them.</figcaption>
-        </figure>
-        <figure id="shot-1" role="tabpanel" aria-labelledby="tab-1" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/panel-files-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/panel-files-light.png" width="3680" height="2200" loading="lazy"
-                   alt="The file explorer and editor open beside a conversation">
-            </picture>
-          </button>
-          <figcaption>A file explorer and an editor in the same panel, so reading the code never costs you the thread.</figcaption>
-        </figure>
-        <figure id="shot-2" role="tabpanel" aria-labelledby="tab-2" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/board-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/board-light.png" width="3680" height="2200" loading="lazy"
-                   alt="A project board with cards spread across five columns">
-            </picture>
-          </button>
-          <figcaption>A board per project. Work that outlives a single conversation lives here rather than in your head.</figcaption>
-        </figure>
-        <figure id="shot-3" role="tabpanel" aria-labelledby="tab-3" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/card-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/card-light.png" width="3680" height="2200" loading="lazy"
-                   alt="A card drawer showing its description, its branch and a note left by a previous session">
-            </picture>
-          </button>
-          <figcaption>Open a card and start a session on it. What that session learns is written back for the next one.</figcaption>
-        </figure>
-        <figure id="shot-8" role="tabpanel" aria-labelledby="tab-8" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/worktrees-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/worktrees-light.png" width="3200" height="2000" loading="lazy"
-                   alt="The project page listing two worktrees, one with uncommitted work and one to merge, each with its sessions">
-            </picture>
-          </button>
-          <figcaption>Every worktree compared with the default branch, with the sessions working there. Clean up a merged one in a step.</figcaption>
-        </figure>
-        <figure id="shot-4" role="tabpanel" aria-labelledby="tab-4" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/search-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/search-light.png" width="3200" height="2000" loading="lazy"
-                   alt="The search palette with results from several projects">
-            </picture>
-          </button>
-          <figcaption>Full-text search over every conversation, in every project, whichever CLI ran it.</figcaption>
-        </figure>
-        <figure id="shot-5" role="tabpanel" aria-labelledby="tab-5" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/permission-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/permission-light.png" width="3200" height="2000" loading="lazy"
-                   alt="A pending permission request with Allow and Deny buttons">
-            </picture>
-          </button>
-          <figcaption>The CLI's own permission requests, answered from wherever you happen to be.</figcaption>
-        </figure>
-        <figure id="shot-6" role="tabpanel" aria-labelledby="tab-6" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/codex-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/codex-light.png" width="3200" height="2000" loading="lazy"
-                   alt="A Codex conversation in Sillage">
-            </picture>
-          </button>
-          <figcaption>Claude Code, Codex, OpenCode, Grok Build and Google Antigravity sit side by side in the sidebar. Same interface, same history, same board.</figcaption>
-        </figure>
-        <figure id="shot-7" role="tabpanel" aria-labelledby="tab-7" hidden>
-          <button type="button" data-zoom>
-            <picture>
-              <source srcset="screenshots/settings-mcp-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="screenshots/settings-mcp-light.png" width="3200" height="2000" loading="lazy"
-                   alt="The MCP settings screen listing configured servers">
-            </picture>
-          </button>
-          <figcaption>Declare your MCP servers once and hand them to the agents that should get them.</figcaption>
-        </figure>
-      </div>
-    </section>
-
-    <section class="features" id="features" aria-labelledby="features-title">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <p class="section-label">Also in the workspace</p>
-      <h2 id="features-title">The everyday details, covered.</h2>
-      <ul>
-        <li><h3>A queue you can steer</h3><p>Write while the agent runs. Queue a follow-up, withdraw it, or send a correction into the current turn.</p></li>
-        <li><h3>Dictation with project vocabulary</h3><p>Transcription uses a lexicon from your repository and current branch. An optional cleanup pass restores exact spellings. Bring an OpenAI-compatible endpoint.</p></li>
-        <li><h3>Shared skills &amp; MCP tools</h3><p>Keep reusable skills in a central library for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity. Declare external MCP servers once and choose which agents receive them. Reconnect a server that was down at launch without restarting the session.</p></li>
-        <li><h3>A task API</h3><p>Create projects and tasks, follow events, answer requests and receive completion webhooks through <code>/api/v1</code>. Tokens have scopes and optional project restrictions. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/api.md">API guide ↗</a></p></li>
-        <li><h3>Processes in view</h3><p>On Linux, inspect commands and services attached to Sillage, their ports and originating conversations. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/services.md">Detection and limits ↗</a></p></li>
-        <li><h3>Each turn, reversible</h3><p>With turn checkpoints on, every turn lists the files it changed and can be reverted to the state before it, with an optional fork of the conversation from that point.</p></li>
-        <li><h3>Images, up close</h3><p>Screenshots an agent reads or produces open in a viewer: zoom, pan, rotate, copy as PNG or download the original.</p></li>
-        <li><h3>Sessions worth showing</h3><p>Export a conversation as a self-contained HTML page: pick an excerpt, choose how much of the tool activity to show, review masked secrets, then download it or publish an expiring, revocable link from Sillage Server.</p></li>
-        <li><h3>Conversations you can reference</h3><p>Type <code>@@</code> to link an earlier session. Open references in agent replies to see the original context. The composer's Insert menu helps you discover shortcuts for files, cards and skills too.</p></li>
-        <li><h3>Tools at your reading pace</h3><p>Choose discreet lines, a timeline, groups by purpose, previews, a compact console or the classic view. Open a tool for its output and file changes. Long conversations load progressively.</p></li>
-        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native server installations update from the UI, containers through their image, and the desktop app updates itself.</p></li>
-      </ul>
-    </section>
-
-    <section class="editorial" id="editions" aria-labelledby="editions-title">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="section-label">Two editions</div>
-      <div class="section-body">
-        <h2 id="editions-title">On a server.<br>Or on your workstation.</h2>
-        <p class="section-lede">The same workspace either way. What changes is where Sillage runs, and where you reach it from.</p>
-        <div class="editions">
-          <div class="edition">
-            <h3>Sillage Server</h3>
-            <p class="edition-tag">Always on. Reachable from every device.</p>
-            <ul>
-              <li>Runs on a server, a NAS, a VPS or any machine that stays on.</li>
-              <li>Open it from any browser: phone, tablet or laptop. Install it as a PWA for push notifications.</li>
-              <li>Agents keep working with your laptop closed. Schedules and webhooks fire on time.</li>
-              <li>Accounts with passwords, to share it with a few trusted people.</li>
-              <li>Docker, a service on Linux, macOS or WSL2, or Kubernetes. Updates from the interface.</li>
-            </ul>
-            <a class="text-link" href="#install">Install the server ↓</a>
-          </div>
-          <div class="edition">
-            <h3>Sillage Desktop</h3>
-            <p class="edition-tag">On your workstation. Nothing to host.</p>
-            <ul>
-              <li>An app for macOS (Apple Silicon), Windows and Linux, with the server built in.</li>
-              <li>Opens in its own window, next to your editor, with no account or password.</li>
-              <li>Agents work while the app is open and the computer awake.</li>
-              <li>One person, one computer: no phone access, no push notifications, no webhooks from the Internet.</li>
-              <li>Downloads updates in the background; install from About or on quit (except .deb).</li>
-            </ul>
-            <a class="text-link" href="#install-desktop">Download the app ↓</a>
+          <div class="install-way">
+            <h3>Server, on a host you control</h3>
+            <p>A background service on Linux or an Apple Silicon Mac. Agents keep working when you close the browser, and you reach it from any device.</p>
+            <div class="command">
+              <pre><code id="home-install-command">curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
+              <button class="copy-button" type="button" data-copy="#home-install-command" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><span data-copy-label>Copy</span></button>
+            </div>
+            <p id="copy-status" class="sr-only" role="status" aria-live="polite"></p>
+            <a class="link" href="download.html#install">Docker, Kubernetes, WSL2 and remote access</a>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="install" id="install" aria-labelledby="install-title">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="install-intro">
-        <p class="section-label">Install Sillage Server</p><h2 id="install-title">A workspace<br>that stays on.</h2>
-        <p>For a machine that stays on: a home server, a NAS, a VPS. Your desktop works too, while it stays awake and connected.</p>
-        <p>Install the CLIs you use from Settings. Reuse their sign-ins on the host, or add Claude and Codex accounts through Sillage's guided sign-in flows.</p>
-        <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Add private remote access with a VPN</a> to connect from another device.</p>
-      </div>
 
-      <div class="install-box">
-        <div class="tabs" role="tablist" aria-label="Installation method">
-          <button id="tab-docker" role="tab" aria-selected="true" aria-controls="panel-docker" data-tab="docker">Docker</button>
-          <button id="tab-script" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-script" data-tab="script">Linux</button>
-          <button id="tab-macos" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-macos" data-tab="macos">macOS</button>
-          <button id="tab-windows" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-windows" data-tab="windows">Windows</button>
-          <button id="tab-helm" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-helm" data-tab="helm">Kubernetes</button>
+    <section class="section" aria-labelledby="faq-title">
+      <div class="faq wrap">
+        <div class="faq-head">
+          <h2 id="faq-title">Before you install</h2>
+          <p>Something missing or unclear?</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/issues">Open an issue</a>
         </div>
-
-        <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker">
-<pre><code><span class="dim"># docker-compose.yml</span>
-services:
-  sillage:
-    image: ghcr.io/marlburrow/sillage:latest
-    ports: [<span class="str">"127.0.0.1:7317:7317"</span>]
-    volumes:
-      - sillage-data:/home/node/.local/share/sillage
-      - ~/.claude:/home/node/.claude
-      - ~/.codex:/home/node/.codex
-      - ~/.local/share/opencode:/home/node/.local/share/opencode
-      - ~/projects:/home/node/workspace
-volumes:
-  sillage-data:</code></pre>
-          <p>The CLIs are not in the image: install the ones you actually use from the UI, and they land in the data volume. Adjust the mounted paths. Start the container, then open Sillage in your browser: the first-run tour creates the first account and sets the instance up. Without a browser at hand, the command line does the same:</p>
-<pre class="one-line"><code>docker compose up -d
-docker compose exec -it sillage node /app/server/cli/user-create.js</code></pre>
-        </div>
-
-        <div id="panel-script" class="tab-panel" role="tabpanel" aria-labelledby="tab-script" data-panel="script" hidden>
-<pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Linux x64 or arm64 with systemd. Install the agents you use from the UI, then authenticate them on the host. It installs under <code>~/.local/share/sillage</code>, fetches Node if the system has none recent enough and sets up a user service. Open Sillage in your browser: the first-run tour creates the first account. Later updates happen from the UI.</p>
-        </div>
-
-        <div id="panel-macos" class="tab-panel" role="tabpanel" aria-labelledby="tab-macos" data-panel="macos" hidden>
-<pre class="one-line"><code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Apple Silicon Macs, from Terminal: Sillage Server as a background service your other devices can reach. For an app in its own window, see <a href="#install-desktop">Sillage Desktop</a> below. The same installer as on Linux fetches Node if needed, opens Sillage in your browser on the first-run tour, which creates the first account, and sets up a launchd agent that starts with your session. It needs git: run <code>xcode-select --install</code> first if the Command Line Tools are missing. Your agents only work while the Mac is awake.</p>
-        </div>
-
-        <div id="panel-windows" class="tab-panel" role="tabpanel" aria-labelledby="tab-windows" data-panel="windows" hidden>
-<pre><code><span class="dim"># 1. PowerShell, as administrator, then restart</span>
-wsl --install
-<span class="dim"># 2. In the Ubuntu terminal</span>
-curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
-          <p>Sillage runs inside WSL2, the Linux built into Windows 10 and 11, and you use it from your Windows browser. The same installer as on Linux enables systemd if the distribution lacks it, fetches Node and adds a <strong>Sillage</strong> entry to the Start menu; the first-run tour creates the first account in your browser. That entry keeps WSL running once the terminal is closed, and can start with Windows.</p>
-          <p>The agents are the Linux <code>claude</code>, <code>codex</code>, <code>opencode</code> and <code>grok</code> of the distribution, not the Windows ones. Keep projects in the Linux file system, not under <code>/mnt/c</code>. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">WSL2 guide</a> covers signing in to the agents, troubleshooting and uninstalling.</p>
-        </div>
-
-        <div id="panel-helm" class="tab-panel" role="tabpanel" aria-labelledby="tab-helm" data-panel="helm" hidden>
-<p>Clone the repository first; the chart lives in <code>deploy/helm/sillage</code>. See the <a href="https://github.com/MarlBurroW/sillage/tree/main/deploy/helm/sillage">Helm installation guide</a>.</p>
-<pre><code>helm install sillage ./deploy/helm/sillage \
-  <span class="dim">--namespace</span> sillage <span class="dim">--create-namespace</span> \
-  <span class="dim">--set</span> storage.data.storageClass=<span class="str">&lt;block-storage-class&gt;</span> \
-  <span class="dim">--set</span> ingress.enabled=<span class="str">true</span> <span class="dim">--set</span> ingress.host=<span class="str">sillage.example.com</span></code></pre>
-          <p>One replica, <code>Recreate</code> strategy: the state is a SQLite database on a <code>ReadWriteOnce</code> volume, and two pods writing to it means corruption. Give the data volume a block storage class rather than NFS, whose file locks SQLite cannot rely on. Then open the ingress host: the first-run tour creates the first account. Or from a terminal:</p>
-<pre><code>kubectl <span class="dim">-n</span> sillage exec <span class="dim">-it</span> deploy/sillage \
-  -- node /app/server/cli/user-create.js</code></pre>
+        <div class="rows">
+          <details><summary>Is Sillage free?</summary><p>Yes. Sillage is free and open source under the MIT license. You bring the accounts, subscriptions or API keys your agents require. There is no Sillage subscription.</p></details>
+          <details><summary>Does it replace my coding agents?</summary><p>No. Sillage runs the native Claude Code, Codex, OpenCode, Grok Build and Google Antigravity tools. They keep their own capabilities and permission flows, and share one interface for your projects and conversations.</p></details>
+          <details><summary>Where do my code and conversations live?</summary><p>Sillage stores its workspace on the computer or server you choose. Your agents still talk to their configured AI providers: hosting Sillage yourself doesn’t make those models local. OpenCode can use local models when its providers support them.</p></details>
+          <details><summary>Can I use it from my phone?</summary><p>Yes. Open Sillage Server in your phone’s browser, or enable Remote access in Desktop, which uses Tailscale. Desktop has to stay open; Server runs as a service. In both cases the host must stay awake. Push notifications are available in the Server edition.</p></details>
+          <details><summary>Can I share my server with a team?</summary><p>Server supports several accounts and shared projects for people you trust. Agents run under the same system account, so it is not an isolated environment for untrusted users. Put it behind a VPN or a protected HTTPS address. <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Remote access guide</a></p></details>
         </div>
       </div>
     </section>
 
-    <section class="install" id="install-desktop" aria-labelledby="install-desktop-title">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <div class="install-intro">
-        <p class="section-label">Install Sillage Desktop</p><h2 id="install-desktop-title">A workspace<br>on your desk.</h2>
-        <p>For the computer you code on. No server to set up, no account to create: the app bundles the server and its own Node, and opens Sillage in its own window.</p>
-        <p>The window header follows your theme, with native window buttons. Windows and Linux have a compact application menu; macOS keeps its traffic lights and system menu.</p>
-        <p>Your agents use your CLIs and their sign-ins, and work while the app is open. Everything stays on this computer: no access from your phone, no push notifications, no webhooks from the Internet.</p>
-      </div>
-
-      <div class="install-box">
-        <div class="download-panel">
-          <p><a class="btn primary" data-desktop-download data-detailed href="https://github.com/MarlBurroW/sillage/releases/latest">Download from the latest release <span aria-hidden="true">↓</span></a></p>
-          <ul class="download-list" aria-label="Every package of the latest release">
-            <li><a data-asset="win-x64.exe" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe">Windows</a><span>x64 · .exe installer</span></li>
-            <li><a data-asset="mac-arm64.dmg" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg">macOS</a><span>Apple Silicon · .dmg</span></li>
-            <li><a data-asset="linux-amd64.deb" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-amd64.deb">Debian, Ubuntu</a><span>x64 · .deb</span></li>
-            <li><a data-asset="linux-arm64.deb" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.deb">Debian, Ubuntu</a><span>arm64 · .deb</span></li>
-            <li><a data-asset="linux-x86_64.AppImage" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-x86_64.AppImage">Other Linux</a><span>x64 · AppImage</span></li>
-            <li><a data-asset="linux-arm64.AppImage" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-linux-arm64.AppImage">Other Linux</a><span>arm64 · AppImage</span></li>
-          </ul>
-          <p>On Windows, Sillage needs <a href="https://git-scm.com/download/win">Git for Windows</a>, and SmartScreen asks you to confirm the first run (<em>More info</em>, then <em>Run anyway</em>).</p>
-          <p>The app is not notarized by Apple yet. On the first launch, allow it in System Settings &gt; Privacy &amp; Security, or from Terminal:</p>
-<pre class="one-line"><code>xattr -dr com.apple.quarantine /Applications/Sillage.app</code></pre>
-          <p>The app then updates itself from each release. The <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md">desktop guide</a> covers what differs from the server, where your data lives, updates and how to uninstall.</p>
+    <section class="section band" id="why" aria-labelledby="why-title">
+      <div class="origin wrap">
+        <div>
+          <h2 id="why-title" class="sr-only">Why Sillage exists</h2>
+          <blockquote>“I wanted one place, on a server I own, where I could pick up a project from my phone, without carrying a laptop or keeping track of a dozen terminals.”</blockquote>
+          <a class="signature" href="https://github.com/MarlBurroW"><img src="avatar-marlburrow.jpg" alt="" width="44" height="44" loading="lazy"><span><strong>MarlBurroW</strong><small>Creator of Sillage</small></span></a>
+        </div>
+        <div class="origin-text">
+          <p>I also wanted to keep the agents I already used. Sillage runs their native tools and gives them a shared workspace: projects, a board, instructions and memory. A session can look up an earlier decision and leave context for the next agent, even when I switch CLIs.</p>
+          <p>Claude Code and Codex wrote most of Sillage, much of it from inside Sillage itself, often from a phone.</p>
         </div>
       </div>
-    </section>
-
-    <section class="why" id="why" aria-labelledby="why-title">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <h2 id="why-title">Why I built Sillage</h2>
-      <figure class="founder-note">
-        <blockquote>
-          <p class="founder-lede">I wanted one place, on a server I own, that I could open from my phone and keep working.</p>
-          <div class="founder-story">
-            <p>
-              That was the starting point: pick up a project wherever I happen to be,
-              without carrying a laptop or keeping track of a dozen terminals.
-            </p>
-            <p>
-              I wanted to keep the agents I already used. Sillage runs Claude Code,
-              Codex, OpenCode and Grok Build through their native interfaces, keeping
-              their tools and permission flows. Each has its own adapter; OpenCode also brings
-              access to the providers and local models it supports.
-            </p>
-            <p>
-              What grew around them is a shared workspace: projects, a board,
-              instructions and memory. An agent can find out what other sessions are
-              doing, read earlier decisions and leave context for whoever picks up
-              the work next, even when they use a different CLI.
-            </p>
-            <p>
-              Sillage is built with AI, heavily. Claude Code and Codex wrote most of
-              the code, much of it from inside Sillage itself, often from a phone.
-              The tool and the way I work on it grew together.
-            </p>
-          </div>
-        </blockquote>
-        <figcaption class="founder-signature">
-          <img class="founder-avatar" src="avatar-marlburrow.jpg" width="56" height="56" loading="lazy" alt="">
-          <span><a href="https://github.com/MarlBurroW">MarlBurroW</a><span class="founder-role">Creator of Sillage</span></span>
-        </figcaption>
-      </figure>
-    </section>
-
-    <section class="security">
-      <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <h2>A word on security</h2>
-      <p>
-        Sillage is built for a trusted circle, not for the open Internet. Agents and
-        terminals run under one system account. Host CLI sign-ins are shared; extra
-        Claude and Codex accounts belong to the Sillage user who adds them, but this
-        does not isolate their files from that system account. The server listens on localhost and does
-        not terminate TLS: reach it through a VPN, a tailnet or a reverse proxy you control.
-        Sillage Desktop has no sign-in: its server answers only the app's own window.
-      </p>
     </section>
   </main>
-
-  <footer>
-    <a class="brand" href="#top">
-      <svg viewBox="0 0 100 100" width="22" height="22" fill="currentColor" aria-hidden="true">
-        <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/>
-        <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/>
-        <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/>
-      </svg>
-      <span>Sillage</span>
-    </a>
-    <p>Open source · MIT licensed · Self-hosted</p>
-    <nav aria-label="Footer">
-      <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
-      <a href="https://github.com/MarlBurroW/sillage/releases">Releases</a>
-      <a href="https://github.com/MarlBurroW/sillage/issues">Issues</a>
-      <a href="https://github.com/MarlBurroW/sillage/blob/main/README.md">Documentation</a>
-    </nav>
+  <footer class="footer">
+    <div class="footer-inner wrap">
+      <div>
+        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+        <p>Free and open source under the MIT license. Independent, and not affiliated with the agent providers.</p>
+      </div>
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="agents.html">Agents</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/features.md">Documentation</a>
+        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+        <a href="https://github.com/MarlBurroW/sillage/issues">Report an issue</a>
+        <a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">License</a>
+      </nav>
+    </div>
   </footer>
-
-  <dialog class="zoom" data-zoom-dialog aria-label="Screenshot at full size">
-    <form method="dialog"><button aria-label="Close">&times;</button></form>
-    <img data-zoom-image alt="">
+  <dialog class="zoom-dialog" data-zoom-dialog aria-label="Product screenshot">
+    <div class="viewer-toolbar"><p data-zoom-title></p><button type="button" class="viewer-size" data-zoom-size aria-pressed="false">Zoom in</button><button class="icon-button" type="button" data-dialog-close aria-label="Close screenshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <div class="zoom-viewport"><img data-zoom-image alt=""></div>
   </dialog>
-
-
-  <script src="main.js?v=v021"></script>
+  <dialog class="film-dialog" data-film-dialog aria-labelledby="film-dialog-title">
+    <div class="viewer-toolbar"><p id="film-dialog-title">Sillage in 54 seconds</p><button class="icon-button" type="button" data-dialog-close aria-label="Close video"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <div class="film-modal-content"></div>
+  </dialog>
 </body>
 </html>

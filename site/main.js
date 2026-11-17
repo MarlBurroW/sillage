@@ -1,20 +1,18 @@
-// Theme switch. The button stays hidden until this runs: without JavaScript the
-// page still follows the system preference, and a dead control would be worse
-// than none. The head applies the stored choice earlier, to avoid a flash.
 const THEME_KEY = 'sillage-site-theme'
 const root = document.documentElement
 const systemDark = matchMedia('(prefers-color-scheme: dark)')
 const themeToggle = document.querySelector('[data-theme-toggle]')
-// A <picture> resolves its variant against the system preference alone, so the
-// switch has to move the media conditions out of the way itself. Same for the
-// colour the mobile browser paints its chrome with.
-const darkSources = [...document.querySelectorAll('picture source')]
+const darkSources = [...document.querySelectorAll('picture source[media*="dark"]')].map((source) => ({
+  source,
+  media: source.media.replace(/(?: and )?\(prefers-color-scheme: dark\)/, '') || 'all',
+}))
 const darkMeta = document.querySelector('meta[name="theme-color"][media*="dark"]')
 const lightMeta = document.querySelector('meta[name="theme-color"][media*="light"]')
 
-const storedTheme = () => {
+function storedTheme() {
   try {
-    return localStorage.getItem(THEME_KEY)
+    const theme = localStorage.getItem(THEME_KEY)
+    return theme === 'dark' || theme === 'light' ? theme : null
   } catch {
     return null
   }
@@ -23,178 +21,313 @@ const storedTheme = () => {
 function applyTheme(theme) {
   const dark = theme === 'dark'
   root.dataset.theme = theme
-  darkSources.forEach((source) => { source.media = dark ? 'all' : 'not all' })
-  darkMeta.media = dark ? 'all' : 'not all'
-  lightMeta.media = dark ? 'not all' : 'all'
-  themeToggle.setAttribute('aria-label', dark ? 'Switch to the light theme' : 'Switch to the dark theme')
+  // Picture and browser chrome otherwise follow the OS, ignoring our switch.
+  darkSources.forEach(({ source, media }) => { source.media = dark ? media : 'not all' })
+  if (darkMeta) darkMeta.media = dark ? 'all' : 'not all'
+  if (lightMeta) lightMeta.media = dark ? 'not all' : 'all'
+  if (themeToggle) {
+    themeToggle.setAttribute('aria-label', dark ? 'Switch to the light theme' : 'Switch to the dark theme')
+  }
 }
 
-applyTheme(root.dataset.theme || (systemDark.matches ? 'dark' : 'light'))
-themeToggle.hidden = false
-
-themeToggle.addEventListener('click', () => {
-  const next = root.dataset.theme === 'dark' ? 'light' : 'dark'
-  applyTheme(next)
-  try {
-    localStorage.setItem(THEME_KEY, next)
-  } catch { /* the choice just does not survive the tab */ }
-})
-
-// Someone who never touched the switch keeps following their system.
+applyTheme(storedTheme() || (systemDark.matches ? 'dark' : 'light'))
+if (themeToggle) {
+  themeToggle.addEventListener('click', () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark'
+    applyTheme(next)
+    try {
+      localStorage.setItem(THEME_KEY, next)
+    } catch { /* The choice still works for this visit. */ }
+  })
+  themeToggle.hidden = false
+}
 systemDark.addEventListener('change', (event) => {
   if (!storedTheme()) applyTheme(event.matches ? 'dark' : 'light')
 })
 
-// Decoration stays static without JavaScript; offscreen animation rests.
-const backgroundObserver = new IntersectionObserver((entries) => {
-  entries.forEach(({ target, isIntersecting }) => target.toggleAttribute('data-visible', isIntersecting))
-})
-document.querySelectorAll('.site-background, .section-background').forEach((background) => {
-  backgroundObserver.observe(background)
-})
+const topbar = document.querySelector('.topbar')
+const menuToggle = document.querySelector('[data-menu-toggle]')
+const navigation = document.getElementById('site-nav')
 
-// Sillage Desktop: the package for the visitor's system, as a direct download.
-const DESKTOP_PACKAGES = {
-  windows: { asset: 'win-x64.exe', label: 'Download for Windows' },
-  mac: { asset: 'mac-arm64.dmg', label: 'Download for macOS' },
-  linux: { asset: 'linux-amd64.deb', label: 'Download for Linux (.deb)' },
+if (topbar) {
+  const onScroll = () => topbar.toggleAttribute('data-stuck', window.scrollY > 8)
+  addEventListener('scroll', onScroll, { passive: true })
+  onScroll()
 }
 
-function desktopSystem() {
-  if (/android|iphone|ipad|ipod/i.test(navigator.userAgent)) return null
-  const platform = (navigator.userAgentData?.platform || navigator.platform || '').toLowerCase()
-  // iPadOS asks for the desktop site as a Mac, but no Mac has a touch screen.
-  if (platform.includes('mac')) return navigator.maxTouchPoints > 1 ? null : 'mac'
-  if (platform.includes('win')) return 'windows'
-  if (platform.includes('linux')) return 'linux'
-  return null
-}
-
-const desktopPackage = DESKTOP_PACKAGES[desktopSystem()]
-
-// Offered only once the release is known to carry this system's package: a direct link
-// to a file the release lacks would end on a GitHub error page.
-function offerDownload(href, version) {
-  document.querySelectorAll('[data-desktop-download]').forEach((button) => {
-    const detail = button.hasAttribute('data-detailed') ? ` · v${version}` : ''
-    button.href = href
-    button.firstChild.textContent = `${desktopPackage.label}${detail} `
-    button.hidden = false
-  })
-}
-
-// Latest release from GitHub: the version badge, and the direct downloads. The package
-// links already point at `releases/latest/download/` and stable asset names; the answer
-// adds the version and covers older releases, whose asset names carried it. The page
-// stays complete without it: the unauthenticated API is capped at 60 requests per hour
-// and per IP.
-fetch('https://api.github.com/repos/MarlBurroW/sillage/releases/latest')
-  .then((res) => (res.ok ? res.json() : null))
-  .then((release) => {
-    if (!release?.tag_name) return
-    const version = release.tag_name.replace(/^v/, '')
-    const badge = document.getElementById('version-badge')
-    badge.textContent = `v${version} available`
-    badge.href = release.html_url
-    badge.hidden = false
-
-    const assets = release.assets ?? []
-    const find = (suffix) => assets.find((asset) => asset.name.endsWith(suffix))
-    document.querySelectorAll('[data-asset]').forEach((link) => {
-      const asset = find(link.dataset.asset)
-      if (asset) link.href = asset.browser_download_url
-    })
-    const own = desktopPackage && find(desktopPackage.asset)
-    if (own) offerDownload(own.browser_download_url, version)
-  })
-  .catch(() => {})
-
-/** Wires an ARIA tablist: click, arrow keys, Home and End. */
-function tablist(tabs, show) {
-  const select = (tab, focus) => {
-    tabs.forEach((other) => {
-      other.setAttribute('aria-selected', String(other === tab))
-      other.tabIndex = other === tab ? 0 : -1
-    })
-    show(tabs.indexOf(tab))
-    if (focus) {
-      tab.focus()
-      tab.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    }
+if (topbar && menuToggle && navigation) {
+  const setMenuOpen = (open) => {
+    topbar.toggleAttribute('data-open', open)
+    menuToggle.setAttribute('aria-expanded', String(open))
+    menuToggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation')
   }
-  tabs.forEach((tab) => {
-    tab.addEventListener('click', () => select(tab, false))
+  menuToggle.addEventListener('click', () => {
+    setMenuOpen(menuToggle.getAttribute('aria-expanded') !== 'true')
+  })
+  navigation.addEventListener('click', (event) => {
+    if (event.target.closest('a')) setMenuOpen(false)
+  })
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || menuToggle.getAttribute('aria-expanded') !== 'true') return
+    setMenuOpen(false)
+    menuToggle.focus({ preventScroll: true })
+  })
+  matchMedia('(max-width: 850px)').addEventListener('change', (event) => {
+    if (!event.matches) setMenuOpen(false)
+  })
+  setMenuOpen(false)
+  topbar.setAttribute('data-enhanced', '')
+  menuToggle.hidden = false
+}
+
+// Panels remain readable without JavaScript. Only complete tab groups are enhanced.
+const tabGroups = []
+document.querySelectorAll('[data-tabs]').forEach((group) => {
+  const tabs = [...group.querySelectorAll('[role="tab"]')]
+    .filter((tab) => tab.closest('[data-tabs]') === group)
+  const panels = tabs.map((tab) => document.getElementById(tab.getAttribute('aria-controls')))
+  if (!tabs.length || panels.some((panel) => !panel)) return
+
+  if (group.matches('.gallery')) {
+    const tablist = group.querySelector('[role="tablist"]')
+    const desktop = matchMedia('(min-width: 851px)')
+    const orient = () => tablist.setAttribute('aria-orientation', desktop.matches ? 'vertical' : 'horizontal')
+    orient()
+    desktop.addEventListener('change', orient)
+  }
+
+  const select = (tab, focus = false) => {
+    tabs.forEach((other, index) => {
+      const selected = other === tab
+      other.setAttribute('aria-selected', String(selected))
+      other.tabIndex = selected ? 0 : -1
+      panels[index].hidden = !selected
+    })
+    if (focus) tab.focus({ preventScroll: true })
+  }
+
+  tabs.forEach((tab, index) => {
+    tab.disabled = false
+    tab.addEventListener('click', () => select(tab))
     tab.addEventListener('keydown', (event) => {
-      const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key]
-      const target = step
-        ? tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]
-        : { Home: tabs[0], End: tabs[tabs.length - 1] }[event.key]
+      const vertical = tab.closest('[role="tablist"]')?.getAttribute('aria-orientation') === 'vertical'
+      const previous = vertical ? 'ArrowUp' : 'ArrowLeft'
+      const next = vertical ? 'ArrowDown' : 'ArrowRight'
+      let target
+      if (event.key === previous) target = tabs[(index - 1 + tabs.length) % tabs.length]
+      if (event.key === next) target = tabs[(index + 1) % tabs.length]
+      if (event.key === 'Home') target = tabs[0]
+      if (event.key === 'End') target = tabs[tabs.length - 1]
       if (!target) return
       event.preventDefault()
       select(target, true)
     })
   })
-  return (index) => select(tabs[(index + tabs.length) % tabs.length], false)
+  select(tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0])
+  group.setAttribute('data-enhanced', '')
+  tabGroups.push({ tabs, panels, select })
+})
+
+function revealHash(hash) {
+  if (!hash || hash === '#') return
+  let target
+  try {
+    target = document.getElementById(decodeURIComponent(hash.slice(1)))
+  } catch {
+    return
+  }
+  if (!target) return
+  tabGroups.forEach(({ tabs, panels, select }) => {
+    const index = panels.findIndex((panel) => panel === target || panel.contains(target))
+    if (index !== -1) select(tabs[index])
+  })
 }
 
-// Screenshot tour.
-const shotTabs = [...document.querySelectorAll('.shots-nav [role="tab"]')]
-const shotPanels = [...document.querySelectorAll('.shots-panels [role="tabpanel"]')]
-let currentShot = 0
-
-const goToShot = tablist(shotTabs, (index) => {
-  currentShot = index
-  shotPanels.forEach((panel, i) => { panel.hidden = i !== index })
+revealHash(location.hash)
+addEventListener('hashchange', () => revealHash(location.hash))
+// Reveal before the browser follows an anchor, including repeated same-hash clicks.
+document.addEventListener('click', (event) => {
+  const anchor = event.target.closest('a[href^="#"]')
+  if (anchor) revealHash(anchor.getAttribute('href'))
 })
 
-document.querySelector('[data-shot-prev]').addEventListener('click', () => goToShot(currentShot - 1))
-document.querySelector('[data-shot-next]').addEventListener('click', () => goToShot(currentShot + 1))
-
-// Installation methods.
-const installTabs = [...document.querySelectorAll('.tabs [role="tab"]')]
-const installPanels = [...document.querySelectorAll('.tab-panel')]
-tablist(installTabs, (index) => {
-  installPanels.forEach((panel, i) => { panel.hidden = i !== index })
-})
-
-// Screenshots are dense; let people open one at its full size.
-const dialog = document.querySelector('[data-zoom-dialog]')
-const dialogImage = dialog.querySelector('[data-zoom-image]')
-
-document.querySelectorAll('[data-zoom]').forEach((trigger) => {
-  trigger.addEventListener('click', () => {
-    const image = trigger.querySelector('img')
-    dialogImage.src = image.currentSrc || image.src
-    dialogImage.alt = image.alt
-    dialog.showModal()
+function enhanceDialog(dialog, onClose) {
+  if (!dialog || typeof dialog.showModal !== 'function') return false
+  dialog.querySelectorAll('[data-dialog-close], [data-dialog-close-link]').forEach((control) => {
+    control.addEventListener('click', () => dialog.close())
   })
-})
-dialog.addEventListener('click', (event) => {
-  if (event.target === dialog) dialog.close()
+  dialog.addEventListener('click', (event) => {
+    if (event.target !== dialog) return
+    const bounds = dialog.getBoundingClientRect()
+    if (event.clientX < bounds.left || event.clientX > bounds.right ||
+        event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close()
+  })
+  if (onClose) dialog.addEventListener('close', onClose)
+  return true
+}
+
+function isPlainClick(event) {
+  return !event.defaultPrevented && event.button === 0 &&
+    !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+}
+
+const zoomDialog = document.querySelector('[data-zoom-dialog]')
+const zoomImage = zoomDialog?.querySelector('[data-zoom-image]')
+const zoomTitle = zoomDialog?.querySelector('[data-zoom-title]')
+const zoomSize = zoomDialog?.querySelector('[data-zoom-size]')
+const zoomViewport = zoomDialog?.querySelector('.zoom-viewport')
+function setZoomSize(actualSize) {
+  zoomDialog.toggleAttribute('data-actual-size', actualSize)
+  if (zoomSize) {
+    zoomSize.setAttribute('aria-pressed', String(actualSize))
+    zoomSize.textContent = actualSize ? 'Fit to screen' : 'Zoom in'
+  }
+  if (zoomViewport) zoomViewport.scrollTo(0, 0)
+}
+if (zoomImage && enhanceDialog(zoomDialog, () => {
+  setZoomSize(false)
+  zoomImage.removeAttribute('src')
+  zoomImage.alt = ''
+  if (zoomTitle) zoomTitle.textContent = ''
+})) {
+  document.querySelectorAll('[data-zoom]').forEach((trigger) => {
+    const image = trigger.querySelector('img')
+    if (!image) return
+    trigger.addEventListener('click', (event) => {
+      if (!isPlainClick(event)) return
+      event.preventDefault()
+      zoomImage.src = image.currentSrc || image.src
+      zoomImage.alt = image.alt
+      if (zoomTitle) {
+        zoomTitle.textContent = trigger.closest('figure')?.querySelector('figcaption')?.textContent.trim() || image.alt
+      }
+      setZoomSize(false)
+      zoomDialog.showModal()
+    })
+    trigger.disabled = false
+  })
+  zoomSize?.addEventListener('click', () => {
+    setZoomSize(!zoomDialog.hasAttribute('data-actual-size'))
+  })
+}
+
+const filmSection = document.getElementById('film')
+const film = filmSection?.querySelector('video[data-film]')
+const filmDialog = document.querySelector('[data-film-dialog]')
+const filmContent = filmDialog?.querySelector('.film-modal-content')
+if (film && filmContent && enhanceDialog(filmDialog, () => film.pause())) {
+  filmContent.append(film)
+  filmSection.setAttribute('data-film-enhanced', '')
+  const openFilm = (autoplay = false) => {
+    if (!filmDialog.open) filmDialog.showModal()
+    if (autoplay) film.play().catch(() => { /* Native controls remain available if playback is blocked. */ })
+  }
+  document.querySelectorAll('a[data-film-open]').forEach((trigger) => {
+    trigger.addEventListener('click', (event) => {
+      if (!isPlainClick(event)) return
+      event.preventDefault()
+      openFilm(true)
+    })
+  })
+  const revealFilmHash = () => {
+    if (location.hash === '#film') openFilm()
+  }
+  addEventListener('hashchange', revealFilmHash)
+  revealFilmHash()
+}
+
+// The fallback also supports a private HTTP preview, where Clipboard is unavailable.
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch { /* A denied Clipboard permission may still allow a user-initiated copy. */ }
+  }
+  const focused = document.activeElement
+  const field = document.createElement('textarea')
+  field.value = value
+  field.setAttribute('readonly', '')
+  field.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
+  document.body.append(field)
+  field.select()
+  try {
+    if (!document.execCommand('copy')) throw new Error('Copy unavailable')
+  } finally {
+    field.remove()
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true })
+  }
+}
+
+const copyStatus = document.getElementById('copy-status')
+document.querySelectorAll('[data-copy]').forEach((button) => {
+  const selector = button.dataset.copy || ''
+  const source = document.getElementById(selector.replace(/^#/, ''))
+  if (!source) return
+  const label = button.querySelector('[data-copy-label]')
+  const originalLabel = label?.textContent
+  let reset
+  button.addEventListener('click', async () => {
+    clearTimeout(reset)
+    if (copyStatus) copyStatus.textContent = ''
+    try {
+      await copyText(source.textContent.trim())
+      if (label) label.textContent = 'Copied'
+      if (copyStatus) copyStatus.textContent = 'Command copied to clipboard.'
+    } catch {
+      if (label) label.textContent = 'Select to copy'
+      if (copyStatus) copyStatus.textContent = 'Could not copy automatically. Select the command and copy it manually.'
+    }
+    reset = setTimeout(() => {
+      if (label) label.textContent = originalLabel
+    }, 2500)
+  })
+  button.disabled = false
+  button.hidden = false
 })
 
-// Opening film: poster/button remain until click, then video plays in place with
-// controls. At end, button returns for replay. #film link (from README) leads here;
-// playback waits for click because browsers reject autoplay with sound.
-const hero = document.querySelector('.hero-film')
-const film = hero.querySelector('[data-film]')
-const filmPlay = hero.querySelector('[data-film-play]')
-// Without JavaScript, native controls suffice; with it, large button replaces them.
-film.controls = false
-filmPlay.hidden = false
-filmPlay.addEventListener('click', () => {
-  hero.toggleAttribute('data-playing', true)
-  film.controls = true
-  film.play().catch(() => {})
-})
-film.addEventListener('ended', () => {
-  hero.toggleAttribute('data-playing', false)
-  film.controls = false
-  film.load() // return to poster
-})
+function githubUrl(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === 'github.com' &&
+      !url.username && !url.password && !url.port &&
+      url.pathname.startsWith('/MarlBurroW/sillage/releases/') ? url.href : null
+  } catch {
+    return null
+  }
+}
 
-// The header only grows a rule once it sits over content.
-const topbar = document.querySelector('.topbar')
-const onScroll = () => topbar.toggleAttribute('data-stuck', window.scrollY > 8)
-addEventListener('scroll', onScroll, { passive: true })
-onScroll()
+// Stable links remain usable if GitHub's public API is unavailable or rate-limited.
+async function updateReleaseLinks() {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch('https://api.github.com/repos/MarlBurroW/sillage/releases/latest', {
+      signal: controller.signal,
+      headers: { Accept: 'application/vnd.github+json' },
+    })
+    if (!response.ok) return
+    const release = await response.json()
+    if (typeof release?.tag_name !== 'string') return
+    const releaseUrl = githubUrl(release.html_url)
+    const badge = document.getElementById('version-badge')
+    if (badge && releaseUrl) {
+      badge.textContent = `${release.tag_name} available`
+      badge.href = releaseUrl
+      badge.hidden = false
+    }
+    const assets = Array.isArray(release.assets) ? release.assets : []
+    document.querySelectorAll('[data-asset]').forEach((link) => {
+      const suffix = link.dataset.asset
+      if (!suffix) return
+      const asset = assets.find((candidate) => typeof candidate?.name === 'string' && candidate.name.endsWith(suffix))
+      const href = asset && githubUrl(asset.browser_download_url)
+      if (href) link.href = href
+    })
+  } catch { /* Release information is optional; the page already has working links. */ }
+  finally {
+    clearTimeout(timeout)
+  }
+}
+
+updateReleaseLinks()

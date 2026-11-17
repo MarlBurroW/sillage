@@ -40,4 +40,34 @@ The script uses Playwright, already included in development dependencies.
 | `apps/web/public/og.png`, `site/og.png` | 1200 × 630 | Social sharing thumbnail. |
 
 Product screenshots in `site/screenshots` are regenerated with
-`scripts/screenshots.mjs` on an isolated demo instance.
+`scripts/screenshots.mjs` on an isolated demo instance. Set `SILLAGE_SHOT_FORMAT=webp`
+for the website; PNG remains the default for existing README images. Each view
+is captured twice, at 1x and with `SILLAGE_SHOT_SCALE=2` (`<name>-2x-<theme>.webp`),
+and the pages offer both through `srcset`.
+
+The website sets everything in self-hosted Archivo, a variable family whose width
+axis gives the headlines their wider cut; JetBrains Mono is kept for code. Both
+licenses are in `site/fonts`. Primary buttons use the ink colour; indigo is kept
+for links and for the wake.
+
+To regenerate only the site's social card, run `node scripts/site-social-image.mjs`.
+It uses the same font, logo and current product screenshot as the landing page.
+
+The public site consists of four static pages: `index.html`, `features.html`,
+`agents.html` and `download.html`, with one stylesheet, `style.css`. The layout is
+built from ruled rows rather than cards. `wake.js` draws the home page's hero:
+rows of water bent by a point that crosses them, which is what "sillage" means.
+It is decoration only, follows the pointer, and draws a single still frame when
+reduced motion is requested.
+`main.js` owns shared navigation, theme, release links and accessible dialogs.
+Show the product only with real application screenshots or recordings. Do not
+reconstruct conversations, tool runs, diffs or other application controls for
+the website. Captures use an example project, and illustrative usage is labeled.
+Every section follows the selected light or dark theme; do not alternate them.
+Keep feature claims aligned with `docs/features.md` and the edition capabilities.
+
+Run `node scripts/site-ui-check.mjs` to check all four pages at desktop and mobile
+sizes, in both themes, with keyboard navigation and without JavaScript. The check
+starts its own temporary server under the GitHub Pages `/sillage/` prefix and
+checks internal links, theme consistency, real screenshot viewers, catalog
+filters, integration details and downloads.
