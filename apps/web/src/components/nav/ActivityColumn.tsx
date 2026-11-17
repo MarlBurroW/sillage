@@ -1,5 +1,6 @@
+import { benchmarkPath, type BenchmarkDto } from '@sillage/protocol'
 import type { ClaudeHostLoginDto, ConversationDto, DecisionDto, ProjectDto } from '@sillage/protocol'
-import { CircleHelp, History, KeyRound, LayoutGrid } from 'lucide-react'
+import { CircleHelp, FlaskConical, History, KeyRound, LayoutGrid } from 'lucide-react'
 import { NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { activitySectionOf, activityWallPath, type ActivityEntry, type ActivitySection } from '../../lib/activity'
 import { openDecision } from '../../lib/decisions'
@@ -20,9 +21,10 @@ import { SessionRow, type FavoriteMutation } from './SessionRow'
  * tile forward. In a phone drawer the wall cannot stand beside the list, so rows open their
  * conversation and headings lead to the wall.
  */
-export function ActivityColumn({ awaiting, running, unread, decisions, hostExpiry, favorites, projects, toggleFavorite }: {
+export function ActivityColumn({ awaiting, running, runningBenchmarks, unread, decisions, hostExpiry, favorites, projects, toggleFavorite }: {
   awaiting: ActivityEntry[]
   running: ActivityEntry[]
+  runningBenchmarks: BenchmarkDto[]
   unread: ActivityEntry[]
   decisions: DecisionDto[]
   hostExpiry: ClaudeHostLoginDto | null
@@ -63,7 +65,8 @@ export function ActivityColumn({ awaiting, running, unread, decisions, hostExpir
     onClick: onNavigate,
   })
   const blocked = awaiting.length + decisions.length + (hostExpiry ? 1 : 0)
-  const quiet = blocked === 0 && running.length === 0 && unread.length === 0
+  const runningCount = running.length + runningBenchmarks.length
+  const quiet = blocked === 0 && runningCount === 0 && unread.length === 0
 
   return (
     <>
@@ -104,9 +107,22 @@ export function ActivityColumn({ awaiting, running, unread, decisions, hostExpir
             {rows('awaiting', awaiting.map((entry) => entry.conversation))}
           </ul>
         </section> : null}
-        {running.length > 0 ? <section aria-label={t('shell.activity.running')} data-activity-section="running">
-          <ColumnHeading label={t('shell.activity.running')} count={running.length} link={heading('running')} />
-          <ul className="flex flex-col gap-px">{rows('running', running.map((entry) => entry.conversation))}</ul>
+        {runningCount > 0 ? <section aria-label={t('shell.activity.running')} data-activity-section="running">
+          <ColumnHeading label={t('shell.activity.running')} count={runningCount} link={running.length ? heading('running') : undefined} />
+          <ul className="flex flex-col gap-px">
+            {runningBenchmarks.map((benchmark) => (
+              <li key={benchmark.id} className="sidebar-session sidebar-session-wide">
+                <NavLink to={benchmarkPath(benchmark.id)} className="sidebar-session-link" onClick={onNavigate}>
+                  <FlaskConical size={16} className="text-accent" />
+                  <span className="sidebar-session-text">
+                    <span className="sidebar-session-title">{benchmark.name}</span>
+                    <span className="sidebar-session-project">{t('benchmark.title')}</span>
+                  </span>
+                </NavLink>
+              </li>
+            ))}
+            {rows('running', running.map((entry) => entry.conversation))}
+          </ul>
         </section> : null}
         {unread.length > 0 ? <section aria-label={t('shell.activity.unread')} data-activity-section="unread">
           <ColumnHeading label={t('shell.activity.unread')} count={unread.length} link={heading('unread')} />

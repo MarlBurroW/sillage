@@ -30,10 +30,11 @@ function countsLabel(counts: ActivityCounts, t: typeof translate): string {
  * The rail: every entry does the same thing, it selects a space. Icons carry a name and their
  * state in a tooltip, and in their accessible name for keyboard and screen-reader users.
  */
-export function NavRail({ space, total, personal, projects, countsOf, hiddenTone, updateNotice, username, onSpace, onReorder, onSearch, onLogout, projectsDialog }: {
+export function NavRail({ space, total, benchmarkRunning, personal, projects, countsOf, hiddenTone, updateNotice, username, onSpace, onReorder, onSearch, onLogout, projectsDialog }: {
   space: NavSpace | null
   /** Across every project and discussion; decisions count as awaiting. */
   total: ActivityCounts
+  benchmarkRunning: boolean
   /** Discussions held outside any project. */
   personal: ActivityCounts
   /** Projects shown as marks, in the account's order. */
@@ -75,7 +76,10 @@ export function NavRail({ space, total, personal, projects, countsOf, hiddenTone
           <MessageSquare size={18} />
           {activityTone(personal) ? <span className={cx('nav-rail-dot', `nav-tone-${activityTone(personal)}`)} /> : null}
         </RailEntry>
-        <RailEntry label={t('benchmark.title')} current={space === 'benchmarks'} onClick={() => onSpace('benchmarks')} data-nav-space="benchmarks"><FlaskConical size={18} /></RailEntry>
+        <RailEntry label={t('benchmark.title')} detail={benchmarkRunning ? t('benchmark.state.running') : undefined} current={space === 'benchmarks'} onClick={() => onSpace('benchmarks')} data-nav-space="benchmarks">
+          <FlaskConical size={18} />
+          {benchmarkRunning && <span className="nav-rail-dot nav-tone-running" />}
+        </RailEntry>
         <span className="nav-rail-rule" />
         <div className="nav-rail-projects">
           <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis, restrictToParentElement]} onDragEnd={onDragEnd} onDragCancel={swallowNextClick}>
