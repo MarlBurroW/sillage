@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { JournalEntry, SillageEvent } from '@sillage/protocol'
-import { computeRunMetrics } from '../src/benchmarks/metrics.js'
+import { computeRunMetrics, readWaitingMs, RUN_METRICS_VERSION, upgradeSnapshot } from '../src/benchmarks/metrics.js'
+import { EventLog } from '../src/events/event-log.js'
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,7 +25,7 @@ function journal(steps: [number, SillageEvent][]): JournalEntry[] {
   return steps.map(([ts, event], index) => ({ conversationId: 'c', seq: index + 1, ts: 1_000_000 + ts, event }))
 }
 
-test('benchmark metrics: durations run from the user message, tokens add up across turns', () => {
+test('benchmark metrics: durations count working time from the user message, tokens add up across turns', () => {
   const metrics = computeRunMetrics(journal([
     [0, { type: 'session.started', agent: 'claude', agentSessionId: 's', model: 'claude-sonnet-5-5', cwd: '/tmp', tools: [] }],
     // Startup time before the user message is Sillage's, not the model's.
@@ -47,7 +48,9 @@ test('benchmark metrics: durations run from the user message, tokens add up acro
     [9500, { type: 'turn.completed', stopReason: 'end_turn', costUsd: 0.02, inputTokens: 1, outputTokens: 2, cacheCreationTokens: 0, cacheReadTokens: 400 }],
   ]))
 
-  assert.equal(metrics.durationMs, 8000)
+  // The idle gap between the turns (4.5 s to 9 s) is on the wall, not on the clock.
+  assert.equal(metrics.durationMs, 3500)
+  assert.equal(metrics.elapsedMs, 8000)
   assert.equal(metrics.firstTextMs, 800)
   assert.equal(metrics.inputTokens, 716)
   assert.equal(metrics.outputTokens, 22)
@@ -434,6 +437,39 @@ test('benchmark metrics: overlapping human waits form a union; async questions d
   assert.equal(metrics.waitingMs, 60)
 })
 
+test('benchmark metrics: the clock stops for humans and idle gaps, not for background work', () => {
+  const metrics = computeRunMetrics(journal([
+    [0, { type: 'turn.started' }],
+    [1000, { type: 'permission.requested', requestId: 'p1', toolName: 'Bash', input: {}, title: null, description: null, displayName: null, suggestions: [] }],
+    [61_000, { type: 'permission.resolved', requestId: 'p1', decision: 'allowed', scope: 'once', decidedBy: null }],
+    [62_000, { type: 'message.completed', messageId: 'a1', role: 'assistant', blocks: [{ type: 'text', text: 'ok' }], parentToolCallId: null }],
+    [63_000, { type: 'background.updated', tasks: [{ id: 'b1', kind: 'bash', description: 'npm run build' }] }],
+    [64_000, completed(1, 1)],
+    // The agent waits on its own build between turns: that is still its time.
+    [74_000, { type: 'background.updated', tasks: [] }],
+    [75_000, { type: 'turn.started' }],
+    [80_000, completed(1, 1)],
+    // Two minutes later someone writes again: the pause belongs to nobody.
+    [200_000, { type: 'message.started', messageId: 'u2', role: 'user' }],
+    [201_000, completed(1, 1)],
+  ]))
+  assert.equal(metrics.waitingMs, 60_000)
+  assert.equal(metrics.firstTextMs, 2000)
+  assert.equal(metrics.durationMs, 1000 + 3000 + 10_000 + 5000 + 1000)
+  assert.equal(metrics.elapsedMs, 201_000)
+})
+
+test('benchmark metrics: snapshots without a journal lose their human wait, and their tokens are fixed only once', () => {
+  const v2 = { ...computeRunMetrics([]), version: 2, durationMs: 4_042_000, waitingMs: 1_921_000, inputTokens: 100, cacheReadTokens: 60, costUsd: 0 }
+  const upgraded = upgradeSnapshot(v2)
+  assert.equal(upgraded.version, RUN_METRICS_VERSION)
+  assert.equal(upgraded.durationMs, 2_121_000)
+  assert.equal(upgraded.elapsedMs, 4_042_000)
+  assert.equal(upgraded.inputTokens, 100, 'a version 2 total already includes cache')
+  assert.equal(upgraded.costUsd, 0)
+  assert.equal(upgradeSnapshot({ ...v2, version: undefined }).inputTokens, 160)
+})
+
 test('benchmark metrics: repeated tool notifications do not inflate counts or time', () => {
   const start: SillageEvent = { type: 'tool.started', toolCallId: 'tool', name: 'Bash', input: {}, parentToolCallId: null }
   const end: SillageEvent = { type: 'tool.completed', toolCallId: 'tool', output: '', isError: true, durationMs: 25 }
@@ -474,7 +510,7 @@ test('benchmark API: legacy snapshots are repaired once and exclude post-benchma
   for (const run of result.runs) {
     assert.equal(run.metrics.inputTokens, 54)
     assert.equal(run.metrics.costUsd, null)
-    assert.equal(run.metrics.version, 2)
+    assert.equal(run.metrics.version, RUN_METRICS_VERSION)
   }
   assert.equal(result.runs.find((run: { id: string }) => run.id === 'run').metrics.durationMs, 100)
   const stored = db.select().from(benchmarkRuns).where(eq(benchmarkRuns.id, 'run')).get()!.metrics
@@ -509,4 +545,45 @@ test('default labels name the model a run announced, written labels stay', (t) =
   const runner = new BenchmarkRunner(ctx, { assertCliEnabled: () => undefined } as never, {} as never, {} as never, {} as never)
   const labels = Object.fromEntries(runner.list('owner')[0]!.variants.map((variant) => [variant.id, variant.label]))
   assert.deepEqual(labels, { alias: 'claude-sonnet-5-5 · medium', unset: 'claude-opus-5-5 · medium', named: 'My pick', live: 'claude-opus-5-5 · medium', waiting: 'haiku · medium' })
+})
+
+test('benchmark timeout: time spent waiting for an answer does not count against the maximum duration', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-bench-timeout-'))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  t.after(() => { sqlite.close(); rmSync(dir, { recursive: true, force: true }) })
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  const minute = 60_000
+  const start = 1_000_000
+  db.insert(benchmarkTable).values({ id: 'bench', userId: 'owner', name: 'test', prompt: 'test',
+    variants: JSON.stringify([{ id: 'v', label: 'Opus', config: { agent: 'claude', model: 'opus', effort: 'medium', permissionMode: 'bypassPermissions' } }]),
+    maxDurationMinutes: 10, createdAt: 1, updatedAt: 1 }).run()
+  db.insert(conversations).values({ id: 'c', userId: 'owner', title: 'run', agent: 'claude', status: 'awaiting_input', config: '{}', createdAt: 1, updatedAt: 1 }).run()
+  db.insert(benchmarkRuns).values({ id: 'run', benchmarkId: 'bench', variantId: 'v', conversationId: 'c', repetition: 1, status: 'running', startedAt: start }).run()
+  const log = new EventLog(db)
+  const write = (seq: number, ts: number, event: SillageEvent) =>
+    db.insert(events).values({ conversationId: 'c', seq, ts, type: event.type, payload: JSON.stringify(event) }).run()
+  write(1, start, { type: 'turn.started' })
+  write(2, start + minute, { type: 'permission.requested', requestId: 'p', toolName: 'Bash', input: {}, title: null, description: null, displayName: null, suggestions: [] })
+  db.update(conversations).set({ lastSeq: 2 }).where(eq(conversations.id, 'c')).run()
+  assert.equal(readWaitingMs(log, 'c', start + 15 * minute), 14 * minute, 'an open request waits until now')
+
+  const terminated: string[] = []
+  const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
+  const runner = new BenchmarkRunner(ctx, { terminate: async (id: string) => { terminated.push(id) } } as never, {} as never, log, {} as never)
+  const status = () => db.select().from(benchmarkRuns).where(eq(benchmarkRuns.id, 'run')).get()!.status
+
+  // Fifteen minutes on the wall, one of work: the run keeps waiting for its answer.
+  await runner.tick(start + 15 * minute)
+  assert.equal(status(), 'running')
+  assert.deepEqual(terminated, [])
+
+  // Answered after thirteen minutes; ten minutes of work later, the limit applies.
+  write(3, start + 14 * minute, { type: 'permission.resolved', requestId: 'p', decision: 'allowed', scope: 'once', decidedBy: null })
+  db.update(conversations).set({ status: 'running', lastSeq: 3 }).where(eq(conversations.id, 'c')).run()
+  await runner.tick(start + 22 * minute)
+  assert.equal(status(), 'running')
+  await runner.tick(start + 24 * minute)
+  assert.equal(status(), 'timed_out')
+  assert.deepEqual(terminated, ['c'])
 })

@@ -1,7 +1,8 @@
-import type { AgentKind, BenchmarkRunMetrics, JournalEntry } from '@sillage/protocol'
+import type { AgentKind, BenchmarkRunMetrics, JournalEntry, SillageEvent } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 
-export const RUN_METRICS_VERSION = 2
+/** 3: durations count working time only, without human waits or idle gaps between turns. */
+export const RUN_METRICS_VERSION = 3
 
 type MetricEntry = JournalEntry & { raw?: unknown }
 
@@ -23,6 +24,78 @@ function claudeResult(raw: unknown) {
     cacheReadTokens: sum('cacheReadInputTokens'), cacheCreationTokens: sum('cacheCreationInputTokens'),
     costUsd: sum('costUSD'),
   } }
+}
+
+/**
+ * A run's stopwatch. It runs while the agent works, in a turn or on background tasks and loops it
+ * started, and stops while a blocking request waits for a human, or when the session sits idle
+ * between turns. Every CLI opens and closes its requests through `PendingInteractions` and reports
+ * turns in the same journal vocabulary, so this one clock times them all alike.
+ */
+export class RunClock {
+  /** Working time so far. */
+  activeMs = 0
+  /** Time with at least one blocking request open; overlapping requests count once. */
+  waitingMs = 0
+  private inTurn = false
+  private background = 0
+  private loops = 0
+  private readonly waiting = new Set<string>()
+  private at: number | null = null
+
+  /** Folds one event. Events must arrive in journal order. */
+  observe(ts: number, event: SillageEvent): void {
+    this.advance(ts)
+    switch (event.type) {
+      case 'permission.requested':
+      case 'question.requested':
+      case 'plan.review_requested':
+      case 'elicitation.requested':
+        if (event.type === 'question.requested' && event.blocking === false) break
+        this.waiting.add(event.requestId)
+        break
+      case 'permission.resolved':
+      case 'question.resolved':
+      case 'plan.review_resolved':
+      case 'elicitation.resolved':
+        this.waiting.delete(event.requestId)
+        break
+      case 'message.started':
+        if (event.role === 'user') this.inTurn = true
+        break
+      case 'turn.started':
+        this.inTurn = true
+        break
+      case 'turn.completed':
+        this.inTurn = false
+        break
+      // Between turns the agent may still wait on a build or a server it started: its own work.
+      case 'background.updated':
+        this.background = event.tasks.length
+        break
+      case 'loops.updated':
+        this.loops = event.loops.length
+        break
+      case 'session.ended':
+        // The CLI is gone, and its turn, background work and requests with it.
+        this.inTurn = false
+        this.background = 0
+        this.loops = 0
+        this.waiting.clear()
+        break
+      default:
+        break
+    }
+  }
+
+  /** Brings the clock to `ts` without an event: the journal's last word, or now for a live run. */
+  advance(ts: number): void {
+    if (this.at !== null && ts > this.at) {
+      if (this.waiting.size > 0) this.waitingMs += ts - this.at
+      else if (this.inTurn || this.background > 0 || this.loops > 0) this.activeMs += ts - this.at
+    }
+    if (this.at === null || ts > this.at) this.at = ts
+  }
 }
 
 /**
@@ -54,34 +127,17 @@ export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): Be
   let outputChars = 0
   let contextTokens: number | null = null
   let model: string | null = null
-  // Requests waiting for a human, by id: their open time is not the model's.
-  const waiting = new Set<string>()
-  let waitingMs = 0
-  let waitingSince: number | null = null
+  // Durations read the stopwatch, not the wall: a request left open for an hour, or a pause
+  // between turns, is nobody's work.
+  const clock = new RunClock()
+  let completedActive = 0
+  let firstTextActive = 0
   let lastTs: number | null = null
 
   for (const { ts, event, raw } of entries) {
     lastTs = ts
+    clock.observe(ts, event)
     switch (event.type) {
-      case 'permission.requested':
-      case 'question.requested':
-      case 'plan.review_requested':
-      case 'elicitation.requested':
-        if (event.type === 'question.requested' && event.blocking === false) break
-        if (waiting.size === 0) waitingSince = ts
-        waiting.add(event.requestId)
-        break
-      case 'permission.resolved':
-      case 'question.resolved':
-      case 'plan.review_resolved':
-      case 'elicitation.resolved': {
-        waiting.delete(event.requestId)
-        if (waiting.size === 0 && waitingSince !== null) {
-          waitingMs += Math.max(0, ts - waitingSince)
-          waitingSince = null
-        }
-        break
-      }
       case 'message.started':
         // The user message opens the clock: the time before it is Sillage starting the CLI,
         // which the user also waits for but which does not belong to the model.
@@ -93,7 +149,10 @@ export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): Be
         break
       case 'message.delta':
         // Deltas carry no role, but only assistants stream: the first one is the first text.
-        if (firstTextAt === null && event.text.length > 0) firstTextAt = ts
+        if (firstTextAt === null && event.text.length > 0) {
+          firstTextAt = ts
+          firstTextActive = clock.activeMs
+        }
         break
       case 'message.completed':
         if (event.role !== 'assistant') break
@@ -101,7 +160,10 @@ export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): Be
         for (const block of event.blocks) {
           if (block.type !== 'text' || block.text.length === 0) continue
           outputChars += block.text.length
-          if (firstTextAt === null) firstTextAt = ts
+          if (firstTextAt === null) {
+            firstTextAt = ts
+            firstTextActive = clock.activeMs
+          }
         }
         break
       case 'tool.started':
@@ -118,6 +180,7 @@ export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): Be
         break
       case 'turn.completed': {
         completedAt = ts
+        completedActive = clock.activeMs
         const native = agent === 'claude' ? claudeResult(raw) : null
         const usage = native?.usage ?? event
         usageReported ||= usage.inputTokens > 0 || usage.outputTokens > 0 || usage.cacheReadTokens > 0 || usage.cacheCreationTokens > 0
@@ -150,14 +213,16 @@ export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): Be
   }
 
   // A request still open when the run was cut off waited until the journal's last word.
-  if (waitingSince !== null && lastTs !== null) waitingMs += Math.max(0, lastTs - waitingSince)
+  if (lastTs !== null) clock.advance(lastTs)
 
   const elapsed = (end: number | null) => (startedAt !== null && end !== null && end >= startedAt ? end - startedAt : null)
+  const worked = (end: number | null, active: number) => (elapsed(end) === null ? null : active)
   return {
     version: RUN_METRICS_VERSION,
-    durationMs: elapsed(completedAt),
-    waitingMs,
-    firstTextMs: elapsed(firstTextAt),
+    durationMs: worked(completedAt, completedActive),
+    elapsedMs: elapsed(completedAt),
+    waitingMs: clock.waitingMs,
+    firstTextMs: worked(firstTextAt, firstTextActive),
     inputTokens: usageReported ? inputTokens : null,
     outputTokens: usageReported ? outputTokens : null,
     cacheReadTokens: usageReported ? cacheReadTokens : null,
@@ -176,6 +241,25 @@ export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): Be
   }
 }
 
+/**
+ * Brings a snapshot whose journal is gone up to the current fold, as far as its own numbers go:
+ * the human wait comes off its duration, idle gaps between turns cannot be told apart and stay.
+ */
+export function upgradeSnapshot(metrics: BenchmarkRunMetrics): BenchmarkRunMetrics {
+  const version = metrics.version ?? 0
+  let upgraded: BenchmarkRunMetrics = { ...metrics, version: RUN_METRICS_VERSION }
+  if (version < 2) {
+    upgraded = { ...upgraded,
+      inputTokens: metrics.inputTokens === null ? null : metrics.inputTokens + (metrics.cacheReadTokens ?? 0) + (metrics.cacheCreationTokens ?? 0),
+      costUsd: metrics.costUsd === 0 ? null : metrics.costUsd }
+  }
+  if (version < 3) {
+    upgraded = { ...upgraded, elapsedMs: metrics.durationMs,
+      durationMs: metrics.durationMs === null ? null : Math.max(0, metrics.durationMs - (metrics.waitingMs ?? 0)) }
+  }
+  return upgraded
+}
+
 /** Event types the fold reads; everything else, tool output deltas above all, stays on disk. */
 const METRIC_EVENT_TYPES = [
   'permission.requested',
@@ -188,6 +272,8 @@ const METRIC_EVENT_TYPES = [
   'elicitation.resolved',
   'session.started',
   'session.ended',
+  'background.updated',
+  'loops.updated',
   'error',
   'turn.started',
   'turn.completed',
@@ -216,4 +302,30 @@ export function readRunMetrics(log: EventLog, conversationId: string, agent?: Ag
     after = page.nextAfter
   }
   return computeRunMetrics(entries, agent)
+}
+
+const REQUEST_EVENT_TYPES = [
+  'permission.requested',
+  'permission.resolved',
+  'question.requested',
+  'question.resolved',
+  'plan.review_requested',
+  'plan.review_resolved',
+  'elicitation.requested',
+  'elicitation.resolved',
+  'session.ended',
+]
+
+/** Human waiting of a live run until `now`, a request still open included. Reads only request events, so a sweep can afford it. */
+export function readWaitingMs(log: EventLog, conversationId: string, now: number): number {
+  const clock = new RunClock()
+  let after = 0
+  for (;;) {
+    const page = log.readForReplay(conversationId, after, { rows: 2000, bytes: 8 * 1024 * 1024, unfiltered: true, onlyTypes: REQUEST_EVENT_TYPES })
+    for (const entry of page.entries) clock.observe(entry.ts, entry.event)
+    if (page.nextAfter <= after) break
+    after = page.nextAfter
+  }
+  clock.advance(now)
+  return clock.waitingMs
 }

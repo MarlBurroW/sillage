@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { activityTone, useFollowedActivity, type ActivityCounts } from '../../lib/activity'
 import { useCliUpdateNotice } from '../../lib/agents'
-import { benchmarkState, useBenchmarks } from '../../lib/benchmarks'
+import { benchmarkState, useBenchmarks, useWaitingRuns } from '../../lib/benchmarks'
 import { useClaudeHostLogin } from '../../lib/claude-accounts'
 import { useAllConversations, useToggleFavorite } from '../../lib/conversations'
 import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
@@ -106,7 +106,9 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
   }
   const { data: benchmarks } = useBenchmarks()
   const runningBenchmarks = benchmarks?.filter((benchmark) => benchmarkState(benchmark) === 'running') ?? []
-  const total: ActivityCounts = { awaiting: activity.awaiting.length + pending.length + (hostExpiry ? 1 : 0), running: activity.running.length + runningBenchmarks.length, unread: activity.unread.length }
+  // A run that asked something stalls its measurement: it waits on the user like any session.
+  const waitingRuns = useWaitingRuns(benchmarks)
+  const total: ActivityCounts = { awaiting: activity.awaiting.length + pending.length + waitingRuns.length + (hostExpiry ? 1 : 0), running: activity.running.length + runningBenchmarks.length, unread: activity.unread.length }
   const hidden = (projects ?? []).filter((project) => !railProjects.includes(project)).map((project) => countsOf(project.id))
   // Running work elsewhere is not a reason to look: only waits and unread reach the "all" entry.
   const hiddenTone = activityTone({ awaiting: hidden.reduce((sum, counts) => sum + counts.awaiting, 0), running: 0, unread: hidden.reduce((sum, counts) => sum + counts.unread, 0) })
@@ -171,7 +173,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
         <NavRail
           space={marked}
           total={total}
-          benchmarkRunning={runningBenchmarks.length > 0}
+          benchmarks={{ awaiting: waitingRuns.length, running: runningBenchmarks.length, unread: 0 }}
           personal={activity.personal}
           projects={railProjects}
           countsOf={countsOf}
@@ -196,7 +198,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
               <span className="mt-1 flex items-center gap-1"><Button variant="ghost" size="sm" onClick={() => { if (toggleFavorite.variables) toggleFavorite.mutate(toggleFavorite.variables) }}>{t('editor.retry')}</Button><IconButton size="sm" label={t('common.close')} onClick={() => toggleFavorite.reset()}><X size={14} /></IconButton></span>
             </Banner></div>}
             {listed === 'activity' ? (
-              <ActivityColumn runningBenchmarks={runningBenchmarks} awaiting={activity.awaiting} running={activity.running} unread={activity.unread} decisions={pending} hostExpiry={hostExpiry} favorites={activity.favorites} projects={projects ?? []} toggleFavorite={toggleFavorite} />
+              <ActivityColumn runningBenchmarks={runningBenchmarks} waitingRuns={waitingRuns} awaiting={activity.awaiting} running={activity.running} unread={activity.unread} decisions={pending} hostExpiry={hostExpiry} favorites={activity.favorites} projects={projects ?? []} toggleFavorite={toggleFavorite} />
             ) : listed === 'discussions' ? (
               <DiscussionsColumn conversations={conversations ?? []} toggleFavorite={toggleFavorite} />
             ) : listed === 'benchmarks' ? (

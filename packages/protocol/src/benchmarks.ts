@@ -161,13 +161,16 @@ export interface BenchmarkRunMetrics {
   /** Version of the persisted measurement fold; absent on legacy snapshots. */
   version?: number
   /**
-   * From the first user message to the last completed turn; null if the turn never completed.
-   * Wall time: it includes `waitingMs`, the time a request for permission or an answer stayed open.
+   * Working time from the first user message to the last completed turn; null if no turn
+   * completed. The clock stops while a request waits for a human (`waitingMs`) and while the
+   * session sits idle between turns; background work the agent started keeps it running.
    */
   durationMs: number | null
+  /** Wall time over the same span, waits included. Absent on snapshots folded before it existed. */
+  elapsedMs?: number | null
   /** Time spent waiting for a human: permissions, questions, plan reviews, MCP forms. */
   waitingMs: number
-  /** From the first user message to the first assistant text; null if none arrived. */
+  /** Working time, on the same clock as `durationMs`, until the first assistant text; null if none arrived. */
   firstTextMs: number | null
   /** Total input across requests, including cache reads and writes (subsets below). */
   inputTokens: number | null

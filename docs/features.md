@@ -202,7 +202,12 @@ The periodic cleanup removes expired, revoked and orphaned files.
   and CLIs, with optional starting files and a check script. Runs start without
   personal memory or platform prompt, so every variant receives the same text.
   Compare measurements, outputs and pass rates, rate runs blind, chart a measure,
-  export CSV or JSON, and rerun a benchmark to follow it over time. Input tokens
+  export CSV or JSON, and rerun a benchmark to follow it over time. Durations count
+  working time, the same way for every CLI: the clock stops while a permission,
+  question or plan waits for you and while a session sits idle between turns, and
+  keeps running for background work the agent started. That wait has its own column
+  and does not count towards the maximum duration either. A run waiting for you shows
+  in **Activity**, on the rail and at the top of its benchmark. Input tokens
   include cache reads and writes across requests; cache columns are subsets of that
   total. Reported auxiliary model usage is included. Cost applies today's public API
   prices to the tokens of every CLI, as on the Consumption page, and stays blank for a

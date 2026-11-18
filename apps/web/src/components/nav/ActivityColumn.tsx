@@ -1,8 +1,9 @@
-import { benchmarkPath, type BenchmarkDto } from '@sillage/protocol'
+import { benchmarkPath, conversationPath, type BenchmarkDto } from '@sillage/protocol'
 import type { ClaudeHostLoginDto, ConversationDto, DecisionDto, ProjectDto } from '@sillage/protocol'
 import { CircleHelp, FlaskConical, History, KeyRound, LayoutGrid } from 'lucide-react'
 import { NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { activitySectionOf, activityWallPath, type ActivityEntry, type ActivitySection } from '../../lib/activity'
+import type { WaitingRun } from '../../lib/benchmarks'
 import { openDecision } from '../../lib/decisions'
 import { locale, useTranslate } from '../../lib/i18n'
 import { shadowedBySection, useSessionViews, viewName } from '../../lib/session-views'
@@ -21,10 +22,12 @@ import { SessionRow, type FavoriteMutation } from './SessionRow'
  * tile forward. In a phone drawer the wall cannot stand beside the list, so rows open their
  * conversation and headings lead to the wall.
  */
-export function ActivityColumn({ awaiting, running, runningBenchmarks, unread, decisions, hostExpiry, favorites, projects, toggleFavorite }: {
+export function ActivityColumn({ awaiting, running, runningBenchmarks, waitingRuns, unread, decisions, hostExpiry, favorites, projects, toggleFavorite }: {
   awaiting: ActivityEntry[]
   running: ActivityEntry[]
   runningBenchmarks: BenchmarkDto[]
+  /** Benchmark runs blocked on a request: they open on the conversation that holds it. */
+  waitingRuns: WaitingRun[]
   unread: ActivityEntry[]
   decisions: DecisionDto[]
   hostExpiry: ClaudeHostLoginDto | null
@@ -64,7 +67,7 @@ export function ActivityColumn({ awaiting, running, runningBenchmarks, unread, d
     current: shownSection === section,
     onClick: onNavigate,
   })
-  const blocked = awaiting.length + decisions.length + (hostExpiry ? 1 : 0)
+  const blocked = awaiting.length + decisions.length + waitingRuns.length + (hostExpiry ? 1 : 0)
   const runningCount = running.length + runningBenchmarks.length
   const quiet = blocked === 0 && runningCount === 0 && unread.length === 0
 
@@ -104,6 +107,20 @@ export function ActivityColumn({ awaiting, running, runningBenchmarks, unread, d
                 </button>
               </li>
             ))}
+            {waitingRuns.map(({ benchmark, run }) => {
+              const variant = benchmark.variants.find((entry) => entry.id === run.variantId)?.label ?? run.variantId
+              return (
+                <li key={run.id} className="sidebar-session sidebar-session-wide" data-activity-benchmark-run>
+                  <NavLink to={conversationPath({ id: run.conversationId, projectId: null })} className="sidebar-session-link" onClick={onNavigate}>
+                    <FlaskConical size={16} className="text-caution" />
+                    <span className="sidebar-session-text">
+                      <span className="sidebar-session-title">{benchmark.repetitions > 1 ? `${variant} · ${run.repetition}` : variant}</span>
+                      <span className="sidebar-session-project"><span>{[t('benchmark.title'), benchmark.name].join(' · ')}</span></span>
+                    </span>
+                  </NavLink>
+                </li>
+              )
+            })}
             {rows('awaiting', awaiting.map((entry) => entry.conversation))}
           </ul>
         </section> : null}

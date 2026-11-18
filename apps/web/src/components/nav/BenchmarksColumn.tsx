@@ -2,7 +2,7 @@ import { benchmarkPath } from '@sillage/protocol'
 import { Plus, RotateCcw, Search, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { BENCHMARK_STATE_LABELS, benchmarkProgress, benchmarkState, useBenchmarks, type BenchmarkState } from '../../lib/benchmarks'
+import { BENCHMARK_STATE_LABELS, benchmarkProgress, benchmarkState, useBenchmarks, useWaitingRuns, type BenchmarkState } from '../../lib/benchmarks'
 import { useTranslate } from '../../lib/i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { IconButton, cx } from '../ui'
@@ -24,6 +24,7 @@ export function BenchmarksColumn() {
   const { onNavigate } = useNavChrome()
   const { data: benchmarks } = useBenchmarks()
   const list = benchmarks ?? []
+  const waiting = new Set(useWaitingRuns(benchmarks).map((entry) => entry.benchmark.id))
   const [filterOpen, setFilterOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const filterInput = useRef<HTMLInputElement>(null)
@@ -48,16 +49,18 @@ export function BenchmarksColumn() {
           {matching.map((benchmark) => {
             const state = benchmarkState(benchmark)
             const progress = benchmarkProgress(benchmark)
+            // Waiting on the user outranks running, as everywhere in the navigation.
+            const stateLabel = waiting.has(benchmark.id) ? t('benchmark.waiting.label') : t(BENCHMARK_STATE_LABELS[state])
             return (
               <li key={benchmark.id}>
                 <NavLink
                   to={benchmarkPath(benchmark.id)}
                   onClick={onNavigate}
-                  title={`${benchmark.name}${benchmark.seriesId ? ` · ${t('benchmark.rerunBadge')}` : ''} · ${t(BENCHMARK_STATE_LABELS[state])}`}
+                  title={`${benchmark.name}${benchmark.seriesId ? ` · ${t('benchmark.rerunBadge')}` : ''} · ${stateLabel}`}
                   className={({ isActive }) => cx('sidebar-session nav-benchmark', isActive && 'sidebar-current')}
                 >
-                  <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', STATE_DOTS[state])} />
-                  <span className="sr-only">{t(BENCHMARK_STATE_LABELS[state])}</span>
+                  <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', waiting.has(benchmark.id) ? 'bg-caution animate-pulse' : STATE_DOTS[state])} />
+                  <span className="sr-only">{stateLabel}</span>
                   <span className="sidebar-session-title flex-1">{benchmark.name}</span>
                   {/* Reruns keep their original's name: the icon tells them apart. */}
                   {benchmark.seriesId ? <RotateCcw size={11} className="shrink-0 text-ink-faint" aria-label={t('benchmark.rerunBadge')} /> : null}

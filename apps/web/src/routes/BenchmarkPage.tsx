@@ -33,6 +33,7 @@ import {
   useUpdateBenchmarkSettings,
   useDeleteBenchmark,
   useRerunBenchmark,
+  useWaitingRuns,
   type MetricKey,
 } from '../lib/benchmarks'
 import { modelsAccount } from '../lib/agents'
@@ -76,6 +77,7 @@ export function BenchmarkPage() {
   const variantIds = useMemo(() => benchmark?.variants.map((variant) => variant.id) ?? [], [benchmark])
   const blind = useBlindReview(id ?? '', variantIds)
   const series = useMemo(() => (benchmark && benchmarks ? benchmarkSeries(benchmarks, benchmark) : []), [benchmark, benchmarks])
+  const waitingRuns = useWaitingRuns(benchmarks).filter((entry) => entry.benchmark.id === id)
 
   const blocks = useMemo(() => (benchmark ? variantBlocks(benchmark, sort) : []), [benchmark, sort])
   const metricKeys = useMemo(() => (benchmark ? visibleMetricKeys(benchmark) : METRIC_KEYS), [benchmark])
@@ -109,6 +111,7 @@ export function BenchmarkPage() {
     const text = letter ? `${letter} · ${variant?.label ?? variantId}` : (variant?.label ?? variantId)
     return { label: text, text }
   }
+  const runName = (run: BenchmarkRunDto) => (benchmark.repetitions > 1 ? `${nameOf(run.variantId).text} · ${run.repetition}` : nameOf(run.variantId).text)
   const tabs: { value: Tab; label: string }[] = [
     { value: 'measures', label: t('benchmark.tab.measures') },
     { value: 'chart', label: t('benchmark.tab.chart') },
@@ -188,6 +191,21 @@ export function BenchmarkPage() {
         {/* Full width: outputs are compared side by side, and every pixel of a wide screen is a wider page. */}
         <div className="flex flex-col gap-5">
           {error ? <Banner>{error.message}</Banner> : null}
+          {/* Above everything: a run that asked is the one thing here that needs the viewer. */}
+          {waitingRuns.length ? (
+            <Banner tone="caution">
+              <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1" data-benchmark-waiting-banner>
+                <span>{waitingRuns.length === 1
+                  ? t('benchmark.waiting.one', { run: runName(waitingRuns[0]!.run) })
+                  : t('benchmark.waiting.many', { count: waitingRuns.length })}</span>
+                {waitingRuns.map(({ run }) => (
+                  <Link key={run.id} to={conversationPath({ id: run.conversationId, projectId: null })} className="font-medium underline underline-offset-2 hover:no-underline">
+                    {waitingRuns.length === 1 ? t('benchmark.waiting.answer') : runName(run)}
+                  </Link>
+                ))}
+              </span>
+            </Banner>
+          ) : null}
 
           <section className="grid gap-x-8 gap-y-3 rounded-lg border border-line px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto]" data-benchmark-brief>
             <Prompt text={benchmark.prompt} />

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import {
   MAX_BENCHMARK_RATING,
   benchmarkSeriesRoot,
@@ -16,6 +16,7 @@ import {
   type UpdateBenchmarkSettingsBody,
 } from '@sillage/protocol'
 import { api } from './api'
+import { liveStatus, subscribeStatus } from './conversation-status'
 import { toCsv } from './download'
 import type { MessageKey } from './i18n'
 
@@ -41,6 +42,27 @@ export function useBenchmarks() {
     staleTime: 5_000,
     refetchInterval: (query) => (hasOpenRuns(query.state.data) ? 4_000 : false),
   })
+}
+
+/** A run whose CLI asked something: it stalls, and so does its benchmark when runs are sequential. */
+export interface WaitingRun {
+  benchmark: BenchmarkDto
+  run: BenchmarkRunDto & { conversationId: string }
+}
+
+/**
+ * Runs blocked on a request from their CLI, across benchmarks or within one. Their own pages are
+ * not where the user looks during a long run, so the navigation and the benchmark page all read
+ * this one list. Statuses come live from the socket, which sends them for every live session on
+ * connection: a reload still finds the wait.
+ */
+export function useWaitingRuns(benchmarks: BenchmarkDto[] | undefined): WaitingRun[] {
+  const candidates = useMemo(() => (benchmarks ?? []).flatMap((benchmark) => benchmark.runs.flatMap((run) =>
+    run.status === 'running' && run.conversationId ? [{ benchmark, run: { ...run, conversationId: run.conversationId } }] : [])), [benchmarks])
+  // A string of flags: a primitive snapshot does not render on every token of a working run.
+  const snapshot = () => candidates.map((entry) => (liveStatus(entry.run.conversationId) === 'awaiting_input' ? '1' : '0')).join('')
+  const flags = useSyncExternalStore(subscribeStatus, snapshot, snapshot)
+  return useMemo(() => candidates.filter((_, index) => flags[index] === '1'), [candidates, flags])
 }
 
 function useInvalidate() {
@@ -377,7 +399,7 @@ function exportStem(benchmark: BenchmarkDto): string {
 export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; content: string } {
   const header = [
     'benchmark', 'variant', 'agent', 'model', 'effort', 'announced_model', 'cli_version', 'repetition', 'status',
-    'check_passed', 'check_exit_code', 'duration_ms', 'waiting_ms', 'first_text_ms', 'input_tokens', 'output_tokens',
+    'check_passed', 'check_exit_code', 'duration_ms', 'elapsed_ms', 'waiting_ms', 'first_text_ms', 'input_tokens', 'output_tokens',
     'cache_read_tokens', 'cache_creation_tokens', 'cost_usd', 'tool_calls', 'tool_errors', 'tool_duration_ms',
     'assistant_messages', 'output_chars', 'context_tokens', 'rating', 'rating_note', 'error',
   ]
@@ -388,7 +410,7 @@ export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; conte
     return [
       benchmark.name, variant?.label, variant ? variantAgent(variant) : '', variant?.config.model,
       variant ? variantEffort(variant.config) : '', m?.model, run.cliVersion, run.repetition, run.status,
-      run.check ? run.check.passed : null, run.check?.exitCode, m?.durationMs, m?.waitingMs, m?.firstTextMs, m?.inputTokens,
+      run.check ? run.check.passed : null, run.check?.exitCode, m?.durationMs, m?.elapsedMs, m?.waitingMs, m?.firstTextMs, m?.inputTokens,
       m?.outputTokens, m?.cacheReadTokens, m?.cacheCreationTokens, m?.costUsd, m?.toolCalls, m?.toolErrors,
       m?.toolDurationMs, m?.assistantMessages, m?.outputChars, m?.contextTokens, run.rating, run.ratingNote, run.error,
     ].map(cell)

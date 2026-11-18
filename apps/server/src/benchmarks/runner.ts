@@ -46,7 +46,7 @@ import { HttpError, badRequest, notFound } from '../http/errors.js'
 import { runScript } from '../scheduler/check.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { listDeliverables } from './deliverables.js'
-import { readRunMetrics, RUN_METRICS_VERSION } from './metrics.js'
+import { readRunMetrics, readWaitingMs, RUN_METRICS_VERSION, upgradeSnapshot } from './metrics.js'
 
 /**
  * Executes benchmarks: opens one fresh personal session per run, waits for it to settle, runs the
@@ -147,9 +147,7 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[], prices: PriceCatal
     const agent = readVariants(benchmark.variants).find((variant) => variant.id === run.variantId)?.config.agent
     const updated = run.conversationId
       ? readRunMetrics(log ??= new EventLog(db), run.conversationId, agent, run.finishedAt)
-      : { ...metrics, version: RUN_METRICS_VERSION,
-          inputTokens: metrics.inputTokens === null ? null : metrics.inputTokens + (metrics.cacheReadTokens ?? 0) + (metrics.cacheCreationTokens ?? 0),
-          costUsd: metrics.costUsd === 0 ? null : metrics.costUsd }
+      : upgradeSnapshot(metrics)
     run.metrics = JSON.stringify(updated)
     db.update(benchmarkRuns).set({ metrics: run.metrics }).where(eq(benchmarkRuns.id, run.id)).run()
   }
@@ -549,7 +547,11 @@ export class BenchmarkRunner {
 
       let outcome: Outcome
       if (working || (!verdict && !dead)) {
-        if (now - (run.startedAt ?? now) < benchmark.maxDurationMinutes * 60_000) continue
+        const limit = benchmark.maxDurationMinutes * 60_000
+        const elapsed = now - (run.startedAt ?? now)
+        // The limit bounds the agent's work, not the user's absence: time a request spent waiting
+        // for an answer is given back, so a run that asked at night still finishes once answered.
+        if (elapsed < limit || elapsed - readWaitingMs(this.log, run.conversationId, now) < limit) continue
         const reason = `Maximum duration reached (${benchmark.maxDurationMinutes} min): the run was interrupted.`
         this.log.append(run.conversationId, { type: 'error', code: 'benchmark_timeout', message: reason, recoverable: true })
         await this.sessions.terminate(run.conversationId)
