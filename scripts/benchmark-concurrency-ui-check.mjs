@@ -199,8 +199,8 @@ try {
       }
       return route.fulfill({ json: saved ? [saved] : [] })
     })
-    await page.route('**/api/benchmarks/test-benchmark/concurrency', async (route) => {
-      saved.concurrency = route.request().postDataJSON().concurrency
+    await page.route('**/api/benchmarks/test-benchmark/settings', async (route) => {
+      Object.assign(saved, route.request().postDataJSON())
       return route.fulfill({ json: saved })
     })
     for (const [size, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
@@ -223,15 +223,36 @@ try {
       await page.screenshot({ path: join(shots, profile + '-' + size + '-form.png') })
       await page.getByRole('button', { name: 'Lancer le benchmark', exact: true }).click()
       await page.getByRole('heading', { name: 'Parallélisme configurable', exact: true }).waitFor()
-      await page.getByRole('button', { name: 'Modifier les exécutions simultanées', exact: true }).click()
+      // Scrolling the page must take the tabs away with it: pinned, they covered what was being read.
+      assert.notEqual(await page.getByRole('tablist').evaluate((list) => getComputedStyle(list).position), 'sticky')
+      // One dialog adjusts the three run settings, in one request.
+      const edit = page.getByRole('button', { name: 'Modifier les réglages d’exécution', exact: true })
+      await edit.click()
       const dialog = page.getByRole('dialog')
-      assert.equal(await dialog.getByRole('spinbutton').inputValue(), '7')
-      await dialog.getByRole('spinbutton').fill('2')
+      const fields = {
+        repetitions: dialog.getByRole('spinbutton', { name: 'Runs par variante', exact: true }),
+        concurrency: dialog.getByRole('spinbutton', { name: 'Exécutions simultanées', exact: true }),
+        duration: dialog.getByRole('spinbutton', { name: 'Durée maximale (min)', exact: true }),
+      }
+      assert.deepEqual([await fields.repetitions.inputValue(), await fields.concurrency.inputValue(), await fields.duration.inputValue()], ['1', '7', '20'])
+      const save = dialog.getByRole('button', { name: 'Enregistrer', exact: true })
+      for (const [field, invalid] of [[fields.repetitions, '6'], [fields.duration, '0'], [fields.concurrency, '61']]) {
+        const valid = await field.inputValue()
+        await field.fill(invalid)
+        assert.ok(await save.isDisabled(), `${invalid} is refused`)
+        await field.fill(valid)
+      }
+      await fields.repetitions.fill('3')
+      await fields.concurrency.fill('2')
+      await fields.duration.fill('45')
       await page.screenshot({ path: join(shots, profile + '-' + size + '-edit.png') })
-      await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).click()
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      await save.click()
       await dialog.waitFor({ state: 'detached' })
-      await page.getByRole('button', { name: 'Modifier les exécutions simultanées', exact: true }).click()
-      assert.equal(await dialog.getByRole('spinbutton').inputValue(), '2')
+      const facts = await page.locator('[data-benchmark-brief] dl').innerText()
+      assert.match(facts.replace(/\s+/g, ' '), /Runs par variante 3 Exécutions simultanées 2 Durée maximale \(min\) 45/)
+      await edit.click()
+      assert.deepEqual([await fields.repetitions.inputValue(), await fields.concurrency.inputValue(), await fields.duration.inputValue()], ['3', '2', '45'])
       await page.keyboard.press('Escape')
     }
   }

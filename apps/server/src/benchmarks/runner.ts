@@ -21,6 +21,7 @@ import {
   benchmarkSeriesRoot,
   benchmarkVariantsSchema,
   announcedVariantLabel,
+  startedRepetitions,
   defaultVariantLabel,
   variantEffort,
   type BenchmarkCheckResult,
@@ -31,6 +32,7 @@ import {
   type BenchmarkRunMetrics,
   type BenchmarkVariant,
   type CreateBenchmarkData,
+  type UpdateBenchmarkSettingsBody,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import type { OutgoingAttachment } from '../agents/types.js'
@@ -40,7 +42,7 @@ import { deleteConversation } from '../conversations/delete.js'
 import { createPersonalWorkspace } from '../conversations/personal-workspaces.js'
 import { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
-import { badRequest, notFound } from '../http/errors.js'
+import { HttpError, badRequest, notFound } from '../http/errors.js'
 import { runScript } from '../scheduler/check.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { listDeliverables } from './deliverables.js'
@@ -112,6 +114,17 @@ function announcedModel(db: Db, runs: BenchmarkRunRow[], benchmarkId: string, va
     }
   }
   return null
+}
+
+
+/** A run waiting for its slot: nothing measured, no session yet. */
+function pendingRun(benchmarkId: string, variantId: string, repetition: number): BenchmarkRunRow {
+  return {
+    id: randomUUID(), benchmarkId, variantId, repetition,
+    conversationId: null, status: 'pending', startedAt: null, finishedAt: null, error: null,
+    cliVersion: null, metrics: null, response: null, check: null, files: null, previewToken: null,
+    rating: null, ratingNote: null, ratedAt: null,
+  }
 }
 
 /** With `prices`, each run's cost is recomputed at today's public prices (see `runCostUsd`); without, the stored one stands. */
@@ -302,28 +315,7 @@ export class BenchmarkRunner {
         tx.insert(benchmarks).values(row).run()
         for (const variant of variants) {
           for (let repetition = 1; repetition <= row.repetitions; repetition += 1) {
-            tx.insert(benchmarkRuns)
-              .values({
-                id: randomUUID(),
-                benchmarkId: row.id,
-                variantId: variant.id,
-                repetition,
-                conversationId: null,
-                status: 'pending',
-                startedAt: null,
-                finishedAt: null,
-                error: null,
-                cliVersion: null,
-                metrics: null,
-                response: null,
-                check: null,
-                files: null,
-                previewToken: null,
-                rating: null,
-                ratingNote: null,
-                ratedAt: null,
-              })
-              .run()
+            tx.insert(benchmarkRuns).values(pendingRun(row.id, variant.id, repetition)).run()
           }
         }
       })
@@ -334,13 +326,39 @@ export class BenchmarkRunner {
   }
 
   /** Records a human rating. Allowed before settlement too: a page can be judged while the check runs. */
-  setConcurrency(benchmarkId: string, concurrency: number): void {
-    this.ctx.db.update(benchmarks).set({
-      maxConcurrentRuns: concurrency,
-      concurrency: concurrency > 1 ? 'parallel' : 'sequential',
-      updatedAt: Date.now(),
-    }).where(eq(benchmarks.id, benchmarkId)).run()
-    // Lowering the limit only delays pending runs; active runs keep their slots.
+  /**
+   * Adjusts how much a benchmark runs, at any point of its life. The slot limit and the duration
+   * are read on every sweep, so they apply at once: a run already past a shortened duration is
+   * interrupted on the next one. More repetitions queue new runs, which reopens a settled
+   * benchmark; fewer only drop runs that never started, so no result is ever deleted.
+   */
+  updateSettings(benchmarkId: string, settings: UpdateBenchmarkSettingsBody): void {
+    writeTransaction(this.ctx.db, (tx) => {
+      const row = tx.select().from(benchmarks).where(eq(benchmarks.id, benchmarkId)).get()
+      if (!row) throw notFound('benchmark_not_found', 'Benchmark not found.')
+      const runs = tx.select().from(benchmarkRuns).where(eq(benchmarkRuns.benchmarkId, benchmarkId)).all()
+      // A run being launched is still pending in the database while its session starts.
+      const started = startedRepetitions(runs.map((run) => (this.launching.has(run.id) ? { ...run, status: 'running' as const } : run)))
+      if (settings.repetitions < started) {
+        throw new HttpError(409, 'benchmark_repetitions_started', 'Runs per variant cannot go below {started}: those runs have already started.', { started })
+      }
+      const dropped = runs.filter((run) => run.repetition > settings.repetitions).map((run) => run.id)
+      if (dropped.length > 0) tx.delete(benchmarkRuns).where(inArray(benchmarkRuns.id, dropped)).run()
+      for (const variant of readVariants(row.variants)) {
+        const known = new Set(runs.filter((run) => run.variantId === variant.id).map((run) => run.repetition))
+        for (let repetition = 1; repetition <= settings.repetitions; repetition += 1) {
+          if (!known.has(repetition)) tx.insert(benchmarkRuns).values(pendingRun(benchmarkId, variant.id, repetition)).run()
+        }
+      }
+      tx.update(benchmarks).set({
+        repetitions: settings.repetitions,
+        maxConcurrentRuns: settings.concurrency,
+        concurrency: settings.concurrency > 1 ? 'parallel' : 'sequential',
+        maxDurationMinutes: settings.maxDurationMinutes,
+        updatedAt: Date.now(),
+      }).where(eq(benchmarks.id, benchmarkId)).run()
+    })
+    // Lowering the slot limit only delays pending runs; active runs keep their slots.
     this.kick()
   }
 

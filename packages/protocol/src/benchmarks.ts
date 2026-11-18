@@ -32,7 +32,23 @@ const benchmarkConcurrencyInputSchema = z.union([
   benchmarkConcurrencySchema,
   z.enum(['sequential', 'parallel']).transform((mode) => mode === 'parallel' ? 4 : 1),
 ])
-export const updateBenchmarkConcurrencyBodySchema = z.object({ concurrency: benchmarkConcurrencySchema })
+export const benchmarkRepetitionsSchema = z.number().int().min(1).max(MAX_BENCHMARK_REPETITIONS)
+export const benchmarkDurationSchema = z.number().int().min(MIN_BENCHMARK_DURATION_MINUTES).max(MAX_BENCHMARK_DURATION_MINUTES)
+/** What stays adjustable once a benchmark exists: how much it runs, not what it measures. */
+export const updateBenchmarkSettingsBodySchema = z.object({
+  repetitions: benchmarkRepetitionsSchema,
+  concurrency: benchmarkConcurrencySchema,
+  maxDurationMinutes: benchmarkDurationSchema,
+})
+export type UpdateBenchmarkSettingsBody = z.infer<typeof updateBenchmarkSettingsBodySchema>
+
+/**
+ * A run that left something behind: a session, measurements, or a verdict. Repetitions can only be
+ * lowered down to the highest one that started, since dropping it would delete results.
+ */
+export function startedRepetitions(runs: { repetition: number; conversationId: string | null; status: BenchmarkRunStatus }[]): number {
+  return Math.max(0, ...runs.filter((run) => run.conversationId !== null || (run.status !== 'pending' && run.status !== 'cancelled')).map((run) => run.repetition))
+}
 
 export const benchmarkRunStatusSchema = z.enum(['pending', 'running', 'checking', 'succeeded', 'failed', 'timed_out', 'cancelled'])
 export type BenchmarkRunStatus = z.infer<typeof benchmarkRunStatusSchema>
@@ -48,14 +64,9 @@ export const createBenchmarkBodySchema = z.object({
   name: z.string().trim().min(1).max(MAX_BENCHMARK_NAME_CHARS),
   prompt: z.string().trim().min(1).max(MAX_BENCHMARK_PROMPT_CHARS),
   variants: z.array(benchmarkVariantInputSchema).min(1).max(MAX_BENCHMARK_VARIANTS),
-  repetitions: z.number().int().min(1).max(MAX_BENCHMARK_REPETITIONS).default(1),
+  repetitions: benchmarkRepetitionsSchema.default(1),
   concurrency: benchmarkConcurrencyInputSchema.default(1),
-  maxDurationMinutes: z
-    .number()
-    .int()
-    .min(MIN_BENCHMARK_DURATION_MINUTES)
-    .max(MAX_BENCHMARK_DURATION_MINUTES)
-    .default(DEFAULT_BENCHMARK_DURATION_MINUTES),
+  maxDurationMinutes: benchmarkDurationSchema.default(DEFAULT_BENCHMARK_DURATION_MINUTES),
   /** Uploaded, unsent attachments: every run receives them with its first message. */
   attachmentIds: z.array(z.string().uuid()).max(MAX_ATTACHMENTS_PER_MESSAGE).default([]),
   /** Same contract as scheduled checks, minus the skip code: zero passes, anything else fails. */

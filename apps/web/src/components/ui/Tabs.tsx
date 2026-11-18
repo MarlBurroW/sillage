@@ -2,16 +2,18 @@ import { useId, type ReactNode } from 'react'
 import { cx } from './cx'
 
 /** Sections of one panel, each reachable without scrolling past another. Arrow keys move between tabs. */
-export function Tabs<T extends string>({ label, tabs, value, onChange, children }: {
+export function Tabs<T extends string>({ label, tabs, value, onChange, pinned = true, children }: {
   label: string
   tabs: { value: T; label: string }[]
   value: T
   onChange: (value: T) => void
+  /** Keeps the tab list in view while its panel scrolls. Off where the panel is the whole page: there the list would cover what is being read. */
+  pinned?: boolean
   children: ReactNode
 }) {
   const id = useId()
   return <div className="flex min-w-0 flex-col gap-4">
-    <div role="tablist" aria-label={label} className="sticky top-0 z-10 grid auto-cols-fr grid-flow-col border-b border-line bg-surface">
+    <div role="tablist" aria-label={label} className={cx('grid auto-cols-fr grid-flow-col border-b border-line bg-surface', pinned && 'sticky top-0 z-10')}>
       {tabs.map((tab, index) => <button key={tab.value} type="button" role="tab"
         id={`${id}-${tab.value}`} aria-controls={`${id}-panel`} aria-selected={value === tab.value}
         tabIndex={value === tab.value ? 0 : -1}

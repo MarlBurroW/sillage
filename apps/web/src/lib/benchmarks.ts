@@ -13,6 +13,7 @@ import {
   type CreateBenchmarkBody,
   type PublishBenchmarkShareBody,
   type RateBenchmarkRunBody,
+  type UpdateBenchmarkSettingsBody,
 } from '@sillage/protocol'
 import { api } from './api'
 import { toCsv } from './download'
@@ -59,11 +60,12 @@ export function useCreateBenchmark() {
   })
 }
 
-export function useUpdateBenchmarkConcurrency() {
+/** Repetitions, slots and duration stay adjustable after launch; the server refuses to drop started runs. */
+export function useUpdateBenchmarkSettings() {
   const invalidate = useInvalidate()
   return useMutation({
-    mutationFn: ({ id, concurrency }: { id: string; concurrency: number }) =>
-      api.put<BenchmarkDto>(`/api/benchmarks/${id}/concurrency`, { concurrency }),
+    mutationFn: ({ id, settings }: { id: string; settings: UpdateBenchmarkSettingsBody }) =>
+      api.put<BenchmarkDto>(`/api/benchmarks/${id}/settings`, settings),
     onSuccess: invalidate,
   })
 }

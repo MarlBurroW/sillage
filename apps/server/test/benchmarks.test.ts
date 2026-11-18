@@ -247,13 +247,13 @@ test('benchmark rerun: same configuration and files, in the original series; rat
 })
 
 test('benchmark concurrency: numeric validation and compatibility with legacy clients', async () => {
-  const { createBenchmarkBodySchema, updateBenchmarkConcurrencyBodySchema } = await import('@sillage/protocol')
+  const { createBenchmarkBodySchema, updateBenchmarkSettingsBodySchema } = await import('@sillage/protocol')
   const body = { name: 'test', prompt: 'test', variants: [{ config: { agent: 'claude', model: 'default', effort: 'low', permissionMode: 'bypassPermissions' } }] }
   for (const [input, expected] of [[undefined, 1], ['sequential', 1], ['parallel', 4], [7, 7], [60, 60]] as const) {
     assert.equal(createBenchmarkBodySchema.parse({ ...body, concurrency: input }).concurrency, expected)
   }
   for (const concurrency of [0, -1, 1.5, 61, '', null]) {
-    assert.equal(updateBenchmarkConcurrencyBodySchema.safeParse({ concurrency }).success, false)
+    assert.equal(updateBenchmarkSettingsBodySchema.safeParse({ repetitions: 1, maxDurationMinutes: 20, concurrency }).success, false)
   }
 })
 
@@ -283,8 +283,10 @@ test('benchmark concurrency: per-benchmark slots, live changes, legacy rows and 
   assert.deepEqual(['one', 'four', 'seven'].map(count), [1, 4, 7])
   await scheduler.launchPending()
   assert.deepEqual(['one', 'four', 'seven'].map(count), [1, 4, 7], 'slow startups do not oversubscribe slots')
-  runner.setConcurrency('one', 3)
-  runner.setConcurrency('seven', 2)
+  // The test rows hold nine runs of one variant: keep them all while changing the slots.
+  const settings = (concurrency: number) => ({ repetitions: 9, concurrency, maxDurationMinutes: 20 })
+  runner.updateSettings('one', settings(3))
+  runner.updateSettings('seven', settings(2))
   await scheduler.launchPending()
   assert.deepEqual(['one', 'four', 'seven'].map(count), [3, 4, 7], 'lowering leaves existing runs alone')
   assert.equal(runner.list('owner').find((row) => row.id === 'four')!.concurrency, 4)
@@ -300,12 +302,61 @@ test('benchmark concurrency: per-benchmark slots, live changes, legacy rows and 
   registerBenchmarkRoutes(app, ctx, runner)
   t.after(() => app.close())
   const update = (concurrency: unknown, owner = 'owner') => app.inject({
-    method: 'PUT', url: '/api/benchmarks/one/concurrency', headers: { 'x-owner': owner }, payload: { concurrency },
+    method: 'PUT', url: '/api/benchmarks/one/settings', headers: { 'x-owner': owner }, payload: { repetitions: 5, maxDurationMinutes: 20, concurrency },
   })
   assert.equal((await update(5)).statusCode, 200)
   assert.equal((await update(0)).statusCode, 400)
   assert.equal((await update(8, 'stranger')).statusCode, 404)
   assert.equal(runner.load('one', 'owner').maxConcurrentRuns, 5)
+})
+
+test('benchmark settings: repetitions grow and shrink without deleting results, duration applies live', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-settings-'))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  t.after(() => { sqlite.close(); rmSync(dir, { recursive: true, force: true }) })
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', isAdmin: false, createdAt: 1 }).run()
+  const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
+  const runner = new BenchmarkRunner(ctx, { assertCliEnabled: () => undefined } as never, {} as never, {} as never, {} as never)
+  runner.kick = () => undefined
+  const config = { agent: 'claude', model: 'default', effort: 'low', permissionMode: 'bypassPermissions' }
+  const variants = JSON.stringify(['a', 'b'].map((id) => ({ id, label: id, config })))
+  db.insert(benchmarkTable).values({ id: 'bench', userId: 'owner', name: 'bench', prompt: 'test', variants, repetitions: 2, concurrency: 'sequential', maxConcurrentRuns: 1, maxDurationMinutes: 20, createdAt: 1, updatedAt: 1 }).run()
+  // Variant a finished both repetitions; variant b finished one and was cancelled before the second.
+  for (const [id, variantId, repetition, status] of [['a1', 'a', 1, 'succeeded'], ['a2', 'a', 2, 'succeeded'], ['b1', 'b', 1, 'succeeded'], ['b2', 'b', 2, 'cancelled']] as const) {
+    db.insert(benchmarkRuns).values({ id, benchmarkId: 'bench', variantId, repetition, status }).run()
+  }
+  const runs = () => runner.list('owner')[0]!.runs.map((run) => `${run.variantId}${run.repetition}:${run.status}`).sort()
+
+  runner.updateSettings('bench', { repetitions: 4, concurrency: 3, maxDurationMinutes: 45 })
+  assert.deepEqual(runs(), ['a1:succeeded', 'a2:succeeded', 'a3:pending', 'a4:pending', 'b1:succeeded', 'b2:cancelled', 'b3:pending', 'b4:pending'])
+  const row = runner.load('bench', 'owner')
+  assert.deepEqual([row.repetitions, row.maxConcurrentRuns, row.maxDurationMinutes], [4, 3, 45])
+
+  // Back down: only runs that never started go, and the floor is the highest one that did.
+  runner.updateSettings('bench', { repetitions: 2, concurrency: 3, maxDurationMinutes: 45 })
+  assert.deepEqual(runs(), ['a1:succeeded', 'a2:succeeded', 'b1:succeeded', 'b2:cancelled'])
+  assert.throws(() => runner.updateSettings('bench', { repetitions: 1, concurrency: 3, maxDurationMinutes: 45 }), { code: 'benchmark_repetitions_started' })
+  assert.deepEqual(runs(), ['a1:succeeded', 'a2:succeeded', 'b1:succeeded', 'b2:cancelled'], 'a refused change touches nothing')
+
+  // A run whose session is starting is pending in the database, yet no longer droppable.
+  runner.updateSettings('bench', { repetitions: 3, concurrency: 3, maxDurationMinutes: 45 })
+  const launching = (runner as unknown as { launching: Set<string> }).launching
+  launching.add(runner.list('owner')[0]!.runs.find((run) => run.variantId === 'a' && run.repetition === 3)!.id)
+  assert.throws(() => runner.updateSettings('bench', { repetitions: 2, concurrency: 3, maxDurationMinutes: 45 }), { code: 'benchmark_repetitions_started' })
+
+  const app = Fastify()
+  registerErrorHandler(app)
+  app.addHook('preHandler', async (request) => { Object.assign(request, { user: { id: 'owner' } }) })
+  registerBenchmarkRoutes(app, ctx, runner)
+  t.after(() => app.close())
+  const put = (payload: unknown) => app.inject({ method: 'PUT', url: '/api/benchmarks/bench/settings', payload: payload as object })
+  assert.equal((await put({ repetitions: 2, concurrency: 1, maxDurationMinutes: 30 })).statusCode, 409)
+  assert.equal((await put({ repetitions: 6, concurrency: 1, maxDurationMinutes: 30 })).statusCode, 400)
+  assert.equal((await put({ repetitions: 3, concurrency: 1, maxDurationMinutes: 0 })).statusCode, 400)
+  const saved = await put({ repetitions: 3, concurrency: 1, maxDurationMinutes: 30 })
+  assert.equal(saved.statusCode, 200)
+  assert.equal(saved.json().maxDurationMinutes, 30)
 })
 
 const completed = (inputTokens: number, outputTokens: number, cacheReadTokens = 0, cacheCreationTokens = 0, costUsd = 0): SillageEvent & { type: 'turn.completed' } => ({

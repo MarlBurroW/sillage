@@ -1,10 +1,10 @@
 import { Pencil, ArrowDown, ArrowUp, Check, ChevronDown, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Share2, Square, Trash2, X } from 'lucide-react'
 import { Fragment, Suspense, lazy, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { benchmarkConcurrencySchema, benchmarkPath, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
+import { benchmarkPath, startedRepetitions, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { ConcurrencyField } from '../components/benchmark/ConcurrencyField'
+import { RunSettingsFields, parseRunSettings, runSettingsDraft, type RunSettingsDraft } from '../components/benchmark/RunSettingsFields'
 import { BenchmarkChart } from '../components/benchmark/BenchmarkChart'
 import { OutputsViewer } from '../components/benchmark/OutputsViewer'
 import { SeriesComparison } from '../components/benchmark/SeriesComparison'
@@ -30,7 +30,7 @@ import {
   useBenchmarks,
   useBlindReview,
   useCancelBenchmark,
-  useUpdateBenchmarkConcurrency,
+  useUpdateBenchmarkSettings,
   useDeleteBenchmark,
   useRerunBenchmark,
   type MetricKey,
@@ -63,9 +63,9 @@ export function BenchmarkPage() {
   const navigate = useNavigate()
   const { data: benchmarks, isPending, isError } = useBenchmarks()
   const cancel = useCancelBenchmark()
-  const updateConcurrency = useUpdateBenchmarkConcurrency()
-  const [editingConcurrency, setEditingConcurrency] = useState(false)
-  const [concurrency, setConcurrency] = useState('1')
+  const updateSettings = useUpdateBenchmarkSettings()
+  // Null while the dialog is closed: the draft is taken from the benchmark each time it opens.
+  const [settings, setSettings] = useState<RunSettingsDraft | null>(null)
   const remove = useDeleteBenchmark()
   const [confirming, setConfirming] = useState(false)
   const [sharing, setSharing] = useState(false)
@@ -96,6 +96,8 @@ export function BenchmarkPage() {
   const state = benchmarkState(benchmark)
   const progress = benchmarkProgress(benchmark)
   const error = cancel.error ?? remove.error ?? rerun.error
+  const minRepetitions = Math.max(1, startedRepetitions(benchmark.runs))
+  const parsedSettings = settings ? parseRunSettings(settings, minRepetitions) : null
   // A variant's heading: its letter while blind, the letter beside the name once revealed.
   const nameOf = (variantId: string) => {
     const variant = benchmark.variants.find((entry) => entry.id === variantId)
@@ -123,17 +125,19 @@ export function BenchmarkPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ConfirmDialog
-        open={editingConcurrency}
-        onOpenChange={setEditingConcurrency}
-        title={t('benchmark.concurrency.edit')}
-        confirmLabel={t('benchmark.concurrency.save')}
-        busy={updateConcurrency.isPending}
-        confirmDisabled={!benchmarkConcurrencySchema.safeParse(Number(concurrency)).success}
-        onConfirm={() => updateConcurrency.mutate({ id: benchmark.id, concurrency: Number(concurrency) }, { onSuccess: () => setEditingConcurrency(false) })}
+        open={settings !== null}
+        onOpenChange={(open) => { if (!open) setSettings(null) }}
+        title={t('benchmark.settings.edit')}
+        confirmLabel={t('benchmark.settings.save')}
+        busy={updateSettings.isPending}
+        confirmDisabled={!parsedSettings}
+        onConfirm={() => { if (parsedSettings) updateSettings.mutate({ id: benchmark.id, settings: parsedSettings }, { onSuccess: () => setSettings(null) }) }}
       >
-        <ConcurrencyField value={concurrency} onChange={setConcurrency} />
-        <p>{t('benchmark.concurrency.liveHint')}</p>
-        {updateConcurrency.error ? <Banner>{updateConcurrency.error.message}</Banner> : null}
+        <div className="flex flex-col gap-4">
+          {settings ? <RunSettingsFields draft={settings} onChange={setSettings} minRepetitions={minRepetitions} /> : null}
+          <p className="text-sm text-ink-soft">{t('benchmark.settings.liveHint')}</p>
+          {updateSettings.error ? <Banner>{updateSettings.error.message}</Banner> : null}
+        </div>
       </ConfirmDialog>
       <header className={'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6'}>
         <MobileNavigationButton />
@@ -189,13 +193,13 @@ export function BenchmarkPage() {
             <Prompt text={benchmark.prompt} />
             <dl className="flex flex-wrap content-start items-center gap-x-6 gap-y-1 text-xs text-ink-soft lg:max-w-md lg:justify-end">
               <Fact label={t('benchmark.form.repetitions')}>{benchmark.repetitions}</Fact>
-              <Fact label={t('benchmark.form.concurrency')}>{benchmark.concurrency}
-                <IconButton size="sm" label={t('benchmark.concurrency.edit')} onClick={() => {
-                  setConcurrency(String(benchmark.concurrency))
-                  updateConcurrency.reset()
-                  setEditingConcurrency(true)
+              <Fact label={t('benchmark.form.concurrency')}>{benchmark.concurrency}</Fact>
+              <Fact label={t('schedule.form.maxDuration')}>{benchmark.maxDurationMinutes}
+                {/* One control for the three: they are changed together and saved in one request. */}
+                <IconButton size="sm" label={t('benchmark.settings.edit')} onClick={() => {
+                  updateSettings.reset()
+                  setSettings(runSettingsDraft(benchmark))
                 }}><Pencil size={13} /></IconButton></Fact>
-              <Fact label={t('schedule.form.maxDuration')}>{benchmark.maxDurationMinutes}</Fact>
               {benchmark.inputs.length ? (
                 <Fact label={t('benchmark.form.inputs')}>
                   {benchmark.inputs.map((input) => `${input.filename} (${formatBytes(input.sizeBytes)})`).join(', ')}
@@ -220,7 +224,7 @@ export function BenchmarkPage() {
               <OutputsViewer benchmark={benchmark} order={blind.order} nameOf={nameOf} blind />
             </section>
           ) : (
-          <Tabs label={t('benchmark.title')} value={shown} onChange={setTab} tabs={tabs}>
+          <Tabs label={t('benchmark.title')} value={shown} onChange={setTab} tabs={tabs} pinned={false}>
           {shown === 'outputs' ? <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="secondary" icon={<EyeOff size={14} />} onClick={() => blind.start()}>

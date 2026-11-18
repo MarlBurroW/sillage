@@ -8,21 +8,17 @@ import {
   MAX_BENCHMARK_CHECK_CHARS,
   MAX_CHECK_TIMEOUT_SECONDS,
   MIN_CHECK_TIMEOUT_SECONDS,
-  MAX_BENCHMARK_DURATION_MINUTES,
   MAX_BENCHMARK_NAME_CHARS,
   MAX_BENCHMARK_PROMPT_CHARS,
-  MAX_BENCHMARK_REPETITIONS,
   MAX_BENCHMARK_VARIANTS,
-  MIN_BENCHMARK_DURATION_MINUTES,
   benchmarkPath,
-  benchmarkConcurrencySchema,
   defaultConfigFor,
   type AgentConfig,
   type AgentKind,
   type AttachmentDto,
 } from '@sillage/protocol'
 import { AttachmentTray } from '../components/chat/AttachmentTray'
-import { ConcurrencyField } from '../components/benchmark/ConcurrencyField'
+import { RunSettingsFields, parseRunSettings, runSettingsDraft } from '../components/benchmark/RunSettingsFields'
 import { VariantEditor } from '../components/benchmark/VariantEditor'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { Banner, Button, Field, IconButton } from '../components/ui'
@@ -56,9 +52,7 @@ export function NewBenchmarkPage() {
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
   const [variants, setVariants] = useState<Draft[]>([])
-  const [repetitions, setRepetitions] = useState('1')
-  const [concurrency, setConcurrency] = useState('1')
-  const [maxDuration, setMaxDuration] = useState(String(DEFAULT_BENCHMARK_DURATION_MINUTES))
+  const [settings, setSettings] = useState(() => runSettingsDraft({ repetitions: 1, concurrency: 1, maxDurationMinutes: DEFAULT_BENCHMARK_DURATION_MINUTES }))
   const [nextKey, setNextKey] = useState(1)
   const [inputs, setInputs] = useState<AttachmentDto[]>([])
   const [uploading, setUploading] = useState(0)
@@ -103,25 +97,20 @@ export function NewBenchmarkPage() {
     setNextKey(nextKey + 1)
   }
 
-  const reps = Number(repetitions)
-  const repsValid = Number.isInteger(reps) && reps >= 1 && reps <= MAX_BENCHMARK_REPETITIONS
-  const duration = Number(maxDuration)
-  const durationValid = Number.isInteger(duration) && duration >= MIN_BENCHMARK_DURATION_MINUTES && duration <= MAX_BENCHMARK_DURATION_MINUTES
+  const run = parseRunSettings(settings)
   const timeout = Number(checkTimeout)
   const timeoutValid = !checkScript.trim() || (Number.isInteger(timeout) && timeout >= MIN_CHECK_TIMEOUT_SECONDS && timeout <= MAX_CHECK_TIMEOUT_SECONDS)
-  const valid = Boolean(name.trim() && prompt.trim() && variants.length > 0 && repsValid && benchmarkConcurrencySchema.safeParse(Number(concurrency)).success && durationValid && timeoutValid && uploading === 0)
-  const total = variants.length * (repsValid ? reps : 0)
+  const valid = Boolean(name.trim() && prompt.trim() && variants.length > 0 && run && timeoutValid && uploading === 0)
+  const total = variants.length * (run?.repetitions ?? 0)
 
   const submit = () => {
-    if (!valid || create.isPending) return
+    if (!valid || !run || create.isPending) return
     create.mutate(
       {
         name: name.trim(),
         prompt: prompt.trim(),
         variants: variants.map((variant) => ({ config: variant.config })),
-        repetitions: reps,
-        concurrency: Number(concurrency),
-        maxDurationMinutes: duration,
+        ...run,
         attachmentIds: inputs.map((input) => input.id),
         checkScript: checkScript.trim() ? checkScript : null,
         ...(checkScript.trim() ? { checkTimeoutSeconds: timeout } : {}),
@@ -203,27 +192,7 @@ export function NewBenchmarkPage() {
           </fieldset>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field
-              label={t('benchmark.form.repetitions')}
-              hint={t('benchmark.form.repetitionsHint')}
-              error={repsValid ? undefined : t('benchmark.form.repetitionsInvalid', { max: MAX_BENCHMARK_REPETITIONS })}
-              type="number"
-              min={1}
-              max={MAX_BENCHMARK_REPETITIONS}
-              value={repetitions}
-              onChange={(event) => setRepetitions(event.target.value)}
-            />
-            <ConcurrencyField value={concurrency} onChange={setConcurrency} />
-            <Field
-              label={t('schedule.form.maxDuration')}
-              hint={t('benchmark.form.maxDurationHint')}
-              error={durationValid ? undefined : t('schedule.form.maxDurationInvalid', { max: MAX_BENCHMARK_DURATION_MINUTES })}
-              type="number"
-              min={MIN_BENCHMARK_DURATION_MINUTES}
-              max={MAX_BENCHMARK_DURATION_MINUTES}
-              value={maxDuration}
-              onChange={(event) => setMaxDuration(event.target.value)}
-            />
+            <RunSettingsFields draft={settings} onChange={setSettings} />
           </div>
 
           <div className="flex flex-col gap-1.5">

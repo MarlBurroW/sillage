@@ -3,7 +3,7 @@ import { realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { BENCHMARK_PREVIEW_PREFIX, BENCHMARK_SHARE_PREFIX, benchmarkShareOptionsSchema, publishBenchmarkShareBodySchema, createBenchmarkBodySchema, updateBenchmarkConcurrencyBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto } from '@sillage/protocol'
+import { BENCHMARK_PREVIEW_PREFIX, BENCHMARK_SHARE_PREFIX, benchmarkShareOptionsSchema, publishBenchmarkShareBodySchema, createBenchmarkBodySchema, updateBenchmarkSettingsBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto } from '@sillage/protocol'
 import { PREVIEW_POLICY, previewType } from '../../benchmarks/deliverables.js'
 import type { BenchmarkRunner } from '../../benchmarks/runner.js'
 import { BenchmarkShares } from '../../benchmarks/share.js'
@@ -38,11 +38,10 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     return runner.dto(row)
   })
 
-  app.put('/api/benchmarks/:id/concurrency', async (request): Promise<BenchmarkDto> => {
+  app.put('/api/benchmarks/:id/settings', async (request): Promise<BenchmarkDto> => {
     const user = requireUser(request)
     const row = runner.load((request.params as { id: string }).id, user.id)
-    const body = updateBenchmarkConcurrencyBodySchema.parse(request.body)
-    runner.setConcurrency(row.id, body.concurrency)
+    runner.updateSettings(row.id, updateBenchmarkSettingsBodySchema.parse(request.body))
     return runner.dto(runner.load(row.id, user.id))
   })
 
