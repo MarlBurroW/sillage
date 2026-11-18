@@ -62,11 +62,16 @@ export function useCreateBenchmark() {
 
 /** Repetitions, slots and duration stay adjustable after launch; the server refuses to drop started runs. */
 export function useUpdateBenchmarkSettings() {
+  const queryClient = useQueryClient()
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: ({ id, settings }: { id: string; settings: UpdateBenchmarkSettingsBody }) =>
       api.put<BenchmarkDto>(`/api/benchmarks/${id}/settings`, settings),
-    onSuccess: invalidate,
+    onSuccess: (saved) => {
+      // The dialog closes on success: show what was saved at once, not the old values until the refetch.
+      queryClient.setQueryData<BenchmarkDto[]>(BENCHMARKS_KEY, (list) => list?.map((benchmark) => (benchmark.id === saved.id ? saved : benchmark)))
+      invalidate()
+    },
   })
 }
 
