@@ -89,11 +89,10 @@ async function checkResults(page, base, profile) {
     assert.ok(aligned.every(Boolean), 'labels and values stay vertically aligned')
     const run = page.locator('[data-benchmark-run]').first()
     await run.waitFor()
-    assert.match(await run.textContent(), /62[\s\u202f\u00a0]?237/)
+    // Large counts read compact ("62,2 k"); the exact value stays in the tooltip.
+    assert.match(await run.locator('td[data-metric="inputTokens"]').getAttribute('title'), /62[\s\u202f\u00a0]?237/)
     const codex = page.locator('[data-benchmark-run]').nth(4)
-    const headings = await page.locator('[data-benchmark-results] thead th').allTextContents()
-    const costIndex = headings.findIndex((text) => text.trim() === 'Coût')
-    assert.equal((await codex.locator('td').nth(costIndex).textContent()).trim(), '—')
+    assert.equal((await codex.locator('td[data-metric="costUsd"]').textContent()).trim(), '—')
     await page.screenshot({ path: join(shots, `${profile}-${size}-measures.png`) })
 
     for (const format of ['csv', 'json']) {

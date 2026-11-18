@@ -290,7 +290,7 @@ async function checkCompare(page, base, profile) {
   // hatched and labelled rather than drawn as the shortest one.
   await page.goto(base + '/benchmarks/crash')
   await page.locator('[data-benchmark-results]').waitFor()
-  await page.locator('[data-benchmark-results] thead button', { hasText: 'Durée' }).click()
+  await page.locator('[data-benchmark-results] thead').getByRole('button', { name: 'Durée', exact: true }).click()
   const groups = await page.locator('[data-benchmark-group]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-benchmark-group')))
   assert.deepEqual(groups, ['v2', 'v1', 'v3'], 'a failed run never sorts as the fastest')
   await page.getByRole('tab', { name: 'Graphique' }).click()
