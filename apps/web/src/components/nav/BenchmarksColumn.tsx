@@ -31,7 +31,8 @@ export function BenchmarksColumn() {
   // A benchmark is remembered by what it asked or whom it compared as often as by its name.
   const query = filter.trim().toLocaleLowerCase()
   const matching = list.filter((benchmark) => !query
-    || [benchmark.name, benchmark.prompt, ...benchmark.variants.map((variant) => variant.label)].some((text) => text.toLocaleLowerCase().includes(query)))
+    // Short names and exact model ids both find a variant: "opus" and "claude-opus-5-5" alike.
+    || [benchmark.name, benchmark.prompt, ...benchmark.variants.flatMap((variant) => [variant.label, variant.technicalLabel])].some((text) => text.toLocaleLowerCase().includes(query)))
 
   return (
     <>

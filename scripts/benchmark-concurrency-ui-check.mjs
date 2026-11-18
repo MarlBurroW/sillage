@@ -50,11 +50,12 @@ async function ready(url, child) {
 async function checkResults(page, base, profile) {
   const variants = ['Opus', 'Sonnet', 'Codex'].map((label, index) => ({
     id: `v${index}`, label, config: { agent: index === 2 ? 'codex' : 'claude', model: label, effort: 'medium' },
+    technicalLabel: `${label} · medium`, labelIsCustom: true, model: null, listPrice: null,
   }))
   const benchmark = {
     id: 'comparison', name: 'Comparaison des résultats', prompt: 'Créer un piano', variants,
     repetitions: 2, concurrency: 10, maxDurationMinutes: 20, inputs: [], checkScript: null,
-    checkTimeoutSeconds: 30, seriesId: null, createdAt: Date.now(), updatedAt: Date.now(),
+    checkTimeoutSeconds: 30, seriesId: null, comparisons: [], createdAt: Date.now(), updatedAt: Date.now(),
     runs: variants.flatMap((variant, index) => [1, 2].map((repetition) => ({
       id: `${variant.id}-${repetition}`, variantId: variant.id, repetition, status: 'succeeded', conversationId: null,
       startedAt: 1, finishedAt: 90001, cliVersion: 'test', error: null, check: null,
@@ -194,7 +195,7 @@ try {
       if (route.request().method() === 'POST') {
         const body = route.request().postDataJSON()
         assert.equal(body.concurrency, 7)
-        saved = { ...body, id: 'test-benchmark', variants: body.variants.map((v, i) => ({ ...v, id: String(i), label: 'Test' })), inputs: [], runs: [], createdAt: Date.now(), updatedAt: Date.now(), seriesId: null }
+        saved = { ...body, id: 'test-benchmark', variants: body.variants.map((v, i) => ({ ...v, id: String(i), label: 'Test', technicalLabel: 'Test', labelIsCustom: true, model: null, listPrice: null })), comparisons: [], inputs: [], runs: [], createdAt: Date.now(), updatedAt: Date.now(), seriesId: null }
         return route.fulfill({ json: saved })
       }
       return route.fulfill({ json: saved ? [saved] : [] })
@@ -212,7 +213,7 @@ try {
       await page.getByRole('textbox', { name: 'Nom', exact: true }).fill('Parallélisme configurable')
       await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Test')
       await page.locator('[data-benchmark-variant]').first().waitFor()
-      for (const invalid of ['0', '1.5', '61', '']) {
+      for (const invalid of ['0', '1.5', '121', '']) {
         await field.fill(invalid)
         assert.ok(await page.getByRole('button', { name: 'Lancer le benchmark', exact: true }).isDisabled())
       }
@@ -236,7 +237,7 @@ try {
       }
       assert.deepEqual([await fields.repetitions.inputValue(), await fields.concurrency.inputValue(), await fields.duration.inputValue()], ['1', '7', '20'])
       const save = dialog.getByRole('button', { name: 'Enregistrer', exact: true })
-      for (const [field, invalid] of [[fields.repetitions, '6'], [fields.duration, '0'], [fields.concurrency, '61']]) {
+      for (const [field, invalid] of [[fields.repetitions, '6'], [fields.duration, '0'], [fields.concurrency, '121']]) {
         const valid = await field.inputValue()
         await field.fill(invalid)
         assert.ok(await save.isDisabled(), `${invalid} is refused`)

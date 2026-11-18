@@ -1,46 +1,43 @@
-import { Trash2 } from 'lucide-react'
 import { agentKindSchema, defaultConfigFor, type AgentConfig, type AgentKind } from '@sillage/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
-import { useAgentSettings } from '../chat/agent-settings'
+import type { SettingGroup } from '../chat/ComposerSettings'
 import { GroupField } from '../schedule/GroupField'
-import { Banner, IconButton, Select } from '../ui'
+import { Banner, Select } from '../ui'
 
 /**
  * The settings a benchmark varies, plus permissions: runs are unattended, and a mode that asks
  * blocks the run until someone answers in its conversation. MCP and skills stay at their defaults
  * so variants differ only by what is measured.
  */
-const VARIED_KEYS = new Set(['model', 'effort', 'account', 'permission', 'approval', 'sandbox'])
+export const VARIED_KEYS = new Set(['model', 'effort', 'account', 'permission', 'approval', 'sandbox'])
 
 /**
- * One row of the variant list: CLI, then the model, effort and account choices the composer offers
- * for that CLI. Reuses the composer's settings model so catalogs, aliases and account-scoped lists
- * behave exactly as in a draft.
+ * The fields of one variant, opened from its lineup row: CLI, then the model, effort and account
+ * choices the composer offers for that CLI. The row calls `useAgentSettings` once and passes its
+ * groups here, so the collapsed summary and these fields read the same catalog.
  */
-export function VariantEditor({
+export function VariantFields({
   config,
+  groups,
+  catalogError,
   onChange,
-  onRemove,
-  removable,
   defaults,
 }: {
   config: AgentConfig
+  groups: SettingGroup[]
+  catalogError: Error | null
   onChange: (config: AgentConfig) => void
-  onRemove: () => void
-  removable: boolean
   /** Account defaults per CLI, applied when the CLI changes. */
   defaults: (agent: AgentKind) => AgentConfig | undefined
 }) {
   const t = useTranslate()
-  const { groups, catalogError } = useAgentSettings({ config, onConfigChange: onChange })
   const varied = groups.filter((group) => VARIED_KEYS.has(group.key))
-
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-line p-3" data-benchmark-variant>
-      <div className="flex items-end gap-2">
+    <div className="@container/variant flex flex-col gap-3">
+      {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
+      <div className="grid gap-3 @min-[28rem]/variant:grid-cols-2 @min-[44rem]/variant:grid-cols-3">
         <Select
-          className="flex-1"
           label={t('draft.cli.legend')}
           value={config.agent}
           onChange={(agent) => onChange(defaults(agent) ?? defaultConfigFor(agent))}
@@ -50,16 +47,10 @@ export function VariantEditor({
             icon: <AgentIcon agent={value} size={16} />,
           }))}
         />
-        <IconButton label={t('benchmark.form.removeVariant')} disabled={!removable} onClick={onRemove}>
-          <Trash2 size={16} />
-        </IconButton>
-      </div>
-      {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {varied.map((group) => (
           <GroupField key={group.key} group={group} />
         ))}
       </div>
-    </li>
+    </div>
   )
 }

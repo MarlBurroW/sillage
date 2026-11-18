@@ -1,11 +1,24 @@
-import { Pencil, ArrowDown, ArrowUp, Check, ChevronDown, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, RotateCcw, Share2, Square, Trash2, X } from 'lucide-react'
-import { Fragment, Suspense, lazy, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { benchmarkPath, startedRepetitions, conversationPath, variantAgent, type BenchmarkDto, type BenchmarkRunDto, type BenchmarkVariant } from '@sillage/protocol'
+import { Pencil, ArrowDown, ArrowUp, Check, ChevronDown, CopyPlus, Download, ExternalLink, Eye, EyeOff, FileText, FlaskConical, ListPlus, MonitorPlay, RotateCcw, Share2, Square, Trash2, X } from 'lucide-react'
+import { Fragment, Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
+import {
+  MAX_BENCHMARK_COMPARISON_VARIANTS,
+  MAX_BENCHMARK_TOTAL_VARIANTS,
+  benchmarkPath,
+  eligibleRuns,
+  startedRepetitions,
+  conversationPath,
+  variantAgent,
+  variantMeasure,
+  type BenchmarkDto,
+  type BenchmarkRunDto,
+  type BenchmarkVariantDto,
+} from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { RunSettingsFields, parseRunSettings, runSettingsDraft, type RunSettingsDraft } from '../components/benchmark/RunSettingsFields'
 import { BenchmarkChart } from '../components/benchmark/BenchmarkChart'
+import { ComparisonPicker } from '../components/benchmark/ComparisonPicker'
 import { OutputsViewer } from '../components/benchmark/OutputsViewer'
 import { SeriesComparison } from '../components/benchmark/SeriesComparison'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, Tabs, cx } from '../components/ui'
@@ -20,10 +33,10 @@ import {
   benchmarkProgress,
   benchmarkState,
   formatMetric,
-  median,
   metricValue,
+  openSlides,
   passRate,
-  spread,
+  readShareOptions,
   visibleMetricKeys,
   BENCHMARK_STATE_TONES,
   RUN_TONES,
@@ -43,25 +56,50 @@ import { downloadText } from '../lib/download'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 
-// Only people who share pay for the window: it stays out of the page's chunk.
+// Only people who share, continue or compare pay for these: they stay out of the page's chunk.
 const BenchmarkShareDialog = lazy(() => import('../components/benchmark/BenchmarkShareDialog'))
+const LineupDialog = lazy(() => import('../components/benchmark/LineupDialog'))
+const ComparisonView = lazy(() => import('../components/benchmark/ComparisonView'))
 
-type Tab = 'measures' | 'chart' | 'outputs' | 'history'
+type Tab = 'measures' | 'compare' | 'chart' | 'outputs' | 'history'
+const TABS: Tab[] = ['measures', 'compare', 'chart', 'outputs', 'history']
 
 interface Sort {
   key: MetricKey
   direction: 'asc' | 'desc'
 }
 
+/** The two parameters this page keeps in the address, as one comparable value. */
+const addressKey = (tab: string | null, vs: string | null) => `${tab ?? ''}|${vs ?? ''}`
+
+/** Variants picked for comparison, from the address: known ids only, once each, the baseline first. */
+function parseSelection(raw: string | null, variantIds: string[]): string[] {
+  const ids: string[] = []
+  for (const id of (raw ?? '').split(',')) {
+    if (variantIds.includes(id) && !ids.includes(id) && ids.length < MAX_BENCHMARK_COMPARISON_VARIANTS) ids.push(id)
+  }
+  return ids
+}
+
 /**
- * A benchmark's measurements: one block per variant, one row per run, a median row when a variant
- * ran several times. Sorting reorders variants by their median so the question “which is fastest”
- * has a one-click answer; rows inside a variant stay in repetition order.
+ * The benchmark of the address. Keyed by id: sorting, dialogs and the blind review belong to one
+ * benchmark, and the router reuses this element when another one is opened from the column.
  */
 export function BenchmarkPage() {
   const { id } = useParams()
+  return <BenchmarkView key={id} id={id ?? ''} />
+}
+
+/**
+ * A benchmark's measurements: one block per variant, one row per run, a median row when a variant
+ * ran several times. Sorting reorders variants by their median so the question “which is fastest”
+ * has a one-click answer; rows inside a variant stay in repetition order. The open tab and the
+ * variants being compared live in the address, so a comparison can be reopened or sent as a link.
+ */
+function BenchmarkView({ id }: { id: string }) {
   const t = useTranslate()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
   const { data: benchmarks, isPending, isError } = useBenchmarks()
   const cancel = useCancelBenchmark()
   const updateSettings = useUpdateBenchmarkSettings()
@@ -70,17 +108,58 @@ export function BenchmarkPage() {
   const remove = useDeleteBenchmark()
   const [confirming, setConfirming] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [lineup, setLineup] = useState<'edit' | 'add' | null>(null)
   const [sort, setSort] = useState<Sort | null>(null)
-  const [tab, setTab] = useState<Tab>('measures')
+  // The open tab and the compared variants, read from the address and written back to it. Held
+  // here too because the router applies a new address after the click: a ticked box would
+  // flicker back to empty until then. `pending` lists the addresses this page asked for and has
+  // not seen land yet, oldest first: seeing one land drops it and those before it. Any other
+  // address (the column, Back, Forward) is followed and empties the list, so a navigation that
+  // overtakes the page's own write can never leave the page ignoring the address.
+  const [view, setView] = useState(() => ({ tab: params.get('tab'), vs: params.get('vs') }))
+  const pending = useRef<string[]>([])
+  const tabParam = params.get('tab')
+  const vsParam = params.get('vs')
+  const navigationType = useNavigationType()
+  // Read by the effect below without making every view change re-run it; declared first, so it is
+  // current when that effect runs in the same commit.
+  const viewRef = useRef(view)
+  useEffect(() => { viewRef.current = view }, [view])
+  useEffect(() => {
+    const landed = pending.current.indexOf(addressKey(tabParam, vsParam))
+    if (landed !== -1) {
+      pending.current = pending.current.slice(landed + 1)
+      return
+    }
+    pending.current = []
+    // Tapping the open benchmark in the column (also how the phone drawer closes) pushes its bare
+    // address: that tap means "this benchmark", not "back to Measures". Keep what is open and put
+    // it back in the address. Back and Forward (POP) still follow the address, whatever it holds.
+    const current = viewRef.current
+    if (navigationType === 'PUSH' && tabParam === null && vsParam === null && (current.tab !== null || current.vs !== null)) {
+      pending.current = [addressKey(current.tab, current.vs)]
+      setParams((address) => {
+        const next = new URLSearchParams(address)
+        if (current.tab) next.set('tab', current.tab)
+        if (current.vs) next.set('vs', current.vs)
+        return next
+      }, { replace: true })
+      return
+    }
+    setView((existing) => (existing.tab === tabParam && existing.vs === vsParam ? existing : { tab: tabParam, vs: vsParam }))
+  }, [tabParam, vsParam, navigationType, setParams])
   const benchmark = benchmarks?.find((entry) => entry.id === id)
   const rerun = useRerunBenchmark()
   const variantIds = useMemo(() => benchmark?.variants.map((variant) => variant.id) ?? [], [benchmark])
-  const blind = useBlindReview(id ?? '', variantIds)
+  const blind = useBlindReview(id, variantIds)
   const series = useMemo(() => (benchmark && benchmarks ? benchmarkSeries(benchmarks, benchmark) : []), [benchmark, benchmarks])
   const waitingRuns = useWaitingRuns(benchmarks).filter((entry) => entry.benchmark.id === id)
 
   const blocks = useMemo(() => (benchmark ? variantBlocks(benchmark, sort) : []), [benchmark, sort])
   const metricKeys = useMemo(() => (benchmark ? visibleMetricKeys(benchmark) : METRIC_KEYS), [benchmark])
+  const selection = useMemo(() => parseSelection(view.vs, variantIds), [view.vs, variantIds])
+  // With two variants nothing is picked (both are compared): a leftover address must not mute a bar.
+  const emphasis = useMemo(() => new Set(variantIds.length > 2 ? selection : []), [selection, variantIds])
   const columnCount = 2 + (benchmark?.checkScript ? 1 : 0) + metricKeys.length
 
   if (isPending) return <p role="status" className="p-6 text-sm text-ink-faint">{t('schedule.loading')}</p>
@@ -100,6 +179,8 @@ export function BenchmarkPage() {
   const error = cancel.error ?? remove.error ?? rerun.error
   const minRepetitions = Math.max(1, startedRepetitions(benchmark.runs))
   const parsedSettings = settings ? parseRunSettings(settings, minRepetitions) : null
+  const lang = locale()
+  const full = benchmark.variants.length >= MAX_BENCHMARK_TOTAL_VARIANTS
   // A variant's heading: its letter while blind, the letter beside the name once revealed.
   const nameOf = (variantId: string) => {
     const variant = benchmark.variants.find((entry) => entry.id === variantId)
@@ -112,18 +193,56 @@ export function BenchmarkPage() {
     return { label: text, text }
   }
   const runName = (run: BenchmarkRunDto) => (benchmark.repetitions > 1 ? `${nameOf(run.variantId).text} · ${run.repetition}` : nameOf(run.variantId).text)
+
+  // With two variants there is nothing to pick: comparing means both, and the address only says
+  // which side is the baseline. So it counts as no selection: no count, no selection line.
+  const pickable = benchmark.variants.length > 2
+  const compared = pickable ? selection : selection.length === 2 ? selection : variantIds
+  const picked = pickable ? selection : []
   const tabs: { value: Tab; label: string }[] = [
     { value: 'measures', label: t('benchmark.tab.measures') },
+    ...(benchmark.variants.length >= 2
+      ? [{ value: 'compare' as const, label: picked.length > 0 ? t('benchmark.tab.compareCount', { count: picked.length }) : t('benchmark.tab.compare') }]
+      : []),
     { value: 'chart', label: t('benchmark.tab.chart') },
     { value: 'outputs', label: t('benchmark.tab.outputs') },
     // History only exists once the benchmark has been rerun.
     ...(series.length > 1 ? [{ value: 'history' as const, label: t('benchmark.tab.history', { count: series.length }) }] : []),
   ]
-  const shown: Tab = tabs.some((entry) => entry.value === tab) ? tab : 'measures'
-  const lang = locale()
+  const requested = TABS.find((value) => value === view.tab) ?? 'measures'
+  const shown: Tab = tabs.some((entry) => entry.value === requested) ? requested : 'measures'
+
+  /** Changes the tab or the compared variants, and the address with them without stacking history entries. */
+  const navigateTo = (change: { tab?: Tab; vs?: string[] }) => {
+    const next = {
+      tab: change.tab === undefined ? view.tab : change.tab === 'measures' ? null : change.tab,
+      vs: change.vs === undefined ? view.vs : change.vs.length > 0 ? change.vs.join(',') : null,
+    }
+    setView(next)
+    // An address equal to the current one never lands as a change: nothing to wait for.
+    const target = addressKey(next.tab, next.vs)
+    if (target !== addressKey(tabParam, vsParam)) pending.current = [...pending.current, target]
+    setParams((current) => {
+      const address = new URLSearchParams(current)
+      for (const [key, value] of Object.entries(next)) {
+        if (value) address.set(key, value)
+        else address.delete(key)
+      }
+      return address
+    }, { replace: true })
+  }
+  const toggleCompared = (variantId: string) => navigateTo({
+    vs: selection.includes(variantId)
+      ? selection.filter((entry) => entry !== variantId)
+      : selection.length >= MAX_BENCHMARK_COMPARISON_VARIANTS ? selection : [...selection, variantId],
+  })
 
   const toggleSort = (key: MetricKey) =>
     setSort((current) => (current?.key === key ? (current.direction === 'asc' ? { key, direction: 'desc' } : null) : { key, direction: 'asc' }))
+  const openSettings = () => {
+    updateSettings.reset()
+    setSettings(runSettingsDraft(benchmark))
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -172,10 +291,35 @@ export function BenchmarkPage() {
         ) : null}
         {/* Nothing to show before a first run settles. */}
         {progress.done > 0 ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<MonitorPlay size={14} />}
+            onClick={() => openSlides(benchmark.id, readShareOptions(benchmark, lang))}
+            title={t('benchmark.page.presentHint')}
+            aria-label={t('benchmark.page.present')}
+            data-benchmark-present
+          >
+            {/* An icon on a phone: the header already wraps on two lines there. */}
+            <span className="max-sm:sr-only">{t('benchmark.page.present')}</span>
+          </Button>
+        ) : null}
+        {progress.done > 0 ? (
           <Button size="sm" variant="secondary" icon={<Share2 size={14} />} onClick={() => setSharing(true)} title={t('benchmark.share.hint')} data-benchmark-share-open>
             {t('benchmark.share.action')}
           </Button>
         ) : null}
+        <IconButton
+          label={full ? t('benchmark.page.variantsFull', { max: MAX_BENCHMARK_TOTAL_VARIANTS }) : t('benchmark.page.addVariant')}
+          disabled={full}
+          onClick={() => setLineup('add')}
+          data-benchmark-add-variant
+        >
+          <ListPlus size={16} />
+        </IconButton>
+        <IconButton label={t('benchmark.page.newFrom')} onClick={() => navigate(`/benchmarks/new?from=${encodeURIComponent(benchmark.id)}`)} data-benchmark-new-from>
+          <CopyPlus size={16} />
+        </IconButton>
         <Menu trigger={<IconButton label={t('benchmark.export')}><Download size={16} /></IconButton>}>
           <MenuItem icon={<FileText size={14} />} onSelect={() => { const file = benchmarkCsv(benchmark); downloadText(file.filename, file.content, 'text/csv') }}>
             {t('benchmark.export.csv')}
@@ -210,14 +354,14 @@ export function BenchmarkPage() {
           <section className="grid gap-x-8 gap-y-3 rounded-lg border border-line px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto]" data-benchmark-brief>
             <Prompt text={benchmark.prompt} />
             <dl className="flex flex-wrap content-start items-center gap-x-6 gap-y-1 text-xs text-ink-soft lg:max-w-md lg:justify-end">
+              <Fact label={t('benchmark.page.variants')}>{benchmark.variants.length}
+                {/* Continuing a benchmark: order, names, new models and removals in one dialog. */}
+                <IconButton size="sm" label={t('benchmark.page.editLineup')} onClick={() => setLineup('edit')} data-benchmark-lineup-edit><Pencil size={13} /></IconButton></Fact>
               <Fact label={t('benchmark.form.repetitions')}>{benchmark.repetitions}</Fact>
               <Fact label={t('benchmark.form.concurrency')}>{benchmark.concurrency}</Fact>
               <Fact label={t('schedule.form.maxDuration')}>{benchmark.maxDurationMinutes}
                 {/* One control for the three: they are changed together and saved in one request. */}
-                <IconButton size="sm" label={t('benchmark.settings.edit')} onClick={() => {
-                  updateSettings.reset()
-                  setSettings(runSettingsDraft(benchmark))
-                }}><Pencil size={13} /></IconButton></Fact>
+                <IconButton size="sm" label={t('benchmark.settings.edit')} onClick={openSettings}><Pencil size={13} /></IconButton></Fact>
               {benchmark.inputs.length ? (
                 <Fact label={t('benchmark.form.inputs')}>
                   {benchmark.inputs.map((input) => `${input.filename} (${formatBytes(input.sizeBytes)})`).join(', ')}
@@ -242,7 +386,7 @@ export function BenchmarkPage() {
               <OutputsViewer benchmark={benchmark} order={blind.order} nameOf={nameOf} blind />
             </section>
           ) : (
-          <Tabs label={t('benchmark.title')} value={shown} onChange={setTab} tabs={tabs} pinned={false}>
+          <Tabs label={t('benchmark.title')} value={shown} onChange={(tab) => navigateTo({ tab })} tabs={tabs} pinned={false}>
           {shown === 'outputs' ? <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="secondary" icon={<EyeOff size={14} />} onClick={() => blind.start()}>
@@ -252,9 +396,31 @@ export function BenchmarkPage() {
               <span className="text-xs text-ink-faint">{t('benchmark.blind.hint')}</span>
             </div>
             <OutputsViewer benchmark={benchmark} order={blind.order} nameOf={nameOf} blind={false} />
-          </div> : shown === 'chart' ? (
+          </div> : shown === 'compare' ? (
+            <div className="flex flex-col gap-5">
+              {/* Two variants leave nothing to pick, but their saved comparisons still live here. */}
+              <ComparisonPicker benchmark={benchmark} selected={compared} onChange={(vs) => navigateTo({ vs })} nameOf={nameOf} pickable={pickable} />
+              {compared.length >= 2 ? (
+                <Suspense fallback={<p role="status" className="text-sm text-ink-faint">{t('schedule.loading')}</p>}>
+                  <ComparisonView
+                    benchmark={benchmark}
+                    ids={compared}
+                    nameOf={nameOf}
+                    metricKeys={metricKeys}
+                    onBaseline={(variantId) => navigateTo({ vs: [variantId, ...compared.filter((entry) => entry !== variantId)] })}
+                    onRemove={pickable ? (variantId) => navigateTo({ vs: compared.filter((entry) => entry !== variantId) }) : undefined}
+                    onRunSettings={openSettings}
+                  />
+                </Suspense>
+              ) : (
+                <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-ink-faint" data-compare-empty>{t('benchmark.compare.empty')}</p>
+              )}
+            </div>
+          ) : shown === 'chart' ? (
             <BenchmarkChart
               metrics={metricKeys}
+              emphasis={emphasis}
+              checkScript={benchmark.checkScript}
               rows={blind.order.flatMap((variantId) => {
                 const variant = benchmark.variants.find((entry) => entry.id === variantId)
                 if (!variant) return []
@@ -272,6 +438,14 @@ export function BenchmarkPage() {
           ) : <>
 
           <p className="text-xs text-ink-faint">{t('benchmark.measures.explanation')}</p>
+          {picked.length > 0 ? (
+            // Inline rather than sticky: this page's tabs were unpinned so nothing covers the table.
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-compare-selection>
+              <span className="text-ink-soft">{t(picked.length === 1 ? 'benchmark.compare.selected.one' : 'benchmark.compare.selected', { count: picked.length })}</span>
+              <Button size="sm" variant="ghost" disabled={picked.length < 2} onClick={() => navigateTo({ tab: 'compare' })}>{t('benchmark.compare.open')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => navigateTo({ vs: [] })}>{t('benchmark.compare.clear')}</Button>
+            </div>
+          ) : null}
           <div className="overflow-x-auto rounded-lg border border-line" data-benchmark-results>
             <table className="w-full min-w-max border-collapse text-sm">
               <thead>
@@ -290,18 +464,34 @@ export function BenchmarkPage() {
                 </tr>
               </thead>
               <tbody>
-                {blocks.map(({ variant, runs, medians, spreads, rate }) => (
+                {blocks.map(({ variant, runs, medians, spreads, rate, pool }) => {
+                  const checked = selection.includes(variant.id)
+                  return (
                   <Fragment key={variant.id}>
-                    <tr className="border-t border-line bg-sunken/60">
+                    <tr className="border-t border-line bg-sunken/60" data-benchmark-group={variant.id}>
                       <th scope="rowgroup" colSpan={columnCount} className="sticky left-0 px-3 py-2 text-left font-medium">
-                        <span className="inline-flex items-center gap-2">
+                        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          {benchmark.variants.length > 2 ? (
+                            <input
+                              type="checkbox"
+                              className="size-4 accent-accent"
+                              checked={checked}
+                              disabled={!checked && selection.length >= MAX_BENCHMARK_COMPARISON_VARIANTS}
+                              aria-label={t('benchmark.compare.toggle', { name: nameOf(variant.id).text })}
+                              onChange={() => toggleCompared(variant.id)}
+                              data-compare-check={variant.id}
+                            />
+                          ) : null}
                           <AgentIcon agent={variantAgent(variant)} size={14} />
                           <span className="text-ink-faint">{AGENT_LABELS[variantAgent(variant)]}</span>
                           <span>{nameOf(variant.id).label}</span>
-                          {/* An alias such as “default” names no generation: show what the CLI announced. */}
-                          {announcedModel(runs, variant) ? <span className="text-xs text-ink-faint">· {announcedModel(runs, variant)}</span> : null}
-                          {modelsAccount(variant.config) ? <span className="text-xs text-ink-faint">· {t('benchmark.table.account')}</span> : null}
-                          {cliVersion(runs) ? <span className="text-xs text-ink-faint">· v{cliVersion(runs)}</span> : null}
+                          {/* The exact model and effort behind a short name, as the CLI announced them. */}
+                          {variant.technicalLabel !== variant.label ? <span className="text-xs font-normal text-ink-faint">· {variant.technicalLabel}</span> : null}
+                          {modelsAccount(variant.config) ? <span className="text-xs font-normal text-ink-faint">· {t('benchmark.table.account')}</span> : null}
+                          {cliVersion(runs) ? <span className="text-xs font-normal text-ink-faint">· v{cliVersion(runs)}</span> : null}
+                          {variant.addedAt ? (
+                            <span className="text-xs font-normal text-ink-faint" title={t('benchmark.page.addedHint')}>· {t('benchmark.page.added', { date: new Date(variant.addedAt).toLocaleDateString(lang, { dateStyle: 'medium' }) })}</span>
+                          ) : null}
                           {rate && rate.checked > 0 ? (
                             <Badge tone={rate.passed === rate.checked ? 'positive' : rate.passed === 0 ? 'critical' : 'caution'}>
                               {t('benchmark.table.passRate', { passed: rate.passed, checked: rate.checked })}
@@ -346,8 +536,15 @@ export function BenchmarkPage() {
                       </tr>
                     ))}
                     {runs.length > 1 ? (
-                      <tr className="border-t border-line/60 text-ink-soft" data-benchmark-median>
-                        <td className="sticky left-0 bg-surface px-3 py-1.5 text-xs font-medium whitespace-nowrap">{t('benchmark.table.median')}</td>
+                      <tr className="border-t border-line/60 text-ink-soft" data-benchmark-median data-median-pool={pool ?? undefined}>
+                        <td className="sticky left-0 bg-surface px-3 py-1.5 text-xs font-medium whitespace-nowrap">
+                          {t('benchmark.table.median')}
+                          {pool ? (
+                            <span className={cx('block text-[0.6875rem] font-normal', pool === 'failed' ? 'text-caution' : 'text-ink-faint')}>
+                              {t(pool === 'failed' ? 'benchmark.compare.failedOnly' : 'benchmark.table.medianSucceeded')}
+                            </span>
+                          ) : null}
+                        </td>
                         <td />
                         {benchmark.checkScript ? <td /> : null}
                         {metricKeys.map((key) => {
@@ -366,7 +563,8 @@ export function BenchmarkPage() {
                       </tr>
                     ) : null}
                   </Fragment>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -378,6 +576,7 @@ export function BenchmarkPage() {
       </div>
 
       {sharing ? <Suspense fallback={null}><BenchmarkShareDialog benchmark={benchmark} onClose={() => setSharing(false)} /></Suspense> : null}
+      {lineup ? <Suspense fallback={null}><LineupDialog benchmark={benchmark} intent={lineup} onClose={() => setLineup(null)} /></Suspense> : null}
 
       <ConfirmDialog
         open={confirming}
@@ -458,12 +657,6 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   )
 }
 
-/** Model reported at session start when it adds to the configured value and to the label. */
-function announcedModel(runs: BenchmarkRunDto[], variant: BenchmarkVariant): string | null {
-  const model = runs.map((run) => run.metrics?.model ?? null).find((value) => value !== null) ?? null
-  return model && model !== variant.config.model && !variant.label.includes(model) ? model : null
-}
-
 /** CLI release shared by a variant's runs; the first one known when they differ. */
 function cliVersion(runs: BenchmarkRunDto[]): string | null {
   return runs.map((run) => run.cliVersion).find((value) => value !== null) ?? null
@@ -481,33 +674,54 @@ function toolBreakdown(run: BenchmarkRunDto): string | undefined {
 }
 
 interface VariantBlock {
-  variant: BenchmarkVariant
+  variant: BenchmarkVariantDto
   runs: BenchmarkRunDto[]
   medians: Partial<Record<MetricKey, number | null>>
   spreads: Partial<Record<MetricKey, { min: number; max: number } | null>>
   rate: { passed: number; checked: number } | null
+  /** Per measure, whether its median may rank: false when it rests on failed runs only. */
+  eligible: Partial<Record<MetricKey, boolean>>
+  /**
+   * Which runs the medians stand on, when not all of them: `succeeded` when failed runs were
+   * left out, `failed` when no run succeeded and the medians come from failed ones.
+   */
+  pool: 'succeeded' | 'failed' | null
 }
 
+/**
+ * Medians follow the rule shared with Compare, the shared page and the slides: runs that succeeded
+ * (and passed the check) when there are any, every run otherwise. A run that crashed after thirty
+ * seconds would otherwise make its variant look fast, and the sort name another winner than the
+ * slides. Each run keeps its own row, so nothing measured disappears.
+ */
 function variantBlocks(benchmark: BenchmarkDto, sort: Sort | null): VariantBlock[] {
   const blocks = benchmark.variants.map((variant): VariantBlock => {
     const runs = benchmark.runs.filter((run) => run.variantId === variant.id).sort((a, b) => a.repetition - b.repetition)
     const medians: VariantBlock['medians'] = {}
     const spreads: VariantBlock['spreads'] = {}
+    const eligible: VariantBlock['eligible'] = {}
     for (const key of METRIC_KEYS) {
-      const values = runs.map((run) => metricValue(run, key))
-      medians[key] = median(values)
-      spreads[key] = spread(values)
+      const measure = variantMeasure(benchmark, variant.id, key)
+      medians[key] = measure.median
+      spreads[key] = measure.count > 1 && measure.min !== null && measure.max !== null ? { min: measure.min, max: measure.max } : null
+      eligible[key] = measure.eligible
     }
-    return { variant, runs, medians, spreads, rate: passRate(benchmark, runs) }
+    const succeeded = eligibleRuns(benchmark, runs).length
+    const settled = runs.filter((run) => run.metrics !== null).length
+    const pool = succeeded === 0 ? (settled > 0 ? 'failed' : null) : succeeded < settled ? 'succeeded' : null
+    return { variant, runs, medians, spreads, rate: passRate(benchmark, runs), eligible, pool }
   })
   if (!sort) return blocks
-  // Unreported values sink to the bottom whatever the direction: they are not small, they are unknown.
+  // Unreported values sink to the bottom whatever the direction: they are not small, they are
+  // unknown. Medians of failed runs only come just before them, as on the slides' ranking: a run
+  // that crashed after twenty seconds is not the fastest one.
+  const standing = (block: VariantBlock) => ((block.medians[sort.key] ?? null) === null ? 2 : block.eligible[sort.key] ? 0 : 1)
   return [...blocks].sort((a, b) => {
+    const rank = standing(a) - standing(b)
+    if (rank !== 0) return rank
     const left = a.medians[sort.key] ?? null
     const right = b.medians[sort.key] ?? null
-    if (left === null && right === null) return 0
-    if (left === null) return 1
-    if (right === null) return -1
+    if (left === null || right === null) return 0
     return sort.direction === 'asc' ? left - right : right - left
   })
 }

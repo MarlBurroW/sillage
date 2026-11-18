@@ -100,7 +100,8 @@ async function writeFolder(folder, files) {
 }
 
 const metrics = (durationMs, costUsd, model) => JSON.stringify({
-  version: 2, durationMs, waitingMs: 0, firstTextMs: 4200, inputTokens: Math.round(durationMs / 2), outputTokens: Math.round(durationMs / 9),
+  // The current fold version: an older snapshot would be refolded from a journal these seeds do not have.
+  version: 3, durationMs, waitingMs: 0, firstTextMs: 4200, inputTokens: Math.round(durationMs / 2), outputTokens: Math.round(durationMs / 9),
   cacheReadTokens: 38462, cacheCreationTokens: 22512, costUsd, toolCalls: 7, toolErrors: 0, toolDurationMs: 900,
   assistantMessages: 4, outputChars: 2400, contextTokens: 35000, model, toolsByName: { Write: 4, Bash: 3 },
 })

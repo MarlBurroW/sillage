@@ -721,10 +721,40 @@ export const benchmarks = sqliteTable(
      * the benchmark they all repeat. No foreign key: deleting the original keeps its reruns.
      */
     seriesId: text('series_id'),
+    /**
+     * JSON BenchmarkComparison[]: comparisons kept with the benchmark (two models of the same
+     * range, say), featured on shared pages and as slides. NULL for none. Pruned when a variant
+     * is removed, so every id names an existing variant.
+     */
+    comparisons: text('comparisons'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
   (t) => [index('idx_benchmarks_user').on(t.userId, t.createdAt), index('idx_benchmarks_series').on(t.seriesId)],
+)
+
+/**
+ * A saved starting point for new benchmarks: a lineup, how much it runs, its comparisons, and
+ * optionally a prompt and check script. Personal like benchmarks. A table rather than a user
+ * settings key: one stored configuration that stops parsing must flag that preset alone, not
+ * reset them all at the next settings write.
+ */
+export const benchmarkPresets = sqliteTable(
+  'benchmark_presets',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** Trimmed lowercase name: `Frontier` and `frontier` cannot coexist for one account. */
+    nameKey: text('name_key').notNull(),
+    /** JSON BenchmarkPresetData minus the name, read leniently. */
+    data: text('data').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    /** Last benchmark launched from it, to list recently used presets first. */
+    lastUsedAt: timestamp('last_used_at'),
+  },
+  (t) => [uniqueIndex('idx_benchmark_presets_user_key').on(t.userId, t.nameKey)],
 )
 
 /**
@@ -1893,6 +1923,7 @@ export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
 export type BenchmarkRow = typeof benchmarks.$inferSelect
 export type BenchmarkRunRow = typeof benchmarkRuns.$inferSelect
+export type BenchmarkPresetRow = typeof benchmarkPresets.$inferSelect
 export type AutomationWebhookRow = typeof automationWebhooks.$inferSelect
 export type AutomationDeliveryRow = typeof automationDeliveries.$inferSelect
 export type ProjectActionRow = typeof projectActions.$inferSelect
@@ -1971,6 +2002,13 @@ export const benchmarkShares = sqliteTable('benchmark_shares', {
   createdAt: timestamp('created_at').notNull(),
   expiresAt: timestamp('expires_at'),
   revokedAt: timestamp('revoked_at'),
+  /**
+   * JSON BenchmarkShareOptions the link was published with, so it can be regenerated under the
+   * same address once the benchmark gained variants or ratings. NULL on links published before.
+   */
+  options: text('options'),
+  /** Last regeneration; the snapshot stays frozen between two explicit refreshes. */
+  refreshedAt: timestamp('refreshed_at'),
 }, (t) => [index('idx_benchmark_shares_benchmark').on(t.benchmarkId)])
 
 export type AntigravityAccountRow = typeof antigravityAccounts.$inferSelect

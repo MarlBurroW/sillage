@@ -1,11 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import {
+  BENCHMARK_METRIC_KEYS,
   MAX_BENCHMARK_RATING,
+  benchmarkLiveUrl,
+  benchmarkMetricValue,
   benchmarkSeriesRoot,
+  benchmarkShareOptionsSchema,
+  eligibleRuns,
+  median,
   variantAgent,
   variantEffort,
   type BenchmarkDto,
+  type BenchmarkMetricKey,
+  type BenchmarkPresetBody,
+  type BenchmarkPresetDto,
   type BenchmarkRunDto,
   type BenchmarkShareDto,
   type BenchmarkShareOptions,
@@ -13,6 +22,8 @@ import {
   type CreateBenchmarkBody,
   type PublishBenchmarkShareBody,
   type RateBenchmarkRunBody,
+  type UpdateBenchmarkComparisonsBody,
+  type UpdateBenchmarkLineupBody,
   type UpdateBenchmarkSettingsBody,
 } from '@sillage/protocol'
 import { api } from './api'
@@ -128,6 +139,77 @@ export function useRerunBenchmark() {
   })
 }
 
+/** Puts a saved benchmark in the cached list at once: dialogs close on success. */
+function usePatchBenchmark() {
+  const queryClient = useQueryClient()
+  return (saved: BenchmarkDto) =>
+    queryClient.setQueryData<BenchmarkDto[]>(BENCHMARKS_KEY, (list) => list?.map((benchmark) => (benchmark.id === saved.id ? saved : benchmark)))
+}
+
+/**
+ * Saves the whole ordered lineup of an existing benchmark: order, names, new variants (which
+ * queue their own runs) and removals. Settings of variants that ran stay frozen on the server.
+ */
+export function useUpdateBenchmarkLineup() {
+  const patch = usePatchBenchmark()
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: ({ id, lineup }: { id: string; lineup: UpdateBenchmarkLineupBody }) =>
+      api.put<BenchmarkDto>(`/api/benchmarks/${id}/lineup`, lineup),
+    onSuccess: (saved) => {
+      patch(saved)
+      invalidate()
+    },
+  })
+}
+
+/** Replaces the comparisons kept with a benchmark. */
+export function useUpdateBenchmarkComparisons() {
+  const patch = usePatchBenchmark()
+  return useMutation({
+    mutationFn: ({ id, comparisons }: { id: string; comparisons: UpdateBenchmarkComparisonsBody['comparisons'] }) =>
+      api.put<BenchmarkDto>(`/api/benchmarks/${id}/comparisons`, { comparisons }),
+    onSuccess: patch,
+  })
+}
+
+const PRESETS_KEY = ['benchmark-presets']
+
+/** The account's presets, recently used first. */
+export function useBenchmarkPresets(enabled = true) {
+  return useQuery({
+    queryKey: PRESETS_KEY,
+    queryFn: () => api.get<BenchmarkPresetDto[]>('/api/benchmark-presets'),
+    enabled,
+    staleTime: 30_000,
+  })
+}
+
+export function useCreateBenchmarkPreset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: BenchmarkPresetBody) => api.post<BenchmarkPresetDto>('/api/benchmark-presets', body),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: PRESETS_KEY }),
+  })
+}
+
+/** Whole replacement: renaming sends the preset back with its new name. */
+export function useUpdateBenchmarkPreset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: BenchmarkPresetBody }) => api.put<BenchmarkPresetDto>(`/api/benchmark-presets/${id}`, body),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: PRESETS_KEY }),
+  })
+}
+
+export function useDeleteBenchmarkPreset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/api/benchmark-presets/${id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: PRESETS_KEY }),
+  })
+}
+
 /**
  * Ratings apply to the cached list before the server answers: a blind pass rates several runs in
  * a row, and stars must not lag. Only the rated run is patched, from the click and then from the
@@ -162,9 +244,15 @@ export function benchmarkSeries(all: BenchmarkDto[], benchmark: BenchmarkDto): B
  * Blind review of one benchmark: variants shuffled and named by letter until revealed. Kept in
  * local storage so a reload mid-review keeps the same letters, which a rating may refer to. The
  * shuffle is per device: ratings are what the server keeps, never the mapping.
+ *
+ * The shuffled order itself is stored, not a seed over the order of the day: a variant added to
+ * the benchmark, or a lineup reordered, during a review would otherwise re-letter every card.
+ * Variants added since the review started take the next letters; removed ones drop out.
  */
 interface BlindState {
-  seed: number
+  order?: string[]
+  /** Reviews started before the order was stored: a seed over the lineup's order then. */
+  seed?: number
   revealed: boolean
 }
 
@@ -173,7 +261,8 @@ const blindKey = (benchmarkId: string) => `sillage.benchmark.blind.${benchmarkId
 function readBlind(benchmarkId: string): BlindState | null {
   try {
     const raw = localStorage.getItem(blindKey(benchmarkId))
-    return raw ? (JSON.parse(raw) as BlindState) : null
+    const parsed = raw ? (JSON.parse(raw) as BlindState) : null
+    return parsed && (Array.isArray(parsed.order) || typeof parsed.seed === 'number') ? parsed : null
   } catch {
     return null
   }
@@ -191,15 +280,33 @@ function shuffled<T>(items: T[], seed: number): T[] {
   return copy
 }
 
+/** The review's order over today's lineup: stored ids that still exist, then the newcomers. */
+function blindOrder(state: BlindState, variantIds: string[]): string[] {
+  const stored = state.order ?? shuffled(variantIds, state.seed ?? 1)
+  const known = stored.filter((id) => variantIds.includes(id))
+  return [...known, ...variantIds.filter((id) => !known.includes(id))]
+}
+
 export function useBlindReview(benchmarkId: string, variantIds: string[]) {
   const [state, setState] = useState<BlindState | null>(() => readBlind(benchmarkId))
   const write = useCallback((next: BlindState | null) => {
     setState(next)
-    if (next) localStorage.setItem(blindKey(benchmarkId), JSON.stringify(next))
-    else localStorage.removeItem(blindKey(benchmarkId))
+    try {
+      if (next) localStorage.setItem(blindKey(benchmarkId), JSON.stringify(next))
+      else localStorage.removeItem(blindKey(benchmarkId))
+    } catch { /* private mode: the review lasts for the page */ }
   }, [benchmarkId])
+  const order = useMemo(() => (state ? blindOrder(state, variantIds) : variantIds), [state, variantIds])
+  // The order is written back whenever the lineup moved it: a seed is frozen the first time it is
+  // read, removed variants leave it, newcomers join it once. Recomputed on every render instead,
+  // newcomers would swap letters when the lineup is reordered, and an id given again to a new
+  // variant would take the letter of the one it replaced.
+  useEffect(() => {
+    if (!state || variantIds.length === 0) return
+    const stored = state.order
+    if (!stored || stored.length !== order.length || stored.some((id, index) => id !== order[index])) write({ order, revealed: state.revealed })
+  }, [state, order, variantIds.length, write])
   const active = state !== null && !state.revealed
-  const order = useMemo(() => (state ? shuffled(variantIds, state.seed) : variantIds), [state, variantIds])
   return {
     /** Variant names and settings are hidden. */
     active,
@@ -208,8 +315,8 @@ export function useBlindReview(benchmarkId: string, variantIds: string[]) {
     /** Variant ids in display order while blind or revealed, original order otherwise. */
     order,
     letterOf: (variantId: string) => (state ? String.fromCharCode(65 + order.indexOf(variantId)) : null),
-    start: () => write({ seed: Math.floor(Math.random() * 2147483647) + 1, revealed: false }),
-    reveal: () => state && write({ ...state, revealed: true }),
+    start: () => write({ order: shuffled(variantIds, Math.floor(Math.random() * 2147483647) + 1), revealed: false }),
+    reveal: () => state && write({ ...state, order, revealed: true }),
     reset: () => write(null),
   }
 }
@@ -266,41 +373,9 @@ export const RUN_TONES: Record<BenchmarkRunDto['status'], string> = {
   cancelled: 'bg-line-strong',
 }
 
-/** Measurements shown as table columns, in reading order. Each reads one number from the metrics. */
-export type MetricKey =
-  | 'rating'
-  | 'durationMs'
-  | 'waitingMs'
-  | 'firstTextMs'
-  | 'inputTokens'
-  | 'outputTokens'
-  | 'cacheReadTokens'
-  | 'cacheCreationTokens'
-  | 'costUsd'
-  | 'toolCalls'
-  | 'toolErrors'
-  | 'toolDurationMs'
-  | 'assistantMessages'
-  | 'outputChars'
-  | 'contextTokens'
-
-export const METRIC_KEYS: MetricKey[] = [
-  'rating',
-  'durationMs',
-  'waitingMs',
-  'firstTextMs',
-  'inputTokens',
-  'outputTokens',
-  'cacheReadTokens',
-  'cacheCreationTokens',
-  'costUsd',
-  'toolCalls',
-  'toolErrors',
-  'toolDurationMs',
-  'assistantMessages',
-  'outputChars',
-  'contextTokens',
-]
+/** Measurements shown as table columns, in reading order; the numbers come from the shared stats module. */
+export type MetricKey = BenchmarkMetricKey
+export const METRIC_KEYS: MetricKey[] = BENCHMARK_METRIC_KEYS
 
 export const METRIC_LABELS: Record<MetricKey, MessageKey> = {
   rating: 'benchmark.metric.rating',
@@ -320,12 +395,7 @@ export const METRIC_LABELS: Record<MetricKey, MessageKey> = {
   contextTokens: 'benchmark.metric.context',
 }
 
-export function metricValue(run: BenchmarkRunDto, key: MetricKey): number | null {
-  if (key === 'rating') return run.rating
-  if (!run.metrics) return null
-  // Measurements folded before a field existed read as unreported rather than undefined.
-  return run.metrics[key] ?? null
-}
+export const metricValue = benchmarkMetricValue
 
 /**
  * Columns worth showing for this benchmark. Human waiting appears only when a run waited: in a
@@ -364,27 +434,8 @@ export function formatDuration(ms: number, locale: string): string {
   return `${minutes} min ${String(rest).padStart(2, '0')} s`
 }
 
-/** Median of reported values; null when nothing was reported. Medians resist one slow outlier better than means. */
-export function median(values: (number | null)[]): number | null {
-  const known = values.filter((value): value is number => value !== null).sort((a, b) => a - b)
-  if (known.length === 0) return null
-  const middle = Math.floor(known.length / 2)
-  return known.length % 2 === 1 ? known[middle]! : (known[middle - 1]! + known[middle]!) / 2
-}
-
-/** Smallest and largest reported values, for the spread under a median. Null below two values. */
-export function spread(values: (number | null)[]): { min: number; max: number } | null {
-  const known = values.filter((value): value is number => value !== null)
-  if (known.length < 2) return null
-  return { min: Math.min(...known), max: Math.max(...known) }
-}
-
-/** Runs whose script ran, and how many passed. Null when the benchmark has no script. */
-export function passRate(benchmark: BenchmarkDto, runs: BenchmarkRunDto[]): { passed: number; checked: number } | null {
-  if (!benchmark.checkScript) return null
-  const checked = runs.filter((run) => run.check !== null)
-  return { passed: checked.filter((run) => run.check?.passed).length, checked: checked.length }
-}
+// The pure numbers live in the protocol, shared with the shared pages and the slides.
+export { median, niceCeiling, passRate, spread } from '@sillage/protocol'
 
 /** File-system-safe stem for exports: the benchmark name, or its id when nothing survives. */
 function exportStem(benchmark: BenchmarkDto): string {
@@ -455,14 +506,28 @@ export function useRevokeBenchmarkShare(benchmarkId: string) {
   })
 }
 
+/** Regenerates a published link under the same address, with the options it was published with. */
+export function useRefreshBenchmarkShare(benchmarkId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (shareId: string) => api.post<BenchmarkShareDto>(`/api/benchmarks/${benchmarkId}/share/${shareId}/refresh`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: shareKey(benchmarkId) }),
+  })
+}
+
+/** What a share or a presentation starts from: everything shown, names visible, in the reader's language. */
+export function defaultShareOptions(benchmark: Pick<BenchmarkDto, 'name'>, lang: string): BenchmarkShareOptions {
+  return benchmarkShareOptionsSchema.parse({ title: benchmark.name, locale: lang.startsWith('fr') ? 'fr' : 'en' })
+}
+
 /** The same page as a public link, as a zip to send or host anywhere. A plain link: the browser downloads it. */
 export function benchmarkArchiveUrl(benchmarkId: string, options: BenchmarkShareOptions): string {
   return `/api/benchmarks/${benchmarkId}/archive?options=${encodeURIComponent(JSON.stringify(options))}`
 }
 
-/** Median of one measure over a variant's settled runs, for summaries that name a winner. */
+/** Median of one measure over a variant's eligible runs (succeeded, check passed), for summaries that name a winner. */
 export function variantMedian(benchmark: BenchmarkDto, variantId: string, key: MetricKey): number | null {
-  return median(benchmark.runs.filter((run) => run.variantId === variantId && run.status === 'succeeded').map((run) => metricValue(run, key)))
+  return median(eligibleRuns(benchmark, benchmark.runs.filter((run) => run.variantId === variantId)).map((run) => metricValue(run, key)))
 }
 
 /**
@@ -498,4 +563,49 @@ export function useOutputsLayout(): [OutputsLayout, (change: Partial<OutputsLayo
     return next
   }), [])
   return [layout, update]
+}
+
+const shareOptionsKey = (benchmarkId: string) => `sillage.benchmark.share.${benchmarkId}`
+
+/**
+ * The share window's last options for a benchmark, on this device, over today's defaults: the
+ * page header's Present button then opens the slides as they were last prepared there.
+ */
+export function readShareOptions(benchmark: Pick<BenchmarkDto, 'id' | 'name'>, lang: string): BenchmarkShareOptions {
+  const defaults = defaultShareOptions(benchmark, lang)
+  try {
+    const raw = localStorage.getItem(shareOptionsKey(benchmark.id))
+    const stored: unknown = raw ? JSON.parse(raw) : null
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return defaults
+    // Field by field: the window writes on every keystroke, so a title left blank must not take
+    // the blind switch, the reveal timing or the featured comparisons down with it.
+    const options: Record<string, unknown> = { ...defaults }
+    const shape = benchmarkShareOptionsSchema.shape
+    for (const key of Object.keys(shape) as (keyof typeof shape)[]) {
+      const field = shape[key].safeParse((stored as Record<string, unknown>)[key])
+      if (field.success && (stored as Record<string, unknown>)[key] !== undefined) options[key] = field.data
+    }
+    const parsed = benchmarkShareOptionsSchema.safeParse(options)
+    return parsed.success ? parsed.data : defaults
+  } catch {
+    return defaults
+  }
+}
+
+export function writeShareOptions(benchmarkId: string, options: BenchmarkShareOptions): void {
+  try { localStorage.setItem(shareOptionsKey(benchmarkId), JSON.stringify(options)) } catch { /* private mode: the choice lasts for the window */ }
+}
+
+/**
+ * Opens the live slides in a window of their own, sized for a 1080p capture: nothing of the app
+ * (its update prompt, its sidebar) can then appear in a recording. Reusing the window's name
+ * brings an open slideshow back instead of stacking a second one.
+ */
+export function openSlides(benchmarkId: string, options: BenchmarkShareOptions): void {
+  window.open(benchmarkLiveUrl(benchmarkId, 'slides', options), `sillage-slides-${benchmarkId}`, 'popup,width=1920,height=1080')
+}
+
+/** The shared page as it would be published, rendered live over the run folders. */
+export function openPagePreview(benchmarkId: string, options: BenchmarkShareOptions): void {
+  window.open(benchmarkLiveUrl(benchmarkId, 'page', options), `sillage-page-${benchmarkId}`)
 }

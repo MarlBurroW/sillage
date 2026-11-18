@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { priceCatalogs, type Db } from '@sillage/db'
 import type { PriceCatalogStatus } from '@sillage/protocol'
 import bundled from './bundled.json' with { type: 'json' }
-import { findPrice, reduceLitellm, reduceModelsDev, type ModelPrice, type PriceTable } from './prices.js'
+import { findName, findPrice, hasNames, ratesOf, reduceLitellm, reduceModelsDev, type ModelPrice, type PriceTable } from './prices.js'
 
 const HOUR = 60 * 60 * 1000
 /** Prices change a few times a year: a daily check is already generous. */
@@ -33,9 +33,13 @@ export class PriceCatalog {
   private readonly loaded = new Map<SourceId, Loaded>()
   private error: PriceCatalogStatus['error'] = null
   private inflight: Promise<void> | null = null
+  /** Names of the shipped list: a stored table reduced before names were kept has none. */
+  private readonly shippedNames: PriceTable
+  private namesRequested = false
 
   constructor(private readonly db: Db, private readonly download: Download = fetch, private readonly now = Date.now) {
     const shipped = bundled as unknown as { fetchedAt: number } & Record<SourceId, PriceTable>
+    this.shippedNames = shipped.modelsdev ?? {}
     for (const source of PRICE_SOURCES) {
       const row = db.select().from(priceCatalogs).where(eq(priceCatalogs.source, source.id)).get()
       let table: PriceTable | null = null
@@ -47,7 +51,17 @@ export class PriceCatalog {
   }
 
   priceOf(model: string): ModelPrice | null {
-    return findPrice(PRICE_SOURCES.map((source) => this.loaded.get(source.id)!.table), model)
+    const price = findPrice(this.tables(), model)
+    return price ? ratesOf(price) : null
+  }
+
+  /** Public name of a model ("GPT-6.2 Astra"), or null when no list names it. */
+  nameOf(model: string): string | null {
+    return findName([...this.tables(), this.shippedNames], model)
+  }
+
+  private tables(): PriceTable[] {
+    return PRICE_SOURCES.map((source) => this.loaded.get(source.id)!.table)
   }
 
   /** Describes the reference list: the fallback only fills gaps and its age says little. */
@@ -59,7 +73,12 @@ export class PriceCatalog {
   start(): void {
     const check = () => {
       const reference = this.loaded.get(PRICE_SOURCES[0].id)!
-      if (reference.checkedAt === null || this.now() - reference.checkedAt >= CHECK_EVERY) void this.refresh()
+      // A models.dev list stored before names were kept would leave benchmarks unnamed for a day.
+      const unnamed = !this.namesRequested && !hasNames(this.loaded.get('modelsdev')!.table)
+      if (reference.checkedAt === null || this.now() - reference.checkedAt >= CHECK_EVERY || unnamed) {
+        this.namesRequested = true
+        void this.refresh()
+      }
     }
     check()
     setInterval(check, HOUR).unref()
@@ -76,9 +95,11 @@ export class PriceCatalog {
     // One at a time: each list is several megabytes of JSON while it is being reduced.
     for (const source of PRICE_SOURCES) {
       const current = this.loaded.get(source.id)!
+      // An unchanged list answers 304 and would never be reduced again with its names.
+      const unnamed = source.id === 'modelsdev' && !hasNames(current.table)
       try {
         const response = await this.download(source.url, {
-          headers: { 'user-agent': 'sillage-prices', ...(current.etag ? { 'if-none-match': current.etag } : {}) },
+          headers: { 'user-agent': 'sillage-prices', ...(current.etag && !unnamed ? { 'if-none-match': current.etag } : {}) },
           signal: AbortSignal.timeout(30_000),
         })
         const checkedAt = this.now()

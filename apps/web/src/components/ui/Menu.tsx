@@ -8,9 +8,11 @@ interface MenuProps {
   children: ReactNode
   align?: 'start' | 'end'
   onOpenChange?: (open: boolean) => void
+  /** Lists that can grow (saved presets, recent items) scroll within the space left on screen. */
+  scrollable?: boolean
 }
 
-export function Menu({ trigger, children, align = 'end', onOpenChange }: MenuProps) {
+export function Menu({ trigger, children, align = 'end', onOpenChange, scrollable = false }: MenuProps) {
   return (
     <DropdownMenu.Root onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
@@ -18,9 +20,11 @@ export function Menu({ trigger, children, align = 'end', onOpenChange }: MenuPro
         <DropdownMenu.Content
           align={align}
           sideOffset={4}
+          collisionPadding={scrollable ? 8 : undefined}
           className={cx(
-            'z-50 min-w-44 overflow-hidden rounded-lg border border-line p-1',
+            'z-50 min-w-44 rounded-lg border border-line p-1',
             'surface shadow-pop',
+            scrollable ? 'max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overscroll-contain' : 'overflow-hidden',
           )}
         >
           {children}

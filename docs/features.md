@@ -207,13 +207,30 @@ The periodic cleanup removes expired, revoked and orphaned files.
   question or plan waits for you and while a session sits idle between turns, and
   keeps running for background work the agent started. That wait has its own column
   and does not count towards the maximum duration either. A run waiting for you shows
-  in **Activity**, on the rail and at the top of its benchmark. Input tokens
+  in **Activity**, on the rail and at the top of its benchmark. The creation form
+  lists variants as compact rows to drag into order or sort by public list price,
+  effort or CLI; the order is the one runs launch in and pages show. Save a lineup,
+  its run settings and comparisons as a preset, or start from an existing benchmark.
+  Continue a benchmark when a new model comes out: add variants, which run on the
+  same prompt and files, rename, reorder or remove them (up to 24 variants, 12 added
+  at a time). Variants are named after the model that answered, with its public
+  name from models.dev. Compare two to four variants head to head, and keep the
+  comparisons you care about with the benchmark. Input tokens
   include cache reads and writes across requests; cache columns are subsets of that
   total. Reported auxiliary model usage is included. Cost applies today's public API
   prices to the tokens of every CLI, as on the Consumption page, and stays blank for a
   model without a public price; a published share page keeps the prices of its day. Existing measurements are
   refreshed from their journals up to the run's finish time. Outputs of the same
   kind align side by side even when agents choose different filenames.
+- **Sharing a benchmark.** A benchmark leaves Sillage as a page anyone can open: the
+  prompt, each variant's production running live when it is made of plain files, the
+  numbers with a chart, the final messages, and comparisons readers pick themselves.
+  Beside it comes a slideshow made for screen sharing and video: one 16:9 slide per
+  model with its production and a band of measures, the featured comparisons, one
+  chart per measure and a podium, driven from the keyboard or a clicker, with a clean
+  mode for recording and an optional "guess the model" reveal. Both go out as a public
+  link on the Server edition (frozen until you refresh it under the same address) and
+  as a zip in both editions; **Present** opens the slideshow live from the benchmark.
 - **Consumption, at API prices.** The **Consumption** entry of the rail shows the
   tokens the instance processed and what the same work would cost through the public
   APIs: totals for a period, a chart per day or month by CLI, and one breakdown at a

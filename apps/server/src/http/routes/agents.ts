@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentKindSchema, compareCliVersions, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@sillage/protocol'
+import { agentKindSchema, compareCliVersions, PREFERRED_CLI_RELEASES, type AgentModelsDto, type ProjectCommandsDto } from '@sillage/protocol'
 import type { CliDescription } from '../../agents/cli-binary.js'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import { claudeCredential } from '../../agents/claude/credential.js'
+import type { PriceCatalog } from '../../pricing/catalog.js'
 import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../../codex-accounts/store.js'
@@ -46,6 +47,8 @@ export function registerAgentRoutes(
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
+  /** Absent in tests that do not look at prices: models are then listed as the CLI reports them. */
+  prices: PriceCatalog | null = null,
 ): void {
   /** CLI names come from requests: unknown names return 404 rather than silently defaulting. */
   /** Resolves additional account references with their owner: browser-provided IDs belonging to someone else must reveal neither tokens nor usage. Null for unknown accounts or CLIs without accounts. */
@@ -168,8 +171,9 @@ export function registerAgentRoutes(
     const credential = account ? accountCredential(adapter.kind, user.id, account) : undefined
     if (account && credential == null) throw new HttpError(404, 'agent_account_not_found', 'Unknown account for this CLI.')
 
+    let listing: AgentModelsDto
     try {
-      return await adapter.models(credential ?? undefined, refresh === '1')
+      listing = await adapter.models(credential ?? undefined, refresh === '1')
     } catch (err) {
       throw cliUnavailable(
         adapter,
@@ -177,6 +181,16 @@ export function registerAgentRoutes(
         'Could not read models from {label}: {error}.',
         err,
       )
+    }
+    if (!prices) return listing
+    // An alias is priced and named as the model it resolves to (the hint): 'opus' itself is in no list.
+    return {
+      ...listing,
+      models: listing.models.map((model) => {
+        const listed = (model.hint ? prices.priceOf(model.hint) : null) ?? prices.priceOf(model.value)
+        const publicName = (model.hint ? prices.nameOf(model.hint) : null) ?? prices.nameOf(model.value)
+        return { ...model, listPrice: listed, publicName }
+      }),
     }
   })
 

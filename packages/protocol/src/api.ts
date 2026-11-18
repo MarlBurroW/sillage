@@ -4,6 +4,7 @@ import { agentConfigSchema, type CodexMode } from './agent-config.js'
 // and this file needs the card badge. Nothing survives at runtime,
 // so there is no module cycle.
 import type { CardColumn, CardLinkDto } from './cards.js'
+import type { ModelListPrice } from './consumption.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpInstallScopeSchema, mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
@@ -811,6 +812,14 @@ export interface AgentModelDto {
   defaultEffort: string | null
   /** The model supports Claude Code fast mode. Always false for Codex. */
   supportsFastMode: boolean
+  /**
+   * Public list rates of the model behind this entry (an alias is priced as the model it resolves
+   * to), for sorting choices by price; null when the reference lists do not have it. Absent from
+   * sources that do not price models.
+   */
+  listPrice?: ModelListPrice | null
+  /** Name the public reference list gives this model ("GPT-6.2 Astra"); null when unlisted. */
+  publicName?: string | null
 }
 
 /**

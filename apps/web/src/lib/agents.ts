@@ -206,14 +206,22 @@ const modelsPath = (agent: AgentKind, account: string | null, refresh: boolean) 
  * updating the CLI exposes new models without changing Sillage.
  */
 export function useAgentModels(agent: AgentKind, enabled = true, account: string | null = null) {
-  return useQuery({
+  return useQuery(agentModelsQuery(agent, enabled, account))
+}
+
+/**
+ * The catalog query itself, for screens reading several catalogs at once (a benchmark lineup
+ * sorts by price across CLIs and accounts): same key and options, so they share one cache.
+ */
+export function agentModelsQuery(agent: AgentKind, enabled = true, account: string | null = null) {
+  return {
     queryKey: modelsKey(agent, account),
     queryFn: () => api.get<AgentModelsDto>(modelsPath(agent, account, false)),
     // The probe starts a CLI: do not rerun it on every composer mount or for conversations using another agent.
     staleTime: 60 * 60 * 1000,
     retry: false,
     enabled,
-  })
+  }
 }
 
 /** Explicit refetch bypassing the server cache too: a login or plan change does not wait an hour. */

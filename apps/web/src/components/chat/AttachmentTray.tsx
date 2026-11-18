@@ -59,6 +59,7 @@ export function AttachmentTray({
             )}
 
             <IconButton
+              type="button"
               label={t('composer.attachments.remove', { name: attachment.filename })}
               size="sm"
               onClick={() => onRemove(attachment.id)}

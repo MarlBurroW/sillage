@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { benchmarkPath, variantAgent, type BenchmarkDto } from '@sillage/protocol'
+import { benchmarkPath, variantAgent, type BenchmarkDto, type BenchmarkVariantDto } from '@sillage/protocol'
 import { METRIC_KEYS, METRIC_LABELS, formatMetric, isOpenRun, median, metricValue, passRate, type MetricKey } from '../../lib/benchmarks'
 import { formatDateTime } from '../../lib/schedules'
 import { locale, useTranslate } from '../../lib/i18n'
@@ -10,13 +10,23 @@ import { Select, cx } from '../ui'
 /**
  * The same benchmark over time: one column per run of the series, one row per variant, the
  * median of the chosen measure in each cell with the CLI release and announced model that
- * produced it. Variants line up by id because a rerun copies them unchanged.
+ * produced it. Variants line up by id because a rerun copies them unchanged and ids added to
+ * one member are never reused by another. Rows are the union of the members' lineups, in the
+ * current benchmark's order first: a model added to one run of the series still gets its row,
+ * with a dash where a member never had it.
  */
 export function SeriesComparison({ series, current }: { series: BenchmarkDto[]; current: string }) {
   const t = useTranslate()
   const lang = locale()
   const [metric, setMetric] = useState<MetricKey>('durationMs')
-  const variants = series[0]?.variants ?? []
+  const variants = useMemo(() => {
+    const members = [...series].sort((a, b) => Number(b.id === current) - Number(a.id === current))
+    const rows: BenchmarkVariantDto[] = []
+    for (const member of members) {
+      for (const variant of member.variants) if (!rows.some((row) => row.id === variant.id)) rows.push(variant)
+    }
+    return rows
+  }, [series, current])
 
   return (
     <section className="flex flex-col gap-4" data-benchmark-series>
@@ -49,8 +59,12 @@ export function SeriesComparison({ series, current }: { series: BenchmarkDto[]; 
               <tr key={variant.id} className="border-t border-line/60">
                 <th scope="row" className="sticky left-0 bg-surface px-3 py-2 text-left font-medium whitespace-nowrap">
                   <span className="inline-flex items-center gap-2"><AgentIcon agent={variantAgent(variant)} size={14} />{variant.label}</span>
+                  {variant.technicalLabel !== variant.label ? <span className="block pl-[1.375rem] text-[0.6875rem] font-normal text-ink-faint">{variant.technicalLabel}</span> : null}
                 </th>
                 {series.map((benchmark) => {
+                  if (!benchmark.variants.some((entry) => entry.id === variant.id)) {
+                    return <td key={benchmark.id} className="px-3 py-2 text-right align-top text-ink-faint" data-series-cell={`${benchmark.id}:${variant.id}`}>—</td>
+                  }
                   const runs = benchmark.runs.filter((run) => run.variantId === variant.id)
                   const value = median(runs.map((run) => metricValue(run, metric)))
                   const rate = passRate(benchmark, runs)

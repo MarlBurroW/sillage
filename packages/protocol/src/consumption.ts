@@ -29,6 +29,8 @@ export const modelPriceSchema = z.object({
   cacheWrite: z.number().nullable(),
   cacheWrite1h: z.number().nullable(),
 })
+/** A model's public list rates, as shown beside a model choice; never a charge on a subscription. */
+export type ModelListPrice = z.infer<typeof modelPriceSchema>
 
 export const priceCatalogStatusSchema = z.object({
   /** When the prices in use last changed. */

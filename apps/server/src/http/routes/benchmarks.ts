@@ -3,11 +3,12 @@ import { realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { BENCHMARK_PREVIEW_PREFIX, BENCHMARK_SHARE_PREFIX, benchmarkShareOptionsSchema, publishBenchmarkShareBodySchema, createBenchmarkBodySchema, updateBenchmarkSettingsBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto } from '@sillage/protocol'
+import { BENCHMARK_PREVIEW_PREFIX, BENCHMARK_SHARE_PREFIX, BENCHMARK_SLIDES_FILE, benchmarkShareOptionsSchema, publishBenchmarkShareBodySchema, createBenchmarkBodySchema, updateBenchmarkSettingsBodySchema, updateBenchmarkLineupBodySchema, updateBenchmarkComparisonsBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto, type BenchmarkShareOptions } from '@sillage/protocol'
 import { PREVIEW_POLICY, previewType } from '../../benchmarks/deliverables.js'
 import type { BenchmarkRunner } from '../../benchmarks/runner.js'
 import { BenchmarkShares } from '../../benchmarks/share.js'
-import { SHARE_PAGE_CSP, renderShareUnavailable } from '../../benchmarks/share-page.js'
+import { renderShareUnavailable } from '../../benchmarks/share-page.js'
+import { SHARE_PAGE_CSP } from '../../benchmarks/share-policy.js'
 import { streamArchive } from '../../workspace-archive.js'
 import { attachmentHeader } from '../attachment-header.js'
 import { resolveRealInside } from '../../workspace.js'
@@ -45,6 +46,21 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     return runner.dto(runner.load(row.id, user.id))
   })
 
+  /** Continuing a benchmark: the whole ordered lineup, with new variants, names and removals. */
+  app.put('/api/benchmarks/:id/lineup', async (request): Promise<BenchmarkDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await runner.updateLineup(id, user.id, updateBenchmarkLineupBodySchema.parse(request.body))
+    return runner.dto(runner.load(id, user.id))
+  })
+
+  app.put('/api/benchmarks/:id/comparisons', async (request): Promise<BenchmarkDto> => {
+    const user = requireUser(request)
+    const row = runner.load((request.params as { id: string }).id, user.id)
+    runner.updateComparisons(row.id, updateBenchmarkComparisonsBodySchema.parse(request.body).comparisons)
+    return runner.dto(runner.load(row.id, user.id))
+  })
+
   app.post('/api/benchmarks/:id/cancel', async (request): Promise<BenchmarkDto> => {
     const user = requireUser(request)
     const row = runner.load((request.params as { id: string }).id, user.id)
@@ -70,8 +86,11 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
   app.delete('/api/benchmarks/:id', async (request, reply) => {
     const user = requireUser(request)
     const row = runner.load((request.params as { id: string }).id, user.id)
-    await shares.removeFor(row.id)
+    // Folders go once their rows are gone: a refresh finishing in between then either swapped
+    // before this removal, or finds its link deleted and removes what it wrote.
+    const links = shares.linksOf(row.id)
     await runner.delete(row.id)
+    await shares.removeFolders(links)
     return reply.status(204).send()
   })
 
@@ -96,17 +115,17 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     return reply.status(204).send()
   })
 
+  /** Regenerates a published link under the same address, with the options it was published with. */
+  app.post('/api/benchmarks/:id/share/:shareId/refresh', async (request) => {
+    const user = requireUser(request)
+    const { id, shareId } = request.params as { id: string; shareId: string }
+    return shares.refresh(id, shareId, user.id)
+  })
+
   /** A GET so the browser downloads it as a file; the options travel as one JSON parameter. */
   app.get('/api/benchmarks/:id/archive', async (request, reply) => {
     const user = requireUser(request)
-    const { options } = z.object({ options: z.string().max(8000) }).parse(request.query)
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(options)
-    } catch {
-      throw badRequest('invalid_options', 'Invalid options.')
-    }
-    const archive = await shares.archive((request.params as { id: string }).id, user.id, benchmarkShareOptionsSchema.parse(parsed))
+    const archive = await shares.archive((request.params as { id: string }).id, user.id, shareOptionsParam(request.query))
     const stream = streamArchive(archive.items)
     stream.once('close', () => void archive.dispose())
     return reply
@@ -117,6 +136,27 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
       .send(stream)
   })
 
+  /**
+   * The owner's rendering of the shared page or of the slideshow over the run folders: to check a
+   * publication before sending it, and to present from the app. Navigations to `/api/` never get
+   * the app shell from the service worker. Same policy as a publication: the documents only run
+   * their pinned scripts and frame the productions through the sandboxed preview route.
+   */
+  app.get('/api/benchmarks/:id/live/:document', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, document } = request.params as { id: string; document: string }
+    if (document !== 'page' && document !== 'slides') throw notFound('not_found', 'Not found.')
+    const html = await shares.live(id, user.id, shareOptionsParam(request.query), document)
+    return reply
+      .header('content-security-policy', SHARE_PAGE_CSP)
+      .header('cache-control', 'no-store')
+      .header('referrer-policy', 'no-referrer')
+      .header('x-content-type-options', 'nosniff')
+      .header('x-robots-tag', 'noindex, nofollow, noarchive')
+      .type('text/html; charset=utf-8')
+      .send(html)
+  })
+
   // Without the trailing slash the page's relative links would resolve one level too high.
   app.get(`${BENCHMARK_SHARE_PREFIX}:token`, { logLevel: 'silent' }, (request, reply) => {
     const { token } = request.params as { token: string }
@@ -124,8 +164,9 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
   })
 
   /**
-   * A published benchmark: the page at the root, the copied productions under `runs/`. The page
-   * only runs its own pinned script; the productions get the same sandbox as the owner's previews.
+   * A published benchmark: the page and its slideshow at the root, the copied productions under
+   * `runs/`. The two documents only run their own pinned scripts; the productions get the same
+   * sandbox as the owner's previews.
    */
   app.get(`${BENCHMARK_SHARE_PREFIX}:token/*`, { logLevel: 'silent' }, async (request, reply) => {
     const { token, '*': rest } = request.params as { token: string; '*': string }
@@ -139,8 +180,9 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
       const locale = /^fr(?:[-,;]|$)/i.test(request.headers['accept-language'] ?? '') ? 'fr' : 'en'
       return reply.code(404).header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'").type('text/html; charset=utf-8').send(renderShareUnavailable(locale))
     }
-    if (!rest || rest === 'index.html') {
-      return reply.header('content-security-policy', SHARE_PAGE_CSP).type('text/html; charset=utf-8').send(createReadStream(join(root, 'index.html')))
+    const document = !rest || rest === 'index.html' ? 'index.html' : rest === BENCHMARK_SLIDES_FILE ? BENCHMARK_SLIDES_FILE : null
+    if (document && (await stat(join(root, document)).catch(() => null))?.isFile()) {
+      return reply.header('content-security-policy', SHARE_PAGE_CSP).type('text/html; charset=utf-8').send(createReadStream(join(root, document)))
     }
     return sendSandboxed(request, reply, root, rest)
   })
@@ -196,4 +238,19 @@ async function sendSandboxed(request: FastifyRequest, reply: FastifyReply, root:
       .send(createReadStream(real, { start: range.start, end: range.end }))
   }
   return reply.header('content-length', info.size).send(createReadStream(real))
+}
+
+/**
+ * Share options carried by a GET (archive, live renderings) as one JSON parameter: a plain link
+ * the browser can follow or download. Old payloads still parse, every new field has a default.
+ */
+function shareOptionsParam(query: unknown): BenchmarkShareOptions {
+  const { options } = z.object({ options: z.string().max(8000) }).parse(query)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(options)
+  } catch {
+    throw badRequest('invalid_options', 'Invalid options.')
+  }
+  return benchmarkShareOptionsSchema.parse(parsed)
 }

@@ -58,12 +58,27 @@ async function head(absolute: string, max = MAX_SCANNED_BYTES): Promise<string> 
   }
 }
 
+/** How much of a folder a verdict reads before giving up. */
+export interface WalkLimits {
+  files: number
+  bytes: number
+}
+
+/** A snapshot copies what it finds, so it stays small enough to copy on every publication. */
+export const SNAPSHOT_LIMITS: WalkLimits = { files: MAX_BENCHMARK_SHARE_RUN_FILES, bytes: MAX_BENCHMARK_SHARE_RUN_BYTES }
+
+/**
+ * A live rendering copies nothing and serves the folder in place: only the walk itself needs a
+ * bound, so a production too large to publish still shows to its owner.
+ */
+export const LIVE_LIMITS: WalkLimits = { files: 10 * MAX_BENCHMARK_SHARE_RUN_FILES, bytes: Number.POSITIVE_INFINITY }
+
 /**
  * Every file of the folder under the same rules as the deliverables list (no hidden files, no
  * tooling folders, no symlinks), without its display cap: a page needs all its assets. Null once
  * a limit is passed.
  */
-export async function walkRunFolder(root: string): Promise<RunFile[] | null> {
+export async function walkRunFolder(root: string, limits: WalkLimits = SNAPSHOT_LIMITS): Promise<RunFile[] | null> {
   const files: RunFile[] = []
   let bytes = 0
   const queue: string[] = ['']
@@ -83,7 +98,7 @@ export async function walkRunFolder(root: string): Promise<RunFile[] | null> {
       if (!info) continue
       bytes += info.size
       files.push({ path, sizeBytes: info.size })
-      if (files.length > MAX_BENCHMARK_SHARE_RUN_FILES || bytes > MAX_BENCHMARK_SHARE_RUN_BYTES) return null
+      if (files.length > limits.files || bytes > limits.bytes) return null
     }
   }
   return files
@@ -172,9 +187,9 @@ const blocked = (reason: BenchmarkExportBlocker): RunAssessment => ({ mode: 'non
 
 const total = (files: RunFile[]) => files.reduce((sum, file) => sum + file.sizeBytes, 0)
 
-export async function assessRunFolder(root: string | null): Promise<RunAssessment> {
+export async function assessRunFolder(root: string | null, limits: WalkLimits = SNAPSHOT_LIMITS): Promise<RunAssessment> {
   if (!root || !(await stat(root).catch(() => null))?.isDirectory()) return blocked('missing')
-  const files = await walkRunFolder(root)
+  const files = await walkRunFolder(root, limits)
   if (!files) return blocked('too_large')
   if (files.length === 0) return blocked('empty')
 

@@ -255,7 +255,8 @@ test('benchmark concurrency: numeric validation and compatibility with legacy cl
   for (const [input, expected] of [[undefined, 1], ['sequential', 1], ['parallel', 4], [7, 7], [60, 60]] as const) {
     assert.equal(createBenchmarkBodySchema.parse({ ...body, concurrency: input }).concurrency, expected)
   }
-  for (const concurrency of [0, -1, 1.5, 61, '', null]) {
+  // The ceiling follows the largest lineup a continued benchmark can reach (24 × 5 runs).
+  for (const concurrency of [0, -1, 1.5, 121, '', null]) {
     assert.equal(updateBenchmarkSettingsBodySchema.safeParse({ repetitions: 1, maxDurationMinutes: 20, concurrency }).success, false)
   }
 })
@@ -543,8 +544,13 @@ test('default labels name the model a run announced, written labels stay', (t) =
   db.insert(events).values({ conversationId: 'live-session', seq: 1, ts: 2, type: 'session.started', payload: JSON.stringify({ type: 'session.started', model: 'claude-opus-5-5' }) }).run()
   const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
   const runner = new BenchmarkRunner(ctx, { assertCliEnabled: () => undefined } as never, {} as never, {} as never, {} as never)
-  const labels = Object.fromEntries(runner.list('owner')[0]!.variants.map((variant) => [variant.id, variant.label]))
+  const listed = runner.list('owner')[0]!.variants
+  const labels = Object.fromEntries(listed.map((variant) => [variant.id, variant.label]))
+  // Without a price list there is no public name: pages show the technical label.
   assert.deepEqual(labels, { alias: 'claude-sonnet-5-5 · medium', unset: 'claude-opus-5-5 · medium', named: 'My pick', live: 'claude-opus-5-5 · medium', waiting: 'haiku · medium' })
+  const technical = Object.fromEntries(listed.map((variant) => [variant.id, variant.technicalLabel]))
+  assert.deepEqual(technical, { alias: 'claude-sonnet-5-5 · medium', unset: 'claude-opus-5-5 · medium', named: 'claude-haiku-5-5 · medium', live: 'claude-opus-5-5 · medium', waiting: 'haiku · medium' })
+  assert.deepEqual(listed.map((variant) => variant.labelIsCustom), [false, false, true, false, false])
 })
 
 test('benchmark timeout: time spent waiting for an answer does not count against the maximum duration', async (t) => {

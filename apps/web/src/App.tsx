@@ -1,8 +1,6 @@
 import { DiscussionFilesPage } from './routes/DiscussionFilesPage'
 import { PersonalMemoryPage } from './routes/PersonalMemoryPage'
 import { BenchmarksPage } from './routes/BenchmarksPage'
-import { NewBenchmarkPage } from './routes/NewBenchmarkPage'
-import { BenchmarkPage } from './routes/BenchmarkPage'
 import { NewsSettingsPage } from './routes/NewsSettingsPage'
 import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
@@ -29,6 +27,10 @@ const ConsumptionPage = lazy(() => import('./routes/ConsumptionPage').then((modu
 const WallPage = lazy(() => import('./routes/WallPage').then((module) => ({ default: module.WallPage })))
 // Onboarding runs once per account: its code, including QR generation, does not belong in the main bundle.
 const OnboardingPage = lazy(() => import('./routes/OnboardingPage').then((module) => ({ default: module.OnboardingPage })))
+// The benchmark form carries the lineup editor and presets: only people creating a benchmark load them.
+const NewBenchmarkPage = lazy(() => import('./routes/NewBenchmarkPage').then((module) => ({ default: module.NewBenchmarkPage })))
+// Same for a benchmark's page, with its tables, comparison and outputs viewer.
+const BenchmarkPage = lazy(() => import('./routes/BenchmarkPage').then((module) => ({ default: module.BenchmarkPage })))
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
@@ -142,8 +144,8 @@ export function App() {
           <Route path="/discussions/memory" element={<PersonalMemoryPage />} />
           <Route path="/discussions/:conversationId" element={<ConversationPage key="personal" />} />
           <Route path="/benchmarks" element={<BenchmarksPage />} />
-          <Route path="/benchmarks/new" element={<NewBenchmarkPage />} />
-          <Route path="/benchmarks/:id" element={<BenchmarkPage />} />
+          <Route path="/benchmarks/new" element={<Suspense fallback={null}><NewBenchmarkPage /></Suspense>} />
+          <Route path="/benchmarks/:id" element={<Suspense fallback={null}><BenchmarkPage /></Suspense>} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/consumption" element={<Suspense fallback={null}><ConsumptionPage /></Suspense>} />

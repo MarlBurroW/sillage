@@ -14,6 +14,11 @@ export interface ModelPrice {
   cacheRead: number | null
   cacheWrite: number | null
   cacheWrite1h: number | null
+  /**
+   * Public name, as models.dev spells it ("Claude Opus 5.5", "GPT-6.2 Astra"): benchmark pages
+   * name models with it. LiteLLM lists none, so only the models.dev table carries names.
+   */
+  name?: string
 }
 
 export type PriceTable = Record<string, ModelPrice>
@@ -60,6 +65,9 @@ export function reduceLitellm(json: unknown): PriceTable {
   return table
 }
 
+/** A name longer than this is not a model name; it would only stretch a slide. */
+const MAX_NAME_CHARS = 60
+
 export function reduceModelsDev(json: unknown): PriceTable {
   const table: PriceTable = {}
   const providers = record(json) ?? {}
@@ -69,7 +77,11 @@ export function reduceModelsDev(json: unknown): PriceTable {
       const input = rate(cost?.input)
       const output = rate(cost?.output)
       if (!cost || input === null || output === null) continue
-      table[`${vendor}/${id}`.toLowerCase()] = { input, output, cacheRead: rate(cost.cache_read), cacheWrite: rate(cost.cache_write), cacheWrite1h: null }
+      const name = typeof record(value)?.name === 'string' ? (record(value)!.name as string).trim().slice(0, MAX_NAME_CHARS) : ''
+      table[`${vendor}/${id}`.toLowerCase()] = {
+        input, output, cacheRead: rate(cost.cache_read), cacheWrite: rate(cost.cache_write), cacheWrite1h: null,
+        ...(name ? { name } : {}),
+      }
     }
   }
   return table
@@ -97,6 +109,27 @@ export function findPrice(tables: PriceTable[], model: string): ModelPrice | nul
     }
   }
   return null
+}
+
+/** Same lookup order as `findPrice`, among entries that carry a public name. */
+export function findName(tables: PriceTable[], model: string): string | null {
+  for (const key of priceKeys(model)) {
+    for (const table of tables) {
+      const name = table[key]?.name
+      if (name) return name
+    }
+  }
+  return null
+}
+
+/** Whether a stored table was reduced since names were kept; older ones must be fetched again. */
+export function hasNames(table: PriceTable): boolean {
+  return Object.values(table).some((entry) => typeof entry.name === 'string')
+}
+
+/** The rates alone: names are for display, and price objects travel in consumption reports. */
+export function ratesOf(price: ModelPrice): ModelPrice {
+  return { input: price.input, output: price.output, cacheRead: price.cacheRead, cacheWrite: price.cacheWrite, cacheWrite1h: price.cacheWrite1h }
 }
 
 /**

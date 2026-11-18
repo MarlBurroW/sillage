@@ -347,7 +347,11 @@ function openWindow(): BrowserWindow {
 // Applied to every created content, including child windows.
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
-    if (isAppUrl(url)) return { action: 'allow' }
+    if (isAppUrl(url)) {
+      // The slideshow is recorded or shared on screen: no menu bar over it, sized by its content.
+      if (isSlidesUrl(url)) return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, useContentSize: true, backgroundColor: '#0f0b11' } }
+      return { action: 'allow' }
+    }
     openExternal(url)
     return { action: 'deny' }
   })
@@ -357,6 +361,15 @@ app.on('web-contents-created', (_event, contents) => {
     openExternal(url)
   })
 })
+
+/** A benchmark's live slideshow, opened by the app's Present action. */
+function isSlidesUrl(url: string): boolean {
+  try {
+    return /^\/api\/benchmarks\/[^/]+\/live\/slides$/.test(new URL(url).pathname)
+  } catch {
+    return false
+  }
+}
 
 function isAppUrl(url: string): boolean {
   try {

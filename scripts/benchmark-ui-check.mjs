@@ -116,19 +116,23 @@ try {
   await writeFile(brief, 'Le mot secret est HIBOU.\n')
   await page.locator('input[type="file"]').setInputFiles(brief)
   await page.getByText('consigne.txt', { exact: true }).waitFor()
+  // The check script folds under its first line: open it to write one.
+  await page.locator('[data-benchmark-check-block] button[aria-expanded]').click()
   await page.getByRole('textbox', { name: 'Script de vérification', exact: true }).fill('grep -q HIBOU index.html && grep -q HIBOU "$SILLAGE_RESPONSE_FILE"')
   const variants = page.locator('[data-benchmark-variant]')
   await variants.first().waitFor()
+  // Rows are compact until opened, one at a time.
+  await variants.first().locator('button[aria-expanded]').first().click()
   // The model catalog comes from the real CLI: wait for the effort select before changing it.
   await variants.first().getByRole('combobox', { name: 'Effort de réflexion', exact: true }).waitFor({ timeout: 60_000 })
   // Unattended runs: a mode that asks would stall on the first write. The second variant copies this one.
-  await page.getByText('Les runs tournent sans surveillance', { exact: false }).waitFor()
   await variants.first().getByRole('combobox', { name: 'Permissions', exact: true }).click()
   await page.getByRole('option', { name: /^Tout autoriser/ }).click()
+  assert.equal(await variants.first().locator('[data-lineup-may-ask]').count(), 0, 'a permissive mode does not wait for an answer')
   await page.getByRole('button', { name: 'Ajouter une variante', exact: true }).click()
   await variants.nth(1).getByRole('combobox', { name: 'Effort de réflexion', exact: true }).click()
   await page.getByRole('option', { name: /^Faible/ }).click()
-  await page.getByText('2 sessions seront lancées.', { exact: true }).waitFor()
+  await page.locator('[data-benchmark-total]').getByText(/= 2 sessions$/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-form-desktop.png'), fullPage: true })
   await page.getByRole('button', { name: 'Lancer le benchmark', exact: true }).click()
 
@@ -243,9 +247,11 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-blind-desktop.png') })
   await page.getByRole('button', { name: 'Révéler les variantes', exact: true }).click()
   await page.getByRole('tab', { name: 'Productions', exact: true }).waitFor()
-  // Default labels name the model the CLI announced rather than the "default" that was asked for.
+  // Default labels name the model the CLI announced rather than the "default" that was asked for:
+  // its public short name ("Haiku 5.5"), or its exact id when the reference list does not know it,
+  // with the effort since the two variants differ by effort.
   const revealed = await page.locator('[data-output-column]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-output-column')))
-  assert.ok(revealed.every((name) => /^[AB] · [\w.-]+ · (medium|low)$/.test(name ?? '')), JSON.stringify(revealed))
+  assert.ok(revealed.every((name) => /^[AB] · (?!default\b)[\w.-]+(?: [\w.-]+)* · (medium|low)$/.test(name ?? '')), JSON.stringify(revealed))
 
   // Ratings join the measures, as a column of their own.
   await page.getByRole('tab', { name: 'Mesures', exact: true }).click()

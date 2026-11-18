@@ -35,6 +35,7 @@ import type { Scheduler } from '../scheduler/scheduler.js'
 import type { TaskScheduler } from '../scheduler/task-scheduler.js'
 import type { BenchmarkRunner } from '../benchmarks/runner.js'
 import { registerBenchmarkRoutes } from './routes/benchmarks.js'
+import { registerBenchmarkPresetRoutes } from './routes/benchmark-presets.js'
 import { registerConsumptionRoutes } from './routes/consumption.js'
 import type { TurnUsageRecorder } from '../consumption/recorder.js'
 import type { PriceCatalog } from '../pricing/catalog.js'
@@ -268,6 +269,7 @@ export async function buildApp(
     codexAccounts,
     grokAccounts,
     antigravityAccounts,
+    prices,
   )
   registerMcpRoutes(app, ctx, (serverId, formerProjectId) => sessions.reloadMcpServer(serverId, formerProjectId), { log, secrets, sessions })
   // Sources read the library to install skills; the library reads source catalogs
@@ -307,6 +309,7 @@ export async function buildApp(
   registerSettingsRoutes(app, ctx, scheduler)
   registerScheduleRoutes(app, ctx, sessions, registry, tasks, automations)
   registerBenchmarkRoutes(app, ctx, benchmarkRunner)
+  registerBenchmarkPresetRoutes(app, ctx, prices)
   registerConsumptionRoutes(app, ctx, prices, turnUsage)
   registerAutomationRoutes(app, ctx, automations)
   registerActionRoutes(app, ctx, sessions, actions)
