@@ -443,6 +443,7 @@ test('default labels name the model a run announced, written labels stay', (t) =
     { id: 'alias', label: 'sonnet · medium', config: claude('sonnet') },
     { id: 'unset', label: 'default · medium', config: claude('default') },
     { id: 'named', label: 'My pick', config: claude('haiku') },
+    { id: 'live', label: 'opus · medium', config: claude('opus') },
     { id: 'waiting', label: 'haiku · medium', config: claude('haiku') },
   ])
   db.insert(benchmarkTable).values({ id: 'b', userId: 'owner', name: 'b', prompt: 'test', variants, concurrency: 'sequential', maxDurationMinutes: 20, createdAt: 1, updatedAt: 1 }).run()
@@ -450,8 +451,11 @@ test('default labels name the model a run announced, written labels stay', (t) =
   for (const [variantId, model] of Object.entries(announced)) {
     db.insert(benchmarkRuns).values({ id: variantId, benchmarkId: 'b', variantId, repetition: 1, status: 'running', metrics: model ? JSON.stringify({ model }) : null }).run()
   }
+  db.insert(conversations).values({ id: 'live-session', userId: 'owner', title: 'run', agent: 'claude', status: 'running', config: '{}', createdAt: 1, updatedAt: 1 }).run()
+  db.insert(benchmarkRuns).values({ id: 'live', benchmarkId: 'b', variantId: 'live', conversationId: 'live-session', repetition: 1, status: 'running' }).run()
+  db.insert(events).values({ conversationId: 'live-session', seq: 1, ts: 2, type: 'session.started', payload: JSON.stringify({ type: 'session.started', model: 'claude-opus-5-5' }) }).run()
   const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
   const runner = new BenchmarkRunner(ctx, { assertCliEnabled: () => undefined } as never, {} as never, {} as never, {} as never)
   const labels = Object.fromEntries(runner.list('owner')[0]!.variants.map((variant) => [variant.id, variant.label]))
-  assert.deepEqual(labels, { alias: 'claude-sonnet-5-5 · medium', unset: 'claude-opus-5-5 · medium', named: 'My pick', waiting: 'haiku · medium' })
+  assert.deepEqual(labels, { alias: 'claude-sonnet-5-5 · medium', unset: 'claude-opus-5-5 · medium', named: 'My pick', live: 'claude-opus-5-5 · medium', waiting: 'haiku · medium' })
 })

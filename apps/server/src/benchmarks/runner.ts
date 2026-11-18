@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, lte } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import type { PriceCatalog } from '../pricing/catalog.js'
 import { runCostUsd } from './cost.js'
@@ -9,6 +9,7 @@ import {
   benchmarkRuns,
   benchmarks,
   conversations,
+  events,
   personalWorkspaces,
   writeTransaction,
   type BenchmarkRow,
@@ -92,11 +93,23 @@ export function runToDto(row: BenchmarkRunRow): BenchmarkRunDto {
 }
 
 /** Model the CLI reported at session start, from the first of the variant's runs that has one. */
-function announcedModel(runs: BenchmarkRunRow[], benchmarkId: string, variantId: string): string | null {
+function announcedModel(db: Db, runs: BenchmarkRunRow[], benchmarkId: string, variantId: string): string | null {
   for (const run of runs) {
-    if (run.benchmarkId !== benchmarkId || run.variantId !== variantId || !run.metrics) continue
-    const model = (JSON.parse(run.metrics) as BenchmarkRunMetrics).model
+    if (run.benchmarkId !== benchmarkId || run.variantId !== variantId) continue
+    const model = run.metrics ? (JSON.parse(run.metrics) as BenchmarkRunMetrics).model : null
     if (model) return model
+    if (!run.conversationId) continue
+    // Metrics are frozen at settlement, but the CLI announces its model during startup.
+    // Read just that event so polling a running benchmark never folds its whole journal.
+    const announcement = db.select({ payload: events.payload }).from(events).where(and(
+      eq(events.conversationId, run.conversationId),
+      eq(events.type, 'session.started'),
+      run.finishedAt === null ? undefined : lte(events.ts, run.finishedAt),
+    )).orderBy(asc(events.seq)).limit(1).get()
+    if (announcement) {
+      const announced = JSON.parse(announcement.payload) as { model?: string }
+      if (announced.model) return announced.model
+    }
   }
   return null
 }
@@ -133,7 +146,7 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[], prices: PriceCatal
     prompt: row.prompt,
     variants: readVariants(row.variants).map((variant) => ({
       ...variant,
-      label: announcedVariantLabel(variant, announcedModel(runs, row.id, variant.id)),
+      label: announcedVariantLabel(variant, announcedModel(db, runs, row.id, variant.id)),
     })),
     repetitions: row.repetitions,
     concurrency: row.maxConcurrentRuns ?? (row.concurrency === 'parallel' ? 4 : 1),
