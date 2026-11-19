@@ -91,7 +91,7 @@ function pageRun(id: string, variantId: string, durationMs: number, extra: Recor
   return {
     id, variantId, repetition: 1, conversationId: null, status: 'succeeded' as const, startedAt: 1, finishedAt: 2, error: null, cliVersion: '1',
     metrics: metrics(durationMs, 0.5), response: '**Done** <img src=x onerror=alert(1)> [local](file:///etc) [web](https://example.com)',
-    check: null, files: [], previewToken: null, rating: 4, ratingNote: null, ...extra,
+    check: null, files: [], previewToken: null, rating: 4, ratingNote: null, followUps: [], ...extra,
   }
 }
 
@@ -424,3 +424,25 @@ test('benchmark sharing: a frozen public snapshot, an identical archive, revocat
 function readdirNames(path: string): string[] {
   return existsSync(path) ? readdirSync(path).sort() : []
 }
+
+test('benchmark share page: a run a human followed up says so, with what was written, escaped', () => {
+  const followUps = [{ text: 'The keys <b>do not</b> play: fix it.', sentAt: Date.UTC(2026, 10, 17) }, { text: 'Now the colors.', sentAt: Date.UTC(2026, 10, 17, 1) }]
+  const benchmark = {
+    id: 'b', name: 'Piano', prompt: 'Build a piano', variants: dtoVariants, comparisons: [], repetitions: 1, concurrency: 1, maxDurationMinutes: 5, inputs: [],
+    checkScript: null, checkTimeoutSeconds: 1, seriesId: null, createdAt: 1, updatedAt: 1,
+    runs: [pageRun('r1', 'v1', 60_000, { followUps }), pageRun('r2', 'v2', 95_000)],
+  } as unknown as BenchmarkDto
+  const html = renderBenchmarkShare(sharePage(benchmark))
+  // On the production, in the table and in the chart; the other variant carries nothing.
+  assert.equal(html.match(/class="assist" data-follow-ups="2"/g)?.length, 1)
+  assert.equal(html.match(/class="assist-line" data-follow-ups="2"/g)?.length, 1)
+  assert.match(html, /2 retours humains/)
+  assert.match(html, /The keys &lt;b&gt;do not&lt;\/b&gt; play: fix it\./)
+  assert.doesNotMatch(html, /<b>do not<\/b>/)
+  assert.match(html, /Retour 2 · /)
+  assert.match(html, /ses mesures incluent le travail qui a suivi/)
+  // Rendered by the server: the pinned script is the one every published page already runs.
+  const script = /<script>([\s\S]*)<\/script>/.exec(html)![1]!
+  assert.equal(createHash('sha256').update(script).digest('base64'), PAGE_SCRIPT_HASHES[0])
+  assert.doesNotMatch(renderBenchmarkShare(sharePage({ ...benchmark, runs: [pageRun('r1', 'v1', 60_000), pageRun('r2', 'v2', 95_000)] } as BenchmarkDto)), /class="(assist|followups)|retour humain/i)
+})

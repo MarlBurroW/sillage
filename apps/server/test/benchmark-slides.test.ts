@@ -36,7 +36,7 @@ function run(variantId: string, overrides: Partial<BenchmarkRunDto> = {}): Bench
       cacheReadTokens: 100_000, cacheCreationTokens: 5_000, costUsd: COSTS[variantId]!, toolCalls: variantId === 'v1' ? 37 : 12,
       toolsByName: {}, toolErrors: 0, toolDurationMs: 1000, assistantMessages: 4, outputChars: 900, contextTokens: null, model: null,
     },
-    response: '**Done** <img src=x onerror=alert(1)>', check: null, files: [], previewToken: null, rating: RATINGS[variantId]!, ratingNote: null,
+    response: '**Done** <img src=x onerror=alert(1)>', check: null, files: [], previewToken: null, rating: RATINGS[variantId]!, ratingNote: null, followUps: [],
     ...overrides,
   }
 }
@@ -289,4 +289,22 @@ test('slides: a long prompt is summed up first, then shown whole', () => {
   assert.match(task.body, /<pre class="prompt-full mono swap" data-step="1" data-scroll>/)
   const rules = sections(renderBenchmarkSlides(pageOf({ includePrompt: false }))).find((section) => section.kind === 'task')!
   assert.ok(rules.body.includes('Les règles') && !rules.body.includes('Build a piano'))
+})
+
+test('slides: a production a human followed up carries the badge and the quote; rankings mark it', () => {
+  const followed = { ...benchmark, runs: benchmark.runs.map((entry) => (entry.variantId === 'v2' ? { ...entry, followUps: [{ text: `Fix the <keys>${' really'.repeat(60)}`, sentAt: 1 }] } : entry)) } as BenchmarkDto
+  const page = pageOf()
+  const html = renderBenchmarkSlides({ ...page, benchmark: followed, runs: page.runs.map((item) => ({ ...item, run: followed.runs.find((entry) => entry.id === item.run.id)! })) })
+  const production = sections(html).filter((section) => section.kind === 'production')
+  assert.equal(production.filter((section) => section.body.includes('data-follow-up-quote')).length, 1)
+  const quoted = production.find((section) => section.body.includes('data-follow-up-quote'))!.body
+  assert.match(quoted, /data-follow-ups="1"/)
+  assert.match(quoted, /Retour humain/)
+  assert.match(quoted, /Fix the &lt;keys&gt;/)
+  // Two lines on screen: a long correction is cut, the whole text stays on the page.
+  assert.match(quoted, /…<\/q>/)
+  assert.ok(sections(html).filter((section) => section.kind === 'chart').every((section) => section.body.includes('class="assist-mini"')))
+  assert.match(sections(html).find((section) => section.kind === 'outro')!.body, /ses mesures incluent le travail qui a suivi/)
+  assert.equal(createHash('sha256').update(/<script>([\s\S]*)<\/script>/.exec(html)![1]!).digest('base64'), SLIDES_SCRIPT_HASHES[0])
+  assert.doesNotMatch(renderBenchmarkSlides(pageOf()), /class="assist|data-follow-up-quote/)
 })

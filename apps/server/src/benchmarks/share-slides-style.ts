@@ -6,7 +6,7 @@
  * and the bottom-right corner stays clear for the channel watermark players draw there.
  */
 export const SLIDES_CSS = `
-:root{color-scheme:dark;--bg:#0f0b11;--surface:#1e1820;--raised:#261f28;--sunken:#171218;--ink:#eee8f0;--muted:#b5aab9;--line:#322936;--accent:#cd7be5;--on-accent:#1b1120;--good:#6fcf97;--bad:#f0837c}
+:root{color-scheme:dark;--bg:#0f0b11;--surface:#1e1820;--raised:#261f28;--sunken:#171218;--ink:#eee8f0;--muted:#b5aab9;--line:#322936;--accent:#cd7be5;--on-accent:#1b1120;--good:#6fcf97;--bad:#f0837c;--warn:#e9b55c}
 *{box-sizing:border-box}[hidden]{display:none!important}
 sg-reveal,sg-conceal{display:contents}
 html,body{margin:0;background:#000;color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -90,6 +90,13 @@ a{color:var(--accent)}
 .chip .v.pass{color:var(--good)}.chip .v.fail{color:var(--bad)}
 .tag{display:inline-flex;align-items:center;gap:8px;font-size:22px;font-weight:750;color:var(--on-accent);background:var(--accent);border-radius:999px;padding:3px 16px}
 .status{font-size:24px;font-weight:750;color:var(--bad);border:3px solid currentColor;border-radius:10px;padding:1px 12px}
+.assist{display:inline-flex;align-items:center;gap:8px;font-size:24px;font-weight:750;color:var(--warn);border:3px solid currentColor;border-radius:10px;padding:1px 12px}.assist svg{width:22px;height:22px}
+.assist-mini{display:inline-flex;align-items:center;gap:4px;margin-left:6px;font-size:.7em;font-weight:750;color:var(--warn);vertical-align:middle}.assist-mini svg{width:.9em;height:.9em}
+/* Over the bottom of the production, above the band: the frame is a picture, the quote a caption. */
+.assist-quote{position:absolute;left:120px;bottom:240px;z-index:2;display:flex;flex-direction:column;gap:6px;max-width:1100px;margin:0;padding:18px 24px;border-radius:14px;background:rgba(15,11,17,.88);border:3px solid var(--warn);font-size:28px;line-height:1.35;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.assist-quote .k{display:inline-flex;align-items:center;gap:8px;font-size:20px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--warn)}.assist-quote .k svg{width:20px;height:20px}
+.assist-quote q{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.assist-quote .more{font-size:20px;color:var(--muted)}
+.no-band .s-production .assist-quote{display:none}
 .gallery{position:absolute;inset:0;display:grid;gap:18px;padding:18px;background:var(--sunken)}
 .gallery.g2{grid-template-columns:1fr 1fr}.gallery.g3,.gallery.g4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
 .gallery figure{position:relative;margin:0;min-height:0;display:flex;flex-direction:column;gap:8px}

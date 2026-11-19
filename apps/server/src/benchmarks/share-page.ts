@@ -79,14 +79,15 @@ const icon = (path: string) =>
 const ICONS = {
   reload: icon('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>'),
   open: icon('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
+  reply: icon('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m10 7-3 3 3 3"/><path d="M17 13v-1a2 2 0 0 0-2-2H7"/>'),
   expand: icon('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>'),
   play: icon('<path d="M7 4v16l13-8z"/>'),
 }
 
 // Same palette as the shared conversation page: both are Sillage's public face.
 const css = `
-:root{color-scheme:light dark;--bg:#faf7fb;--surface:#fff;--sunken:#f1eaf3;--ink:#211925;--muted:#6d6172;--line:#e5dce8;--accent:#85409b;--on-accent:#fff;--code:#f0e9f2;--good:#2f7d4f;--bad:#b3403a}
-@media(prefers-color-scheme:dark){:root{--bg:#0f0b11;--surface:#1e1820;--sunken:#171218;--ink:#eee8f0;--muted:#b5aab9;--line:#322936;--accent:#cd7be5;--on-accent:#1b1120;--code:#261f28;--good:#6fcf97;--bad:#f0837c}}
+:root{color-scheme:light dark;--bg:#faf7fb;--surface:#fff;--sunken:#f1eaf3;--ink:#211925;--muted:#6d6172;--line:#e5dce8;--accent:#85409b;--on-accent:#fff;--code:#f0e9f2;--good:#2f7d4f;--bad:#b3403a;--warn:#94600f}
+@media(prefers-color-scheme:dark){:root{--bg:#0f0b11;--surface:#1e1820;--sunken:#171218;--ink:#eee8f0;--muted:#b5aab9;--line:#322936;--accent:#cd7be5;--on-accent:#1b1120;--code:#261f28;--good:#6fcf97;--bad:#f0837c;--warn:#e9b55c}}
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
 body.locked{overflow:hidden}
@@ -146,6 +147,9 @@ a.pill{display:inline-flex;align-items:center;gap:.45rem;text-decoration:none;fo
 .lane-bar{display:flex;align-items:center;gap:.7rem;padding:.55rem .6rem .55rem .7rem;border-bottom:1px solid var(--line)}
 .who{min-width:0;flex:1;line-height:1.25}.who strong{display:block;font-size:.95rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.who span{display:block;font-size:.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flag{flex:none;font-size:.75rem;font-weight:600;color:var(--bad);border:1px solid currentColor;border-radius:5px;padding:0 .4rem}
+.assist{flex:none;display:inline-flex;align-items:center;gap:.25rem;font-size:.75rem;font-weight:600;color:var(--warn);border:1px solid currentColor;border-radius:5px;padding:0 .4rem;white-space:nowrap}.assist svg{width:12px;height:12px}
+.name-row small.assist-line,.cname .assist-line{display:inline-flex;align-items:center;gap:.25rem;color:var(--warn);font-weight:600}.assist-line svg{width:11px;height:11px}
+.followups{border-top:1px solid var(--line);padding:.45rem .8rem;font-size:.85rem}.followups summary{cursor:pointer;color:var(--warn);font-weight:600}.followups ol{margin:.4rem 0 .2rem;padding-left:1.2rem}.followups li{margin:.3rem 0}.followups li p{margin:0;white-space:pre-wrap}.followups li span{display:block;font-size:.75rem;color:var(--muted)}
 .acts{display:flex;gap:.15rem;flex:none}
 .acts a,.acts button{display:grid;place-items:center;width:2rem;height:2rem;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .acts a:hover,.acts button:hover{background:var(--sunken);color:var(--ink)}
@@ -545,6 +549,22 @@ export function renderBenchmarkShare(page: SharePage): string {
   const runOf = (variant: BenchmarkVariantDto, repetition: number) =>
     page.runs.find((item) => item.run.variantId === variant.id && item.run.repetition === repetition)
 
+  // Corrections a human sent after a run finished: a result that needed help says so wherever it shows.
+  const followUpText = (count: number) => fill(t(count === 1 ? 'export.bench.followUps.one' : 'export.bench.followUps'), { count })
+  const followUpsOf = (variant: BenchmarkVariantDto) =>
+    page.runs.reduce((total, item) => total + (item.run.variantId === variant.id ? item.run.followUps.length : 0), 0)
+  const assistLine = (variant: BenchmarkVariantDto, tag: string) => {
+    const count = followUpsOf(variant)
+    return count ? `<${tag} class="assist-line" data-follow-ups="${count}">${ICONS.reply}${e(followUpText(count))}</${tag}>` : ''
+  }
+  const followUpList = (item: SharePageRun) => {
+    const { followUps } = item.run
+    if (followUps.length === 0) return ''
+    const entries = followUps.map((followUp, index) =>
+      `<li><span>${e(fill(t('export.bench.followUpN'), { n: index + 1 }))} · ${e(format.date(followUp.sentAt))}</span><p>${e(followUp.text)}</p></li>`).join('')
+    return `<details class="followups" data-follow-up-texts><summary>${e(followUpText(followUps.length))}</summary><ol>${entries}</ol></details>`
+  }
+
   const blockedNotice = (item: SharePageRun) =>
     item.reason && !(item.reason === 'empty' && item.run.response)
       ? `<p class="blocked">${e(t(`export.bench.blocked.${item.reason}`))}</p>`
@@ -601,14 +621,17 @@ export function renderBenchmarkShare(page: SharePage): string {
       body = `<div class="lane-body read">${blockedNotice(item)}${options.includeResponses ? response(item) : ''}</div>`
     }
     const failure = TERMINAL_FAILURES.has(run.status) ? `<span class="flag">${e(t(`export.bench.status.${run.status as 'failed' | 'timed_out' | 'cancelled'}`))}</span>` : ''
+    const assisted = run.followUps.length
+      ? `<span class="assist" data-follow-ups="${run.followUps.length}" title="${e(followUpText(run.followUps.length))}" aria-label="${e(followUpText(run.followUps.length))}">${ICONS.reply}${run.followUps.length}</span>`
+      : ''
     const stats = options.includeMetrics
       ? `<dl class="lane-stats">${stat(t('export.bench.col.duration'), metrics?.durationMs != null ? format.duration(metrics.durationMs) : null)}${stat(t('export.bench.col.tokens'), tokens === null ? null : format.tokens(tokens))}${stat(t('export.bench.col.cost'), metrics?.costUsd != null ? format.cost(metrics.costUsd) : null)}${stat(t('export.bench.col.tools'), metrics ? format.number(metrics.toolCalls) : null)}</dl>`
       : ''
     return (
       `<article class="lane" data-lane data-rep="${run.repetition}" data-variant="${index}">` +
-      `<header class="lane-bar"><span class="letter">${letterOf(index)}</span>${mark(index, 18)}<div class="who">${variantName(index)}${detailLine(index)}</div>${failure}` +
+      `<header class="lane-bar"><span class="letter">${letterOf(index)}</span>${mark(index, 18)}<div class="who">${variantName(index)}${detailLine(index)}</div>${failure}${assisted}` +
       `<div class="acts">${actions}<button type="button" data-expand="${e(t('export.bench.expand'))}" data-collapse="${e(t('export.bench.collapse'))}" aria-label="${e(t('export.bench.expand'))}" title="${e(t('export.bench.expand'))}">${ICONS.expand}</button></div></header>` +
-      body + stats + '</article>'
+      body + followUpList(item) + stats + '</article>'
     )
   }
 
@@ -731,10 +754,11 @@ export function renderBenchmarkShare(page: SharePage): string {
       repetitions.length > 1 ? fill(t('export.bench.median'), { count: repetitions.length }) : '',
       t('export.bench.eligibleNote'),
       measures.some((measure) => measure.key === 'costUsd') ? t('export.bench.costNote') : '',
+      page.runs.some((item) => item.run.followUps.length > 0) ? t('export.bench.followUpNote') : '',
     ].filter(Boolean)
     const table =
       `<div class="table-wrap"><table><thead><tr><th>${e(t('export.bench.col.variant'))}</th>${measures.map((measure) => `<th>${e(t(MEASURE_LABELS[measure.key]))}</th>`).join('')}</tr></thead><tbody>` +
-      variants.map((_, index) => `<tr data-index="${index}"><td class="name"><div class="name-row"><span class="letter">${letterOf(index)}</span>${mark(index, 16)}<div>${variantName(index)}${detailLine(index, 'small')}</div></div></td>${measures.map((measure) => tableCell(measure, index)).join('')}</tr>`).join('') +
+      variants.map((_, index) => `<tr data-index="${index}"><td class="name"><div class="name-row"><span class="letter">${letterOf(index)}</span>${mark(index, 16)}<div>${variantName(index)}${detailLine(index, 'small')}${assistLine(variants[index]!, 'small')}</div></div></td>${measures.map((measure) => tableCell(measure, index)).join('')}</tr>`).join('') +
       `</tbody></table></div>`
     const charts = options.includeChart ? renderCharts(measures) : ''
     numbers = `<section class="numbers column"><h2 class="section">${e(t('export.bench.numbers'))}</h2>${charts}${table}<p class="foot">${e(notes.join(' '))}</p></section>`
@@ -763,7 +787,7 @@ export function renderBenchmarkShare(page: SharePage): string {
         const bar = value.median === null
           ? `<span class="cval" style="left:0">–</span>`
           : `<i class="cbar" style="width:${at(value.median)}%"></i>${dots}<span class="cval" style="left:${end}%">${e(text!)}${weak}</span>`
-        return `<div class="crow${measure.best === index ? ' best' : ''}" data-index="${index}"><span class="cname"><span class="letter">${letterOf(index)}</span>${variantName(index, 'span', ' class="n"')}</span><span class="ctrack">${hairlines}${bar}</span></div>`
+        return `<div class="crow${measure.best === index ? ' best' : ''}" data-index="${index}"><span class="cname"><span class="letter">${letterOf(index)}</span>${variantName(index, 'span', ' class="n"')}${followUpsOf(variants[index]!) ? ` <span class="assist-line" title="${e(followUpText(followUpsOf(variants[index]!)))}">${ICONS.reply}${followUpsOf(variants[index]!)}</span>` : ''}</span><span class="ctrack">${hairlines}${bar}</span></div>`
       }).join('')
       const axis = `<div class="crow caxis" aria-hidden="true"><span></span><span class="ctrack">${ticks.map((tick, index) => `<span style="left:${at(tick)}%;transform:translateX(${index === 0 ? '0' : index === ticks.length - 1 ? '-100%' : '-50%'})">${e(tickText(measure.key, tick))}</span>`).join('')}</span></div>`
       const caption = [directionNote(measure), repetitions.length > 1 && measure.key !== 'passRate' ? fill(t('export.bench.chartRuns'), { count: repetitions.length }) : ''].filter(Boolean).join(' ')

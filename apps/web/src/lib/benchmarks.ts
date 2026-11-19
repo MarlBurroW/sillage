@@ -20,6 +20,7 @@ import {
   type BenchmarkShareOptions,
   type BenchmarkShareStateDto,
   type CreateBenchmarkBody,
+  type FollowUpBenchmarkRunsBody,
   type PublishBenchmarkShareBody,
   type RateBenchmarkRunBody,
   type UpdateBenchmarkComparisonsBody,
@@ -231,6 +232,15 @@ export function useRateBenchmarkRun(benchmarkId: string) {
       if (run) patch(runId, { rating: run.rating, ratingNote: run.ratingNote })
     },
     onError: () => void queryClient.invalidateQueries({ queryKey: BENCHMARKS_KEY }),
+  })
+}
+
+/** Sends one correction to finished runs, which reopen in their sessions; polling resumes with them. */
+export function useFollowUpBenchmarkRuns(benchmarkId: string) {
+  const patch = usePatchBenchmark()
+  return useMutation({
+    mutationFn: (body: FollowUpBenchmarkRunsBody) => api.post<BenchmarkDto>(`/api/benchmarks/${benchmarkId}/follow-ups`, body),
+    onSuccess: patch,
   })
 }
 
@@ -452,7 +462,7 @@ export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; conte
     'benchmark', 'variant', 'agent', 'model', 'effort', 'announced_model', 'cli_version', 'repetition', 'status',
     'check_passed', 'check_exit_code', 'duration_ms', 'elapsed_ms', 'waiting_ms', 'first_text_ms', 'input_tokens', 'output_tokens',
     'cache_read_tokens', 'cache_creation_tokens', 'cost_usd', 'tool_calls', 'tool_errors', 'tool_duration_ms',
-    'assistant_messages', 'output_chars', 'context_tokens', 'rating', 'rating_note', 'error',
+    'assistant_messages', 'output_chars', 'context_tokens', 'rating', 'rating_note', 'error', 'follow_ups', 'follow_up_texts',
   ]
   const cell = (value: number | string | boolean | null | undefined) => (value === null || value === undefined ? '' : String(value))
   const rows = benchmark.runs.map((run) => {
@@ -464,6 +474,8 @@ export function benchmarkCsv(benchmark: BenchmarkDto): { filename: string; conte
       run.check ? run.check.passed : null, run.check?.exitCode, m?.durationMs, m?.elapsedMs, m?.waitingMs, m?.firstTextMs, m?.inputTokens,
       m?.outputTokens, m?.cacheReadTokens, m?.cacheCreationTokens, m?.costUsd, m?.toolCalls, m?.toolErrors,
       m?.toolDurationMs, m?.assistantMessages, m?.outputChars, m?.contextTokens, run.rating, run.ratingNote, run.error,
+      // Appended rather than inserted: notebooks reading columns by position keep working.
+      run.followUps.length, run.followUps.map((followUp) => followUp.text).join('\n---\n'),
     ].map(cell)
   })
   return { filename: `${exportStem(benchmark)}.csv`, content: toCsv([header, ...rows]) }

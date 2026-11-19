@@ -18,6 +18,7 @@ import {
   type Db,
 } from '@sillage/db'
 import {
+  BENCHMARK_FOLLOW_UP_STATUSES,
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_BENCHMARK_TOTAL_VARIANTS,
   MAX_BENCHMARK_VARIANTS,
@@ -40,6 +41,7 @@ import {
   type BenchmarkComparison,
   type BenchmarkDeliverable,
   type BenchmarkDto,
+  type BenchmarkFollowUp,
   type BenchmarkInput,
   type BenchmarkRunDto,
   type BenchmarkRunMetrics,
@@ -134,6 +136,10 @@ export function benchmarkInputDir(dataDir: string, benchmarkId: string): string 
   return join(dataDir, 'benchmarks', benchmarkId, 'inputs')
 }
 
+function readFollowUps(raw: string | null): BenchmarkFollowUp[] {
+  return raw ? (JSON.parse(raw) as BenchmarkFollowUp[]) : []
+}
+
 export function runToDto(row: BenchmarkRunRow): BenchmarkRunDto {
   return {
     id: row.id,
@@ -152,6 +158,7 @@ export function runToDto(row: BenchmarkRunRow): BenchmarkRunDto {
     previewToken: row.previewToken,
     rating: row.rating,
     ratingNote: row.ratingNote,
+    followUps: readFollowUps(row.followUps),
   }
 }
 
@@ -184,7 +191,7 @@ function pendingRun(benchmarkId: string, variantId: string, repetition: number):
     id: randomUUID(), benchmarkId, variantId, repetition,
     conversationId: null, status: 'pending', startedAt: null, finishedAt: null, error: null,
     cliVersion: null, metrics: null, response: null, check: null, files: null, previewToken: null,
-    rating: null, ratingNote: null, ratedAt: null,
+    rating: null, ratingNote: null, ratedAt: null, followUps: null,
   }
 }
 
@@ -275,6 +282,8 @@ export class BenchmarkRunner {
   private logger: FastifyBaseLogger | null = null
   /** Runs whose CLI is starting: a sweep during those seconds must not launch them twice. */
   private readonly launching = new Set<string>()
+  /** Runs whose follow-up is being sent: their rows reopen only once the message is announced. */
+  private readonly followingUp = new Set<string>()
   /**
    * Short-lived stand-ins for run preview tokens, minted for the owner's live renderings. A link
    * hovered inside a production shows its address in the status bubble, which a recording or a
@@ -627,6 +636,57 @@ export class BenchmarkRunner {
     this.touch(benchmarkId, Date.now())
   }
 
+  /**
+   * Continues settled runs with a human correction, each in its own session. The run reopens
+   * instead of a new one starting: its next settlement folds the whole journal again, so the
+   * correction's work adds to the first attempt's, and the check reruns on the folder the agent
+   * left. The rating goes, since it judged a result the correction is meant to change.
+   */
+  async followUp(benchmarkId: string, runIds: string[], text: string): Promise<void> {
+    const ids = [...new Set(runIds)]
+    // A second request (another tab, a double click) would pass the same checks before the first
+    // reopened the rows, send the message twice and keep only one of the two in the list.
+    if (ids.some((id) => this.followingUp.has(id))) {
+      throw new HttpError(409, 'benchmark_run_unsettled', 'Only a finished run can be followed up: wait for it to finish.')
+    }
+    const runs = this.ctx.db.select().from(benchmarkRuns)
+      .where(and(eq(benchmarkRuns.benchmarkId, benchmarkId), inArray(benchmarkRuns.id, ids))).all()
+    // Every run is checked before any message leaves: a refusal must not leave half of them sent.
+    for (const id of ids) {
+      const run = runs.find((entry) => entry.id === id)
+      if (!run) throw notFound('benchmark_run_not_found', 'Benchmark run not found.')
+      const thread = run.conversationId
+        ? this.ctx.db.select({ id: conversations.id }).from(conversations).where(eq(conversations.id, run.conversationId)).get()
+        : undefined
+      if (!thread) throw new HttpError(409, 'benchmark_run_thread_missing', 'This run no longer has its conversation: it cannot be continued.')
+      if (!BENCHMARK_FOLLOW_UP_STATUSES.includes(run.status)) {
+        throw new HttpError(409, 'benchmark_run_unsettled', 'Only a finished run can be followed up: wait for it to finish.')
+      }
+    }
+    const variants = readVariants(this.ctx.db.select({ variants: benchmarks.variants }).from(benchmarks).where(eq(benchmarks.id, benchmarkId)).get()!.variants)
+    for (const run of runs) {
+      const agent = variants.find((variant) => variant.id === run.variantId)?.config.agent
+      if (agent) this.sessions.assertCliEnabled(agent)
+    }
+    for (const id of ids) this.followingUp.add(id)
+    try {
+      for (const run of runs) {
+        const sentAt = Date.now()
+        // Sent before the row reopens: announcing the message marks the thread busy at once, so no
+        // sweep can take the previous turn's verdict for this one.
+        await this.sessions.sendMessage(run.conversationId!, randomUUID(), text)
+        this.ctx.db.update(benchmarkRuns).set({
+          status: 'running', finishedAt: null, error: null, metrics: null, response: null, check: null, files: null,
+          rating: null, ratingNote: null, ratedAt: null,
+          followUps: JSON.stringify([...readFollowUps(run.followUps), { text, sentAt }]),
+        }).where(eq(benchmarkRuns.id, run.id)).run()
+      }
+    } finally {
+      for (const id of ids) this.followingUp.delete(id)
+      this.touch(benchmarkId, Date.now())
+    }
+  }
+
   /** Pending runs never start; running ones are terminated and still measured, since a partial run says something. */
   async cancel(benchmarkId: string): Promise<void> {
     const now = Date.now()
@@ -845,10 +905,12 @@ export class BenchmarkRunner {
       let outcome: Outcome
       if (working || (!verdict && !dead)) {
         const limit = benchmark.maxDurationMinutes * 60_000
-        const elapsed = now - (run.startedAt ?? now)
+        // Each attempt has the whole duration: a follow-up sent days later starts its own.
+        const attemptStart = readFollowUps(run.followUps).at(-1)?.sentAt ?? run.startedAt ?? now
+        const elapsed = now - attemptStart
         // The limit bounds the agent's work, not the user's absence: time a request spent waiting
         // for an answer is given back, so a run that asked at night still finishes once answered.
-        if (elapsed < limit || elapsed - readWaitingMs(this.log, run.conversationId, now) < limit) continue
+        if (elapsed < limit || elapsed - readWaitingMs(this.log, run.conversationId, now, attemptStart) < limit) continue
         const reason = `Maximum duration reached (${benchmark.maxDurationMinutes} min): the run was interrupted.`
         this.log.append(run.conversationId, { type: 'error', code: 'benchmark_timeout', message: reason, recoverable: true })
         await this.sessions.terminate(run.conversationId)

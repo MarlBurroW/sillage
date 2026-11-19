@@ -484,6 +484,13 @@
       "when": 1795029531105,
       "tag": "0068_wet_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1795081380466,
+      "tag": "0069_striped_hawkeye",
+      "breakpoints": true
     }
   ]
 }

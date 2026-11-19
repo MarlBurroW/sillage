@@ -336,6 +336,17 @@ export interface BenchmarkRunDto {
   /** Human rating from 1 to 5; null until rated. */
   rating: number | null
   ratingNote: string | null
+  /**
+   * Corrections a human sent after the run settled, oldest first. Each one continued the same
+   * session, so the measurements add its work to the first attempt's: the list is how a reader
+   * tells that the result needed help, and what help.
+   */
+  followUps: BenchmarkFollowUp[]
+}
+
+export interface BenchmarkFollowUp {
+  text: string
+  sentAt: number
 }
 
 export interface BenchmarkDto {
@@ -459,6 +470,20 @@ export const rateBenchmarkRunBodySchema = z.object({
   note: z.string().trim().max(MAX_BENCHMARK_RATING_NOTE_CHARS).nullable().default(null),
 })
 export type RateBenchmarkRunBody = z.input<typeof rateBenchmarkRunBodySchema>
+
+/** A follow-up continues settled runs: those whose session could still answer. */
+export const BENCHMARK_FOLLOW_UP_STATUSES: readonly BenchmarkRunStatus[] = ['succeeded', 'failed', 'timed_out']
+
+export function canFollowUp(run: Pick<BenchmarkRunDto, 'status' | 'conversationId'>): boolean {
+  return run.conversationId !== null && BENCHMARK_FOLLOW_UP_STATUSES.includes(run.status)
+}
+
+/** One text sent to several runs at once: the same correction for every model that needs it. */
+export const followUpBenchmarkRunsBodySchema = z.object({
+  runIds: z.array(z.string().min(1).max(64)).min(1).max(MAX_BENCHMARK_TOTAL_VARIANTS * MAX_BENCHMARK_REPETITIONS),
+  text: z.string().trim().min(1).max(MAX_BENCHMARK_PROMPT_CHARS),
+})
+export type FollowUpBenchmarkRunsBody = z.input<typeof followUpBenchmarkRunsBodySchema>
 
 /** Root of the series a benchmark belongs to: itself for an original. */
 export function benchmarkSeriesRoot(benchmark: { id: string; seriesId: string | null }): string {

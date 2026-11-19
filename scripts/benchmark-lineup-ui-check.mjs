@@ -92,7 +92,7 @@ function stubBenchmark() {
     runs: variants.map((variant, index) => ({
       id: `run-${variant.id}`, variantId: variant.id, repetition: 1, status: 'succeeded', conversationId: `conv-${index}`,
       startedAt: 1, finishedAt: 90001, cliVersion: index === 2 ? '0.163.0' : '2.1.325', error: null, check: { passed: true, exitCode: 0, timedOut: false, stdout: '', stderr: '', durationMs: 10 },
-      response: 'ok', previewToken: null, rating: [4, 2, 3][index], ratingNote: null, files: [],
+      response: 'ok', previewToken: null, rating: [4, 2, 3][index], ratingNote: null, followUps: [], files: [],
       metrics: { version: 2, durationMs: [400_000, 120_000, 80_000][index], waitingMs: 0, firstTextMs: 5000, inputTokens: 1000, outputTokens: 500,
         cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: [6.9, 2.4, 0.3][index], toolCalls: 4, toolErrors: 0, toolDurationMs: 30,
         assistantMessages: 3, outputChars: 400, contextTokens: 10000, model: variant.model, toolsByName: {} },

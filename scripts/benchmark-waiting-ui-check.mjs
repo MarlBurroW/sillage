@@ -61,7 +61,7 @@ const metrics = (durationMs, waitingMs) => ({
 const run_ = (id, variantId, status, extra = {}) => ({
   id, variantId, repetition: 1, status, conversationId: `conv-${id}`, startedAt: Date.now() - 60_000, finishedAt: null,
   cliVersion: 'test', error: null, metrics: null, response: null, check: null, files: [], previewToken: null,
-  rating: null, ratingNote: null, ...extra,
+  rating: null, ratingNote: null, followUps: [], ...extra,
 })
 const benchmark = {
   id: 'transformer', name: 'Transformer', prompt: 'Une voiture qui se transforme en robot', variants,

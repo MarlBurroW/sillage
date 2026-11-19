@@ -317,15 +317,26 @@ const REQUEST_EVENT_TYPES = [
 ]
 
 /** Human waiting of a live run until `now`, a request still open included. Reads only request events, so a sweep can afford it. */
-export function readWaitingMs(log: EventLog, conversationId: string, now: number): number {
+export function readWaitingMs(log: EventLog, conversationId: string, now: number, since = 0): number {
   const clock = new RunClock()
+  // Waiting before `since` belongs to an earlier attempt: only what follows counts.
+  let before: number | null = null
+  const reach = (ts: number) => {
+    if (before !== null || ts <= since) return
+    clock.advance(since)
+    before = clock.waitingMs
+  }
   let after = 0
   for (;;) {
     const page = log.readForReplay(conversationId, after, { rows: 2000, bytes: 8 * 1024 * 1024, unfiltered: true, onlyTypes: REQUEST_EVENT_TYPES })
-    for (const entry of page.entries) clock.observe(entry.ts, entry.event)
+    for (const entry of page.entries) {
+      reach(entry.ts)
+      clock.observe(entry.ts, entry.event)
+    }
     if (page.nextAfter <= after) break
     after = page.nextAfter
   }
+  reach(now)
   clock.advance(now)
-  return clock.waitingMs
+  return clock.waitingMs - (before ?? 0)
 }

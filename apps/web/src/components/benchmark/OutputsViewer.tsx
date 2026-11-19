@@ -2,11 +2,12 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { useQuery } from '@tanstack/react-query'
 import {
   ChevronDown, ChevronLeft, ChevronRight, Columns3, Download, ExternalLink, Eye, FileText, GalleryHorizontal, Maximize2,
-  MessageSquareText, Monitor, MonitorSmartphone, RotateCw, Scaling, Smartphone, Tablet, X,
+  MessageSquareReply, MessageSquareText, Monitor, MonitorSmartphone, RotateCw, Scaling, Smartphone, Tablet, X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   benchmarkPreviewUrl,
+  canFollowUp,
   variantAgent,
   type BenchmarkDeliverable,
   type BenchmarkDeliverableKind,
@@ -19,6 +20,7 @@ import { formatMetric, isOpenRun, RUN_STATUS_LABELS, useOutputsLayout, type Outp
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { Markdown } from '../chat/Markdown'
+import { FollowUpBadge, followUpEntries } from './FollowUps'
 import { RatingInput } from './RatingInput'
 import { IconButton, Menu, MenuCheckboxItem, MenuItem, MenuLabel, MenuSeparator, Segmented, Select, cx } from '../ui'
 
@@ -81,6 +83,7 @@ export function OutputsViewer({
   order,
   nameOf,
   blind,
+  onFollowUp,
 }: {
   benchmark: BenchmarkDto
   /** Variant ids in card order: shuffled during a blind review. */
@@ -89,6 +92,8 @@ export function OutputsViewer({
   nameOf: (variantId: string) => { label: ReactNode; text: string }
   /** Hides CLI icons and measures, which would give the variant away. */
   blind: boolean
+  /** Opens the correction dialog on a finished run; absent during a blind review. */
+  onFollowUp?: (runId: string) => void
 }) {
   const t = useTranslate()
   const [layout, setLayout] = useOutputsLayout()
@@ -139,6 +144,7 @@ export function OutputsViewer({
       viewport={layout.viewport}
       heightClass={full ? 'min-h-0 flex-1' : HEIGHTS[layout.height]}
       onExpand={full ? null : () => setExpanded(column.variant.id)}
+      onFollowUp={onFollowUp}
     />
   )
 
@@ -338,7 +344,7 @@ export function OutputsViewer({
   )
 }
 
-function OutputCard({ benchmarkId, column, name, blind, pick, onPick, viewport, heightClass, onExpand }: {
+function OutputCard({ benchmarkId, column, name, blind, pick, onPick, viewport, heightClass, onExpand, onFollowUp }: {
   benchmarkId: string
   column: Column
   name: { label: ReactNode; text: string }
@@ -349,6 +355,7 @@ function OutputCard({ benchmarkId, column, name, blind, pick, onPick, viewport, 
   heightClass: string
   /** Null inside the full-screen view, which is already as large as it gets. */
   onExpand: (() => void) | null
+  onFollowUp?: (runId: string) => void
 }) {
   const t = useTranslate()
   const { variant, run, files } = column
@@ -371,6 +378,7 @@ function OutputCard({ benchmarkId, column, name, blind, pick, onPick, viewport, 
         {run && run.status !== 'succeeded' ? (
           <span className={cx('shrink-0 text-xs', isOpenRun(run) ? 'text-accent' : 'text-caution')}>{t(isOpenRun(run) ? 'benchmark.outputs.pending' : RUN_STATUS_LABELS[run.status])}</span>
         ) : null}
+        {run ? <FollowUpBadge entries={followUpEntries([run])} className="ml-1 shrink-0" /> : null}
         <span className="flex-1" />
         <Menu trigger={
           <button type="button" aria-label={t('benchmark.outputs.pick')} className="inline-flex h-11 max-w-[45%] min-w-0 items-center gap-1 rounded-md px-2 text-xs text-ink-soft hover:bg-surface-high hover:text-ink md:h-7 pointer-coarse:h-11">
@@ -400,6 +408,9 @@ function OutputCard({ benchmarkId, column, name, blind, pick, onPick, viewport, 
           <a href={url} target="_blank" rel="noreferrer"><IconButton size="sm" label={t('benchmark.outputs.open')} tabIndex={-1}><ExternalLink size={14} /></IconButton></a>
         ) : null}
         {url ? <a href={`${url}?download=1`}><IconButton size="sm" label={t('benchmark.outputs.download')} tabIndex={-1}><Download size={14} /></IconButton></a> : null}
+        {run && onFollowUp && canFollowUp(run) ? (
+          <IconButton size="sm" label={t('benchmark.followUp.action')} onClick={() => onFollowUp(run.id)} data-follow-up-open={run.id}><MessageSquareReply size={14} /></IconButton>
+        ) : null}
         {onExpand ? <IconButton size="sm" label={t('benchmark.outputs.expand')} onClick={onExpand}><Maximize2 size={14} /></IconButton> : null}
       </header>
 

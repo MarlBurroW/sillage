@@ -810,6 +810,11 @@ export const benchmarkRuns = sqliteTable(
     rating: integer('rating'),
     ratingNote: text('rating_note'),
     ratedAt: timestamp('rated_at'),
+    /**
+     * JSON BenchmarkFollowUp[]: corrections sent after settlement, which reopened the run in the
+     * same session. NULL when the run never needed one, as before the column existed.
+     */
+    followUps: text('follow_ups'),
   },
   (t) => [
     index('idx_benchmark_runs_benchmark').on(t.benchmarkId, t.variantId, t.repetition),

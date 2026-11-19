@@ -59,7 +59,7 @@ const runs = variants.map((variant) => ({
     toolErrors: 0, toolDurationMs: 1000, assistantMessages: 6, outputChars: 1200, contextTokens: null, model: variant.model,
   },
   response: '## Done\n\nThe piano is in `index.html`, with **88 keys** and a sustain pedal.', check: null, files: [], previewToken: null,
-  rating: facts[variant.id].rating, ratingNote: null,
+  rating: facts[variant.id].rating, ratingNote: null, followUps: [],
 }))
 const prompt = `${'Build a playable piano as a single static web page, with eighty-eight keys, a sustain pedal and keyboard shortcuts so it can be played without a mouse. '.repeat(4)}\n\nThe page must work offline, from plain files.\n\n${'Detail of the expected behaviour, line after line. '.repeat(30)}`
 const benchmark = {

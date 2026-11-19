@@ -222,6 +222,10 @@ The periodic cleanup removes expired, revoked and orphaned files.
   model without a public price; a published share page keeps the prices of its day. Existing measurements are
   refreshed from their journals up to the run's finish time. Outputs of the same
   kind align side by side even when agents choose different filenames.
+  A finished run can take a follow-up, the correction you would give the agent, sent
+  to one run or several at once: it continues in the same session, its numbers add
+  the extra work to the first attempt's, the check runs again, and the run carries a
+  follow-up badge with the text, in the app as on shared pages and slides.
 - **Sharing a benchmark.** A benchmark leaves Sillage as a page anyone can open: the
   prompt, each variant's production running live when it is made of plain files, the
   numbers with a chart, the final messages, and comparisons readers pick themselves.

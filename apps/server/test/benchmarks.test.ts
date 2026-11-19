@@ -593,3 +593,103 @@ test('benchmark timeout: time spent waiting for an answer does not count against
   assert.equal(status(), 'timed_out')
   assert.deepEqual(terminated, ['c'])
 })
+
+test('benchmark follow-up: the run reopens in its session, measures add up, each attempt gets the whole duration', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-bench-follow-up-'))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  t.after(() => { sqlite.close(); rmSync(dir, { recursive: true, force: true }) })
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  const minute = 60_000
+  // Real clock: the fake session journals the follow-up at the time it is sent.
+  const start = Date.now() - 60 * minute
+  db.insert(benchmarkTable).values({ id: 'bench', userId: 'owner', name: 'test', prompt: 'build it',
+    variants: JSON.stringify([{ id: 'v', label: 'Opus', config: { agent: 'claude', model: 'opus', effort: 'medium', permissionMode: 'bypassPermissions' } }]),
+    repetitions: 2, maxDurationMinutes: 10, createdAt: 1, updatedAt: 1 }).run()
+  for (const id of ['c', 'busy']) {
+    db.insert(conversations).values({ id, userId: 'owner', title: 'run', agent: 'claude', status: id === 'c' ? 'idle' : 'running', config: '{}', createdAt: 1, updatedAt: 1 }).run()
+  }
+  let seq = 0
+  const write = (ts: number, event: SillageEvent) => {
+    db.insert(events).values({ conversationId: 'c', seq: ++seq, ts, type: event.type, payload: JSON.stringify(event) }).run()
+    db.update(conversations).set({ lastSeq: seq }).where(eq(conversations.id, 'c')).run()
+  }
+  write(start, { type: 'message.started', messageId: 'u1', role: 'user' })
+  write(start, { type: 'turn.started' })
+  write(start + 2 * minute, completed(100, 10))
+  const log = new EventLog(db)
+  const first = JSON.stringify(computeRunMetrics(log.readForReplay('c', 0, { rows: 100, bytes: 1 << 20, unfiltered: true }).entries))
+  db.insert(benchmarkRuns).values([
+    { id: 'run', benchmarkId: 'bench', variantId: 'v', conversationId: 'c', repetition: 1, status: 'failed', error: 'Check failed', startedAt: start,
+      finishedAt: start + 2 * minute, metrics: first, response: 'v1', rating: 2, ratingNote: 'broken', ratedAt: start },
+    { id: 'running', benchmarkId: 'bench', variantId: 'v', conversationId: 'busy', repetition: 2, status: 'running', startedAt: start },
+  ]).run()
+
+  const sent: [string, string][] = []
+  let journaledAt = 0
+  const sessions = {
+    assertCliEnabled: () => undefined,
+    terminate: async () => undefined,
+    sendMessage: async (id: string, _clientMessageId: string, text: string) => {
+      sent.push([id, text])
+      // A real send yields while it journals: the window a concurrent request could slip into.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const now = Date.now()
+      journaledAt = now
+      write(now, { type: 'message.started', messageId: 'u2', role: 'user' })
+      write(now, { type: 'turn.started' })
+      db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, id)).run()
+    },
+  }
+  const ctx = { db, config: { paths: { data: dir } } } as unknown as AppContext
+  const runner = new BenchmarkRunner(ctx, sessions as never, {} as never, log, {} as never)
+  const app = Fastify()
+  registerErrorHandler(app)
+  app.addHook('preHandler', async (request) => { Object.assign(request, { user: { id: 'owner' } }) })
+  registerBenchmarkRoutes(app, ctx, runner)
+  t.after(() => app.close())
+  const followUp = (runIds: string[], text = 'The button does nothing: fix it.') =>
+    app.inject({ method: 'POST', url: '/api/benchmarks/bench/follow-ups', payload: { runIds, text } })
+
+  // All or nothing: a run still working refuses the whole batch before any message leaves.
+  assert.equal((await followUp(['run', 'running'])).statusCode, 409)
+  assert.equal((await followUp(['missing'])).statusCode, 404)
+  assert.equal((await followUp(['run'], '   ')).statusCode, 400)
+  assert.deepEqual(sent, [])
+
+  const reopened = await followUp(['run'])
+  assert.equal(reopened.statusCode, 200, reopened.body)
+  assert.deepEqual(sent, [['c', 'The button does nothing: fix it.']])
+  const run = reopened.json().runs.find((entry: { id: string }) => entry.id === 'run')
+  assert.equal(run.status, 'running')
+  assert.equal(run.finishedAt, null)
+  assert.equal(run.metrics, null)
+  // The rating judged the result the correction is meant to change.
+  assert.equal(run.rating, null)
+  assert.equal(run.followUps.length, 1)
+  assert.equal(run.followUps[0].text, 'The button does nothing: fix it.')
+  const sentAt = run.followUps[0].sentAt as number
+
+  // An hour after the run started, five minutes after the follow-up: still within its own duration.
+  await runner.tick(sentAt + 5 * minute)
+  const row = () => db.select().from(benchmarkRuns).where(eq(benchmarkRuns.id, 'run')).get()!
+  assert.equal(row().status, 'running')
+
+  write(sentAt + 3 * minute, completed(50, 5))
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'c')).run()
+  await runner.tick(sentAt + 6 * minute)
+  const settled = row()
+  assert.equal(settled.status, 'succeeded')
+  assert.equal(settled.error, null)
+  const metrics = JSON.parse(settled.metrics!)
+  // Both attempts' work, without the hour the run sat finished between them.
+  assert.equal(metrics.durationMs, 2 * minute + (sentAt + 3 * minute - journaledAt))
+  assert.equal(metrics.outputTokens, 15)
+  assert.equal(JSON.parse(settled.followUps!).length, 1)
+
+  // Two requests at once (a double click, another tab): one message leaves, the other is refused.
+  const [one, two] = await Promise.all([followUp(['run'], 'Now the colors.'), followUp(['run'], 'Now the colors.')])
+  assert.deepEqual([one.statusCode, two.statusCode].sort(), [200, 409])
+  assert.equal(sent.filter(([, text]) => text === 'Now the colors.').length, 1)
+  assert.deepEqual(JSON.parse(row().followUps!).map((entry: { text: string }) => entry.text), ['The button does nothing: fix it.', 'Now the colors.'])
+})

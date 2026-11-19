@@ -59,7 +59,7 @@ async function checkResults(page, base, profile) {
     runs: variants.flatMap((variant, index) => [1, 2].map((repetition) => ({
       id: `${variant.id}-${repetition}`, variantId: variant.id, repetition, status: 'succeeded', conversationId: null,
       startedAt: 1, finishedAt: 90001, cliVersion: 'test', error: null, check: null,
-      response: `Résultat de ${variant.label}`, previewToken: `preview-${variant.id}-${repetition}`, rating: null, ratingNote: null,
+      response: `Résultat de ${variant.label}`, previewToken: `preview-${variant.id}-${repetition}`, rating: null, ratingNote: null, followUps: [],
       metrics: { version: 2, durationMs: 90000, waitingMs: 0, firstTextMs: 5000,
         inputTokens: [62237, 98887, 181027][index], outputTokens: 10000, cacheReadTokens: 38462, cacheCreationTokens: 22512,
         costUsd: index === 2 ? null : 0.3868893, toolCalls: 2, toolErrors: 0, toolDurationMs: 30,

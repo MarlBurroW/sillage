@@ -74,7 +74,11 @@ const ICONS = {
   fullscreen: icon('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>'),
   help: icon('<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'),
   close: icon('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+  reply: icon('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m10 7-3 3 3 3"/><path d="M17 13v-1a2 2 0 0 0-2-2H7"/>'),
 }
+
+/** A follow-up quoted over its production: two lines on screen, the rest stays on the page. */
+const QUOTE_CHARS = 180
 
 type ChartKey = 'durationMs' | 'costUsd' | 'tokens' | 'toolCalls' | 'rating' | 'passRate'
 
@@ -202,6 +206,13 @@ export function renderBenchmarkSlides(page: SharePage): string {
   const letterBadge = (c: Contestant) => `<span class="letter">${e(c.letter)}</span>`
   const variantWord = (c: Contestant) => fill(t('export.bench.variant'), { letter: c.letter })
   const nameOf = (c: Contestant) => e(c.variant.label)
+  // A result a human had to correct says so on every slide that names it: the video stays honest.
+  const followUpsOf = (c: Contestant) => c.runs.reduce((total, item) => total + item.run.followUps.length, 0)
+  const followUpText = (count: number) => fill(t(count === 1 ? 'export.bench.followUps.one' : 'export.bench.followUps'), { count })
+  const assistMini = (c: Contestant) => {
+    const count = followUpsOf(c)
+    return count ? ` <span class="assist-mini" title="${e(followUpText(count))}">${ICONS.reply}${count}</span>` : ''
+  }
 
   // --- Pieces --------------------------------------------------------------------
 
@@ -288,10 +299,22 @@ export function renderBenchmarkSlides(page: SharePage): string {
     const runCount = c.runs.length
     const run = c.shown && runCount > 1 ? `<span>${e(fill(t('export.slides.run'), { n: c.shown.run.repetition, total: runCount }))}</span>` : ''
     const tags = (records.get(c.id) ?? []).map((label) => `<span class="tag">▲ ${e(label)}</span>`).join('')
-    const line = `<span>${e(c.cli)}${c.effort ? ` · ${e(c.effort)}` : ''}</span>${run}${status}${tags}`
+    const count = c.shown?.run.followUps.length ?? 0
+    const assist = count ? `<span class="assist" data-follow-ups="${count}">${ICONS.reply}${e(followUpText(count))}</span>` : ''
+    const line = `<span>${e(c.cli)}${c.effort ? ` · ${e(c.effort)}` : ''}</span>${run}${status}${assist}${tags}`
     return `<div class="band" data-band><div class="badge">${letterBadge(c)}<span class="count">${c.index + 1} / ${total}</span></div>` +
       `<div class="who"><p class="name">${named(c, `${mark(c, 56)}<span>${nameOf(c)}</span>`, e(t('export.slides.guess')))}</p>` +
       `<p class="line">${named(c, line, e(variantWord(c)))}</p></div>${revealed(c, chips(c))}</div>`
+  }
+
+  /** What the human wrote to the run shown, over the bottom of its production. */
+  function followUpQuote(c: Contestant): string {
+    const followUps = c.shown?.run.followUps ?? []
+    if (followUps.length === 0) return ''
+    const last = followUps[followUps.length - 1]!.text.replace(/\s+/g, ' ').trim()
+    const text = last.length > QUOTE_CHARS ? `${last.slice(0, QUOTE_CHARS - 1).trimEnd()}…` : last
+    const more = followUps.length > 1 ? `<span class="more">${e(followUpText(followUps.length))}</span>` : ''
+    return `<p class="assist-quote" data-follow-up-quote><span class="k">${ICONS.reply}${e(t('export.slides.followUp'))}</span><q>${e(text)}</q>${more}</p>`
   }
 
   function card(c: Contestant, dense: boolean): string {
@@ -370,7 +393,7 @@ export function renderBenchmarkSlides(page: SharePage): string {
       kind: 'production', steps: eachReveal ? 2 : 1, dwell: eachReveal ? DWELL.blindProduction : DWELL.production,
       title: `${c.letter} · ${c.variant.label}`,
       ...(blind ? { blind: { title: variantWord(c), at: () => c.revealAt } } : {}),
-      body: () => production(c, PRODUCTION_WIDTH, FRAME_WIDTH) + band(c),
+      body: () => production(c, PRODUCTION_WIDTH, FRAME_WIDTH) + followUpQuote(c) + band(c),
     }
     productionSpecs.set(c.id, spec)
     specs.push(spec)
@@ -484,7 +507,7 @@ export function renderBenchmarkSlides(page: SharePage): string {
           const classes = ['bar-row', 'st', row.rank === 1 && direction ? 'best' : '', out ? 'out' : ''].filter(Boolean).join(' ')
           const step = direction ? rows.length - index : 0
           return `<li class="${classes}" data-step="${step}" style="--w:${value === null ? 0 : width(value).toFixed(2)}%">` +
-            `<span class="rank">${row.rank ?? ''}</span>${letterBadge(row.c)}${mark(row.c, dense ? 28 : 36)}<span class="name">${nameOf(row.c)}</span>` +
+            `<span class="rank">${row.rank ?? ''}</span>${letterBadge(row.c)}${mark(row.c, dense ? 28 : 36)}<span class="name">${nameOf(row.c)}${assistMini(row.c)}</span>` +
             `<span class="track"><span class="fill"></span></span>` +
             `<span class="value${out ? ' out' : ''}">${value === null ? '—' : e(format(key, value))}${out ? ` · ${e(t('export.bench.status.failed'))}` : ''}</span></li>`
         }).join('') + '</ol>' +
@@ -513,7 +536,7 @@ export function renderBenchmarkSlides(page: SharePage): string {
         const entry = podium[index]
         if (!entry) return '<div></div>'
         return `<div class="place p${index + 1} st" data-step="${placeSteps[index]}"><span class="rank">${entry.rank}</span>` +
-          `<p class="name">${mark(entry.c, 40)}<span>${nameOf(entry.c)}</span></p><p class="value">${e(format(criterion, entry.value.median!))}</p></div>`
+          `<p class="name">${mark(entry.c, 40)}<span>${nameOf(entry.c)}</span>${assistMini(entry.c)}</p><p class="value">${e(format(criterion, entry.value.median!))}</p></div>`
       }
       specs.push({
         kind: 'ranking', steps: step, dwell: [3, ...Array.from({ length: step - 1 }, (_, index) => (index === step - 2 ? 8 : 3))],
@@ -523,7 +546,7 @@ export function renderBenchmarkSlides(page: SharePage): string {
           // Alone, the podium takes the middle; a long list of the others shares the width with it.
           `<div class="ranking${rest.length === 0 ? ' solo' : rest.length > 8 ? ' crowded' : ''}"><div class="podium">${place(1)}${place(0)}${place(2)}</div>` +
           (rest.length ? `<ol class="rest st${rest.length > 8 ? ' dense' : ''}" data-step="${restStep}">${rest.map((entry) =>
-            `<li><span class="rank">${entry.rank ?? '—'}</span>${mark(entry.c, 32)}<span class="name">${nameOf(entry.c)}</span>` +
+            `<li><span class="rank">${entry.rank ?? '—'}</span>${mark(entry.c, 32)}<span class="name">${nameOf(entry.c)}${assistMini(entry.c)}</span>` +
             `<span class="value">${entry.rank === null ? e(t('export.slides.notRanked')) : e(format(criterion, entry.value.median!))}</span></li>`).join('')}</ol>` : '') +
           '</div>',
       })
@@ -539,6 +562,7 @@ export function renderBenchmarkSlides(page: SharePage): string {
     body: () => `<h2 class="slide-title">${e(t('export.slides.outro'))}</h2><div style="height:40px"></div>` +
       `<p class="outro-text">${e(fill(t('export.slides.outro.method'), { minutes: benchmark.maxDurationMinutes }))}</p>` +
       (metrics ? `<p class="outro-text">${e(t('export.slides.outro.median'))}</p><p class="outro-text">${e(t('export.slides.outro.cost'))}</p>` : '') +
+      (contestants.some((c) => followUpsOf(c) > 0) ? `<p class="outro-text">${e(t('export.bench.followUpNote'))}</p>` : '') +
       (versions.length ? `<p class="versions">${e(t('export.slides.outro.versions'))} · ${e(versions.join(' · '))}</p>` : '') +
       `<a class="pagelink" href="${e(page.links.page)}">${e(t('export.slides.outro.page'))}</a>` +
       `<p class="brandline">${logo(34)}<span>${e(t('export.page.signature'))}</span></p>`,

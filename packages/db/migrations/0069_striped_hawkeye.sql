@@ -1,0 +1,1 @@
+ALTER TABLE `benchmark_runs` ADD `follow_ups` text;

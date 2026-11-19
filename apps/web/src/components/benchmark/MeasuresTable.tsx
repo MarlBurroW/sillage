@@ -1,9 +1,10 @@
-import { ArrowDown, ArrowUp, Check, ExternalLink, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ExternalLink, MessageSquareReply, X } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
   BENCHMARK_METRIC_DIRECTIONS,
   MAX_BENCHMARK_COMPARISON_VARIANTS,
+  canFollowUp,
   conversationPath,
   eligibleRuns,
   passRate,
@@ -19,6 +20,7 @@ import { useLiveStatus } from '../../lib/conversation-status'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { Badge, cx } from '../ui'
+import { FollowUpBadge, followUpEntries } from './FollowUps'
 
 export interface Sort {
   key: MetricKey
@@ -117,7 +119,7 @@ function compactValue(key: MetricKey, value: number | null, lang: string): strin
  * right-aligned with their numbers, the best value of each directional measure stands out, and
  * zeros step back so differences show first.
  */
-export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, selection, onToggleCompared, nameOf }: {
+export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, selection, onToggleCompared, nameOf, onFollowUp }: {
   benchmark: BenchmarkDto
   blocks: VariantBlock[]
   metricKeys: MetricKey[]
@@ -126,9 +128,17 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
   selection: string[]
   onToggleCompared: (variantId: string) => void
   nameOf: (variantId: string) => { label: string; text: string }
+  /** Opens the correction dialog on a finished run. */
+  onFollowUp: (runId: string) => void
 }) {
   const t = useTranslate()
   const lang = locale()
+  const followUpButton = (run: BenchmarkRunDto, size: number) => canFollowUp(run) ? (
+    <button type="button" className="text-ink-faint hover:text-accent" onClick={() => onFollowUp(run.id)}
+      aria-label={t('benchmark.followUp.action')} title={t('benchmark.followUp.action')} data-follow-up-open={run.id}>
+      <MessageSquareReply size={size} />
+    </button>
+  ) : null
   const checked = Boolean(benchmark.checkScript)
   const pickable = benchmark.variants.length > 2
   const groups = GROUPS.map((group) => ({ ...group, keys: group.keys.filter((key) => metricKeys.includes(key)) })).filter((group) => group.keys.length > 0)
@@ -224,6 +234,7 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
                           <ExternalLink size={12} />
                         </Link>
                       ) : null}
+                      {single ? followUpButton(single, 13) : null}
                     </div>
                     {/* The exact model, the CLI release and when a variant joined, on a quiet second line. */}
                     <div className="truncate text-[0.6875rem] text-ink-faint sm:overflow-visible sm:whitespace-nowrap">
@@ -244,7 +255,10 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
                 {single ? (
                   <tr className={cx('border-t border-line hover:bg-surface-high/70', zebra)} data-benchmark-group={variant.id} data-benchmark-run={single.status}>
                     {head}
-                    <td className="px-3 py-2 whitespace-nowrap"><RunStatus run={single} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <RunStatus run={single} />
+                      <FollowUpBadge entries={followUpEntries([single])} className="ml-2" />
+                    </td>
                     {checked ? <CheckCell run={single} /> : null}
                     {/* A failed run's numbers stay readable but step back: they never rank. */}
                     {metricKeys.map((key) => metricCell(key, metricValue(single, key), isBest(key), null, key === 'toolCalls' ? toolBreakdown(single) : undefined, key === 'rating' || block.eligible[key] !== false || metricValue(single, key) === null))}
@@ -258,6 +272,7 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
                           {runs.map((run) => <span key={run.id} aria-hidden className={cx('size-1.5 rounded-full', RUN_TONES[run.status])} />)}
                           <span className="ml-1 text-xs text-ink-soft">{t('benchmark.table.median')}</span>
                         </span>
+                        <FollowUpBadge entries={followUpEntries(runs)} className="ml-2" />
                         {pool ? (
                           <span className={cx('block text-[0.6875rem]', pool === 'failed' ? 'text-caution' : 'text-ink-faint')}>
                             {t(pool === 'failed' ? 'benchmark.compare.failedOnly' : 'benchmark.table.medianSucceeded')}
@@ -293,8 +308,12 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
                           ) : (
                             <span className="text-ink-faint">{t('benchmark.table.repetition', { n: run.repetition })}</span>
                           )}
+                          <span className="ml-2 inline-flex align-middle">{followUpButton(run, 12)}</span>
                         </td>
-                        <td className="px-3 py-1 whitespace-nowrap"><RunStatus run={run} /></td>
+                        <td className="px-3 py-1 whitespace-nowrap">
+                          <RunStatus run={run} />
+                          <FollowUpBadge entries={followUpEntries([run])} className="ml-2" />
+                        </td>
                         {checked ? <CheckCell run={run} /> : null}
                         {metricKeys.map((key) => {
                           const value = metricValue(run, key)

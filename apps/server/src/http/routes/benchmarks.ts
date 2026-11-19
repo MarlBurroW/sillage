@@ -3,7 +3,7 @@ import { realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { BENCHMARK_PREVIEW_PREFIX, BENCHMARK_SHARE_PREFIX, BENCHMARK_SLIDES_FILE, benchmarkShareOptionsSchema, publishBenchmarkShareBodySchema, createBenchmarkBodySchema, updateBenchmarkSettingsBodySchema, updateBenchmarkLineupBodySchema, updateBenchmarkComparisonsBodySchema, rateBenchmarkRunBodySchema, type BenchmarkDto, type BenchmarkShareOptions } from '@sillage/protocol'
+import { BENCHMARK_PREVIEW_PREFIX, BENCHMARK_SHARE_PREFIX, BENCHMARK_SLIDES_FILE, benchmarkShareOptionsSchema, publishBenchmarkShareBodySchema, createBenchmarkBodySchema, updateBenchmarkSettingsBodySchema, updateBenchmarkLineupBodySchema, updateBenchmarkComparisonsBodySchema, rateBenchmarkRunBodySchema, followUpBenchmarkRunsBodySchema, type BenchmarkDto, type BenchmarkShareOptions } from '@sillage/protocol'
 import { PREVIEW_POLICY, previewType } from '../../benchmarks/deliverables.js'
 import type { BenchmarkRunner } from '../../benchmarks/runner.js'
 import { BenchmarkShares } from '../../benchmarks/share.js'
@@ -81,6 +81,15 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     const body = rateBenchmarkRunBodySchema.parse(request.body)
     runner.rate(row.id, runId, body.rating, body.note)
     return runner.dto(row)
+  })
+
+  /** Continues finished runs with the same correction; they reopen and are measured again at settlement. */
+  app.post('/api/benchmarks/:id/follow-ups', async (request): Promise<BenchmarkDto> => {
+    const user = requireUser(request)
+    const row = runner.load((request.params as { id: string }).id, user.id)
+    const body = followUpBenchmarkRunsBodySchema.parse(request.body)
+    await runner.followUp(row.id, body.runIds, body.text)
+    return runner.dto(runner.load(row.id, user.id))
   })
 
   app.delete('/api/benchmarks/:id', async (request, reply) => {

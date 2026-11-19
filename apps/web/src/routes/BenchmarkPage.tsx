@@ -1,4 +1,4 @@
-import { Pencil, ChevronDown, CopyPlus, Download, Eye, EyeOff, FileText, FlaskConical, ListPlus, MonitorPlay, RotateCcw, Share2, Square, Trash2 } from 'lucide-react'
+import { Pencil, ChevronDown, CopyPlus, Download, Eye, EyeOff, FileText, FlaskConical, ListPlus, MessageSquareReply, MonitorPlay, RotateCcw, Share2, Square, Trash2 } from 'lucide-react'
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -17,6 +17,7 @@ import { BenchmarkChart } from '../components/benchmark/BenchmarkChart'
 import { ComparisonPicker } from '../components/benchmark/ComparisonPicker'
 import { OutputsViewer } from '../components/benchmark/OutputsViewer'
 import { SeriesComparison } from '../components/benchmark/SeriesComparison'
+import { FollowUpDialog } from '../components/benchmark/FollowUps'
 import { MeasuresTable, variantBlocks, type Sort } from '../components/benchmark/MeasuresTable'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, Tabs, cx } from '../components/ui'
 import {
@@ -94,6 +95,8 @@ function BenchmarkView({ id }: { id: string }) {
   const [sharing, setSharing] = useState(false)
   const [lineup, setLineup] = useState<'edit' | 'add' | null>(null)
   const [sort, setSort] = useState<Sort | null>(null)
+  /** Runs the correction dialog opened on; null while closed. */
+  const [followingUp, setFollowingUp] = useState<string[] | null>(null)
   // The open tab and the compared variants, read from the address and written back to it. Held
   // here too because the router applies a new address after the click: a ticked box would
   // flicker back to empty until then. `pending` lists the addresses this page asked for and has
@@ -378,7 +381,7 @@ function BenchmarkView({ id }: { id: string }) {
               {blind.revealed ? <Button size="sm" variant="ghost" onClick={() => blind.reset()}>{t('benchmark.blind.forget')}</Button> : null}
               <span className="text-xs text-ink-faint">{t('benchmark.blind.hint')}</span>
             </div>
-            <OutputsViewer benchmark={benchmark} order={blind.order} nameOf={nameOf} blind={false} />
+            <OutputsViewer benchmark={benchmark} order={blind.order} nameOf={nameOf} blind={false} onFollowUp={(runId) => setFollowingUp([runId])} />
           </div> : shown === 'compare' ? (
             <div className="flex flex-col gap-5">
               {/* Two variants leave nothing to pick, but their saved comparisons still live here. */}
@@ -408,10 +411,21 @@ function BenchmarkView({ id }: { id: string }) {
                 const variant = benchmark.variants.find((entry) => entry.id === variantId)
                 if (!variant) return []
                 const name = nameOf(variantId)
+                const followUps = benchmark.runs.reduce((total, run) => total + (run.variantId === variantId ? run.followUps.length : 0), 0)
                 return [{
                   id: variantId,
                   text: name.text,
-                  label: <span className="inline-flex min-w-0 items-center gap-1.5"><AgentIcon agent={variantAgent(variant)} size={13} /><span className="truncate">{name.label}</span></span>,
+                  label: (
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <AgentIcon agent={variantAgent(variant)} size={13} />
+                      <span className="truncate">{name.label}</span>
+                      {followUps > 0 ? (
+                        <span className="inline-flex shrink-0 items-center gap-0.5 text-[0.6875rem] font-medium text-caution" title={t(followUps === 1 ? 'benchmark.followUp.count.one' : 'benchmark.followUp.count', { count: followUps })}>
+                          <MessageSquareReply size={11} aria-hidden />{followUps}
+                        </span>
+                      ) : null}
+                    </span>
+                  ),
                   runs: benchmark.runs.filter((run) => run.variantId === variantId),
                 }]
               })}
@@ -438,6 +452,7 @@ function BenchmarkView({ id }: { id: string }) {
             selection={selection}
             onToggleCompared={toggleCompared}
             nameOf={nameOf}
+            onFollowUp={(runId) => setFollowingUp([runId])}
           />
           <p className="mt-3 text-xs text-ink-faint">{t('benchmark.table.legend')}</p>
           </>}
@@ -447,6 +462,7 @@ function BenchmarkView({ id }: { id: string }) {
       </div>
 
       {sharing ? <Suspense fallback={null}><BenchmarkShareDialog benchmark={benchmark} onClose={() => setSharing(false)} /></Suspense> : null}
+      {followingUp ? <FollowUpDialog benchmark={benchmark} initial={followingUp} nameOf={nameOf} onClose={() => setFollowingUp(null)} /> : null}
       {lineup ? <Suspense fallback={null}><LineupDialog benchmark={benchmark} intent={lineup} onClose={() => setLineup(null)} /></Suspense> : null}
 
       <ConfirmDialog
