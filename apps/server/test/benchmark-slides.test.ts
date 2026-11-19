@@ -308,3 +308,23 @@ test('slides: a production a human followed up carries the badge and the quote; 
   assert.equal(createHash('sha256').update(/<script>([\s\S]*)<\/script>/.exec(html)![1]!).digest('base64'), SLIDES_SCRIPT_HASHES[0])
   assert.doesNotMatch(renderBenchmarkSlides(pageOf()), /class="assist|data-follow-up-quote/)
 })
+
+test("slides: the author's take sits over its production, after the reveal on a blind deck", () => {
+  const commented = { ...benchmark, runs: benchmark.runs.map((entry) => (entry.variantId === 'v1' ? { ...entry, ratingNote: 'Opus <b>nailed</b> it.' } : entry)) } as BenchmarkDto
+  const withComments = (options: Partial<BenchmarkShareOptions>) => {
+    const page = pageOf(options)
+    return renderBenchmarkSlides({ ...page, benchmark: commented, runs: page.runs.map((item) => ({ ...item, run: { ...commented.runs.find((entry) => entry.id === item.run.id)!, rating: item.run.rating } })) })
+  }
+  const production = (html: string) => sections(html).filter((section) => section.kind === 'production')
+  const open = production(withComments({ includeRatings: true }))
+  assert.equal(open.filter((section) => section.body.includes('data-author-quote')).length, 1)
+  const quoted = open.find((section) => section.body.includes('data-author-quote'))!.body
+  assert.match(quoted, /Mon avis<span class="stars">★★★★★<\/span>/)
+  assert.match(quoted, /Opus &lt;b&gt;nailed&lt;\/b&gt; it\./)
+  // The band sizes the name to its length, and the check chip does not repeat its title.
+  assert.match(quoted, /<p class="name" style="--chars:8">/)
+  assert.doesNotMatch(withComments({}), /Vérification réussie/)
+  // Blind: the comment may name the model, so it waits for the reveal like the name does.
+  const blindProduction = production(withComments({ blind: true, revealAt: 'each' })).find((section) => section.body.includes('data-author-quote'))!
+  assert.doesNotMatch(visibleAt(blindProduction.body, blindProduction.base), /nailed/)
+})

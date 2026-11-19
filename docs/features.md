@@ -201,7 +201,8 @@ The periodic cleanup removes expired, revoked and orphaned files.
 - **Benchmarks.** Under **Discussions**, run one prompt across models, effort levels
   and CLIs, with optional starting files and a check script. Runs start without
   personal memory or platform prompt, so every variant receives the same text.
-  Compare measurements, outputs and pass rates, rate runs blind, chart a measure,
+  Compare measurements, outputs and pass rates, rate runs blind and comment on each
+  result (a comment needs no stars), chart a measure,
   export CSV or JSON, and rerun a benchmark to follow it over time. Durations count
   working time, the same way for every CLI: the clock stops while a permission,
   question or plan waits for you and while a session sits idle between turns, and
@@ -235,6 +236,8 @@ The periodic cleanup removes expired, revoked and orphaned files.
   mode for recording and an optional "guess the model" reveal. Both go out as a public
   link on the Server edition (frozen until you refresh it under the same address) and
   as a zip in both editions; **Present** opens the slideshow live from the benchmark.
+  Your comments can go out with them, under each production and on its slide; they
+  stay private unless you tick them.
 - **Consumption, at API prices.** The **Consumption** entry of the rail shows the
   tokens the instance processed and what the same work would cost through the public
   APIs: totals for a period, a chart per day or month by CLI, and one breakdown at a

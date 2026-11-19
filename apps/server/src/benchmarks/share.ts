@@ -155,7 +155,7 @@ export class BenchmarkShares {
     for (const run of sorted) {
       const verdict = assessments.get(run.id)!
       const root = run.previewToken ? this.runner.previewRoot(run.previewToken) : null
-      const shared = { ...run, rating: options.includeRatings ? run.rating : null, ratingNote: null, conversationId: null, previewToken: null }
+      const shared = { ...run, rating: options.includeRatings ? run.rating : null, ratingNote: options.includeComments ? run.ratingNote : null, conversationId: null, previewToken: null }
       if (verdict.mode === 'none' || !root) {
         runs.push({ run: shared, mode: 'none', reason: verdict.reason ?? 'missing', dir: null, entry: null, files: [], excerpts: {} })
         continue

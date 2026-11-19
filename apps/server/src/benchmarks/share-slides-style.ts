@@ -79,8 +79,9 @@ a{color:var(--accent)}
 .badge .letter{width:72px;height:72px;font-size:44px}
 .count{font-size:22px;font-weight:650;color:var(--muted);font-variant-numeric:tabular-nums}
 .clean .count{visibility:hidden}
-.who{min-width:0;flex:1}
-.who .name{display:flex;align-items:center;gap:18px;margin:0;font-size:64px;line-height:1.05;font-weight:800;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The name shrinks with the room the measures leave it before it ever cuts: a model's name is the point of the slide. */
+.who{min-width:0;flex:1;container-type:inline-size}
+.who .name{display:flex;align-items:center;gap:18px;margin:0;font-size:clamp(34px,calc((100cqi - 80px) / (var(--chars,12) * .58)),64px);line-height:1.05;font-weight:800;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .who .name>span:last-child,.who .name sg-reveal>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .who .line{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin:8px 0 0;font-size:28px;color:var(--muted)}
 .chips{display:flex;gap:44px;flex:none;margin:0;padding:0;list-style:none}
@@ -88,15 +89,20 @@ a{color:var(--accent)}
 .chip .k{font-size:22px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .chip .v{font-size:52px;line-height:1.05;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .chip .v.pass{color:var(--good)}.chip .v.fail{color:var(--bad)}
+.chips[data-count="4"]{gap:32px}.chips[data-count="4"] .chip .v{font-size:44px}
+.chips[data-count="5"]{gap:26px}.chips[data-count="5"] .chip .v{font-size:40px}.chips[data-count="5"] .chip .k{font-size:20px}
 .tag{display:inline-flex;align-items:center;gap:8px;font-size:22px;font-weight:750;color:var(--on-accent);background:var(--accent);border-radius:999px;padding:3px 16px}
 .status{font-size:24px;font-weight:750;color:var(--bad);border:3px solid currentColor;border-radius:10px;padding:1px 12px}
 .assist{display:inline-flex;align-items:center;gap:8px;font-size:24px;font-weight:750;color:var(--warn);border:3px solid currentColor;border-radius:10px;padding:1px 12px}.assist svg{width:22px;height:22px}
 .assist-mini{display:inline-flex;align-items:center;gap:4px;margin-left:6px;font-size:.7em;font-weight:750;color:var(--warn);vertical-align:middle}.assist-mini svg{width:.9em;height:.9em}
-/* Over the bottom of the production, above the band: the frame is a picture, the quote a caption. */
-.assist-quote{position:absolute;left:120px;bottom:240px;z-index:2;display:flex;flex-direction:column;gap:6px;max-width:1100px;margin:0;padding:18px 24px;border-radius:14px;background:rgba(15,11,17,.88);border:3px solid var(--warn);font-size:28px;line-height:1.35;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+/* Over the bottom of the production, above the band: the frame is a picture, the quotes captions. */
+.overlays{position:absolute;left:120px;bottom:240px;z-index:2;display:flex;flex-direction:column;align-items:flex-start;gap:16px;max-width:1100px}
+.assist-quote,.author-quote{display:flex;flex-direction:column;gap:6px;margin:0;padding:18px 24px;border-radius:14px;background:rgba(15,11,17,.88);border:3px solid var(--warn);font-size:28px;line-height:1.35;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.author-quote{border-color:var(--accent)}.author-quote .k{display:inline-flex;align-items:center;gap:14px;font-size:20px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}.author-quote .stars{letter-spacing:.1em;font-size:24px}
+.author-quote q{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .assist-quote .k{display:inline-flex;align-items:center;gap:8px;font-size:20px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--warn)}.assist-quote .k svg{width:20px;height:20px}
 .assist-quote q{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.assist-quote .more{font-size:20px;color:var(--muted)}
-.no-band .s-production .assist-quote{display:none}
+.no-band .s-production .overlays{display:none}
 .gallery{position:absolute;inset:0;display:grid;gap:18px;padding:18px;background:var(--sunken)}
 .gallery.g2{grid-template-columns:1fr 1fr}.gallery.g3,.gallery.g4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
 .gallery figure{position:relative;margin:0;min-height:0;display:flex;flex-direction:column;gap:8px}

@@ -78,6 +78,7 @@ export default function BenchmarkShareDialog({ benchmark, onClose }: { benchmark
   const live = runs.filter((run) => run.mode === 'page').length
   const shown = runs.filter((run) => run.mode !== 'none').length
   const rated = benchmark.runs.some((run) => run.rating !== null)
+  const commented = benchmark.runs.some((run) => run.ratingNote)
   // The server takes titles up to the benchmark name's length: past it, every way out would fail.
   const titleTooLong = cleaned.title.length > MAX_BENCHMARK_NAME_CHARS
   const titled = cleaned.title.length > 0 && !titleTooLong
@@ -118,6 +119,7 @@ export default function BenchmarkShareDialog({ benchmark, onClose }: { benchmark
             onChange={(includeChart) => set({ includeChart })}
           />
           {rated ? <Option label={t('benchmark.share.option.ratings')} checked={options.includeRatings} onChange={(includeRatings) => set({ includeRatings })} /> : null}
+          {commented ? <Option label={t('benchmark.share.option.comments')} hint={t('benchmark.share.option.commentsHint')} checked={options.includeComments} onChange={(includeComments) => set({ includeComments })} /> : null}
           <Option label={t('benchmark.share.option.slides')} hint={t('benchmark.share.option.slidesHint')} checked={options.includeSlides} onChange={(includeSlides) => set({ includeSlides })} />
           <Option label={t('benchmark.share.option.blind')} hint={t('benchmark.share.option.blindHint')} checked={options.blind} onChange={(blind) => set({ blind })} />
           {options.blind ? (

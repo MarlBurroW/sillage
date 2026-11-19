@@ -335,6 +335,7 @@ export interface BenchmarkRunDto {
   previewToken: string | null
   /** Human rating from 1 to 5; null until rated. */
   rating: number | null
+  /** The author's comment on the result, with or without a rating. */
   ratingNote: string | null
   /**
    * Corrections a human sent after the run settled, oldest first. Each one continued the same
@@ -464,7 +465,10 @@ export const MIN_BENCHMARK_RATING = 1
 export const MAX_BENCHMARK_RATING = 5
 export const MAX_BENCHMARK_RATING_NOTE_CHARS = 2000
 
-/** `rating: null` clears it: a blind pass can be redone. */
+/**
+ * `rating: null` clears the stars: a blind pass can be redone. The note is the author's comment on
+ * the run and stands on its own: it can be written without stars, and outlives cleared ones.
+ */
 export const rateBenchmarkRunBodySchema = z.object({
   rating: z.number().int().min(MIN_BENCHMARK_RATING).max(MAX_BENCHMARK_RATING).nullable(),
   note: z.string().trim().max(MAX_BENCHMARK_RATING_NOTE_CHARS).nullable().default(null),
@@ -596,6 +600,11 @@ export const benchmarkShareOptionsSchema = z.object({
   includeResponses: z.boolean().default(true),
   includeMetrics: z.boolean().default(true),
   includeRatings: z.boolean().default(false),
+  /**
+   * The author's comments on runs, what they thought of each result. Off unless asked for, so a
+   * link published before comments existed shows none after a refresh.
+   */
+  includeComments: z.boolean().default(false),
   /** The chart of one measure across variants, next to the table; needs the measurements. */
   includeChart: z.boolean().default(true),
   /** A slideshow beside the page (`slides.html`), for screen sharing and recording. */

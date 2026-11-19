@@ -17,6 +17,7 @@ import { METRIC_LABELS, formatMetric, isOpenRun, type MetricKey } from '../../li
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { FollowUpBadge, followUpEntries } from './FollowUps'
+import { CommentBadge } from './RunComments'
 import { Banner, Button, IconButton, cx } from '../ui'
 import { OutputsViewer } from './OutputsViewer'
 
@@ -128,7 +129,10 @@ export default function ComparisonView({
           apart && Number.isFinite(starts[index]) ? t('benchmark.compare.ranOn', { date: new Date(starts[index]!).toLocaleDateString(lang, { dateStyle: 'medium' }) }) : null,
         ].filter(Boolean).join(' · ')}
       </p>
-      <FollowUpBadge entries={followUpEntries(benchmark.runs.filter((run) => run.variantId === variant.id))} className={mirrored ? 'self-end' : 'self-start'} />
+      <span className={cx('flex items-center gap-1.5', mirrored ? 'self-end' : 'self-start')}>
+        <FollowUpBadge entries={followUpEntries(benchmark.runs.filter((run) => run.variantId === variant.id))} />
+        <CommentBadge runs={benchmark.runs.filter((run) => run.variantId === variant.id)} />
+      </span>
       {wins.get(variant.id) ? (
         <span className="inline-flex items-center gap-1 text-xs text-accent"><Trophy size={12} aria-hidden />{t(wins.get(variant.id) === 1 ? 'benchmark.compare.wins.one' : 'benchmark.compare.wins', { count: wins.get(variant.id)! })}</span>
       ) : null}

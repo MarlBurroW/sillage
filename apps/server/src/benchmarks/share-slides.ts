@@ -282,6 +282,7 @@ export function renderBenchmarkSlides(page: SharePage): string {
       const runs = c.runs.map((item) => item.run).filter((run) => run.check)
       const passed = runs.filter((run) => run.check!.passed).length
       if (runs.length) {
+        // The chip is already titled Check: its value says only how it went.
         const text = runs.length === 1 ? (passed ? `✓ ${t('export.slides.check.passed')}` : `✗ ${t('export.slides.check.failed')}`) : `${passed === runs.length ? '✓' : '✗'} ${passed}/${runs.length}`
         list.push(chip(t('export.bench.col.check'), text, passed === runs.length ? ' pass' : ' fail'))
       }
@@ -290,7 +291,8 @@ export function renderBenchmarkSlides(page: SharePage): string {
       const rating = measure(c.id, 'rating')
       if (rating.median !== null) list.push(chip(t('export.bench.col.rating'), `★ ${format('rating', rating.median)}`))
     }
-    return `<ul class="chips">${list.join('')}</ul>`
+    // The count lets the band tighten its numbers when ratings and the check join the three measures.
+    return `<ul class="chips" data-count="${list.length}">${list.join('')}</ul>`
   }
 
   function band(c: Contestant): string {
@@ -303,16 +305,35 @@ export function renderBenchmarkSlides(page: SharePage): string {
     const assist = count ? `<span class="assist" data-follow-ups="${count}">${ICONS.reply}${e(followUpText(count))}</span>` : ''
     const line = `<span>${e(c.cli)}${c.effort ? ` · ${e(c.effort)}` : ''}</span>${run}${status}${assist}${tags}`
     return `<div class="band" data-band><div class="badge">${letterBadge(c)}<span class="count">${c.index + 1} / ${total}</span></div>` +
-      `<div class="who"><p class="name">${named(c, `${mark(c, 56)}<span>${nameOf(c)}</span>`, e(t('export.slides.guess')))}</p>` +
+      // Its length sizes the name to the room the measures leave (see .who .name).
+      `<div class="who"><p class="name" style="--chars:${Math.max(6, [...c.variant.label].length)}">${named(c, `${mark(c, 56)}<span>${nameOf(c)}</span>`, e(t('export.slides.guess')))}</p>` +
       `<p class="line">${named(c, line, e(variantWord(c)))}</p></div>${revealed(c, chips(c))}</div>`
   }
 
-  /** What the human wrote to the run shown, over the bottom of its production. */
+  const clip = (raw: string) => {
+    const flat = raw.replace(/\s+/g, ' ').trim()
+    return flat.length > QUOTE_CHARS ? `${flat.slice(0, QUOTE_CHARS - 1).trimEnd()}…` : flat
+  }
+
+  /** Captions over the bottom of a production: the follow-up it needed, then the author's take. */
+  function overlays(c: Contestant): string {
+    const parts = followUpQuote(c) + authorQuote(c)
+    return parts ? `<div class="overlays">${parts}</div>` : ''
+  }
+
+  /** The author's comment on the run shown. It may name the model, so a blind slide waits for the reveal. */
+  function authorQuote(c: Contestant): string {
+    const run = c.shown?.run
+    if (!run?.ratingNote) return ''
+    const stars = run.rating !== null ? `<span class="stars">${'★'.repeat(run.rating)}${'☆'.repeat(5 - run.rating)}</span>` : ''
+    return revealed(c, `<p class="author-quote" data-author-quote><span class="k">${e(t('export.slides.comment'))}${stars}</span><q>${e(clip(run.ratingNote))}</q></p>`)
+  }
+
+  /** What the human wrote to the run shown. */
   function followUpQuote(c: Contestant): string {
     const followUps = c.shown?.run.followUps ?? []
     if (followUps.length === 0) return ''
-    const last = followUps[followUps.length - 1]!.text.replace(/\s+/g, ' ').trim()
-    const text = last.length > QUOTE_CHARS ? `${last.slice(0, QUOTE_CHARS - 1).trimEnd()}…` : last
+    const text = clip(followUps[followUps.length - 1]!.text)
     const more = followUps.length > 1 ? `<span class="more">${e(followUpText(followUps.length))}</span>` : ''
     return `<p class="assist-quote" data-follow-up-quote><span class="k">${ICONS.reply}${e(t('export.slides.followUp'))}</span><q>${e(text)}</q>${more}</p>`
   }
@@ -393,7 +414,7 @@ export function renderBenchmarkSlides(page: SharePage): string {
       kind: 'production', steps: eachReveal ? 2 : 1, dwell: eachReveal ? DWELL.blindProduction : DWELL.production,
       title: `${c.letter} · ${c.variant.label}`,
       ...(blind ? { blind: { title: variantWord(c), at: () => c.revealAt } } : {}),
-      body: () => production(c, PRODUCTION_WIDTH, FRAME_WIDTH) + followUpQuote(c) + band(c),
+      body: () => production(c, PRODUCTION_WIDTH, FRAME_WIDTH) + overlays(c) + band(c),
     }
     productionSpecs.set(c.id, spec)
     specs.push(spec)

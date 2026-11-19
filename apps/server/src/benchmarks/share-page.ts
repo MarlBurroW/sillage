@@ -150,6 +150,7 @@ a.pill{display:inline-flex;align-items:center;gap:.45rem;text-decoration:none;fo
 .assist{flex:none;display:inline-flex;align-items:center;gap:.25rem;font-size:.75rem;font-weight:600;color:var(--warn);border:1px solid currentColor;border-radius:5px;padding:0 .4rem;white-space:nowrap}.assist svg{width:12px;height:12px}
 .name-row small.assist-line,.cname .assist-line{display:inline-flex;align-items:center;gap:.25rem;color:var(--warn);font-weight:600}.assist-line svg{width:11px;height:11px}
 .followups{border-top:1px solid var(--line);padding:.45rem .8rem;font-size:.85rem}.followups summary{cursor:pointer;color:var(--warn);font-weight:600}.followups ol{margin:.4rem 0 .2rem;padding-left:1.2rem}.followups li{margin:.3rem 0}.followups li p{margin:0;white-space:pre-wrap}.followups li span{display:block;font-size:.75rem;color:var(--muted)}
+.author-note{margin:0;padding:.55rem .8rem;border-top:1px solid var(--line);font-size:.9rem;white-space:pre-wrap}.author-note::before{content:attr(data-label);display:block;margin-bottom:.15rem;font-size:.72rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}.author-note:empty{display:none}
 .acts{display:flex;gap:.15rem;flex:none}
 .acts a,.acts button{display:grid;place-items:center;width:2rem;height:2rem;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .acts a:hover,.acts button:hover{background:var(--sunken);color:var(--ink)}
@@ -565,6 +566,18 @@ export function renderBenchmarkShare(page: SharePage): string {
     return `<details class="followups" data-follow-up-texts><summary>${e(followUpText(followUps.length))}</summary><ol>${entries}</ol></details>`
   }
 
+  // What the author thought of the result. A comment may name the model, so a blind page keeps its
+  // text in the swapped attributes until the reveal; an empty paragraph hides itself.
+  const comment = (item: SharePageRun) => {
+    const text = item.run.ratingNote
+    if (!text) return ''
+    const rating = item.run.rating
+    const label = t('export.bench.comment') + (rating !== null ? ` · ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}` : '')
+    return options.blind
+      ? `<p class="author-note" data-author-note data-label="${e(label)}" data-real="${e(text)}" data-blind=""></p>`
+      : `<p class="author-note" data-author-note data-label="${e(label)}">${e(text)}</p>`
+  }
+
   const blockedNotice = (item: SharePageRun) =>
     item.reason && !(item.reason === 'empty' && item.run.response)
       ? `<p class="blocked">${e(t(`export.bench.blocked.${item.reason}`))}</p>`
@@ -631,7 +644,7 @@ export function renderBenchmarkShare(page: SharePage): string {
       `<article class="lane" data-lane data-rep="${run.repetition}" data-variant="${index}">` +
       `<header class="lane-bar"><span class="letter">${letterOf(index)}</span>${mark(index, 18)}<div class="who">${variantName(index)}${detailLine(index)}</div>${failure}${assisted}` +
       `<div class="acts">${actions}<button type="button" data-expand="${e(t('export.bench.expand'))}" data-collapse="${e(t('export.bench.collapse'))}" aria-label="${e(t('export.bench.expand'))}" title="${e(t('export.bench.expand'))}">${ICONS.expand}</button></div></header>` +
-      body + followUpList(item) + stats + '</article>'
+      body + followUpList(item) + comment(item) + stats + '</article>'
     )
   }
 

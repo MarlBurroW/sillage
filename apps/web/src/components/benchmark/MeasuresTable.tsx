@@ -21,6 +21,7 @@ import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { Badge, cx } from '../ui'
 import { FollowUpBadge, followUpEntries } from './FollowUps'
+import { CommentBadge } from './RunComments'
 
 export interface Sort {
   key: MetricKey
@@ -258,6 +259,7 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
                     <td className="px-3 py-2 whitespace-nowrap">
                       <RunStatus run={single} />
                       <FollowUpBadge entries={followUpEntries([single])} className="ml-2" />
+                      <CommentBadge runs={[single]} className="ml-1.5" />
                     </td>
                     {checked ? <CheckCell run={single} /> : null}
                     {/* A failed run's numbers stay readable but step back: they never rank. */}
@@ -273,6 +275,7 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
                           <span className="ml-1 text-xs text-ink-soft">{t('benchmark.table.median')}</span>
                         </span>
                         <FollowUpBadge entries={followUpEntries(runs)} className="ml-2" />
+                        <CommentBadge runs={runs} className="ml-1.5" />
                         {pool ? (
                           <span className={cx('block text-[0.6875rem]', pool === 'failed' ? 'text-caution' : 'text-ink-faint')}>
                             {t(pool === 'failed' ? 'benchmark.compare.failedOnly' : 'benchmark.table.medianSucceeded')}
@@ -313,6 +316,7 @@ export function MeasuresTable({ benchmark, blocks, metricKeys, sort, onSort, sel
                         <td className="px-3 py-1 whitespace-nowrap">
                           <RunStatus run={run} />
                           <FollowUpBadge entries={followUpEntries([run])} className="ml-2" />
+                          <CommentBadge runs={[run]} className="ml-1.5" />
                         </td>
                         {checked ? <CheckCell run={run} /> : null}
                         {metricKeys.map((key) => {

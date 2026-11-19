@@ -6,9 +6,9 @@ import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 
 /**
- * Rating of one run, from 1 to 5, with an optional note. A radio group of stars: arrows move the
- * choice, the current star clicked again clears it. The note saves when the field loses focus so
- * typing never waits on the network.
+ * Rating of one run, from 1 to 5, and the author's comment on it. A radio group of stars: arrows
+ * move the choice, the current star clicked again clears it. The comment stands on its own, with
+ * or without stars, and saves when the field loses focus so typing never waits on the network.
  */
 export function RatingInput({ benchmarkId, run, label }: { benchmarkId: string; run: BenchmarkRunDto; label: string }) {
   const t = useTranslate()
@@ -52,18 +52,18 @@ export function RatingInput({ benchmarkId, run, label }: { benchmarkId: string; 
         ))}
         {rate.isError ? <span className="ml-2 text-xs text-critical">{rate.error.message}</span> : null}
       </div>
-      {run.rating !== null ? (
-        <textarea
-          rows={2}
-          maxLength={MAX_BENCHMARK_RATING_NOTE_CHARS}
-          value={note}
-          aria-label={t('benchmark.rating.note')}
-          placeholder={t('benchmark.rating.notePlaceholder')}
-          onChange={(event) => setNote(event.target.value)}
-          onBlur={() => { if ((run.ratingNote ?? '') !== note.trim()) save(run.rating, note) }}
-          className="rounded-md border border-line bg-sunken px-2 py-1.5 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
-        />
-      ) : null}
+      {/* Always there: what one thinks of a result does not wait for a number of stars. */}
+      <textarea
+        rows={2}
+        maxLength={MAX_BENCHMARK_RATING_NOTE_CHARS}
+        value={note}
+        aria-label={t('benchmark.rating.note')}
+        placeholder={t('benchmark.rating.notePlaceholder')}
+        onChange={(event) => setNote(event.target.value)}
+        onBlur={() => { if ((run.ratingNote ?? '') !== note.trim()) save(run.rating, note) }}
+        className="rounded-md border border-line bg-sunken px-2 py-1.5 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
+        data-benchmark-comment
+      />
     </div>
   )
 }

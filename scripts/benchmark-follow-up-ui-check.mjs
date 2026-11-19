@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Following up on finished runs: the button on the table and the outputs, the dialog that sends one
+// Following up on finished runs, and commenting on them: the button on the table and the outputs, the dialog that sends one
 // correction to several runs, and the badge that says a result needed help, wherever the variant
 // shows. Disposable Server and Desktop instances; the benchmark list is stubbed, so no model runs.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -60,6 +60,7 @@ const metrics = (durationMs) => ({
 })
 const check = (passed) => ({ passed, exitCode: passed ? 0 : 1, timedOut: false, stdout: passed ? '' : 'keys do not play', stderr: '', durationMs: 10 })
 const FIRST = 'Les touches ne jouent aucun son : corrige le clavier.'
+const COMMENT = 'Le plus propre, mais il a fallu le corriger.'
 const runOf = (id, variantId, extra = {}) => ({
   id, variantId, repetition: 1, status: 'succeeded', conversationId: `conv-${id}`, startedAt: Date.now() - 600_000, finishedAt: Date.now() - 60_000,
   cliVersion: '2.1.325', error: null, metrics: metrics(300_000), response: 'Fait.', check: check(true), files: [], previewToken: null,
@@ -72,7 +73,7 @@ const initial = () => ({
   runs: [
     runOf('opus', 'v1'),
     // Already corrected once: its numbers include the second turn.
-    runOf('sonnet', 'v2', { followUps: [{ text: FIRST, sentAt: Date.now() - 120_000 }], metrics: metrics(420_000) }),
+    runOf('sonnet', 'v2', { followUps: [{ text: FIRST, sentAt: Date.now() - 120_000 }], metrics: metrics(420_000), ratingNote: COMMENT }),
     runOf('haiku', 'v3', { status: 'failed', error: 'Check failed', check: check(false), rating: 2 }),
   ],
 })
@@ -93,6 +94,14 @@ async function stub(page) {
     }
     await route.fulfill({ json: benchmark })
   })
+  await page.route('**/api/benchmarks/piano/runs/*/rating', async (route) => {
+    const runId = route.request().url().split('/runs/')[1].split('/')[0]
+    const body = route.request().postDataJSON()
+    sent.push({ runId, ...body })
+    benchmark = { ...benchmark, runs: benchmark.runs.map((entry) => (entry.id === runId ? { ...entry, rating: body.rating, ratingNote: body.note } : entry)) }
+    await route.fulfill({ json: benchmark })
+  })
+  await page.route('**/api/benchmarks/piano/share', (route) => route.fulfill({ json: { canPublish: true, runs: [], shares: [] } }))
   return sent
 }
 
@@ -122,7 +131,7 @@ async function scenario(page, base, profile, phone) {
   assert.equal(await dialog.locator('[data-follow-up-run="opus"]').isChecked(), false)
   // A failed check reads as such, and a rated run warns that its rating goes.
   await dialog.getByText('contrôle échoué').waitFor()
-  await dialog.getByText(/Les notes de ces runs sont effacées/).waitFor()
+  await dialog.getByText(/Les étoiles de ces runs sont effacées/).waitFor()
   const send = page.getByRole('button', { name: 'Envoyer', exact: true })
   assert.equal(await send.isDisabled(), true, 'nothing to send without a text')
   await dialog.locator('[data-follow-up-text]').fill('Le son ne se déclenche pas : branche les touches.')
@@ -144,8 +153,34 @@ async function scenario(page, base, profile, phone) {
   assert.equal(await page.locator('[data-output-column] [data-follow-up-badge]').count(), 3)
   assert.equal(await page.locator('[data-output-column] [data-follow-up-open]').count(), 1)
   await shot('outputs')
+
+  // A comment needs no stars, is kept when written, and marks the variant's line.
+  const sonnetCard = page.locator('[data-output-column="Sonnet 5.5"]')
+  const comment = sonnetCard.locator('[data-benchmark-comment]')
+  assert.equal(await comment.inputValue(), COMMENT)
+  await comment.fill('Le plus propre, sans aide cette fois.')
+  await comment.blur()
+  for (let i = 0; i < 50 && !sent.some((entry) => entry.runId === 'sonnet'); i++) await delay(100)
+  // Saved with the comment alone: the run has no stars.
+  assert.deepEqual(sent.find((entry) => entry.runId === 'sonnet'), { runId: 'sonnet', rating: null, note: 'Le plus propre, sans aide cette fois.' })
+  await page.getByRole('tab', { name: /Mesures/ }).click()
+  const commentBadge = page.locator('[data-benchmark-results] [data-comment-badge="1"]')
+  assert.equal(await commentBadge.count(), 1)
+  await commentBadge.click()
+  await page.getByRole('dialog', { name: 'Ton avis' }).getByText('Le plus propre, sans aide cette fois.').waitFor()
+  await page.keyboard.press('Escape')
+
+  // Sharing offers the comments, off by default.
+  await page.getByRole('button', { name: /Partager/ }).first().click()
+  const commentsOption = page.getByRole('switch', { name: 'Tes commentaires' })
+  await commentsOption.waitFor()
+  assert.equal(await commentsOption.getAttribute('aria-checked'), 'false')
+  await shot('share')
+  await page.keyboard.press('Escape')
+
   await page.goto(`${base}/benchmarks/piano?tab=compare&vs=v1,v2`)
   await page.locator('[data-compare-head="v2"] [data-follow-up-badge="1"]').first().waitFor()
+  await page.locator('[data-compare-head="v2"] [data-comment-badge="1"]').first().waitFor()
   await shot('compare')
 }
 

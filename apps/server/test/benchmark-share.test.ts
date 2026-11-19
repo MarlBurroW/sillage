@@ -265,7 +265,7 @@ test('benchmark sharing: a frozen public snapshot, an identical archive, revocat
     db.insert(conversations).values({ id, userId: 'owner', title: id, agent: 'claude', status: 'idle', config: '{}', workspaceId: `w-${id}`, createdAt: 1, updatedAt: 1, lastSeq: 0 }).run()
     db.insert(benchmarkRuns).values({
       id: `run-${id}`, benchmarkId: 'bench', variantId, conversationId: id, repetition: 1, status: 'succeeded', finishedAt: 5,
-      metrics: JSON.stringify(metrics(variantId === 'v1' ? 30_000 : 90_000, null)), response: `Answer of ${variantId}`, previewToken: `token-${id}`, rating: 5,
+      metrics: JSON.stringify(metrics(variantId === 'v1' ? 30_000 : 90_000, null)), response: `Answer of ${variantId}`, previewToken: `token-${id}`, rating: 5, ratingNote: `Private take on ${variantId}`,
     }).run()
   }
 
@@ -395,6 +395,11 @@ test('benchmark sharing: a frozen public snapshot, an identical archive, revocat
   const pageOnly = unzipSync((await app.inject({ url: `/api/benchmarks/bench/archive?options=${encodeURIComponent(JSON.stringify({ title: 'x', includeSlides: false }))}` })).rawPayload)
   assert.deepEqual(Object.keys(pageOnly).sort(), ['index.html', 'runs/1/index.html', 'runs/1/keys.js'])
   assert.doesNotMatch(Buffer.from(pageOnly['index.html']!).toString(), /slides\.html/)
+  // Comments stay private unless asked for, then reach the page and the slides alike.
+  assert.doesNotMatch(Buffer.from(pageOnly['index.html']!).toString(), /Private take/)
+  const commented = unzipSync((await app.inject({ url: `/api/benchmarks/bench/archive?options=${encodeURIComponent(JSON.stringify({ title: 'x', includeComments: true }))}` })).rawPayload)
+  assert.match(Buffer.from(commented['index.html']!).toString(), /Private take on v1/)
+  assert.match(Buffer.from(commented['slides.html']!).toString(), /Private take on v1/)
   await new Promise((resolve) => setTimeout(resolve, 50))
   assert.deepEqual(readdirNames(join(dir, 'benchmark-shares')), [share.id])
 
@@ -445,4 +450,23 @@ test('benchmark share page: a run a human followed up says so, with what was wri
   const script = /<script>([\s\S]*)<\/script>/.exec(html)![1]!
   assert.equal(createHash('sha256').update(script).digest('base64'), PAGE_SCRIPT_HASHES[0])
   assert.doesNotMatch(renderBenchmarkShare(sharePage({ ...benchmark, runs: [pageRun('r1', 'v1', 60_000), pageRun('r2', 'v2', 95_000)] } as BenchmarkDto)), /class="(assist|followups)|retour humain/i)
+})
+
+test("benchmark share page: the author's comments only when asked for, out of sight on a blind page", () => {
+  const benchmark = {
+    id: 'b', name: 'Piano', prompt: 'Build a piano', variants: dtoVariants, comparisons: [], repetitions: 1, concurrency: 1, maxDurationMinutes: 5, inputs: [],
+    checkScript: null, checkTimeoutSeconds: 1, seriesId: null, createdAt: 1, updatedAt: 1,
+    runs: [pageRun('r1', 'v1', 60_000, { ratingNote: 'Opus <b>nailed</b> the keys.' }), pageRun('r2', 'v2', 95_000)],
+  } as unknown as BenchmarkDto
+  const page = (options: Record<string, unknown>) => renderBenchmarkShare(sharePage(benchmark, { options }))
+  // The composition strips the comment unless asked (share.ts): a run without one shows nothing.
+  assert.doesNotMatch(renderBenchmarkShare(sharePage({ ...benchmark, runs: [pageRun('r1', 'v1', 60_000), pageRun('r2', 'v2', 95_000)] } as BenchmarkDto)), /data-author-note/)
+  const shown = page({ includeComments: true, includeRatings: true })
+  assert.match(shown, /<p class="author-note" data-author-note data-label="L’avis de l’auteur · ★★★★☆">Opus &lt;b&gt;nailed&lt;\/b&gt; the keys\.<\/p>/)
+  assert.equal(shown.match(/data-author-note/g)!.length, 1)
+  const blind = page({ includeComments: true, blind: true })
+  assert.doesNotMatch(visibleText(blind), /nailed/)
+  assert.match(blind, /data-author-note data-label="[^"]*" data-real="Opus &lt;b&gt;nailed&lt;\/b&gt; the keys\." data-blind=""><\/p>/)
+  const script = /<script>([\s\S]*)<\/script>/.exec(shown)![1]!
+  assert.equal(createHash('sha256').update(script).digest('base64'), PAGE_SCRIPT_HASHES[0])
 })

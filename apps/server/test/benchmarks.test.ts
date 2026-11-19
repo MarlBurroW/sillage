@@ -239,8 +239,12 @@ test('benchmark rerun: same configuration and files, in the original series; rat
   const rated = listed!.runs.find((run) => run.id === runs[0]!.id)!
   assert.equal(rated.rating, 4)
   assert.equal(rated.ratingNote, 'clean output')
-  runner.rate(second.id, runs[0]!.id, null, 'ignored')
-  assert.equal(runner.list('owner').find((entry) => entry.id === second.id)!.runs.find((run) => run.id === runs[0]!.id)!.ratingNote, null)
+  // The comment stands on its own: clearing the stars keeps it, and it can be written without any.
+  const runOf = () => runner.list('owner').find((entry) => entry.id === second.id)!.runs.find((run) => run.id === runs[0]!.id)!
+  runner.rate(second.id, runs[0]!.id, null, 'still my take')
+  assert.deepEqual([runOf().rating, runOf().ratingNote], [null, 'still my take'])
+  runner.rate(second.id, runs[0]!.id, null, null)
+  assert.deepEqual([runOf().rating, runOf().ratingNote], [null, null])
   // A run of another benchmark cannot be rated through this one.
   assert.throws(() => runner.rate(first.id, runs[0]!.id, 3, null), /not found/i)
 
@@ -664,8 +668,9 @@ test('benchmark follow-up: the run reopens in its session, measures add up, each
   assert.equal(run.status, 'running')
   assert.equal(run.finishedAt, null)
   assert.equal(run.metrics, null)
-  // The rating judged the result the correction is meant to change.
+  // The stars judged the result the correction is meant to change; the comment is the author's own words.
   assert.equal(run.rating, null)
+  assert.equal(run.ratingNote, 'broken')
   assert.equal(run.followUps.length, 1)
   assert.equal(run.followUps[0].text, 'The button does nothing: fix it.')
   const sentAt = run.followUps[0].sentAt as number

@@ -469,7 +469,6 @@ export class BenchmarkRunner {
     }
   }
 
-  /** Records a human rating. Allowed before settlement too: a page can be judged while the check runs. */
   /**
    * Adjusts how much a benchmark runs, at any point of its life. The slot limit and the duration
    * are read on every sweep, so they apply at once: a run already past a shortened duration is
@@ -626,10 +625,11 @@ export class BenchmarkRunner {
     })
   }
 
+  /** Records a human rating and comment. Allowed before settlement too: a page can be judged while the check runs. */
   rate(benchmarkId: string, runId: string, rating: number | null, note: string | null): void {
     const result = this.ctx.db
       .update(benchmarkRuns)
-      .set({ rating, ratingNote: rating === null ? null : note, ratedAt: rating === null ? null : Date.now() })
+      .set({ rating, ratingNote: note, ratedAt: rating === null && note === null ? null : Date.now() })
       .where(and(eq(benchmarkRuns.id, runId), eq(benchmarkRuns.benchmarkId, benchmarkId)))
       .run()
     if (result.changes === 0) throw notFound('benchmark_run_not_found', 'Benchmark run not found.')
@@ -640,7 +640,8 @@ export class BenchmarkRunner {
    * Continues settled runs with a human correction, each in its own session. The run reopens
    * instead of a new one starting: its next settlement folds the whole journal again, so the
    * correction's work adds to the first attempt's, and the check reruns on the folder the agent
-   * left. The rating goes, since it judged a result the correction is meant to change.
+   * left. The stars go, since they judged a result the correction is meant to change; the comment
+   * stays, as the author's own words about the run.
    */
   async followUp(benchmarkId: string, runIds: string[], text: string): Promise<void> {
     const ids = [...new Set(runIds)]
@@ -677,7 +678,7 @@ export class BenchmarkRunner {
         await this.sessions.sendMessage(run.conversationId!, randomUUID(), text)
         this.ctx.db.update(benchmarkRuns).set({
           status: 'running', finishedAt: null, error: null, metrics: null, response: null, check: null, files: null,
-          rating: null, ratingNote: null, ratedAt: null,
+          rating: null,
           followUps: JSON.stringify([...readFollowUps(run.followUps), { text, sentAt }]),
         }).where(eq(benchmarkRuns.id, run.id)).run()
       }
