@@ -19,6 +19,7 @@ import {
   parseAgentConfig,
   type AgentConfig,
   type AgentKind,
+  type BackgroundTaskOutput,
   type ConversationMetrics,
   type ConversationStatus,
   type CliRequestKind,
@@ -1578,6 +1579,13 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
     return managed.runner.stopBackgroundTask(taskId)
+  }
+
+  /** Reads a background shell's tail without waking anything: a cold runner has no task left. */
+  async readBackgroundTaskOutput(conversationId: string, taskId: string): Promise<BackgroundTaskOutput | null> {
+    const managed = this.runners.get(conversationId)
+    if (!managed?.runner.readBackgroundTaskOutput) return null
+    return managed.runner.readBackgroundTaskOutput(taskId)
   }
 
   async interrupt(conversationId: string): Promise<void> {

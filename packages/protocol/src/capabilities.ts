@@ -29,6 +29,11 @@ export interface AgentCapabilities {
    */
   stopBackgroundTask: boolean
   /**
+   * The CLI can return the tail of a background shell's output (Bash `run_in_background`, Monitor)
+   * by its listed ID. Read on demand: nothing streams it into the log.
+   */
+  readBackgroundOutput: boolean
+  /**
    * The CLI can list slash commands for a directory without a running session: conversation
    * drafts offer them before the first turn. Codex has no slash commands; its `$` skills arrive
    * on the first turn.
@@ -44,6 +49,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     planReview: true,
     cliSessions: true,
     stopBackgroundTask: true,
+    readBackgroundOutput: true,
     draftCommands: true,
   },
   codex: {
@@ -53,6 +59,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     planReview: false,
     cliSessions: false,
     stopBackgroundTask: false,
+    readBackgroundOutput: false,
     draftCommands: false,
   },
   // `steer` is true, probed on opencode 1.18.25: a `prompt_async` sent during a turn
@@ -65,6 +72,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     planReview: false,
     cliSessions: false,
     stopBackgroundTask: false,
+    readBackgroundOutput: false,
     draftCommands: true,
   },
   // Google ACP supports native import, but neither live steering nor manual compaction.
@@ -75,6 +83,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     planReview: false,
     cliSessions: true,
     stopBackgroundTask: false,
+    readBackgroundOutput: false,
     draftCommands: true,
   },
   // Grok Build speaks ACP plus `_x.ai/…` extensions: `interject` inserts a message
@@ -87,6 +96,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     planReview: true,
     cliSessions: false,
     stopBackgroundTask: false,
+    readBackgroundOutput: false,
     draftCommands: true,
   },
 }

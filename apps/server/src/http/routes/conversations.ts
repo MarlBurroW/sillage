@@ -881,6 +881,22 @@ export function registerConversationRoutes(
     return reply.status(202).send({ accepted: true })
   })
 
+  /** Tail of a background shell's output, polled by the panel while a row is open. Reading only: project members may follow it. */
+  app.get('/api/conversations/:id/background/:taskId/output', async (request) => {
+    const user = requireUser(request)
+    const { id, taskId } = request.params as { id: string; taskId: string }
+    await loadReadable(id, user.id)
+
+    const output = await sessions.readBackgroundTaskOutput(id, taskId)
+    if (!output) {
+      throw notFound(
+        'background_output_unavailable',
+        'No running session holds this task, or this CLI cannot read its output.',
+      )
+    }
+    return output
+  })
+
   app.post('/api/conversations/:id/interrupt', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

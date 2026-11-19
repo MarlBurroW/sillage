@@ -137,6 +137,18 @@ export const backgroundTaskSchema = z.object({
 export type BackgroundTask = z.infer<typeof backgroundTaskSchema>
 
 /**
+ * End of what a background shell wrote, read on demand rather than streamed: the CLI keeps the
+ * output in a file and hands back its last 8 KiB, so the log never carries it. `totalBytes` counts
+ * the whole output; `truncated` says the text starts mid-way.
+ */
+export const backgroundTaskOutputSchema = z.object({
+  output: z.string(),
+  totalBytes: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+})
+export type BackgroundTaskOutput = z.infer<typeof backgroundTaskOutputSchema>
+
+/**
  * Where a workflow agent stands. `queued` is the CLI's `start` before a slot opened: it counts
  * agents as running only once `startedAt` is set, and the panel must not claim more parallelism
  * than the CLI does.

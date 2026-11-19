@@ -12,6 +12,14 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (message.type === 'control_request') {
     const invalid = message.request.subtype === 'apply_flag_settings' &&
       message.request.settings?.outputStyle === 'fixture-reject'
+    // The CLI refuses ids that are not shell tasks of the session; any other id has written two lines.
+    if (message.request.subtype === 'get_task_output') {
+      send({ type: 'control_response', response: message.request.task_id === 'not-a-shell'
+        ? { subtype: 'error', request_id: message.request_id, error: 'Not a shell task' }
+        : { subtype: 'success', request_id: message.request_id,
+            response: { output: 'tick 1\ntick 2\n', total_bytes: 9000, truncated: true } } })
+      continue
+    }
     send({ type: 'control_response', response: invalid
       ? { subtype: 'error', request_id: message.request_id, error: 'Invalid flag settings' }
       : { subtype: 'success', request_id: message.request_id,

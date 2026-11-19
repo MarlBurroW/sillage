@@ -1,5 +1,6 @@
 import type {
   AgentConfig,
+  BackgroundTaskOutput,
   ConversationStatus,
   ElicitationAction,
   ElicitationValue,
@@ -149,5 +150,10 @@ export interface AgentRunner {
   reviewPlan(requestId: string, review: PlanReview): boolean
   /** Stops background IDs announced by `background.updated`. False when unsupported (`stopBackgroundTask`) or sessions are unloaded. Completion arrives through later `background.updated`, not this response. */
   stopBackgroundTask(taskId: string): Promise<boolean>
+  /**
+   * Tail of a background shell's output (`readBackgroundOutput`). Optional: only Claude exposes it.
+   * Null when the session is gone or the CLI refuses the ID (not a shell, or redacted lane).
+   */
+  readBackgroundTaskOutput?(taskId: string): Promise<BackgroundTaskOutput | null>
   stop(): Promise<void>
 }

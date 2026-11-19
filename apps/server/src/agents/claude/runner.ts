@@ -20,6 +20,7 @@ import {
   claudePermissionModeSchema,
   parseElicitationFields,
   type AgentConfig,
+  type BackgroundTaskOutput,
   type ClaudeConfig,
   type ContentBlock,
   type McpServerStatus,
@@ -144,6 +145,11 @@ async function buildUserMessage(
   }
 
   return { blocks, prompt }
+}
+
+/** `get_task_output` as the SDK answers it (see SDKControlGetTaskOutputResponse). */
+interface TaskOutputReader {
+  getTaskOutput(taskId: string): Promise<{ output?: unknown; total_bytes?: unknown; truncated?: unknown } | undefined>
 }
 
 export class ClaudeRunner implements AgentRunner {
@@ -1222,6 +1228,26 @@ export class ClaudeRunner implements AgentRunner {
       return false
     }
     return true
+  }
+
+  /**
+   * SDK `get_task_output` control request: the same 8 KiB tail as the terminal's /tasks detail.
+   * `Query` implements it but does not declare it (SDK 0.3.301 through 0.3.328), hence the
+   * structural check; a refusal (ended task whose file is gone, not a shell) reads as no output.
+   */
+  async readBackgroundTaskOutput(taskId: string): Promise<BackgroundTaskOutput | null> {
+    const session = this.session as (Query & Partial<TaskOutputReader>) | null
+    if (typeof session?.getTaskOutput !== 'function') return null
+    try {
+      const raw = await session.getTaskOutput(taskId)
+      return {
+        output: typeof raw?.output === 'string' ? raw.output : '',
+        totalBytes: typeof raw?.total_bytes === 'number' ? Math.max(0, Math.trunc(raw.total_bytes)) : 0,
+        truncated: raw?.truncated === true,
+      }
+    } catch {
+      return null
+    }
   }
 
   /** SDK control requests apply these settings without restarting CLI, preserving loaded context. */

@@ -117,3 +117,11 @@ test('idle compaction keeps its native trigger without opening a turn', async (t
   sillageEventSchema.parse(compacted)
   assert.equal(f.events.filter((event) => event.type === 'turn.started').length, 0)
 })
+
+test('background shell output is read through get_task_output, and a refusal reads as none', async (t) => {
+  const f = await setup(t)
+  assert.deepEqual(await f.runner.readBackgroundTaskOutput('b1'), { output: 'tick 1\ntick 2\n', totalBytes: 9000, truncated: true })
+  assert.equal(await f.runner.readBackgroundTaskOutput('not-a-shell'), null)
+  const reads = (await f.trace()).filter((message) => message.request?.subtype === 'get_task_output')
+  assert.deepEqual(reads.map((message) => message.request.task_id), ['b1', 'not-a-shell'])
+})

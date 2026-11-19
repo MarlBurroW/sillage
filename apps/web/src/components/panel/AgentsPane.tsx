@@ -2,9 +2,15 @@ import { useThreadLayout } from '../../lib/use-thread-layout'
 import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
 import { AGENT_CAPABILITIES, type AgentKind } from '@sillage/protocol'
-import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
-import { useRef, useMemo, useState, type ReactNode } from 'react'
-import type { BackgroundWork } from '../../lib/background'
+import { ArrowLeft, Bot, ChevronRight, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react'
+import { formatBytes } from '../../lib/attachments'
+import {
+  hasReadableOutput,
+  plainTerminalText,
+  useBackgroundTaskOutput,
+  type BackgroundWork,
+} from '../../lib/background'
 import { stopBackgroundTask } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
@@ -99,8 +105,8 @@ const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
 }
 
 /**
- * Background work above rather than mixed with subagents. The CLI reports activity but no written
- * output, so inert rows accurately avoid promising nonexistent detail.
+ * Background work above rather than mixed with subagents. Shell rows open onto the output the CLI
+ * kept for them; the others stay inert, since the CLI reports their activity but nothing they wrote.
  */
 function BackgroundList({
   conversationId,
@@ -113,6 +119,14 @@ function BackgroundList({
 }) {
   const t = useTranslate()
   const canStop = AGENT_CAPABILITIES[agent].stopBackgroundTask
+  const canRead = AGENT_CAPABILITIES[agent].readBackgroundOutput
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
+  const toggle = (taskId: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(taskId)) next.add(taskId)
+      return next
+    })
   /**
    * Stop replies do not confirm termination: tasks disappear on the next background.updated. Keep
    * the button pending meanwhile to avoid repeated stop requests.
@@ -151,16 +165,38 @@ function BackgroundList({
         const subtitle = task.workflow
           ? [kindLabel, task.workflowName, phase ? t('panel.workflow.phase', phase) : null].filter(Boolean).join(' · ')
           : task.activity ? `${kindLabel} · ${task.activity}` : kindLabel
+        const readable = canRead && hasReadableOutput(task.kind)
+        const expanded = readable && open.has(task.id)
+        const heading = (
+          <>
+            <span className="shrink-0 text-accent">
+              {family ? KIND_ICONS[family] : <Waves size={13} />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs text-ink">{task.description}</span>
+              <span className="block truncate text-[0.6875rem] text-ink-faint">{subtitle}</span>
+            </span>
+          </>
+        )
         return (
           <div key={task.id} className="flex flex-col gap-1.5 rounded-md border border-line bg-surface-high px-2 py-1.5">
             <div className="flex items-center gap-2">
-              <span className="shrink-0 text-accent">
-                {family ? KIND_ICONS[family] : <Waves size={13} />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs text-ink">{task.description}</span>
-                <span className="block truncate text-[0.6875rem] text-ink-faint">{subtitle}</span>
-              </span>
+              {readable ? (
+                <button
+                  type="button"
+                  onClick={() => toggle(task.id)}
+                  aria-expanded={expanded}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <ChevronRight
+                    size={12}
+                    className={cx('shrink-0 text-ink-faint transition-transform', expanded && 'rotate-90')}
+                  />
+                  {heading}
+                </button>
+              ) : (
+                heading
+              )}
 
               {task.toolUses > 0 ? (
                 <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
@@ -188,10 +224,64 @@ function BackgroundList({
                 <WorkflowPhases progress={task.workflow} />
               </div>
             ) : null}
+            {expanded ? <BackgroundOutput conversationId={conversationId} taskId={task.id} /> : null}
           </div>
         )
       })}
     </section>
+  )
+}
+
+/**
+ * Tail of a background shell, refreshed while open. Follows the end like a terminal unless the
+ * reader scrolled up, so new lines never yank them away from what they are reading.
+ */
+function BackgroundOutput({ conversationId, taskId }: { conversationId: string; taskId: string }) {
+  const t = useTranslate()
+  const { data, isError, isPending } = useBackgroundTaskOutput(conversationId, taskId, true)
+  const scroller = useRef<HTMLPreElement>(null)
+  const following = useRef(true)
+  const text = useMemo(() => (data ? plainTerminalText(data.output).replace(/\n+$/, '') : ''), [data])
+
+  useLayoutEffect(() => {
+    const node = scroller.current
+    if (node && following.current) node.scrollTop = node.scrollHeight
+  }, [text])
+  // A fresh row starts at the end, whatever the previous one left behind.
+  useEffect(() => {
+    following.current = true
+  }, [taskId])
+
+  let body: ReactNode
+  if (isError) body = <p className="text-[0.6875rem] text-ink-faint">{t('panel.background.output.unavailable')}</p>
+  else if (isPending) body = <p className="text-[0.6875rem] text-ink-faint">{t('panel.background.output.loading')}</p>
+  else if (!text) body = <p className="text-[0.6875rem] text-ink-faint">{t('panel.background.output.empty')}</p>
+  else
+    body = (
+      <pre
+        ref={scroller}
+        onScroll={(event) => {
+          const node = event.currentTarget
+          following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 8
+        }}
+        className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed text-ink-muted"
+      >
+        {text}
+      </pre>
+    )
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+      {body}
+      {data?.truncated ? (
+        <p className="text-[0.625rem] text-ink-faint">
+          {t('panel.background.output.truncated', {
+            shown: formatBytes(new TextEncoder().encode(data.output).length),
+            total: formatBytes(data.totalBytes),
+          })}
+        </p>
+      ) : null}
+    </div>
   )
 }
 
