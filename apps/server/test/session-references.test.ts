@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
 import { sessionMentionAt, sessionReference, sessionReferenceRanges } from '@sillage/protocol'
 import { sessionReferenceContext } from '../src/conversations/references.js'
@@ -95,4 +96,33 @@ test('session context and MCP share exact IDs, archives and project isolation wi
   const denied = call('read_conversation', { id: sessionReference(foreign) })
   assert.ok(denied.isError)
   assert.doesNotMatch(denied.content[0]!.text, /Private foreign title/)
+})
+
+test('references to another project resolve once the project may act on the others, and name the setting until then', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'sillage-session-references-cross-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(users).values({ id: 'stranger', username: 'stranger', displayName: 'stranger', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: project, name: 'Timesheets', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'other', name: 'Client Alpha', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'hidden', name: 'Not mine', workspacePath: dir, ownerId: 'stranger', visibility: 'private', createdAt: 1 }).run()
+  for (const [sessionId, projectId, userId, title] of [[foreign, 'other', 'owner', 'PDF export fix'], [missing, 'hidden', 'stranger', 'Stranger work']]) {
+    db.insert(conversations).values({ id: sessionId!, projectId: projectId!, title: title!, userId: userId!, agent: 'codex', config: '{}', status: 'idle', createdAt: 1, updatedAt: 1 }).run()
+  }
+  const text = `Use ${sessionReference(foreign)}, ${origin}/p/other/c/${foreign} and ${sessionReference(missing)}`
+
+  const closed = sessionReferenceContext(db, project, text, origin, true, 'owner')!
+  assert.match(closed, /in project "Client Alpha", not reachable from this session: .*Act on my other projects/)
+  assert.doesNotMatch(closed, /PDF export fix|Stranger work|Not mine/)
+
+  db.update(projects).set({ crossProjects: true }).where(eq(projects.id, project)).run()
+  const open = sessionReferenceContext(db, project, text, origin, true, 'owner')!
+  assert.match(open, /codex \| project: "Client Alpha" \| title: "PDF export fix"/)
+  assert.match(open, /and `project` for a session of another project/)
+  // The setting widens reach to what the account sees, nothing more.
+  assert.match(open, new RegExp(`${sessionReference(missing)} \\| unavailable in this project`))
+  assert.doesNotMatch(open, /Stranger work|Not mine/)
 })

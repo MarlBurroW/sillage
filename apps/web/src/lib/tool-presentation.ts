@@ -25,6 +25,7 @@ const SILLAGE_LABELS: Record<string, MessageKey> = {
   search_history: 'sillageTool.search_history',
   read_conversation: 'sillageTool.read_conversation',
   list_sessions: 'sillageTool.list_sessions',
+  work_log: 'sillageTool.work_log',
   find_file_edits: 'sillageTool.find_file_edits',
   list_cards: 'sillageTool.list_cards',
   read_card: 'sillageTool.read_card',

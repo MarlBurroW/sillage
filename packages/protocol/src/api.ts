@@ -170,6 +170,7 @@ export const updateProjectBodySchema = z
       }),
     archived: z.boolean(),
     turnCheckpoints: z.boolean(),
+    crossProjects: z.boolean(),
     memoryMode: memoryModeSchema,
   })
   .partial()
@@ -222,6 +223,8 @@ export interface ProjectDto {
   instructionsMode: InstructionsMode | null
   /** Git checkpoints per turn (see server-side `checkpoints.ts`). */
   turnCheckpoints: boolean
+  /** Sessions may reach the account's other projects (see `projects.crossProjects`). */
+  crossProjects: boolean
   /** Where this project's agent memory lives (see `memory.ts`). */
   memoryMode: MemoryMode
   /** Live shells in the project, indicating a terminal is still running. */

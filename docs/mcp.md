@@ -66,6 +66,34 @@ Actions going through the daemon remain subject to its guards: launch chains
 cannot exceed two levels, and the daemon must be running, otherwise the request
 expires.
 
+## Projects that act on the others
+
+A project's owner can turn on **Act on my other projects** (General tab of the
+project page, `projects.cross_projects`). Its sessions stay in conversation mode,
+with their own project, memory and instructions by default, but the work tools
+take an optional `project` naming another project the session's account can see
+(owned or shared): `search_history`, `read_conversation`, `list_sessions`,
+`find_file_edits`, `work_log`, the card tools, `list_actions`, `run_action`,
+`start_session`, `list_worktrees`, `schedule_task`, `list_models`,
+`send_session_message`, `notify_when_done`, `read_instructions` and
+`read_memory`. Configuration edits and tools bound to the session itself
+(rename, move, its own card, decisions, MCP proposals) stay in the home project.
+The target project's usual rights apply: the setting widens where a session can
+go, not what its account may do there.
+
+The parameter is offered even when the setting is off, so a request about another
+project gets a refusal naming the setting rather than a silent limit; the daemon
+refuses the same requests. A session started or messaged from such a project
+carries its name in the envelope (`project` attribute), and the recipient can
+reply even if its own project keeps its sessions inside it. The setting is read on
+every call, so it applies to running sessions immediately.
+
+`work_log({ from, to, project? })` lists, per day and project, the account's
+sessions with their active time, card and branch. Active time adds up the gaps
+between journal events that are at most five minutes apart, an estimate meant
+for timesheets. It covers every project the session can reach without `project`,
+and personal discussions too when called from one.
+
 ## Personal discussions
 
 Discussions opened from **Discussions** in the sidebar have no project. Sillage

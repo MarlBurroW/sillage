@@ -238,9 +238,9 @@ export function Composer({
   const [uploading, setUploading] = useState(0)
   const [token, setToken] = useState<MentionToken | null>(null)
   const [sessionToken, setSessionToken] = useState<MentionToken | null>(null)
-  const { sessions: referenceSessions, loading: searchingSessions } = useSessionReferences(projectId)
+  const { sessions: referenceSessions, anyProject: referencesAnyProject, loading: searchingSessions } = useSessionReferences(projectId)
   const sessionSuggestions = useMemo(() => matchSessions(referenceSessions, sessionToken?.query ?? '', draftKey), [referenceSessions, sessionToken, draftKey])
-  const referencedIds = useMemo(() => [...new Set(sessionReferenceRanges(text, window.location.origin).filter(ref => projectId === null || !ref.projectId || ref.projectId === projectId).filter(ref => ref.explicit || referenceSessions.has(ref.id)).map(ref => ref.id))], [text, referenceSessions, projectId])
+  const referencedIds = useMemo(() => [...new Set(sessionReferenceRanges(text, window.location.origin).filter(ref => projectId === null || referencesAnyProject || !ref.projectId || ref.projectId === projectId).filter(ref => ref.explicit || referenceSessions.has(ref.id)).map(ref => ref.id))], [text, referenceSessions, projectId, referencesAnyProject])
   const [cardToken, setCardToken] = useState<MentionToken | null>(null)
   const [sigil, setSigil] = useState<SigilToken | null>(null)
   // Shared by suggestion lists: tokens are mutually exclusive, since no cursor position opens @, /,
@@ -561,7 +561,7 @@ export function Composer({
     const sent = attachments
     // Mentions or skills deleted from text after selection must not be sent: current text is
     // authoritative, not previous clicks.
-    const urls = sessionReferenceRanges(value, window.location.origin).filter(ref => projectId === null || ref.projectId === projectId)
+    const urls = sessionReferenceRanges(value, window.location.origin).filter(ref => projectId === null || referencesAnyProject || ref.projectId === projectId)
     for (const ref of urls.reverse()) value = `${value.slice(0, ref.start)}${sessionReference(ref.id)}${value.slice(ref.end)}`
     const paths = [...mentioned].filter((path) => value.includes(`@${path}`))
     const invocations = [...invoked].filter((name) => value.includes(`$${name}`))
@@ -803,7 +803,7 @@ export function Composer({
             onRemove={removeAttachment}
           />
 
-          {sessionToken && <SessionPicker sessions={sessionSuggestions} active={active} loading={searchingSessions} onPick={pickSession} onHover={setActive} />}
+          {sessionToken && <SessionPicker sessions={sessionSuggestions} projectId={projectId} anyProject={referencesAnyProject} active={active} loading={searchingSessions} onPick={pickSession} onHover={setActive} />}
 
           {referencedIds.length > 0 && <div className="flex flex-wrap gap-1 px-2 py-1" aria-label={t('sessionRef.attached')}>
             {referencedIds.map(id => <SessionReference key={id} id={id} conversation={referenceSessions.get(id)} loading={searchingSessions} />)}

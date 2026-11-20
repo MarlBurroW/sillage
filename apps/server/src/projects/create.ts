@@ -96,6 +96,7 @@ export const insertProject = async (
     ownerId,
     defaultConfig: null,
     turnCheckpoints: true,
+    crossProjects: false,
     position: (highest?.max ?? 0) + 1,
     archivedAt: null,
     createdAt: Date.now(),

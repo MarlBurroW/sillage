@@ -16,6 +16,7 @@ import {
   cardTags,
   cards,
   conversations,
+  events,
   openDatabase,
   projects,
   runMigrations,
@@ -116,9 +117,9 @@ async function harness(t: TestContext) {
   const requests = new AgentRequests({ db, config }, sessions, registry, undefined, undefined, undefined, undefined, log)
 
   /** Calls the real MCP server while the daemon sweeps. Empty `from` uses global mode as `owner`, with the project passed explicitly. */
-  const mcp = async (from: string, name: string, args: object) => {
+  const mcp = async (from: string, name: string, args: object, project = 'project') => {
     const env = from
-      ? { SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from }
+      ? { SILLAGE_MCP_PROJECT: project, SILLAGE_MCP_CONVERSATION: from }
       : { SILLAGE_MCP_USER: 'owner' }
     const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
       env: { ...process.env, SILLAGE_MCP_DB: dbPath, ...env },
@@ -136,7 +137,7 @@ async function harness(t: TestContext) {
     return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  return { db, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value }, setCatalogDelay: (agent: string, ms: number) => { catalogDelay[agent] = ms } }
+  return { db, dir, requests, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value }, setCatalogDelay: (agent: string, ms: number) => { catalogDelay[agent] = ms } }
 }
 
 test('an agent names only its own session and broadcasts the title without changing its activity', async (t) => {
@@ -534,4 +535,91 @@ test('list_models skips disabled and hidden CLIs instead of probing them', async
   assert.match(all.content[0]!.text, /## claude — defaults/)
   const explicit = await mcp('parent', 'list_models', { agent: 'codex' })
   assert.match(explicit.content[0]!.text, /`astra-1` \(Astra\)/)
+})
+
+test('a project session acts on another project only once its project allows it', async (t) => {
+  const { db, dir, conversation, mcp, sent: delivered } = await harness(t)
+  conversation('self')
+  db.insert(projects).values({ id: 'other', name: 'Other', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.insert(conversations).values({
+    id: 'there', projectId: 'other', userId: 'owner', title: 'Session there', agent: 'claude', config: '{}', status: 'idle',
+    createdAt: 1, updatedAt: Date.now(),
+  }).run()
+  const out = (result: { content: { text: string }[] }) => result.content[0]!.text
+
+  // Closed by default: every way of reaching the other project names the setting.
+  for (const [name, args] of [
+    ['start_session', { project: 'Other', prompt: 'Fill in the timesheet.' }],
+    ['list_sessions', { project: 'Other' }],
+    ['search_history', { project: 'other', query: 'anything' }],
+  ] as const) {
+    const refused = await mcp('self', name, args)
+    assert.equal(refused.isError, true, name)
+    assert.match(out(refused), /Act on my other projects/, name)
+  }
+  assert.match(out(await mcp('self', 'read_conversation', { id: 'session:there' })), /belongs to project “Other”\. .*Act on my other projects/)
+  assert.match(out(await mcp('self', 'list_projects', {})), /can only act within its own project/)
+  // The home project by name is not another project.
+  assert.equal((await mcp('self', 'list_sessions', { project: 'project' })).isError, undefined)
+
+  db.update(projects).set({ crossProjects: true }).where(eq(projects.id, 'project')).run()
+  assert.match(out(await mcp('self', 'list_projects', {})), /lets its sessions act on these projects/)
+  assert.match(out(await mcp('self', 'list_sessions', { project: 'Other', within_minutes: 60 })), /Session there/)
+  assert.match(out(await mcp('self', 'read_conversation', { id: 'there' })), /call again with project="Other"/)
+  assert.equal((await mcp('self', 'read_conversation', { id: 'there', project: 'Other' })).isError, undefined)
+
+  const started = await mcp('self', 'start_session', { project: 'Other', prompt: 'Fill in the timesheet.' })
+  assert.equal(started.isError, undefined, out(started))
+  assert.match(out(started), /notify_when_done with this ID and project="Other"/)
+  const launched = db.select().from(conversations).where(eq(conversations.projectId, 'other')).all().find((row) => row.id !== 'there')!
+  assert.equal(launched.userId, 'owner')
+  assert.equal(launched.worktreeId, null)
+  const mission = parseSessionMessage(delivered.find((entry) => entry.to === launched.id)?.text ?? '')
+  assert.equal(mission?.project, 'project')
+
+  // Messages carry where they come from, and the recipient can answer without the setting.
+  const sent = await mcp('self', 'send_session_message', { project: 'Other', to: 'there', body: 'Which card did you close?' })
+  assert.equal(sent.isError, undefined, out(sent))
+  assert.equal((await mcp('there', 'send_session_message', { to: 'self', body: 'Card #4.' }, 'other')).isError, undefined)
+  assert.equal((await mcp('there', 'list_sessions', { project: 'project' }, 'other')).isError, true)
+
+  // Turning it off applies to the next call of a running session.
+  db.update(projects).set({ crossProjects: false }).where(eq(projects.id, 'project')).run()
+  assert.match(out(await mcp('self', 'list_sessions', { project: 'Other' })), /Act on my other projects/)
+})
+
+test('the daemon refuses a cross-project request when the setting is off, even without the MCP check', async (t) => {
+  const { db, dir, conversation, requests } = await harness(t)
+  conversation('self')
+  db.insert(projects).values({ id: 'other', name: 'Other', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.insert(agentRequests).values({ id: 'forged', projectId: 'other', conversationId: 'self', userId: 'owner', kind: 'start_session', payload: JSON.stringify({ prompt: 'x' }), createdAt: Date.now() }).run()
+  await requests.sweep()
+  const row = db.select().from(agentRequests).where(eq(agentRequests.id, 'forged')).get()!
+  assert.equal(row.isError, true)
+  assert.match(row.result ?? '', /Act on my other projects/)
+})
+
+test('work_log sums active time per day and project, leaving long pauses out', async (t) => {
+  const { db, dir, conversation, mcp } = await harness(t)
+  conversation('self')
+  db.insert(projects).values({ id: 'other', name: 'Other', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  db.update(projects).set({ crossProjects: true }).where(eq(projects.id, 'project')).run()
+  const day = new Date(2026, 10, 18, 9, 0).getTime()
+  db.insert(conversations).values({
+    id: 'there', projectId: 'other', userId: 'owner', title: 'Timesheet export', agent: 'codex', config: '{}', status: 'idle',
+    createdAt: day, updatedAt: day + 3 * 3600_000,
+  }).run()
+  const minutes = [0, 4, 8, 12, 60, 63] // 12 min of work, a 48 min pause, then 3 more
+  minutes.forEach((minute, seq) => db.insert(events).values({ conversationId: 'there', seq: seq + 1, ts: day + minute * 60_000, type: 'tool.started', payload: '{}' }).run())
+
+  const log = (await mcp('self', 'work_log', { from: '2026-11-18', to: '2026-11-18' })).content[0]!.text
+  assert.match(log, /## 2026-11-18 — 15 min active/)
+  assert.match(log, /- Other: 15 min \(09:00–10:03\)/)
+  assert.match(log, /session:there “Timesheet export” \(codex\): 15 min/)
+
+  db.update(projects).set({ crossProjects: false }).where(eq(projects.id, 'project')).run()
+  const closed = (await mcp('self', 'work_log', { from: '2026-11-18', to: '2026-11-18' })).content[0]!.text
+  assert.doesNotMatch(closed, /Timesheet export/)
+  assert.match(closed, /Only this project is listed\. .*Act on my other projects/)
+  assert.equal((await mcp('self', 'work_log', { from: '2026-11-18', to: '2026-10-01' })).isError, true)
 })

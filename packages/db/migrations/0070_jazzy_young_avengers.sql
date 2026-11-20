@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `cross_projects` integer DEFAULT false NOT NULL;

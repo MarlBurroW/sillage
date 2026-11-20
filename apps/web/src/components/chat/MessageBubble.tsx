@@ -7,6 +7,7 @@ import { isAudioType, isPlayableMediaType, parseSessionMessage, type ContentBloc
 import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'
+import { sessionHref, useSessionReferences } from '../../lib/session-references'
 import { cx } from '../ui'
 import { CopyButton } from './CopyButton'
 import { ImageGallery } from './ImageViewer'
@@ -191,17 +192,22 @@ function PeerMessage({
 }) {
   const t = useTranslate()
   const { projectId } = useParams()
+  // A sender from another project (cross-project sessions) lives under that project's route.
+  const { sessions } = useSessionReferences(null)
+  const known = sessions.get(envelope.from)
+  const href = known ? sessionHref(known) : projectId && !envelope.project ? `/p/${projectId}/c/${envelope.from}` : null
   const sender = envelope.title || envelope.from
 
   return (
     <div className="group flex flex-col items-start gap-0.5">
       <div className="sg-bubble flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-bl-sm border border-dashed border-accent/50 bg-accent-wash/40 px-3.5 py-2.5">
-        <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
+        {/* Wraps so another project's name moves to its own line rather than being cut on phones. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-ink-soft">
           <MessagesSquare size={13} className="shrink-0 text-accent" />
           <span className="shrink-0">{t(PEER_LABELS[envelope.kind])}</span>
-          {projectId ? (
+          {href ? (
             <Link
-              to={`/p/${projectId}/c/${envelope.from}`}
+              to={href}
               title={t('message.peer.open')}
               className="min-w-0 truncate font-medium text-ink hover:text-accent hover:underline"
             >
@@ -210,6 +216,7 @@ function PeerMessage({
           ) : (
             <span className="min-w-0 truncate font-medium text-ink">{sender}</span>
           )}
+          {envelope.project ? <span className="min-w-0 max-w-full truncate text-ink-faint">· {t('message.peer.project', { project: envelope.project })}</span> : null}
           {envelope.agent ? <span className="shrink-0 text-ink-faint">· {envelope.agent}</span> : null}
         </div>
         <Markdown text={envelope.body} />

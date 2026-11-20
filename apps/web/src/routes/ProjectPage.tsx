@@ -171,6 +171,7 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
             {key === 'general' ? project.isOwner ? <>
               <ProjectSettings projectId={project.id} initialName={project.name} initialPath={project.workspacePath}
                 initialVisibility={project.visibility} turnCheckpoints={project.turnCheckpoints}
+                crossProjects={project.crossProjects}
                 hasConversations={hasConversations} onDeleted={() => navigate('/')} />
               <ProjectImage project={project} />
             </> : <Card><CardBody className="flex flex-col gap-3 text-sm text-ink-faint">
@@ -412,12 +413,14 @@ function ProjectSettings({
   initialPath,
   initialVisibility,
   turnCheckpoints,
+  crossProjects,
   hasConversations,
   onDeleted,
 }: {
   projectId: string
   initialName: string
   turnCheckpoints: boolean
+  crossProjects: boolean
   initialPath: string
   initialVisibility: ProjectVisibility
   hasConversations: boolean
@@ -486,6 +489,19 @@ function ProjectSettings({
             label={t('project.settings.checkpoints')}
             disabled={updateProject.isPending}
             onCheckedChange={(checked) => updateProject.mutate({ id: projectId, turnCheckpoints: checked })}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm">{t('project.settings.crossProjects')}</p>
+            <p className="text-xs text-ink-faint">{t('project.settings.crossProjects.hint')}</p>
+          </div>
+          <Switch
+            checked={crossProjects}
+            label={t('project.settings.crossProjects')}
+            disabled={updateProject.isPending}
+            onCheckedChange={(checked) => updateProject.mutate({ id: projectId, crossProjects: checked })}
           />
         </div>
 

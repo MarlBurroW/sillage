@@ -26,14 +26,14 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
   const { projectId, cards: cardsByNumber } = useCardRefs()
   const cards = useMemo(() => (cardsByNumber.size > 0 ? new Set(cardsByNumber.keys()) : undefined), [cardsByNumber])
   const cardRefs = useCardRefPreview(projectId, cardsByNumber)
-  const { sessions, ids: sessionIds, loading: loadingSessions } = useSessionReferences(projectId ?? (conversationId ? null : undefined))
+  const { sessions, ids: sessionIds, anyProject, loading: loadingSessions } = useSessionReferences(projectId ?? (conversationId ? null : undefined))
   const root = useRef<HTMLDivElement>(null)
   const origin = window.location.origin
 
   // First pass collects cited paths without file links; its HTML displays while awaiting the server.
   const found = useMemo(
-    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, cards, sessionIds, projectId: projectId ?? null, origin }),
-    [text, conversationId, base, cards, sessionIds, projectId, origin],
+    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, cards, sessionIds, projectId: projectId ?? null, anyProject, origin }),
+    [text, conversationId, base, cards, sessionIds, projectId, anyProject, origin],
   )
   const known = useKnownFiles(found.candidates)
 

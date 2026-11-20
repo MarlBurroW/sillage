@@ -149,6 +149,7 @@ export function registerProjectRoutes(
           defaultConfig: readProjectDefaults(project.defaultConfig),
           instructionsMode: project.instructionsMode,
           turnCheckpoints: project.turnCheckpoints,
+          crossProjects: project.crossProjects,
           memoryMode: project.memoryMode,
           activeTerminals: terminals.aliveCount(project.id),
           cardCounts: cardCounts.get(project.id) ?? {},
@@ -313,6 +314,7 @@ export function registerProjectRoutes(
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
     if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
+    if (body.crossProjects !== undefined) patch.crossProjects = body.crossProjects
     // Applied on the next runner launch; running sessions retain their memory.
     if (body.memoryMode !== undefined) patch.memoryMode = body.memoryMode
 

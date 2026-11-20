@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import {
   conversations,
   events,
+  projects,
   sessionMessages,
   sessionWatches,
   type Db,
@@ -361,6 +362,7 @@ and(eq(events.conversationId, conversationId), eq(events.type, 'message.complete
         id: conversations.id,
         title: conversations.title,
         agent: conversations.agent,
+        projectId: conversations.projectId,
         status: conversations.status,
         archivedAt: conversations.archivedAt,
       })
@@ -372,11 +374,17 @@ and(eq(events.conversationId, conversationId), eq(events.type, 'message.complete
   /** Message as read by its recipient; see formatSessionMessage. */
   private frame(message: SessionMessageRow): string {
     const sender = this.conversation(message.fromConversationId)
+    const recipient = this.conversation(message.toConversationId)
+    // Sessions of a cross-project project write to other projects: say where the sender works.
+    const elsewhere = sender?.projectId && recipient?.projectId && sender.projectId !== recipient.projectId
+      ? this.db.select({ name: projects.name }).from(projects).where(eq(projects.id, sender.projectId)).get()?.name
+      : undefined
     return formatSessionMessage({
       kind: message.kind,
       from: message.fromConversationId,
       title: sender?.title ?? message.fromConversationId,
       agent: sender?.agent ?? '?',
+      ...(elsewhere ? { project: elsewhere } : {}),
       messageId: message.id,
       body: message.body,
     })

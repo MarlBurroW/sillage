@@ -20,6 +20,9 @@ const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
 /** Project memory directory shared with Claude automatic memory. In global mode, `SILLAGE_MCP_MEMORY` identifies the memory root (default `memory/` beside the database, like the daemon), and each call selects its project's directory. */
 let MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
 const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
+/** Conversation-mode project and memory, restored after each call that targeted another project. */
+const HOME_PROJECT_ID = PROJECT_ID
+const HOME_MEMORY_DIR = MEMORY_DIR
 const MEMORY_ROOT = GLOBAL && DB_PATH ? (PERSONAL ? process.env.SILLAGE_MCP_MEMORY_ROOT : process.env.SILLAGE_MCP_MEMORY) || join(dirname(DB_PATH), 'memory') : ''
 /** Global write identity: configured username or the database's sole account. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
@@ -265,6 +268,19 @@ const TOOLS = [
       },
       required: ['id'],
     },
+  },
+  {
+    name: 'work_log',
+    description:
+      "Account work log for a date range: per day and per project, your sessions with their active time, card and branch, from the session journals. Use for timesheets, reports or remembering what you worked on. Active time adds up journal activity with pauses of more than 5 minutes left out: an estimate of time spent, not billing truth. Omit project for every project this session can reach. Read a session with read_conversation for detail.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'First day, YYYY-MM-DD, in the server time zone. Defaults to 6 days before `to`.' },
+        to: { type: 'string', description: 'Last day included, YYYY-MM-DD. Defaults to today.' },
+      },
+    },
+    annotations: { readOnlyHint: true },
   },
   {
     name: 'list_sessions',
@@ -1081,7 +1097,7 @@ const PERSONAL_TOOLS = [
   { name: 'delete_project', description: 'Delete a project owned by this account from Sillage, including its conversations and board. Its disk workspace is preserved. Use an exact project name or ID; resolve ambiguous requests before deleting.', annotations: { destructiveHint: true, readOnlyHint: false }, inputSchema: { type: 'object', properties: { project: { type: 'string' } }, required: ['project'] } },
   { name: 'find_files', description: 'Find filenames in accessible Sillage project folders; optionally target one project. Returns absolute directory and relative file paths. To search elsewhere, use native CLI tools subject to their permissions and the user request.', annotations: { readOnlyHint: true }, inputSchema: { type: 'object', properties: { query: { type: 'string', minLength: 2 }, project: { type: 'string' } }, required: ['query'] } },
 ]
-const PERSONAL_DEFAULT_TOOLS = new Set(['rename_session', 'search_history', 'read_conversation', 'list_sessions', 'read_memory', 'write_memory', 'delete_memory', 'create_project', 'continue_in_project', 'find_files', 'list_models'])
+const PERSONAL_DEFAULT_TOOLS = new Set(['rename_session', 'work_log', 'search_history', 'read_conversation', 'list_sessions', 'read_memory', 'write_memory', 'delete_memory', 'create_project', 'continue_in_project', 'find_files', 'list_models'])
 
 function personalTools() {
   return [
@@ -1207,6 +1223,220 @@ function visibleProjects() {
     )
     .all(accountId)
     .filter((row) => ALLOWED_PROJECTS.length === 0 || ALLOWED_PROJECTS.includes(row.id))
+}
+
+/** Refusal for a call aimed at another project while the home project keeps its sessions inside it. Must match `CROSS_PROJECTS_OFF` in `apps/server/src/projects/cross-projects.ts`, which the daemon returns for the same case. */
+const CROSS_PROJECTS_OFF =
+  "This session can only act within its own project. To let this project's sessions read and act on the account's other projects, the project owner enables “Act on my other projects” on the project page, General tab (French interface: « Agir sur mes autres projets », tab « Général »). Tell the user about this setting instead of working around it."
+
+/** Conversation-mode tools that accept `project` to work in another of the account's projects. Work, not configuration: reading history and state, sessions, cards, worktrees, actions and schedules, plus read-only memory and instructions. Configuration edits and tools bound to this session (rename, move, own card attachment, decisions, MCP proposals) stay in the home project. */
+const CROSS_TOOLS = new Set([
+  'work_log', 'search_history', 'read_conversation', 'list_sessions', 'find_file_edits',
+  'list_cards', 'read_card', 'add_card_note', 'move_card', 'update_card', 'create_card', 'link_cards', 'unlink_cards', 'update_issue',
+  'list_actions', 'run_action', 'start_session', 'list_worktrees', 'schedule_task', 'list_models',
+  'send_session_message', 'notify_when_done', 'read_instructions', 'read_memory',
+])
+
+const CROSS_PROJECT_PARAM = {
+  type: 'string',
+  description:
+    "Another of this account's projects, by name or ID from list_projects; omit for this project. Requires this project's “Act on my other projects” setting: without it the call says so, and you should tell the user how to enable it.",
+}
+
+/** Read on every call rather than at startup, so toggling the setting applies to running sessions. */
+function crossProjectsOpen() {
+  if (GLOBAL) return false
+  try {
+    return Boolean(db.prepare('SELECT cross_projects AS open FROM projects WHERE id = ?').get(HOME_PROJECT_ID)?.open)
+  } catch {
+    // Database older than the setting.
+    return false
+  }
+}
+
+/** Conversation-mode tools: a `project` parameter on the cross-project ones. Offered whether or not the setting is on, so a request about another project reaches the explanation instead of a silent limit. */
+function projectTools(tools) {
+  return tools.map((tool) => !CROSS_TOOLS.has(tool.name)
+    ? tool
+    : { ...tool, inputSchema: { ...tool.inputSchema, properties: { project: CROSS_PROJECT_PARAM, ...(tool.inputSchema.properties ?? {}) } } })
+}
+
+/** Points a conversation-mode call at the requested project, or returns the refusal. The caller restores the home project afterward. */
+function selectCrossProject(name, args) {
+  const wanted = typeof args?.project === 'string' ? args.project.trim() : ''
+  if (!wanted || !CROSS_TOOLS.has(name)) return null
+  const rows = visibleProjects()
+  const lower = wanted.toLowerCase()
+  let found = rows.filter((row) => row.id === wanted)
+  if (found.length === 0) found = rows.filter((row) => row.name.toLowerCase() === lower)
+  if (found.length === 0) found = rows.filter((row) => row.name.toLowerCase().includes(lower))
+  if (found.length === 1 && found[0].id === HOME_PROJECT_ID) return null
+  if (!crossProjectsOpen()) return { ...text(CROSS_PROJECTS_OFF), isError: true }
+  if (found.length !== 1) {
+    return {
+      ...text(
+        found.length === 0
+          ? `No project “${wanted}” accessible to this account. Use list_projects for names and IDs.`
+          : `Multiple projects match “${wanted}”: ${found.map((row) => `${row.name} (${row.id})`).join(', ')}. Be more specific.`,
+      ),
+      isError: true,
+    }
+  }
+  PROJECT_ID = found[0].id
+  const mode = db.prepare('SELECT memory_mode AS mode FROM projects WHERE id = ?').get(PROJECT_ID)?.mode
+  // Project memory directories are siblings under the memory root; a native-memory project has none.
+  const root = HOME_MEMORY_DIR ? dirname(dirname(HOME_MEMORY_DIR)) : join(dirname(DB_PATH), 'memory')
+  MEMORY_DIR = mode === 'native' ? '' : join(root, 'projects', PROJECT_ID)
+  return null
+}
+
+/** Explains a conversation missing from the targeted project when it lives in another project of the account: name that project if this one may reach it, otherwise the setting. Empty when there is nothing to add. */
+function elsewhereHint(id) {
+  if (GLOBAL || !id) return ''
+  const bare = id.replace(/^session:/, '').trim()
+  const row = db.prepare('SELECT project_id AS projectId FROM conversations WHERE id = ? AND project_id IS NOT NULL AND project_id != ?').get(bare, PROJECT_ID)
+  const project = row && visibleProjects().find((entry) => entry.id === row.projectId)
+  if (!project) return ''
+  return crossProjectsOpen()
+    ? ` It belongs to project “${project.name}”: call again with project="${project.name}".`
+    : ` It belongs to project “${project.name}”. ${CROSS_PROJECTS_OFF}`
+}
+
+/** Session that wrote to this one from another project, so a reply can reach it even when this project keeps its sessions inside it: answering is not reaching out. */
+function replyPeer(id) {
+  return (
+    db
+      .prepare(
+        `SELECT c.id AS id, c.title AS title, c.agent AS agent, c.status AS status,
+                c.background_count AS background, c.loop_count AS loops,
+                c.archived_at AS archivedAt, c.project_id AS projectId
+         FROM conversations AS c
+         WHERE c.id = ? AND c.project_id IS NOT NULL AND EXISTS (
+           SELECT 1 FROM session_messages AS m WHERE m.from_conversation_id = c.id AND m.to_conversation_id = ?)`,
+      )
+      .get(id, CURRENT_CONVERSATION) ?? null
+  )
+}
+
+/** Pauses longer than this between journal events are not counted as work: the session was waiting for someone. */
+const WORK_GAP_MS = 5 * 60_000
+const WORK_LOG_MAX_DAYS = 31
+const WORK_LOG_MAX_SESSIONS = 300
+
+function localDay(ts) {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function parseDay(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof value === 'string' ? value.trim() : '')
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return localDay(date.getTime()) === match[0] ? date.getTime() : null
+}
+
+function hoursMinutes(ms) {
+  const minutes = Math.round(ms / 60_000)
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`
+}
+
+const clock = (ts) => new Date(ts).toTimeString().slice(0, 5)
+
+/** Projects work_log covers: the targeted one, or without `project` every project this session may reach (plus personal discussions outside a project session). */
+function workLogScope(args) {
+  const named = typeof args?.project === 'string' && args.project.trim() !== ''
+  if (PROJECT_ID && (named || (GLOBAL && !PERSONAL))) return { projects: [PROJECT_ID], personal: false, note: '' }
+  if (GLOBAL) return { projects: visibleProjects().map((row) => row.id), personal: PERSONAL, note: '' }
+  if (crossProjectsOpen()) return { projects: visibleProjects().map((row) => row.id), personal: false, note: '' }
+  return { projects: [HOME_PROJECT_ID], personal: false, note: `Only this project is listed. ${CROSS_PROJECTS_OFF}` }
+}
+
+function workLog(args) {
+  const toDay = args?.to === undefined ? parseDay(localDay(Date.now())) : parseDay(args.to)
+  if (toDay === null) return { ...text('`to` must be a date as YYYY-MM-DD.'), isError: true }
+  const fromDay = args?.from === undefined ? new Date(toDay).setDate(new Date(toDay).getDate() - 6) : parseDay(args.from)
+  if (fromDay === null) return { ...text('`from` must be a date as YYYY-MM-DD.'), isError: true }
+  if (fromDay > toDay) return { ...text('`from` must not be after `to`.'), isError: true }
+  const end = new Date(toDay).setDate(new Date(toDay).getDate() + 1)
+  if (end - fromDay > (WORK_LOG_MAX_DAYS + 1) * 86_400_000) return { ...text(`At most ${WORK_LOG_MAX_DAYS} days per call: split the range.`), isError: true }
+
+  const accountId = USER?.id ?? db.prepare('SELECT user_id AS id FROM conversations WHERE id = ?').get(CURRENT_CONVERSATION)?.id
+  const scope = workLogScope(args)
+  const placeholders = scope.projects.map(() => '?').join(', ') || 'NULL'
+  // Archived sessions count too: archiving tidies the list, the work was still done.
+  const sessions = db
+    .prepare(
+      `SELECT c.id AS id, c.title AS title, c.agent AS agent, c.project_id AS projectId,
+              p.name AS projectName, k.number AS cardNumber, k.title AS cardTitle, w.name AS branch
+       FROM conversations AS c
+       LEFT JOIN projects AS p ON p.id = c.project_id
+       LEFT JOIN cards AS k ON k.id = c.card_id
+       LEFT JOIN worktrees AS w ON w.id = c.worktree_id
+       WHERE c.user_id = ? AND c.updated_at >= ? AND c.created_at < ?
+         AND (c.project_id IN (${placeholders})${scope.personal ? ' OR c.project_id IS NULL' : ''})
+       ORDER BY c.created_at
+       LIMIT ${WORK_LOG_MAX_SESSIONS + 1}`,
+    )
+    .all(accountId, fromDay, end, ...scope.projects)
+  const truncated = sessions.length > WORK_LOG_MAX_SESSIONS
+
+  // Only the timestamp column is read, so large payloads are never loaded.
+  const stamps = db.prepare('SELECT ts FROM events WHERE conversation_id = ? AND ts >= ? AND ts < ? ORDER BY seq')
+  /** day → project → { active, first, last, sessions[] } */
+  const days = new Map()
+  for (const session of sessions.slice(0, WORK_LOG_MAX_SESSIONS)) {
+    const perDay = new Map()
+    let previous = null
+    for (const { ts } of stamps.iterate(session.id, fromDay, end)) {
+      const day = localDay(ts)
+      const entry = perDay.get(day) ?? { active: 0, first: ts, last: ts }
+      if (previous !== null && localDay(previous) === day && ts - previous <= WORK_GAP_MS) entry.active += Math.max(0, ts - previous)
+      entry.last = Math.max(entry.last, ts)
+      entry.first = Math.min(entry.first, ts)
+      perDay.set(day, entry)
+      previous = ts
+    }
+    for (const [day, entry] of perDay) {
+      const projects = days.get(day) ?? new Map()
+      const key = session.projectName ?? 'Personal discussions'
+      const group = projects.get(key) ?? { active: 0, first: entry.first, last: entry.last, sessions: [] }
+      group.active += entry.active
+      group.first = Math.min(group.first, entry.first)
+      group.last = Math.max(group.last, entry.last)
+      group.sessions.push({ ...session, ...entry })
+      projects.set(key, group)
+      days.set(day, projects)
+    }
+  }
+
+  const range = `${localDay(fromDay)} to ${localDay(toDay)}`
+  if (days.size === 0) return text([`No session activity from ${range}.`, scope.note].filter(Boolean).join('\n\n'))
+  const lines = [`Work log from ${range} (server time zone; active time excludes pauses over 5 minutes):`]
+  for (const day of [...days.keys()].sort()) {
+    const projects = days.get(day)
+    const total = [...projects.values()].reduce((sum, group) => sum + group.active, 0)
+    lines.push('', `## ${day} — ${hoursMinutes(total)} active`)
+    for (const [name, group] of [...projects].sort((a, b) => b[1].active - a[1].active)) {
+      lines.push(`- ${name}: ${hoursMinutes(group.active)} (${clock(group.first)}–${clock(group.last)})`)
+      for (const entry of group.sessions.sort((a, b) => b.active - a.active)) {
+        const extras = [
+          entry.cardNumber ? `card #${entry.cardNumber} “${entry.cardTitle}”` : null,
+          entry.branch ? `branch ${entry.branch}` : null,
+        ].filter(Boolean)
+        lines.push(`  - ${sessionReference(entry.id)} “${entry.title}” (${entry.agent}): ${hoursMinutes(entry.active)}, ${clock(entry.first)}–${clock(entry.last)}${extras.length ? ` · ${extras.join(' · ')}` : ''}`)
+      }
+    }
+  }
+  if (truncated) lines.push('', `Only the first ${WORK_LOG_MAX_SESSIONS} sessions were counted: narrow the range.`)
+  if (scope.note) lines.push('', scope.note)
+  return text(lines.join('\n'))
+}
+
+/** Footer of list_projects in conversation mode: whether those projects are reachable from here. */
+function crossProjectsNote() {
+  return crossProjectsOpen()
+    ? 'This project lets its sessions act on these projects: pass `project` to the tools that accept it.'
+    : CROSS_PROJECTS_OFF
 }
 
 function listProjects() {
@@ -1875,8 +2105,9 @@ function describeBoardLink(link) {
   return `Board linked to issues at github.com/${link.repo}: a card marked “GitHub #n” is an issue, public if the repository is public; other cards are local. Here, ${where}.`
 }
 
-/** Card handled by the current conversation, if any. */
+/** Card handled by the current conversation, if any. None while a call targets another project: that card belongs to the home board. */
 function currentCard() {
+  if (PROJECT_ID !== HOME_PROJECT_ID) return null
   return (
     db
       .prepare(
@@ -2159,13 +2390,12 @@ function readSessionMessages(withId) {
        LEFT JOIN conversations AS o
          ON o.id = CASE WHEN m.from_conversation_id = @me THEN m.to_conversation_id
                         ELSE m.from_conversation_id END
-       WHERE m.project_id = @project
-         AND (m.from_conversation_id = @me OR m.to_conversation_id = @me)
+       WHERE (m.from_conversation_id = @me OR m.to_conversation_id = @me)
          AND (@with IS NULL OR m.from_conversation_id = @with OR m.to_conversation_id = @with)
        ORDER BY m.created_at DESC
        LIMIT ${PEER_HISTORY_LIMIT}`,
     )
-    .all({ me: CURRENT_CONVERSATION, project: PROJECT_ID, with: withId })
+    .all({ me: CURRENT_CONVERSATION, with: withId })
     .reverse()
 
   const unread = rows.filter((row) => row.toId === CURRENT_CONVERSATION && row.deliveredAt === null)
@@ -2617,7 +2847,13 @@ async function callTool(name, args) {
   if (PERSONAL && !PROJECT_ID && (name === 'write_memory' || name === 'delete_memory')) return requestDaemon(name === 'write_memory' ? 'write_personal_memory' : 'delete_personal_memory', args ?? {})
 
   if (name === 'list_projects') {
-    return text(renderProjects(listProjects()))
+    if (GLOBAL) return text(renderProjects(listProjects()))
+    // Marked per row while closed: a model skimming the list must not take another project for reachable.
+    const open = crossProjectsOpen()
+    const rows = listProjects().map((row) => row.id === HOME_PROJECT_ID
+      ? { ...row, name: `${row.name} [this project]` }
+      : open ? row : { ...row, name: `${row.name} [not reachable from this session]` })
+    return text(`${renderProjects(rows)}\n\n${crossProjectsNote()}`)
   }
 
   if (name === 'read_session' || name === 'wait_for_session') {
@@ -2636,6 +2872,8 @@ async function callTool(name, args) {
     return text(renderSession(row))
   }
 
+  if (name === 'work_log') return workLog(args)
+
   if (name === 'search_history') {
     const query = typeof args?.query === 'string' ? args.query : ''
     if (!query.trim()) return { ...text('The `query` parameter is required.'), isError: true }
@@ -2650,7 +2888,7 @@ async function callTool(name, args) {
     const found = id ? readConversation(id) : null
     if (!found) {
       return {
-        ...text(`No conversation “${id}” in this project.`),
+        ...text(`No conversation “${id}” in this project.${elsewhereHint(id)}`),
         isError: true,
       }
     }
@@ -2860,10 +3098,15 @@ async function callTool(name, args) {
       return { ...text('That is the ID of this conversation.'), isError: true }
     }
 
-    const peer = peerConversation(to)
+    let peer = peerConversation(to)
+    if (!peer && !GLOBAL) {
+      peer = replyPeer(to)
+      // Filed under the recipient's project, like any message it receives.
+      if (peer) PROJECT_ID = peer.projectId
+    }
     if (!peer) {
       return {
-        ...text(`No conversation “${to}” in this project. Use list_sessions to see available sessions.`),
+        ...text(`No conversation “${to}” in this project. Use list_sessions to see available sessions.${elsewhereHint(to)}`),
         isError: true,
       }
     }
@@ -2924,7 +3167,7 @@ async function callTool(name, args) {
     const peer = peerConversation(target)
     if (!peer) {
       return {
-        ...text(`No conversation “${target}” in this project. Use list_sessions to see available sessions.`),
+        ...text(`No conversation “${target}” in this project. Use list_sessions to see available sessions.${elsewhereHint(target)}`),
         isError: true,
       }
     }
@@ -3186,7 +3429,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       ? personalTools()
       : GLOBAL
       ? globalTools()
-      : [LIST_PROJECTS, ...TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name)))]
+      : [LIST_PROJECTS, ...projectTools(TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name))))]
     send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
     return
   }
@@ -3199,12 +3442,16 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       try {
         result = GLOBAL && SESSION_ONLY_TOOLS.has(name) && !(PERSONAL && name === 'rename_session')
           ? { ...text(`Tool ${name} is unavailable outside a session: no session identity or turn to receive messages.`), isError: true }
-          : (GLOBAL && selectProject(name, args)) || (await callTool(name, args))
+          : (GLOBAL ? selectProject(name, args) : selectCrossProject(name, args)) || (await callTool(name, args))
       } catch (err) {
         // Return tool results rather than JSON-RPC errors so models can correct requests;
         // protocol errors provide no useful guidance.
         log(`tool ${name} failed: ${err.message}`)
         result = { ...text(`Tool call failed: ${err.message}`), isError: true }
+      }
+      if (!GLOBAL) {
+        PROJECT_ID = HOME_PROJECT_ID
+        MEMORY_DIR = HOME_MEMORY_DIR
       }
       send({ jsonrpc: '2.0', id: msg.id, result })
     })

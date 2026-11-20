@@ -104,6 +104,13 @@ export const projects = sqliteTable(
      * classifies itself; turned off once the catalog suits the user, agents then only reuse it.
      */
     agentCardTags: integer('agent_card_tags', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Whether this project's sessions may act on the account's other projects through the
+     * built-in MCP tools (history, sessions, cards…), for coordination projects such as
+     * timesheets. Off by default: a session normally stays within its project. Read on every
+     * tool call, so toggling it applies to running sessions too.
+     */
+    crossProjects: integer('cross_projects', { mode: 'boolean' }).notNull().default(false),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },

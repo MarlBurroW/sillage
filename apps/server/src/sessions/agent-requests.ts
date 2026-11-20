@@ -3,6 +3,7 @@ import { resolveAgentTags, setCardTags, TagRefusal, type TagAuthor } from '../bo
 import { personalMemoryDir, writePersonalMemory } from '../memory/personal.js'
 import { createProject } from '../projects/create.js'
 import { deleteProject } from '../projects/delete.js'
+import { CROSS_PROJECTS_OFF, crossProjectsEnabled } from '../projects/cross-projects.js'
 import { searchTree } from '../search/search-files.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
@@ -159,7 +160,7 @@ const WORKTREE_STATE_WORDS = {
 } as const
 
 /** Requester is a session or an account without sessions. Global MCP local clients (`docs/mcp.md`) supply `user_id` instead of conversations, with empty `id`, no worktree/task ancestry and no session-specific launch chains, provenance notes or decisions. Use `Pick` rather than whole rows so types expose only fields actually read. */
-type Requester = Pick<ConversationRow, 'id' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'> & { projectId: string; personal?: boolean; apiToken?: ApiTokenRow }
+type Requester = Pick<ConversationRow, 'id' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'> & { projectId: string; personal?: boolean; apiToken?: ApiTokenRow; fromProject?: string }
 
 interface StartSessionPayload {
   prompt?: unknown
@@ -249,7 +250,11 @@ export class AgentRequests {
         ? this.ctx.db.select().from(conversations).where(eq(conversations.id, request.conversationId)).get()
         : null
       if (request.conversationId && !conversation) throw new Refusal('The requesting session no longer exists.')
-      if (conversation?.projectId && conversation.projectId !== request.projectId) throw new Refusal('The target must belong to the requesting project session.')
+      // A project session acts in its own project unless that project lets its sessions reach the
+      // account's other projects; the target's own access check below still applies.
+      if (conversation?.projectId && conversation.projectId !== request.projectId && !crossProjectsEnabled(this.ctx.db, conversation.projectId)) {
+        throw new Refusal(CROSS_PROJECTS_OFF)
+      }
       if (conversation && request.userId && request.userId !== conversation.userId) throw new Refusal('The request account does not match its session.')
       const userId = conversation?.userId ?? request.userId
       if (!userId || !this.ctx.db.select().from(users).where(eq(users.id, userId)).get()) throw new Refusal('The requesting account no longer exists.')
@@ -311,7 +316,16 @@ export class AgentRequests {
       const project = this.ctx.db.select().from(projects).where(eq(projects.id, request.projectId)).get()
       if (!project || (project.ownerId !== userId && project.visibility !== 'shared')) throw new Refusal('The target project is unavailable to this account.')
       const requester: Requester = conversation
-        ? { ...conversation, projectId: project.id, personal: conversation.projectId === null, worktreeId: conversation.projectId === project.id ? conversation.worktreeId : null }
+        ? {
+            ...conversation,
+            projectId: project.id,
+            personal: conversation.projectId === null,
+            worktreeId: conversation.projectId === project.id ? conversation.worktreeId : null,
+            // Named in what it starts or signs there, so the other project's sessions know where it comes from.
+            fromProject: conversation.projectId && conversation.projectId !== project.id
+              ? this.ctx.db.select({ name: projects.name }).from(projects).where(eq(projects.id, conversation.projectId)).get()?.name
+              : undefined,
+          }
         : this.principal(request, project.id, payload)
       if (request.kind === 'delete_project') {
         if (!conversation || conversation.projectId !== null || !this.attachments || !this.terminals) throw new Refusal('Project deletion is unavailable here.')
@@ -468,6 +482,7 @@ export class AgentRequests {
               kind: 'launch',
               from: requester.id,
               title: requester.title,
+              ...(requester.fromProject ? { project: requester.fromProject } : {}),
               agent: requester.agent,
               messageId: request.id,
               body: prompt,
@@ -492,7 +507,9 @@ export class AgentRequests {
       describePermissions(config),
       requester.personal || !requester.id
         ? 'The user sees it in Sillage. Use read_session or wait_for_session for progress, and interrupt_session to stop its turn. Reuse this ID to continue the mission.'
-        : 'The user sees it in Sillage. To be notified when it finishes, call notify_when_done with this ID, then end your turn if you have no independent work.',
+        : requester.fromProject
+          ? `The user sees it in Sillage, in project “${project.name}”. To be notified when it finishes, call notify_when_done with this ID and project="${project.name}", then end your turn if you have no independent work.`
+          : 'The user sees it in Sillage. To be notified when it finishes, call notify_when_done with this ID, then end your turn if you have no independent work.',
     ]
     return { text: lines.filter(Boolean).join('\n'), launchedId: row.id }
   }

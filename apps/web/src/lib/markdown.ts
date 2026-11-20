@@ -323,7 +323,7 @@ function markSessionReferences(md: MarkdownIt): void {
     const env = state.env as MarkdownEnv
     if (!env.projectId) return
     const ranges = (value: string) => sessionReferenceRanges(value, env.origin)
-      .filter(ref => (env.projectId === null || !ref.projectId || ref.projectId === env.projectId) && (ref.explicit || env.sessionIds?.has(ref.id)))
+      .filter(ref => (env.projectId === null || env.anyProject || !ref.projectId || ref.projectId === env.projectId) && (ref.explicit || env.sessionIds?.has(ref.id)))
     const slot = (id: string) => {
       const token = new state.Token('html_inline', '', 0)
       token.meta = { sessionReference: sessionReference(id) }
@@ -428,6 +428,8 @@ markCardReferences(md)
 interface MarkdownEnv {
   sessionIds?: Pick<ReadonlySet<string>, 'has'>
   projectId?: string | null
+  /** The project may reach the account's other projects: links to their sessions are references too. */
+  anyProject?: boolean
   origin?: string
   /** Potential paths encountered, to submit to the server. */
   candidates?: Set<string>

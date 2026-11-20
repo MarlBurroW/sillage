@@ -20,6 +20,10 @@ import { registerErrorHandler } from '../src/http/errors.js'
 import { registerInstructionRoutes } from '../src/http/routes/instructions.js'
 import { registerMcpRoutes } from '../src/http/routes/mcp.js'
 import { registerMemoryRoutes } from '../src/http/routes/memory.js'
+import { registerProjectRoutes } from '../src/http/routes/projects.js'
+import type { AttachmentStore } from '../src/attachments/store.js'
+import type { CloneJobs } from '../src/clone-jobs.js'
+import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { registerSecretRoutes } from '../src/http/routes/secrets.js'
 import { registerClaudeAccountRoutes } from '../src/http/routes/claude-accounts.js'
 import { registerConsumptionRoutes } from '../src/http/routes/consumption.js'
@@ -71,6 +75,7 @@ async function harness(t: TestContext) {
   registerMcpRoutes(app, ctx, () => {}, { log, secrets, sessions })
   registerInstructionRoutes(app, ctx)
   registerMemoryRoutes(app, ctx)
+  registerProjectRoutes(app, ctx, {} as AttachmentStore, {} as CloneJobs, { aliveCount: () => 0 } as unknown as TerminalManager)
   registerSecretRoutes(app, ctx, secrets)
   registerClaudeAccountRoutes(app, {} as ClaudeAccountStore, {} as ClaudeLoginService, {
     read: async () => ({ state: 'connected', loginExpiresAt: '2026-12-11T20:53:03.641Z', checkedAt: 1 }),
@@ -243,4 +248,19 @@ test('agent tools answer like the interface for the account their session runs f
   assert.equal(image.isError, true)
   assert.match(out(image), /belongs to its owner/)
   assert.equal(tool('c-owner', 'set_project_image', { path: logo }).isError, undefined)
+})
+
+test('acting on other projects is project configuration, and reaches only what the session account sees', async (t) => {
+  const { db, call, tool } = await harness(t)
+  for (const user of ['admin', 'member']) {
+    assert.equal((await call(user, 'PATCH', '/api/projects/shared', { crossProjects: true })).code, 'project_edit_forbidden', user)
+  }
+  assert.equal((await call('owner', 'PATCH', '/api/projects/shared', { crossProjects: true })).status, 200)
+  assert.equal(db.select().from(projects).where(eq(projects.id, 'shared')).get()?.crossProjects, true)
+
+  // Same setting, different accounts: the owner's private project stays out of a member's reach.
+  assert.equal(tool('c-owner', 'list_sessions', { project: 'private' }).isError, undefined)
+  const member = tool('c-member', 'list_sessions', { project: 'private' })
+  assert.equal(member.isError, true)
+  assert.match(member.content[0]!.text, /No project “private” accessible/)
 })

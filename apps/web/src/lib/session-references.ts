@@ -1,6 +1,7 @@
 import { conversationPath } from '@sillage/protocol'
 import type { ConversationDto } from '@sillage/protocol'
 import { useAllConversations } from './conversations'
+import { useProjects } from './projects'
 
 interface SessionIndex {
   sessions: Map<string, ConversationDto>
@@ -10,10 +11,22 @@ interface SessionIndex {
 // Every message observes the same list. Build its index once per snapshot, not once per bubble.
 const indexes = new WeakMap<ConversationDto[], Map<string, SessionIndex>>()
 const EMPTY: SessionIndex = { sessions: new Map(), ids: new Set() }
+/** Index key for every project session, without personal discussions: what a project acting on the account's other projects can reach. */
+const ANY_PROJECT = '*'
 let latestIds = new Map<string, ReadonlySet<string>>()
 
-/** Reuse the sidebar's authorized list, including archives, without fetching transcripts. */
+/**
+ * Whether references from this project may point to sessions of the account's other projects: its
+ * “Act on my other projects” setting, under which its agents can read and reach them.
+ */
+export function useCrossProjectReferences(projectId?: string | null): boolean {
+  const { data: projects } = useProjects()
+  return Boolean(projectId && projects?.find(project => project.id === projectId)?.crossProjects)
+}
+
+/** Reuse the sidebar's authorized list, including archives, without fetching transcripts. `anyProject` tells callers to accept references to other projects too. */
 export function useSessionReferences(projectId?: string | null) {
+  const anyProject = useCrossProjectReferences(projectId)
   const { data, isPending } = useAllConversations(projectId !== undefined)
   let index = data ? indexes.get(data) : undefined
   if (data && !index) {
@@ -24,6 +37,7 @@ export function useSessionReferences(projectId?: string | null) {
       byProject.set(session.projectId ?? '', group)
     }
     byProject.set('', new Map(data.map(session => [session.id, session])))
+    byProject.set(ANY_PROJECT, new Map(data.filter(session => session.projectId !== null).map(session => [session.id, session])))
     index = new Map()
     const nextIds = new Map<string, ReadonlySet<string>>()
     for (const [id, sessions] of byProject) {
@@ -38,7 +52,8 @@ export function useSessionReferences(projectId?: string | null) {
     latestIds = nextIds
     indexes.set(data, index)
   }
-  return { ...(projectId === undefined ? EMPTY : index?.get(projectId ?? '') ?? EMPTY), loading: isPending }
+  const key = anyProject ? ANY_PROJECT : projectId ?? ''
+  return { ...(projectId === undefined ? EMPTY : index?.get(key) ?? EMPTY), anyProject, loading: isPending }
 }
 
 export function sessionHref(session: Pick<ConversationDto, 'projectId' | 'id'>): string {

@@ -1,4 +1,5 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
+import { crossProjectsEnabled } from '../projects/cross-projects.js'
 import { automationWebhooks, cards, conversations, projectImages, projects, scheduledTasks, worktrees, type Db } from '@sillage/db'
 import { MAX_SESSION_TITLE_CHARS, sessionReference, sessionMarker, sessionTrailer } from '@sillage/protocol'
 
@@ -169,7 +170,11 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
   const projectReminder = input.sillageMcp
     ? 'If the task belongs to a different project, point out the mismatch. Once the user identifies the intended project, use list_projects and move_session to move this same session with its full history, then finish your turn so the move can take effect. The next turn uses the destination workspace and instructions; files and project memory stay in their original folders.'
     : null
-  const briefing = [referenceReminder, projectReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
+  // Only when enabled: a closed project needs no extra prompt, its tools explain the setting when asked.
+  const crossReminder = input.sillageMcp && input.projectId && crossProjectsEnabled(db, input.projectId)
+    ? "This project lets its sessions act on the account's other projects. The `sillage` tools that accept `project` (history, sessions, cards, worktrees, actions, schedules, memory, instructions) work there by name or ID from list_projects, and `work_log` reports time spent per day and project. When the user asks about another project, work on it from here with `project` rather than moving this session. What you start or send there carries this project's name."
+    : null
+  const briefing = [referenceReminder, projectReminder, crossReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
 
@@ -227,7 +232,7 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
 
   if (input.sillageMcp) {
     parts.push(
-      'The `sillage` server tools provide further context: `search_history` and `read_conversation` for earlier decisions, `list_sessions` and `find_file_edits` for current work by others, `send_session_message` to alert or ask another session when it cannot wait for the user, `notify_when_done` to resume when it finishes instead of polling, `broadcast_session_message` before an action affecting all working sessions, `list_cards` and `read_card` for planned project work, `attach_card` when you start on a card this session is not attached to, `create_card` to record work outside your scope, `start_session` to delegate work to a new session when the user asks, `list_worktrees`, `create_worktree` and `remove_worktree` to work separately from others and clean up after a merge instead of using `git worktree add` or `remove`, which Sillage would not track, `schedule_task` to schedule recurring or deferred work that survives this session, `create_automation` to start a session on webhook calls (a labeled issue or failed CI), `list_actions` and `register_action` for project buttons that launch a server, tests or a script, and `list_mcp_servers` and `install_mcp_server` to propose an MCP server the user confirms, typing any secret themselves.',
+      'The `sillage` server tools provide further context: `search_history` and `read_conversation` for earlier decisions, `list_sessions` and `find_file_edits` for current work by others, `work_log` for time spent per day, `send_session_message` to alert or ask another session when it cannot wait for the user, `notify_when_done` to resume when it finishes instead of polling, `broadcast_session_message` before an action affecting all working sessions, `list_cards` and `read_card` for planned project work, `attach_card` when you start on a card this session is not attached to, `create_card` to record work outside your scope, `start_session` to delegate work to a new session when the user asks, `list_worktrees`, `create_worktree` and `remove_worktree` to work separately from others and clean up after a merge instead of using `git worktree add` or `remove`, which Sillage would not track, `schedule_task` to schedule recurring or deferred work that survives this session, `create_automation` to start a session on webhook calls (a labeled issue or failed CI), `list_actions` and `register_action` for project buttons that launch a server, tests or a script, and `list_mcp_servers` and `install_mcp_server` to propose an MCP server the user confirms, typing any secret themselves.',
     )
   }
 
