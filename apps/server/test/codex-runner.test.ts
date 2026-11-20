@@ -118,6 +118,34 @@ test('la fin d’un sous-agent ne termine pas le tour principal', async (t) => {
   assert.ok(agent.type === 'tool.started' && message.type === 'message.completed' && message.parentToolCallId === agent.toolCallId)
 })
 
+test('sub-agent tokens are recorded apart, under their own model, even after the main turn', async (t) => {
+  const f = await runnerFixture(t)
+  const breakdown = (input: number, cached: number, output: number) =>
+    ({ totalTokens: input + output, inputTokens: input, cachedInputTokens: cached, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 })
+  const usage = (threadId: string, turnId: string, total: ReturnType<typeof breakdown>, last: ReturnType<typeof breakdown>) =>
+    ({ method: 'thread/tokenUsage/updated', params: { threadId, turnId, tokenUsage: { total, last, modelContextWindow: 100_000 } } })
+  await f.emit([
+    { method: 'thread/started', params: { thread: { id: 'child', parentThreadId: 'root', agentNickname: 'Inspector', preview: 'Inspect', model: 'gpt-6-luna' } } },
+    usage('root', 'turn-1', breakdown(1000, 800, 50), breakdown(1000, 800, 50)),
+    usage('child', 'child-turn', breakdown(400, 300, 20), breakdown(400, 300, 20)),
+    usage('child', 'child-turn', breakdown(900, 700, 45), breakdown(500, 400, 25)),
+    // The parent finishes first: the sub-agent keeps working, and spending.
+    done(),
+    usage('child', 'child-turn', breakdown(1500, 1100, 60), breakdown(600, 400, 15)),
+    done('child-turn', 'child'),
+    // A thread Sillage never saw start still bills, under the session's model.
+    usage('stray', 'stray-turn', breakdown(200, 0, 10), breakdown(200, 0, 10)),
+    done('stray-turn', 'stray'),
+  ])
+  const turn = f.events.find((event) => event.type === 'turn.completed')
+  assert.deepEqual(turn && { ...turn, stopReason: undefined }, { type: 'turn.completed', stopReason: undefined, costUsd: 0, inputTokens: 200, outputTokens: 50, cacheReadTokens: 800, cacheCreationTokens: 0 })
+  assert.deepEqual(f.events.filter((event) => event.type === 'usage.consumed'), [
+    { type: 'usage.consumed', costUsd: 0, model: 'gpt-6-luna', inputTokens: 400, outputTokens: 60, cacheReadTokens: 1100, cacheCreationTokens: 0 },
+    { type: 'usage.consumed', costUsd: 0, model: null, inputTokens: 200, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0 },
+  ])
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
 test('un message à un sous-agent terminé ne le remet pas en cours, un nouveau tour si', async (t) => {
   const f = await runnerFixture(t)
   const interacted = (id: string, agentThreadId: string, agentPath: string) =>

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { test, type TestContext } from 'node:test'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
@@ -153,6 +156,29 @@ test('turns are recorded as they complete, with the owner read at that moment', 
   ])
 })
 
+test('sub-agent consumption gets its own row, under its model or the session\'s', (t) => {
+  const db = database(t)
+  conversation(db, 'c', 'codex', { model: 'gpt-6-astra' })
+  const recorder = new TurnUsageRecorder(db)
+  const consumed = (model: string | null, inputTokens: number): SillageEvent =>
+    ({ type: 'usage.consumed', model, costUsd: 0, inputTokens, outputTokens: 3, cacheReadTokens: 10, cacheCreationTokens: 0 })
+  recorder.observe('c', { seq: 1, ts: 100, event: completed(5, 7) }, undefined)
+  recorder.observe('c', { seq: 2, ts: 150, event: consumed('gpt-6-luna', 4) }, undefined)
+  recorder.observe('c', { seq: 3, ts: 160, event: consumed(null, 2) }, undefined)
+  recorder.observe('c', { seq: 4, ts: 170, event: { ...consumed(null, 0), outputTokens: 0, cacheReadTokens: 0 } as SillageEvent }, undefined)
+  assert.deepEqual(db.select().from(turnUsage).orderBy(turnUsage.seq).all().map((row) => [row.seq, row.model, row.inputTokens, row.outputTokens, row.cacheReadTokens]), [
+    [1, 'gpt-6-astra', 5, 7, 0],
+    [2, 'gpt-6-luna', 4, 3, 10],
+    [3, 'gpt-6-astra', 2, 3, 10],
+  ])
+  // Benchmarks fold the same events into a run's measures.
+  const metrics = computeRunMetrics([
+    { seq: 1, ts: 100, event: completed(5, 7) },
+    { seq: 2, ts: 150, event: consumed('gpt-6-luna', 4) },
+  ], 'codex')
+  assert.deepEqual([metrics.inputTokens, metrics.outputTokens, metrics.cacheReadTokens], [5 + 4 + 10, 10, 10])
+})
+
 test('history is read once from the journals, forks do not count twice and Claude totals are repaired', async (t) => {
   const db = database(t)
   const log = new EventLog(db)
@@ -166,7 +192,8 @@ test('history is read once from the journals, forks do not count twice and Claud
   ])
   log.copyThrough('source', 'fork', 3)
   log.appendBatch('fork', [{ ts: 40, event: completed(1, 1, 0, 0, 0.5), raw: { type: 'result', total_cost_usd: 0.5, modelUsage: { main: counters(4, 5, 0.5) } } }])
-  log.appendBatch('codex', [{ ts: 50, event: completed(8, 9) }, { ts: 60, event: completed(0, 0) }])
+  log.appendBatch('codex', [{ ts: 50, event: completed(8, 9) }, { ts: 60, event: completed(0, 0) },
+    { ts: 70, event: { type: 'usage.consumed', model: 'gpt-6-luna', costUsd: 0, inputTokens: 6, outputTokens: 2, cacheReadTokens: 0, cacheCreationTokens: 0 } }])
 
   const recorder = new TurnUsageRecorder(db)
   assert.equal(recorder.historyReady(), false)
@@ -179,6 +206,7 @@ test('history is read once from the journals, forks do not count twice and Claud
     ['source', 3, 'main', 20, 40, 2],
     ['fork', 4, 'main', 4, 5, 0.5],
     ['codex', 1, 'fallback-model', 8, 9, null],
+    ['codex', 3, 'gpt-6-luna', 6, 2, null],
   ])
   const costs = Object.fromEntries(db.select({ id: conversations.id, costUsd: conversations.costUsd }).from(conversations).all().map((row) => [row.id, row.costUsd]))
   assert.deepEqual(costs, { source: 3, fork: 0.5, codex: 7 })
@@ -187,6 +215,40 @@ test('history is read once from the journals, forks do not count twice and Claud
   db.delete(turnUsage).run()
   await new TurnUsageRecorder(db).importHistory()
   assert.equal(db.select().from(turnUsage).all().length, 0)
+})
+
+test('Codex sub-agents are read back once from their rollouts, before live recording took over', async (t) => {
+  const db = database(t)
+  const log = new EventLog(db)
+  const home = await mkdtemp(join(tmpdir(), 'sillage-codex-home-'))
+  t.after(() => rm(home, { recursive: true, force: true }))
+  const child = '01a1f43d-2e10-76f0-b392-7687d898e2f3'
+  const now = Date.now()
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const count = (at: number, input: number, cached: number, output: number) => JSON.stringify({ timestamp: iso(at), type: 'event_msg',
+    payload: { type: 'token_count', info: { total_token_usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output } } } })
+  await mkdir(join(home, 'sessions', '2026', '11', '19'), { recursive: true })
+  await writeFile(join(home, 'sessions', '2026', '11', '19', `rollout-2026-11-19T15-36-49-${child}.jsonl`), [
+    JSON.stringify({ timestamp: iso(now - 5000), type: 'turn_context', payload: { model: 'gpt-6-luna' } }),
+    count(now - 4000, 1000, 600, 20),
+    JSON.stringify({ timestamp: iso(now - 3500), type: 'response_item', payload: { type: 'message', content: 'token_count is mentioned here' } }),
+    count(now - 3000, 2500, 1800, 45),
+    // Written after this start: a live runner reports it as usage.consumed.
+    count(now + 60_000, 9000, 8000, 90),
+  ].join('\n'))
+  conversation(db, 'source', 'codex', { createdAt: 1, model: 'gpt-6-astra', inputTokens: 10, outputTokens: 1 })
+  conversation(db, 'fork', 'codex', { createdAt: 2, model: 'gpt-6-astra' })
+  const spawned = (thread: string): SillageEvent => ({ type: 'tool.started', toolCallId: `codex-agent-${thread}-${crypto.randomUUID()}`, name: 'Agent', input: {}, parentToolCallId: null })
+  log.appendBatch('source', [{ ts: 10, event: completed(1, 1) }, { ts: 20, event: spawned(child) }, { ts: 30, event: spawned(child) }, { ts: 40, event: spawned('01a1f43d-0000-7000-8000-000000000000') }])
+  log.copyThrough('source', 'fork', 4)
+
+  await new TurnUsageRecorder(db, home).importHistory()
+  const rows = db.select().from(turnUsage).where(eq(turnUsage.model, 'gpt-6-luna')).all()
+  assert.deepEqual(rows.map((row) => [row.conversationId, row.seq, row.inputTokens, row.cacheReadTokens, row.outputTokens, row.ts]), [
+    ['source', 2, 700, 1800, 45, now - 3000],
+  ])
+  const totals = db.select({ inputTokens: conversations.inputTokens, outputTokens: conversations.outputTokens }).from(conversations).where(eq(conversations.id, 'source')).get()
+  assert.deepEqual(totals, { inputTokens: 710, outputTokens: 46 })
 })
 
 test('the report prices groups, buckets them on the reader\'s calendar and names what remains', (t) => {

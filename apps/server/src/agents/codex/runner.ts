@@ -82,7 +82,7 @@ import { CodexAppServerClient, CodexRpcError } from './app-server-client.js'
 import { CodexAsyncQuestions } from './async-questions.js'
 import { startedItem, completedItem } from './item-events.js'
 import { NOTIFICATION_POLICY } from './notification-policy.js'
-import { CodexTurnUsage } from './turn-usage.js'
+import { CodexSubAgentUsage, CodexTurnUsage } from './turn-usage.js'
 import { CLIENT_INFO } from './client-info.js'
 import { describeTurnError } from './errors.js'
 import { fromCodexMcpStatus, toCodexThreadConfig, type CodexMcpStartup } from './mcp.js'
@@ -196,6 +196,7 @@ export class CodexRunner implements AgentRunner {
   private readonly requestScopes = new Map<RequestId, { threadId: string | null; turnId: string | null }>()
   private readonly childThreads = new Map<string, { toolId: string; parent: string | null; description: string; startedAt: number; running: boolean }>()
   private readonly turnUsage = new CodexTurnUsage()
+  private readonly subAgentUsage = new CodexSubAgentUsage()
   private readonly startedItems = new Set<string>()
   private readonly completedItems = new Set<string>()
   private readonly durations = new ToolDurations()
@@ -478,6 +479,8 @@ export class CodexRunner implements AgentRunner {
    * message resumes the thread.
    */
   private onProcessExit(code: number | null): void {
+    // Sub-agents cut off mid-turn still consumed what they reported.
+    for (const id of this.subAgentUsage.unsettled()) this.settleSubAgent(id)
     this.client = null
     this.turnId = null
     this.clearInterruptWatchdog()
@@ -505,6 +508,7 @@ export class CodexRunner implements AgentRunner {
     if (method === 'thread/started') {
       const { thread } = params as ThreadStartedNotification
       if (thread.parentThreadId) {
+        this.subAgentUsage.setModel(thread.id, thread.model)
         const parent = this.childThreads.get(thread.parentThreadId)?.toolId ?? null
         this.ensureSubAgent(thread.id, thread.agentNickname ?? thread.name ?? 'Codex', parent, thread.preview)
       }
@@ -514,6 +518,13 @@ export class CodexRunner implements AgentRunner {
     const child = threadId && threadId !== this.threadId ? this.childThreads.get(threadId) : undefined
     // Subagent turns must never close the main thread's turn.
     if (this.threadId && threadId && threadId !== this.threadId) {
+      // Counted for every sub-agent thread, including one Sillage never saw start: its tokens
+      // were consumed all the same.
+      if (method === 'thread/tokenUsage/updated') {
+        this.subAgentUsage.update(params as ThreadTokenUsageUpdatedNotification)
+        return
+      }
+      if (method === 'turn/completed') this.settleSubAgent(threadId)
       if (child) this.translateChild(method, params, threadId, child.toolId)
       return
     }
@@ -859,9 +870,15 @@ export class CodexRunner implements AgentRunner {
     this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'running')
   }
 
+  private settleSubAgent(threadId: string): void {
+    const usage = this.subAgentUsage.settle(threadId)
+    if (usage) this.ctx.emit({ type: 'usage.consumed', costUsd: 0, ...usage })
+  }
+
   private ensureSubAgent(threadId: string, label: string, parent: string | null, prompt = ''): string {
     const previous = this.childThreads.get(threadId)
     if (previous?.running) return previous.toolId
+    // consumption/codex-subagent-history.ts reads the thread back from this id: keep its shape.
     const toolId = `codex-agent-${threadId}-${randomUUID()}`
     this.childThreads.set(threadId, { toolId, parent, description: label, startedAt: Date.now(), running: true })
     this.ctx.emit({ type: 'tool.started', toolCallId: toolId, name: 'Agent',
@@ -895,6 +912,7 @@ export class CodexRunner implements AgentRunner {
     // forever after messages, or marked the main thread active when subagents
     // wrote to /root, with no later event closing them.
     if (item.kind === 'interacted' || item.agentThreadId === this.threadId) return
+    this.subAgentUsage.setModel(item.agentThreadId, item.model)
     if (item.kind === 'started') {
       this.ensureSubAgent(item.agentThreadId, item.agentPath, parent)
     } else {
@@ -1001,6 +1019,8 @@ export class CodexRunner implements AgentRunner {
     if (item.type === 'collabAgentToolCall') {
       for (const threadId of item.receiverThreadIds) {
         if (threadId === this.threadId) continue
+        // Probed on 0.169.0: the child's thread/started carries no model, the spawning call does.
+        if (item.tool === 'spawnAgent') this.subAgentUsage.setModel(threadId, item.model)
         const state = item.agentsStates[threadId]
         if (['spawnAgent', 'resumeAgent', 'sendInput', 'followupTask'].includes(item.tool) && item.status !== 'failed') {
           this.ensureSubAgent(threadId, threadId, parent, item.prompt ?? '')
@@ -1417,6 +1437,7 @@ export class CodexRunner implements AgentRunner {
   }
 
   async stop(): Promise<void> {
+    for (const id of this.subAgentUsage.unsettled()) this.settleSubAgent(id)
     this.asyncQuestions.expireAll()
     this.clearInterruptWatchdog()
     this.interactions.expireAll()

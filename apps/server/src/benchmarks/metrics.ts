@@ -198,6 +198,16 @@ export function computeRunMetrics(entries: MetricEntry[], agent?: AgentKind): Be
         if (native && typeof native.totalCost === 'number') previousClaudeCost = native.totalCost
         break
       }
+      case 'usage.consumed':
+        // Codex sub-agents: tokens outside the turn totals, same counters.
+        usageReported ||= event.inputTokens > 0 || event.outputTokens > 0 || event.cacheReadTokens > 0 || event.cacheCreationTokens > 0
+        inputTokens += event.inputTokens + event.cacheReadTokens + event.cacheCreationTokens
+        outputTokens += event.outputTokens
+        cacheReadTokens += event.cacheReadTokens
+        cacheCreationTokens += event.cacheCreationTokens
+        costUsd += event.costUsd
+        costReported ||= event.costUsd > 0
+        break
       case 'usage.updated':
         // These are context snapshots, not turn totals. Never manufacture zero consumption
         // from an interrupted run that emitted snapshots but no final usage.
@@ -277,6 +287,7 @@ const METRIC_EVENT_TYPES = [
   'error',
   'turn.started',
   'turn.completed',
+  'usage.consumed',
   'message.started',
   'message.delta',
   'message.completed',

@@ -1070,6 +1070,17 @@ export class SessionManager {
         if (event.type === 'turn.completed' || event.type === 'session.ended') {
           this.closeCheckpoint(conversationId)
         }
+        if (event.type === 'usage.consumed') {
+          this.db
+            .update(conversations)
+            .set({
+              costUsd: sql`${conversations.costUsd} + ${event.costUsd}`,
+              inputTokens: sql`${conversations.inputTokens} + ${event.inputTokens}`,
+              outputTokens: sql`${conversations.outputTokens} + ${event.outputTokens}`,
+            })
+            .where(eq(conversations.id, conversationId))
+            .run()
+        }
         if (event.type === 'turn.completed') {
           this.log.refreshTurnCount(conversationId)
           // CLIs summarize sessions only after turns finish,

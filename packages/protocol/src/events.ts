@@ -248,6 +248,21 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     cacheCreationTokens: z.number().default(0),
     cacheReadTokens: z.number().default(0),
   }),
+  /**
+   * Consumption billed outside the main turn's totals: Codex sub-agents report usage on their
+   * own thread, and may finish after the turn that spawned them. Same counters as
+   * `turn.completed`, with `inputTokens` excluding cache. `model` is the sub-agent's own, null
+   * when the CLI did not say.
+   */
+  z.object({
+    type: z.literal('usage.consumed'),
+    model: z.string().nullable(),
+    costUsd: z.number(),
+    inputTokens: z.number(),
+    outputTokens: z.number(),
+    cacheCreationTokens: z.number(),
+    cacheReadTokens: z.number(),
+  }),
 
   // Content
   z.object({

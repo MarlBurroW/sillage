@@ -9,6 +9,7 @@ export interface ModelTurnUsage extends TokenCounts {
 }
 
 type TurnCompleted = Extract<SillageEvent, { type: 'turn.completed' }>
+type UsageConsumed = Extract<SillageEvent, { type: 'usage.consumed' }>
 
 const USAGE_KEYS = ['inputTokens', 'outputTokens', 'cacheReadInputTokens', 'cacheCreationInputTokens', 'cacheCreationEphemeral1hInputTokens', 'costUSD'] as const
 /** Per-model counters of a Claude `result`, reduced to the keys read here. */
@@ -119,4 +120,18 @@ export function turnUsageOf(
     reportedCostUsd: agent !== 'claude' && event.costUsd > 0 ? event.costUsd : null,
   }
   return { rows: consumed(row) ? [row] : [], claude: state.claude }
+}
+
+/** Consumption reported apart from a turn, under the model that ran it when the CLI said. */
+export function consumedUsageOf(event: UsageConsumed, sessionModel: string | null): ModelTurnUsage[] {
+  const row: ModelTurnUsage = {
+    model: event.model ?? sessionModel ?? '',
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+    cacheReadTokens: event.cacheReadTokens,
+    cacheWriteTokens: event.cacheCreationTokens,
+    cacheWrite1hTokens: 0,
+    reportedCostUsd: event.costUsd > 0 ? event.costUsd : null,
+  }
+  return consumed(row) ? [row] : []
 }
