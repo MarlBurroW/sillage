@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   MAX_PROJECT_IMAGE_BYTES,
   type CloneJobDto,
@@ -18,6 +18,16 @@ export function useProjects() {
   })
 }
 
+/**
+ * A project created here joins a rail its account composed: otherwise it would show while open
+ * and vanish on leaving. Without pins the rail follows recent visits, which already shows it.
+ * Best effort: the project exists either way, and the rail's own entry adds it later.
+ */
+async function keepCreatedInRail(queryClient: QueryClient, id: string): Promise<void> {
+  if (!queryClient.getQueryData<ProjectDto[]>(PROJECTS_KEY)?.some((entry) => entry.pinned)) return
+  await api.put(`/api/projects/${id}/pin`, {}).catch(() => undefined)
+}
+
 /** An existing directory (`workspacePath`) or one to create within `parentDir`. */
 export type CreateProjectInput = (
   | { name: string; workspacePath: string; visibility: 'private' | 'shared' }
@@ -27,7 +37,11 @@ export type CreateProjectInput = (
 export function useCreateProject() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: CreateProjectInput) => api.post<ProjectDto>('/api/projects', input),
+    mutationFn: async (input: CreateProjectInput) => {
+      const project = await api.post<ProjectDto>('/api/projects', input)
+      await keepCreatedInRail(queryClient, project.id)
+      return project
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
       // The server remembers the parent directory for newly created projects: the next form should
@@ -65,7 +79,12 @@ export function useCloneJob(id: string | null) {
     queryFn: async () => {
       const job = await api.get<CloneJobDto>(`/api/projects/clone/${id}`)
       // The project exists only after cloning completes: only then does the displayed list become stale.
-      if (job.status === 'done') void queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
+      if (job.status === 'done') {
+        // Once, when the clone lands: a later refetch must not bring back a project taken off the rail.
+        const landed = queryClient.getQueryData<CloneJobDto>(['clone', id])?.status !== 'done'
+        if (landed && job.projectId) await keepCreatedInRail(queryClient, job.projectId)
+        void queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
+      }
       return job
     },
     enabled: id !== null,
@@ -105,33 +124,36 @@ export function useReorderProjects() {
 }
 
 /**
- * Project-switcher pin. Apply locally before the reply like conversation bookmarks: fill the star
- * on click. The server stores pins per account so they follow users across devices.
+ * Rail pins, several at once: an account without pins sees an implicit rail, and its first choice
+ * turns that whole rail into pins (see `rail-projects.ts`). Apply locally before the replies and
+ * refresh once, so marks appear on click and never flicker through a half-written set. The server
+ * stores pins per account so they follow users across devices.
  */
-export function useTogglePin() {
+export function useSetPins() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
-      pinned
-        ? api.put<{ pinned: boolean }>(`/api/projects/${id}/pin`, {})
-        : api.delete<{ pinned: boolean }>(`/api/projects/${id}/pin`),
+    mutationFn: (pins: { id: string; pinned: boolean }[]) =>
+      Promise.all(pins.map(({ id, pinned }) =>
+        pinned
+          ? api.put<{ pinned: boolean }>(`/api/projects/${id}/pin`, {})
+          : api.delete<{ pinned: boolean }>(`/api/projects/${id}/pin`))),
 
-    onMutate: async ({ id, pinned }) => {
+    onMutate: async (pins) => {
       await queryClient.cancelQueries({ queryKey: PROJECTS_KEY })
       const previous = queryClient.getQueryData<ProjectDto[]>(PROJECTS_KEY)
+      const next = new Map(pins.map((pin) => [pin.id, pin.pinned]))
       queryClient.setQueryData<ProjectDto[]>(PROJECTS_KEY, (current) =>
-        current?.map((entry) => (entry.id === id ? { ...entry, pinned } : entry)),
+        current?.map((entry) => (next.has(entry.id) ? { ...entry, pinned: next.get(entry.id)! } : entry)),
       )
       return { previous }
     },
 
-    onError: (_error, { id }, context) => {
-      // Roll back only the pin: Git status or counters may have changed meanwhile.
-      const before = context?.previous?.find((entry) => entry.id === id)
-      if (!before) return
+    onError: (_error, pins, context) => {
+      // Roll back only the pins: Git status or counters may have changed meanwhile.
+      const before = new Map(context?.previous?.map((entry) => [entry.id, entry.pinned]))
       queryClient.setQueryData<ProjectDto[]>(PROJECTS_KEY, (current) =>
-        current?.map((entry) => (entry.id === id ? { ...entry, pinned: before.pinned } : entry)),
+        current?.map((entry) => (pins.some((pin) => pin.id === entry.id) && before.has(entry.id) ? { ...entry, pinned: before.get(entry.id)! } : entry)),
       )
     },
 

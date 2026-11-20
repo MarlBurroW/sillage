@@ -1,9 +1,8 @@
 import { claudeLoginExpiry, conversationPath } from '@sillage/protocol'
-import type { ProjectDto } from '@sillage/protocol'
 import { X } from 'lucide-react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useMatch, useNavigate } from 'react-router-dom'
-import { activityTone, useFollowedActivity, type ActivityCounts } from '../../lib/activity'
+import { useFollowedActivity, type ActivityCounts } from '../../lib/activity'
 import { useCliUpdateNotice } from '../../lib/agents'
 import { benchmarkState, useBenchmarks, useWaitingRuns } from '../../lib/benchmarks'
 import { useClaudeHostLogin } from '../../lib/claude-accounts'
@@ -15,6 +14,7 @@ import { hasColumn, projectOfSpace, routeSpace, useNavSpace, type NavSpace } fro
 import { projectViewOf, projectViewPath } from '../../lib/project-view'
 import { useProjectVisits } from '../../lib/project-visits'
 import { useProjects, useReorderProjects } from '../../lib/projects'
+import { useLegacyPinMigration, useRailProjects } from '../../lib/rail-projects'
 import { resizeHandle } from '../../lib/resize-handle'
 import { useSchedules } from '../../lib/schedules'
 import { useCurrentUser, useLogout } from '../../lib/session'
@@ -23,15 +23,13 @@ import { useUpdateNotice } from '../../lib/system'
 import { PullToRefresh } from '../PullToRefresh'
 import { Banner, Button, IconButton, cx } from '../ui'
 import { ActivityColumn } from './ActivityColumn'
+import { AddToRailPopover } from './AddToRailPopover'
 import { BenchmarksColumn } from './BenchmarksColumn'
 import { NavChromeContext } from './chrome'
 import { DiscussionsColumn } from './DiscussionsColumn'
 import { NavRail } from './NavRail'
 import { ProjectColumn } from './ProjectColumn'
 import { ProjectsDialog } from './ProjectsDialog'
-
-/** Projects the rail shows when none is pinned: enough to switch between current work. */
-const UNPINNED_SHOWN = 6
 
 /**
  * Navigation in two levels. The rail selects a space; the column lists what that space holds and
@@ -68,7 +66,9 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
   const folded = useNavColumnFolded()
   const { refreshing, refresh } = useRefreshLists()
   const column = useRef<HTMLDivElement>(null)
+  const [managing, setManaging] = useState(false)
   useStatusFeed()
+  useLegacyPinMigration(user?.id ?? '', projects)
 
   const openProjectThread = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
   const openDiscussion = useMatch('/discussions/:conversationId')?.params.conversationId
@@ -85,18 +85,8 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
   const listed = wide ? (space && hasColumn(space) && !folded ? space : null) : marked
   const currentProject = projects?.find((project) => project.id === (marked ? projectOfSpace(marked) : null))
 
-  // Pins choose the rail. Without any, recent projects then the first ones stand in so the rail is
-  // never empty; the current project always shows, or its column would have no entry to fold it from.
-  const railProjects = useMemo(() => {
-    const all = projects ?? []
-    const pinned = all.filter((project) => project.pinned)
-    const recent = visits.map((visit) => visit.projectId)
-    const chosen = new Set(pinned.length > 0
-      ? pinned.map((project) => project.id)
-      : [...new Set([...recent, ...all.map((project) => project.id)])].slice(0, UNPINNED_SHOWN))
-    if (currentProject) chosen.add(currentProject.id)
-    return all.filter((project) => chosen.has(project.id))
-  }, [projects, visits, currentProject])
+  const rail = useRailProjects(projects, visits, currentProject?.id ?? null)
+  const recent = visits.map((visit) => visit.projectId)
 
   const pending = activity.decisions
   const countsOf = (projectId: string): ActivityCounts => {
@@ -109,9 +99,9 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
   // A run that asked something stalls its measurement: it waits on the user like any session.
   const waitingRuns = useWaitingRuns(benchmarks)
   const total: ActivityCounts = { awaiting: activity.awaiting.length + pending.length + waitingRuns.length + (hostExpiry ? 1 : 0), running: activity.running.length + runningBenchmarks.length, unread: activity.unread.length }
-  const hidden = (projects ?? []).filter((project) => !railProjects.includes(project)).map((project) => countsOf(project.id))
-  // Running work elsewhere is not a reason to look: only waits and unread reach the "all" entry.
-  const hiddenTone = activityTone({ awaiting: hidden.reduce((sum, counts) => sum + counts.awaiting, 0), running: 0, unread: hidden.reduce((sum, counts) => sum + counts.unread, 0) })
+  const unseen = (projects ?? []).filter((project) => !rail.isKept(project.id) && project.id !== rail.visiting?.id).map((project) => countsOf(project.id))
+  // Running work elsewhere is not a reason to look: only waits and unread reach the entry that lists them.
+  const hidden: ActivityCounts = { awaiting: unseen.reduce((sum, counts) => sum + counts.awaiting, 0), running: 0, unread: unseen.reduce((sum, counts) => sum + counts.unread, 0) }
 
   /** Where a space opens: the place last left there, so switching never loses one's position. */
   const pathOf = (target: NavSpace): string | null => {
@@ -148,9 +138,13 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
     if (!hasColumn(target)) onNavigate()
   }
 
+  // Lists of projects open one without folding it: there, choosing the open project changes nothing.
+  const openProject = (id: string) => { if (marked !== `project:${id}`) select(`project:${id}`) }
+  const createProject = () => { navigate('/projects/new'); onNavigate() }
+
   const reorder = (draggedId: string, overId: string) => {
     // The rail shows a subset: place the mark next to the one it landed on in the full order.
-    const shown = railProjects.map((project) => project.id)
+    const shown = rail.kept.map((project) => project.id)
     const ids = (projects ?? []).map((project) => project.id).filter((id) => id !== draggedId)
     const anchor = ids.indexOf(overId)
     if (anchor === -1) return
@@ -175,21 +169,23 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
           total={total}
           benchmarks={{ awaiting: waitingRuns.length, running: runningBenchmarks.length, unread: 0 }}
           personal={activity.personal}
-          projects={railProjects}
+          rail={rail}
           countsOf={countsOf}
-          hiddenTone={hiddenTone}
+          hidden={hidden}
           updateNotice={appUpdateNotice || cliUpdateNotice ? t('about.badge.updateAvailable') : undefined}
           username={passwordAuth ? user?.username : undefined}
           onSpace={select}
           onReorder={reorder}
           onSearch={onSearch}
           onLogout={() => logout.mutate()}
-          projectsDialog={(trigger) => (
-            <ProjectsDialog trigger={trigger} projects={projects ?? []} selected={currentProject} recent={visits.map((entry) => entry.projectId)}
-              key={user?.id ?? ''} userId={user?.id ?? ''} countsOf={countsOf} onNavigate={onNavigate}
-              onSelect={(chosen: ProjectDto) => select(`project:${chosen.id}`)} />
+          addProject={(trigger, zone) => (
+            <AddToRailPopover trigger={trigger} zone={zone} projects={projects ?? []} rail={rail} recent={recent} countsOf={countsOf}
+              onOpenProject={(chosen) => openProject(chosen.id)} onCreate={createProject} onManage={() => setManaging(true)} />
           )}
         />
+        <ProjectsDialog open={managing} onOpenChange={setManaging} projects={projects ?? []} rail={rail} currentId={currentProject?.id} recent={recent} countsOf={countsOf}
+          onOpenProject={(chosen) => openProject(chosen.id)} onCreate={createProject}
+          onSettings={(chosen) => { navigate(`/p/${chosen.id}`); onNavigate() }} />
         {listed ? (
           <nav ref={column} className="nav-column" aria-label={t('shell.nav.label')} data-nav-column={listed}>
             <PullToRefresh target={column} refreshing={refreshing} onRefresh={refresh} />
@@ -205,7 +201,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
               <BenchmarksColumn />
             ) : project ? (
               // Keyed: the filter and open archives belong to one project.
-              <ProjectColumn key={project.id} project={project} toggleFavorite={toggleFavorite}
+              <ProjectColumn key={project.id} project={project} rail={rail} toggleFavorite={toggleFavorite}
                 conversations={(conversations ?? []).filter((entry) => entry.projectId === project.id)}
                 schedules={(schedules ?? []).filter((task) => task.projectId === project.id)} />
             ) : (

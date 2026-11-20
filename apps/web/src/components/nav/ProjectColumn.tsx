@@ -2,13 +2,14 @@ import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import type { ConversationDto, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
-import { Archive, CalendarClock, ChevronRight, FolderGit2, MoreHorizontal, Pin, PinOff, Plus, RefreshCw, Search, SlidersHorizontal, SquareKanban, SquareTerminal, Users, X } from 'lucide-react'
+import { Archive, CalendarClock, ChevronRight, FolderGit2, Minus, MoreHorizontal, Plus, RefreshCw, Search, SlidersHorizontal, SquareKanban, SquareTerminal, Users, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useReorderConversations } from '../../lib/conversations'
 import { useRefreshLists } from '../../lib/conversation-status'
 import { useTranslate } from '../../lib/i18n'
-import { useTogglePin, useUpdateProject } from '../../lib/projects'
+import { useUpdateProject } from '../../lib/projects'
+import type { RailProjects } from '../../lib/rail-projects'
 import { useWorktreeStatuses, worktreeCounts } from '../../lib/worktrees'
 import { ProjectAvatar } from '../ProjectAvatar'
 import { Tooltip } from '../ui/Tooltip'
@@ -22,8 +23,10 @@ import { RenameInput, swallowNextClick, useDragSensors } from './shared'
  * A project's column: its views, then its sessions over all the height left. Nothing global sits
  * above them any more, so the list needs no "show more" step.
  */
-export function ProjectColumn({ project, conversations, schedules, toggleFavorite }: {
+export function ProjectColumn({ project, rail, conversations, schedules, toggleFavorite }: {
   project: ProjectDto
+  /** Whether the rail keeps this project, and what changes that. */
+  rail: RailProjects
   /** Active and archived together: the column separates them itself. */
   conversations: ConversationDto[]
   schedules: ScheduledTaskDto[]
@@ -33,7 +36,6 @@ export function ProjectColumn({ project, conversations, schedules, toggleFavorit
   const navigate = useNavigate()
   const { onNavigate } = useNavChrome()
   const updateProject = useUpdateProject()
-  const togglePin = useTogglePin()
   const reorder = useReorderConversations(project.id)
   const { refreshing, refresh } = useRefreshLists()
   // Scheduled runs live beneath their task on the scheduling page, not among followed sessions.
@@ -89,7 +91,9 @@ export function ProjectColumn({ project, conversations, schedules, toggleFavorit
           {project.isOwner ? <ProjectMenuItems variant="dropdown" project={project} onRename={() => setEditing(true)} onNavigate={onNavigate} />
             : <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => go(`/p/${project.id}`)}>{t('shell.project.settings')}</MenuItem>}
           <MenuSeparator />
-          <MenuItem icon={project.pinned ? <PinOff size={14} /> : <Pin size={14} />} onSelect={() => togglePin.mutate({ id: project.id, pinned: !project.pinned })}>{t(project.pinned ? 'shell.rail.unpin' : 'shell.rail.pin')}</MenuItem>
+          {rail.isKept(project.id)
+            ? <MenuItem icon={<Minus size={14} />} disabled={!rail.canRemove} onSelect={() => rail.setKept(project, false)}>{t('shell.rail.remove')}</MenuItem>
+            : <MenuItem icon={<Plus size={14} />} onSelect={() => rail.setKept(project, true)}>{t('shell.rail.add')}</MenuItem>}
           <MenuItem icon={<RefreshCw size={14} />} disabled={refreshing} onSelect={refresh}>{t('shell.refresh')}</MenuItem>
         </Menu>}
       />

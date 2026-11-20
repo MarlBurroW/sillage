@@ -13,7 +13,16 @@
 /* The marker sits on the rail's own edge and keeps right angles, like every left-border cue. */
 .nav-rail-item[aria-current=page]::before { content: ''; position: absolute; top: 5px; bottom: 5px; left: calc((100% - var(--nav-rail-width)) / 2); width: 2px; background: var(--sg-accent); }
 .nav-rail-rule { flex-shrink: 0; width: 24px; height: 1px; margin: 6px 0; background: var(--sg-line); }
-.nav-rail-projects { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 2px; width: 100%; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.nav-rail-projects { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 2px; width: 100%; min-height: 0; }
+/* Only the kept projects scroll; the entry that adds one follows them and never leaves the rail. */
+.nav-rail-projects-list { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+/* Each end fades by what it hides, up to a mark's worth: a list two pixels too long must not look cut. */
+.nav-rail-projects-list:is([data-more-above], [data-more-below]) { mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-above, 0px), #000 calc(100% - var(--fade-below, 0px)), transparent); }
+/* An empty slot shaped like a project mark: it reads as the place the next one goes. */
+.nav-rail-add { display: grid; place-items: center; width: 30px; height: 30px; border: 1px dashed var(--sg-line-strong); border-radius: 22%; color: var(--sg-ink-faint); transition: border-color .15s, color .15s; }
+.nav-rail-item:hover > .nav-rail-add, .nav-rail-item[data-state=open] > .nav-rail-add { border-color: var(--sg-accent); color: var(--sg-accent); }
+/* Open without being kept: the same dashed outline says the slot is not its own yet. */
+.nav-rail-item[data-nav-visiting] > .nav-project-mark { outline: 1px dashed var(--sg-line-strong); outline-offset: 2px; }
 .nav-rail-badge { position: absolute; top: 2px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--sg-caution); color: var(--sg-canvas); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 .nav-rail-dot { position: absolute; right: 3px; bottom: 3px; width: 10px; height: 10px; border: 2px solid var(--sg-canvas); border-radius: 50%; }
 .nav-inline-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; }
@@ -21,7 +30,7 @@
 .nav-tone-awaiting { background: var(--sg-caution); }
 .nav-tone-running { background: var(--sg-accent); }
 .nav-tone-unread { background: var(--sg-ink); }
-.nav-project-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 22%; background: color-mix(in oklch, var(--mark, var(--sg-accent)) 26%, var(--sg-surface)); color: color-mix(in oklch, var(--mark, var(--sg-accent)) 55%, var(--sg-ink)); font-size: 12px; font-weight: 650; letter-spacing: -0.02em; }
+.nav-project-mark { display: grid; place-items: center; flex-shrink: 0; width: var(--mark-size, 30px); height: var(--mark-size, 30px); border-radius: 22%; background: color-mix(in oklch, var(--mark, var(--sg-accent)) 26%, var(--sg-surface)); color: color-mix(in oklch, var(--mark, var(--sg-accent)) 55%, var(--sg-ink)); font-size: calc(var(--mark-size, 30px) * .4); font-weight: 650; letter-spacing: -0.02em; }
 img.nav-project-mark { background: none; }
 .sidebar-utilities { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
 

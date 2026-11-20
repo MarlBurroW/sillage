@@ -3,34 +3,30 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { ProjectDto } from '@sillage/protocol'
-import { Activity, ChartColumn, FlaskConical, LogOut, MessageSquare, MoreHorizontal, Search, Server, Settings } from 'lucide-react'
-import { useState, type ComponentPropsWithRef, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import { Activity, ChartColumn, FlaskConical, LogOut, MessageSquare, Minus, Plus, Search, Server, Settings } from 'lucide-react'
+import { useEffect, useState, type ComponentPropsWithRef, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { activityTone, type ActivityCounts } from '../../lib/activity'
-import { useTranslate, type translate } from '../../lib/i18n'
+import { useTranslate } from '../../lib/i18n'
 import type { NavSpace } from '../../lib/nav-space'
+import type { RailProjects } from '../../lib/rail-projects'
 import { Logo } from '../Logo'
+import { ProjectMark } from '../ProjectMark'
 import { Tooltip, TooltipProvider } from '../ui/Tooltip'
 import { UpdateDot } from '../UpdateDot'
-import { Menu, MenuItem, MenuLabel, cx } from '../ui'
-import { swallowNextClick, useDragSensors } from './shared'
+import { ContextMenu, ContextMenuItem, Menu, MenuItem, MenuLabel, cx } from '../ui'
+import { countsLabel, swallowNextClick, useContextMenuEnabled, useDragSensors } from './shared'
+
+/** Longest fade at an end of the scrolled projects, in pixels. */
+const FADE = 22
 
 /** Display the modifier key actually used by the platform. */
 const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
-
-/** "2 awaiting · 1 running", or nothing when the entry is quiet. */
-function countsLabel(counts: ActivityCounts, t: typeof translate): string {
-  return [
-    counts.awaiting > 0 ? t('shell.overview.awaitingCount', { count: counts.awaiting }) : null,
-    counts.running > 0 ? t('shell.overview.runningCount', { count: counts.running }) : null,
-    counts.unread > 0 ? t('shell.overview.unreadCount', { count: counts.unread }) : null,
-  ].filter(Boolean).join(' · ')
-}
 
 /**
  * The rail: every entry does the same thing, it selects a space. Icons carry a name and their
  * state in a tooltip, and in their accessible name for keyboard and screen-reader users.
  */
-export function NavRail({ space, total, benchmarks, personal, projects, countsOf, hiddenTone, updateNotice, username, onSpace, onReorder, onSearch, onLogout, projectsDialog }: {
+export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hidden, updateNotice, username, onSpace, onReorder, onSearch, onLogout, addProject }: {
   space: NavSpace | null
   /** Across every project and discussion; decisions count as awaiting. */
   total: ActivityCounts
@@ -38,11 +34,11 @@ export function NavRail({ space, total, benchmarks, personal, projects, countsOf
   benchmarks: ActivityCounts
   /** Discussions held outside any project. */
   personal: ActivityCounts
-  /** Projects shown as marks, in the account's order. */
-  projects: ProjectDto[]
+  /** Projects shown as marks, and what adds or removes one. */
+  rail: RailProjects
   countsOf: (projectId: string) => ActivityCounts
-  /** State of the projects the rail does not show, carried by the entry that lists them all. */
-  hiddenTone: ReturnType<typeof activityTone>
+  /** State of the projects the rail does not show, carried by the entry that adds them. */
+  hidden: ActivityCounts
   updateNotice: string | undefined
   /** Absent when the edition has no account to sign out of. */
   username: string | undefined
@@ -50,19 +46,32 @@ export function NavRail({ space, total, benchmarks, personal, projects, countsOf
   onReorder: (draggedId: string, overId: string) => void
   onSearch: () => void
   onLogout: () => void
-  /** Wraps the "all projects" entry with its dialog. */
-  projectsDialog: (trigger: ReactElement) => ReactNode
+  /**
+   * Gives the entry that adds a project its panel. The panel is placed against the projects' zone,
+   * built around the wired entry: the entry moves down with each project added, and would take
+   * the panel and its rows with it.
+   */
+  addProject: (trigger: ReactElement, zone: (entry: ReactElement) => ReactElement) => ReactNode
 }) {
   const t = useTranslate()
-  const [accountOpen, setAccountOpen] = useState(false)
   const sensors = useDragSensors()
   const totalLabel = countsLabel(total, t)
+  const hiddenTone = activityTone(hidden)
+  const [list, ends] = useHiddenEnds(rail.kept.length, space)
 
   const onDragEnd = (event: DragEndEvent) => {
     // Dragging ends with mouseup on the mark, causing a click: suppress it or reordering opens the project.
     swallowNextClick()
     if (event.over && event.active.id !== event.over.id) onReorder(String(event.active.id), String(event.over.id))
   }
+  const entryOf = (project: ProjectDto) => ({
+    project,
+    counts: countsOf(project.id),
+    current: space === `project:${project.id}`,
+    canRemove: rail.canRemove,
+    onSelect: () => onSpace(`project:${project.id}`),
+    onKeep: (kept: boolean) => rail.setKept(project, kept),
+  })
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -82,21 +91,27 @@ export function NavRail({ space, total, benchmarks, personal, projects, countsOf
           {activityTone(benchmarks) ? <span className={cx('nav-rail-dot', `nav-tone-${activityTone(benchmarks)}`)} /> : null}
         </RailEntry>
         <span className="nav-rail-rule" />
-        <div className="nav-rail-projects">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis, restrictToParentElement]} onDragEnd={onDragEnd} onDragCancel={swallowNextClick}>
-            <SortableContext items={projects.map((project) => project.id)} strategy={verticalListSortingStrategy}>
-              {projects.map((project) => (
-                <ProjectEntry key={project.id} project={project} counts={countsOf(project.id)} current={space === `project:${project.id}`} onSelect={() => onSpace(`project:${project.id}`)} />
-              ))}
-            </SortableContext>
-          </DndContext>
-          {projectsDialog(
-            <RailEntry label={t('shell.switcher.all')} detail={t('shell.rail.allHint')} aria-haspopup="dialog" data-nav-projects>
-              <MoreHorizontal size={18} />
-              {hiddenTone ? <span className={cx('nav-rail-dot', `nav-tone-${hiddenTone}`)} /> : null}
-            </RailEntry>,
-          )}
-        </div>
+        {addProject(
+          <RailEntry label={t('shell.rail.add')} detail={hiddenTone ? t('shell.rail.hidden', { state: countsLabel(hidden, t) }) : t('shell.rail.addHint')} data-nav-add-project>
+            <span className="nav-rail-add"><Plus size={16} /></span>
+            {hiddenTone ? <span className={cx('nav-rail-dot', `nav-tone-${hiddenTone}`)} /> : null}
+          </RailEntry>,
+          (entry) => (
+            <div className="nav-rail-projects">
+              {/* Only the kept projects scroll: what adds one stays in reach however long the list grows. */}
+              <div ref={list} className="nav-rail-projects-list" data-more-above={ends.above > 0 || undefined} data-more-below={ends.below > 0 || undefined}
+                style={{ '--fade-above': `${ends.above}px`, '--fade-below': `${ends.below}px` } as CSSProperties}>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis, restrictToParentElement]} onDragEnd={onDragEnd} onDragCancel={swallowNextClick}>
+                  <SortableContext items={rail.kept.map((project) => project.id)} strategy={verticalListSortingStrategy}>
+                    {rail.kept.map((project) => <SortableProject key={project.id} {...entryOf(project)} />)}
+                  </SortableContext>
+                </DndContext>
+              </div>
+              {rail.visiting ? <ProjectEntry key={rail.visiting.id} {...entryOf(rail.visiting)} visiting /> : null}
+              {entry}
+            </div>
+          ),
+        )}
         <span className="nav-rail-rule" />
         <div className="sidebar-utilities">
           <RailEntry label={t('services.title')} current={space === 'services'} onClick={() => onSpace('services')} data-nav-space="services"><Server size={18} /></RailEntry>
@@ -105,8 +120,8 @@ export function NavRail({ space, total, benchmarks, personal, projects, countsOf
             <span className="relative"><Settings size={18} />{updateNotice ? <UpdateDot /> : null}</span>
           </RailEntry>
           {username ? (
-            <Menu onOpenChange={setAccountOpen} trigger={
-              <RailEntry label={t('shell.account.menu')} detail={username} tooltipDisabled={accountOpen} className="sidebar-account">
+            <Menu trigger={
+              <RailEntry label={t('shell.account.menu')} detail={username} className="sidebar-account">
                 <span className="sidebar-account-avatar">{username.slice(0, 1).toLocaleUpperCase()}</span>
               </RailEntry>
             }>
@@ -119,17 +134,46 @@ export function NavRail({ space, total, benchmarks, personal, projects, countsOf
   )
 }
 
+/**
+ * How much each end of the list hides, capped at the fade that says so; and the open project
+ * brought back into view, since a rail that scrolled it away would show no current entry at all.
+ */
+function useHiddenEnds(count: number, space: NavSpace | null) {
+  const [node, setNode] = useState<HTMLDivElement | null>(null)
+  const [ends, setEnds] = useState({ above: 0, below: 0 })
+  useEffect(() => {
+    if (!node) return
+    const measure = () => setEnds((current) => {
+      const above = Math.min(FADE, Math.round(node.scrollTop))
+      const below = Math.min(FADE, Math.max(0, Math.round(node.scrollHeight - node.clientHeight - node.scrollTop)))
+      return current.above === above && current.below === below ? current : { above, below }
+    })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    node.addEventListener('scroll', measure, { passive: true })
+    return () => { observer.disconnect(); node.removeEventListener('scroll', measure) }
+  }, [node, count])
+  useEffect(() => {
+    node?.querySelector('[aria-current=page]')?.scrollIntoView({ block: 'nearest' })
+  }, [node, space])
+  return [setNode, ends] as const
+}
+
 type RailEntryProps = ComponentPropsWithRef<'button'> & {
   label: string
   /** Second tooltip line, also read out: the entry's state or what it leads to. */
   detail?: string
+  /** Third tooltip line, for pointer users only: a gesture the entry answers to. */
+  hint?: string
   current?: boolean
-  tooltipDisabled?: boolean
 }
 
-function RailEntry({ label, detail, current, tooltipDisabled, className, children, ...props }: RailEntryProps) {
+function RailEntry({ label, detail, hint, current, className, children, ...props }: RailEntryProps) {
+  // A menu or panel opened from the entry sets its state on it: the tooltip would cover what just opened.
+  const open = (props as { 'data-state'?: string })['data-state'] === 'open'
   return (
-    <Tooltip side="right" sideOffset={8} disabled={tooltipDisabled} label={<><span className="block font-medium">{label}</span>{detail ? <span className="block text-ink-faint">{detail}</span> : null}</>}>
+    <Tooltip side="right" sideOffset={8} disabled={open || undefined} label={<><span className="block font-medium">{label}</span>{detail ? <span className="block text-ink-faint first-letter:uppercase">{detail}</span> : null}{hint ? <span className="block text-ink-faint">{hint}</span> : null}</>}>
       <button type="button" {...props} aria-label={detail ? `${label} — ${detail}` : label} aria-current={current ? 'page' : undefined} className={cx('nav-rail-item', className)}>
         {children}
       </button>
@@ -137,32 +181,59 @@ function RailEntry({ label, detail, current, tooltipDisabled, className, childre
   )
 }
 
-/** A project in the rail: its image, or its initials on its color when it has none. */
-function ProjectEntry({ project, counts, current, onSelect }: { project: ProjectDto; counts: ActivityCounts; current: boolean; onSelect: () => void }) {
+type ProjectEntryProps = Omit<ComponentPropsWithRef<'button'>, 'onSelect'> & {
+  project: ProjectDto
+  counts: ActivityCounts
+  current: boolean
+  /** Open without being kept in the rail: it leaves with the next space chosen. */
+  visiting?: boolean
+  canRemove: boolean
+  onSelect: () => void
+  onKeep: (kept: boolean) => void
+}
+
+/** A project in the rail: its mark and one state, and by right click what keeps it there or not. */
+function ProjectEntry({ project, counts, current, visiting = false, canRemove, onSelect, onKeep, className, ...props }: ProjectEntryProps) {
   const t = useTranslate()
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id })
+  const contextMenu = useContextMenuEnabled()
   const tone = activityTone(counts)
-  const initials = project.name.trim().split(/\s+/).slice(0, 2).map((word) => [...word][0] ?? '').join('').toLocaleUpperCase()
   return (
-    <RailEntry
+    <ContextMenu disabled={!contextMenu} trigger={
+      <RailEntry
+        {...props}
+        label={project.name}
+        detail={[countsLabel(counts, t), visiting ? t('shell.rail.visiting') : null].filter(Boolean).join(' · ') || undefined}
+        hint={visiting && contextMenu ? t('shell.rail.visitingHint') : undefined}
+        current={current}
+        onClick={onSelect}
+        data-nav-space={`project:${project.id}`}
+        data-nav-visiting={visiting || undefined}
+        className={className}
+      >
+        <ProjectMark project={project} />
+        {tone ? <span className={cx('nav-rail-dot', `nav-tone-${tone}`)} /> : null}
+      </RailEntry>
+    }>
+      {visiting
+        ? <ContextMenuItem icon={<Plus size={14} />} onSelect={() => onKeep(true)}>{t('shell.rail.add')}</ContextMenuItem>
+        : <ContextMenuItem icon={<Minus size={14} />} disabled={!canRemove} onSelect={() => onKeep(false)}>{t('shell.rail.remove')}</ContextMenuItem>}
+    </ContextMenu>
+  )
+}
+
+/** A kept project, which drag reorders. */
+function SortableProject(props: ProjectEntryProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.project.id })
+  return (
+    <ProjectEntry
+      {...props}
       ref={setNodeRef}
       {...attributes}
       {...listeners}
       // The sortable role would announce a generic button; the entry is a navigation target first.
       role={undefined}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      label={project.name}
-      detail={countsLabel(counts, t) || undefined}
-      current={current}
-      onClick={onSelect}
-      data-nav-space={`project:${project.id}`}
       className={cx(isDragging && 'relative z-10 opacity-80')}
-    >
-      {project.image
-        // Contain rather than cover: cropped logos become unrecognizable.
-        ? <img src={project.image.url} alt="" className="nav-project-mark object-contain" />
-        : <span aria-hidden className="nav-project-mark" style={{ '--mark': project.color ?? 'var(--sg-accent)' } as CSSProperties}>{initials}</span>}
-      {tone ? <span className={cx('nav-rail-dot', `nav-tone-${tone}`)} /> : null}
-    </RailEntry>
+    />
   )
 }

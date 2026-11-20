@@ -189,13 +189,13 @@ try {
   await sidebar.getByRole('status').filter({ hasText: 'Aucune session ne correspond' }).waitFor()
   await sidebar.getByRole('button', { name: 'Filtrer les sessions' }).click()
 
-  // The rail selects a space: every project is reachable from its last entry, and pins choose
-  // which ones stay in the rail.
+  // The rail selects a space: every project is reachable from its last entry, which also chooses
+  // the ones the rail keeps (rail-projects-ui-check covers that panel).
   const atlas = projects.find((item) => item.name === 'Atlas API')
-  await rail.locator('[data-nav-projects]').click()
-  const dialog = page.getByRole('dialog', { name: 'Tous les projets' })
-  await dialog.getByRole('textbox', { name: 'Rechercher un projet…' }).fill('atlas')
-  await dialog.getByRole('button', { name: 'Atlas API', exact: true }).click()
+  await rail.locator('[data-nav-add-project]').click()
+  const picker = page.getByRole('dialog', { name: 'Projets du rail' })
+  await picker.getByRole('textbox', { name: 'Rechercher un projet…' }).fill('atlas')
+  await picker.getByRole('button', { name: 'Atlas API', exact: true }).click()
   await switcher.filter({ hasText: 'Atlas API' }).waitFor()
   await current(`project:${atlas.id}`)
   await entry(`project:${project.id}`).click()
@@ -261,14 +261,13 @@ try {
   await rename.fill(hero.title)
   await rename.press('Enter')
   await row(hero.id).getByText(hero.title, { exact: true }).waitFor()
-  // Pinning decides the rail: with one pin, only that project and the current one remain.
-  await rail.locator('[data-nav-projects]').click()
-  await dialog.getByRole('button', { name: 'Épingler Atlas API', exact: true }).click()
-  await page.keyboard.press('Escape')
-  await page.waitForFunction(() => document.querySelectorAll('[data-nav-rail] [data-nav-space^="project:"]').length === 2)
-  await rail.locator('[data-nav-projects]').click()
-  await dialog.getByRole('button', { name: 'Désépingler Atlas API', exact: true }).click()
-  await page.keyboard.press('Escape')
+  // The column's menu takes its project off the rail: still open, it shows apart until kept again.
+  await column.getByRole('button', { name: 'Actions du projet Nimbus' }).click()
+  await page.getByRole('menuitem', { name: 'Retirer du rail', exact: true }).click()
+  await rail.locator(`[data-nav-visiting][data-nav-space="project:${project.id}"]`).waitFor()
+  await column.getByRole('button', { name: 'Actions du projet Nimbus' }).click()
+  await page.getByRole('menuitem', { name: 'Ajouter au rail', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('[data-nav-rail] [data-nav-visiting]').length === 0)
 
   for (const width of [200, 264, 320, 480]) {
     await page.evaluate(width => document.documentElement.style.setProperty('--sidebar-desktop-width', `${width}px`), width)

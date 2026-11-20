@@ -967,11 +967,29 @@ reader scrolls up.
 In a phone drawer Activity is only a list to pick from: it stays selected while
 the sessions it opens change the route, until another rail entry is chosen.
 
-The rail shows pinned projects in the account's order, the current project, and
-otherwise the most recent ones; its last project entry opens every project with
-search and pins. A project's mark carries one state, the most pressing of its
-sessions: waiting on the user, working, unread. The same three colors mean the same
-thing wherever a state is marked.
+The rail keeps the projects its account added, in the account's order; an account
+that chose none sees its most recent ones. Its last project entry, a "+" shaped like
+an empty mark, stays in reach while the kept projects scroll above it. It opens a
+panel beside the rail rather than a dialog over it, so a mark is seen to appear when
+its project is added: a row opens its project, and its button says in words what it
+does ("Add", "In the rail"). The same button is in the full list of projects, which
+the panel leads to and where a new project starts. Adding is a pin (`project_pins`),
+but no screen says "pin": one verb pair, add and remove, wherever the rail is
+concerned (the panel, the full list, the column's menu, a mark's right click).
+
+Three rules keep the rail from changing behind the user's back. The first choice of
+an account without pins writes down the rail as it stands, changed by that one
+project, instead of pinning it alone and dropping the others. The last kept project
+cannot be removed: an emptied rail would fill itself with recent ones again. And a
+project created from the interface joins a composed rail, where it would otherwise
+show while open and vanish on leaving. An open project the rail does not keep shows
+between the list and the "+", outlined like the empty slot, until another space is
+chosen.
+
+A project's mark carries one state, the most pressing of its sessions: waiting on
+the user, working, unread. The same three colors mean the same thing wherever a
+state is marked. Waits and unread sessions of projects outside the rail show on the
+"+" entry.
 
 Conversations list in manual rather than chronological order, and so do projects:
 both have a `position` column rewritten in bulk by drag/drop. Rewriting all

@@ -1,6 +1,17 @@
 import { MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { useState } from 'react'
+import type { ActivityCounts } from '../../lib/activity'
+import type { translate } from '../../lib/i18n'
 import { useMediaQuery } from '../../lib/viewport'
+
+/** "2 awaiting · 1 running", or nothing when the entry is quiet. */
+export function countsLabel(counts: ActivityCounts, t: typeof translate): string {
+  return [
+    counts.awaiting > 0 ? t('shell.overview.awaitingCount', { count: counts.awaiting }) : null,
+    counts.running > 0 ? t('shell.overview.runningCount', { count: counts.running }) : null,
+    counts.unread > 0 ? t('shell.overview.unreadCount', { count: counts.unread }) : null,
+  ].filter(Boolean).join(' · ')
+}
 
 /**
  * Touch has no right click and long-press already starts row dragging: omit context menus; the
