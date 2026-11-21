@@ -12,7 +12,8 @@ import { join } from 'node:path'
 
 /** Exact versions of `apps/server` dependencies in pnpm-lock.yaml, peer suffixes removed. */
 export function lockedServerVersions(root) {
-  const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8')
+  // A Windows checkout gives the lockfile CRLF line endings: parse it as LF either way.
+  const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8').replace(/\r\n/g, '\n')
   const start = lock.indexOf('\n  apps/server:\n')
   if (start === -1) throw new Error('pnpm-lock.yaml has no apps/server importer')
   const rest = lock.slice(start + 1)
