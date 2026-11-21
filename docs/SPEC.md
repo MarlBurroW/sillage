@@ -342,14 +342,10 @@ CREATE TABLE skill_sources (
 );
 ```
 
-**Retention.** `events` grows quickly (many text deltas). Two measures:
-
-1. `message.delta` and `thinking.delta` events compact into the corresponding
-   `message.completed` when the message finishes, then are deleted. Historical
-   journal therefore contains complete messages only; only active conversations
-   contain deltas.
-2. Daily maintenance deletes events from conversations archived more than
-   90 days ago (configurable), with weekly `VACUUM`.
+**Retention.** `events` grows quickly (many text deltas). Nothing is compacted or
+purged today: deltas stay in the journal, and replay skips the superseded ones at read
+time (`events/superseded.ts`); archived conversations keep their events until they are
+deleted. Compacting deltas and vacuuming were planned and remain to be done.
 
 ---
 
@@ -1901,7 +1897,6 @@ session_idle_timeout_min = 30
 pty_idle_timeout_min = 60
 
 [retention]
-archived_events_days = 90
 # Inactive days before read, idle conversations are archived.
 # Zero disables automatic archiving; manual action remains available.
 auto_archive_days = 14

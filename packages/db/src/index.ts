@@ -4,6 +4,7 @@ import Database from 'better-sqlite3'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { readMigrationFiles } from 'drizzle-orm/migrator'
 import * as schema from './schema.js'
 
 export * as schema from './schema.js'
@@ -67,6 +68,61 @@ export function openDatabase(file: string): { db: Db; sqlite: SqliteHandle } {
 
   const db = drizzle(sqlite, { schema })
   return { db, sqlite }
+}
+
+/** The database was migrated by a release newer than this one, and strict mode asked to stop. */
+export class SchemaNewerError extends Error {
+  constructor(readonly appliedAt: number, readonly shippedAt: number) {
+    super(
+      `This database was migrated by a newer Sillage release (migration of ${new Date(appliedAt).toISOString()}, ` +
+        `this release ships up to ${new Date(shippedAt).toISOString()}). Start the newer release, or restore a backup ` +
+        'made before its upgrade.',
+    )
+    this.name = 'SchemaNewerError'
+  }
+}
+
+export interface MigrationCheck {
+  /** The database holds migrations this release does not ship: a rollback after an upgrade. */
+  newerThanRelease: boolean
+  /** Shipped migrations dated before the last applied one that are not recorded: they will never run. */
+  skipped: number
+}
+
+/**
+ * Compares the migrations recorded in the database with the ones shipped. Drizzle applies a
+ * migration only when it is newer than the last one recorded, so two cases pass in silence:
+ * an older release running on a schema migrated past it (a rollback), and a migration dated before
+ * the last applied one, never run. Both are reported. A newer schema stops startup only with
+ * SILLAGE_STRICT_SCHEMA=1: deployments roll back automatically after a failed start, and most
+ * migrations only add columns or tables an older release ignores, so refusing would turn a
+ * rollback into an outage. Call before `runMigrations`.
+ */
+export function checkMigrations(db: Db, migrationsFolder: string): MigrationCheck {
+  const table = db.all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'`)
+  if (table.length === 0) return { newerThanRelease: false, skipped: 0 }
+  const applied = db.all<{ hash: string; created_at: number }>(sql`SELECT hash, created_at FROM __drizzle_migrations`)
+  if (applied.length === 0) return { newerThanRelease: false, skipped: 0 }
+  const shipped = readMigrationFiles({ migrationsFolder })
+  const lastApplied = Math.max(...applied.map((row) => Number(row.created_at)))
+  const lastShipped = Math.max(...shipped.map((migration) => migration.folderMillis))
+  const newerThanRelease = lastApplied > lastShipped
+  if (newerThanRelease) {
+    if (process.env.SILLAGE_STRICT_SCHEMA === '1') throw new SchemaNewerError(lastApplied, lastShipped)
+    console.warn(`sillage: ${new SchemaNewerError(lastApplied, lastShipped).message} Running anyway: writes to newer columns may fail.`)
+  }
+  // Hashes also differ when an applied migration's file was edited later: reported, not fatal.
+  // The journal-date test in the server suite prevents the real case before release.
+  const recorded = new Set(applied.map((row) => row.hash))
+  const skipped = shipped.filter((migration) => migration.folderMillis <= lastApplied && !recorded.has(migration.hash))
+  if (skipped.length > 0) {
+    console.warn(
+      `sillage: ${skipped.length} shipped migration(s) dated before the last applied one are not recorded and will not run ` +
+        `(${skipped.map((migration) => new Date(migration.folderMillis).toISOString()).join(', ')}): ` +
+        'a migration merged with an older date, or an applied migration edited afterwards.',
+    )
+  }
+  return { newerThanRelease, skipped: skipped.length }
 }
 
 export function runMigrations(db: Db, migrationsFolder: string): void {

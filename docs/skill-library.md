@@ -266,7 +266,7 @@ GET    /api/skill-sources/search?q=            skills.sh
   collisions too: a native skill `x` would hide Claude's `/x` alias, while Codex
   would show both.
 - Archive import rejects absolute paths and paths containing `..`. It caps size
-  at `limits.maxAttachmentBytes` and file count at 500. It accepts `SKILL.md` at
+  at the attachment limit (`MAX_ATTACHMENT_BYTES`, 20 MB) and file count at 500. It accepts `SKILL.md` at
   the root or in a single top-level directory.
 - Cloning reuses `cloneRepository` (`git.ts:167`) with `--depth 1` and the triggering
   admin's git credentials, covering a team's private repositories. Refresh runs

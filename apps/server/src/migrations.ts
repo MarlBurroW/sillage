@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { runMigrations, type Db } from '@sillage/db'
+import { checkMigrations, runMigrations, type Db, type MigrationCheck } from '@sillage/db'
 
 /** Valid Drizzle migration directories always contain this file. */
 const JOURNAL = join('meta', '_journal.json')
@@ -29,6 +29,10 @@ export function migrationsFolder(): string {
   )
 }
 
+/** Outcome of the startup check, shown by the health route so a rollback onto a newer schema is visible. */
+export const migrationState: MigrationCheck = { newerThanRelease: false, skipped: 0 }
+
 export function runPendingMigrations(db: Db, folder: string): void {
+  Object.assign(migrationState, checkMigrations(db, folder))
   runMigrations(db, folder)
 }

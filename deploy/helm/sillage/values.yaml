@@ -91,7 +91,7 @@ config: ""
   #   session_idle_timeout_min = 30
   #
   #   [retention]
-  #   archived_events_days = 90
+  #   auto_archive_days = 14
 
 # debug | info | warn | error
 logLevel: info

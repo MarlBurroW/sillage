@@ -20,7 +20,9 @@ session_idle_timeout_min = 30
 pty_idle_timeout_min = 60
 
 [retention]
-archived_events_days = 90
+# Inactive days before a read, idle conversation is archived; 0 disables it.
+# Settings > Archiving overrides this.
+auto_archive_days = 14
 
 [agents.claude]
 binary = "claude"

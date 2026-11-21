@@ -175,3 +175,30 @@ NODE_ENV=development pnpm dev  # API on :7317, Vite UI on :5317 with /api proxy
 pnpm user:create          # optional: the first account from a terminal rather than the tour
 ```
 
+
+## Back up and restore
+
+Everything lives in the data directory: `~/.local/share/sillage` for the script
+and macOS installs, the `/data` volume in Docker and Helm. The desktop app keeps
+its own, listed in the [desktop guide](desktop.md). Back these up together:
+
+| Path | What it holds |
+|---|---|
+| `sillage.db` | conversations, journals, projects, cards, settings |
+| `secret.key` | the key encrypting stored secrets and git credentials: without it they are unreadable, even with the database |
+| `vapid.json` | the push notification keys: losing it unsubscribes every device |
+| `attachments/`, `memory/`, `skill-library/`, `worktrees/` | files the database refers to |
+| `*-accounts/` | sign-ins of additional Claude, Codex, Grok and Antigravity accounts |
+
+Do not copy `sillage.db` while the server writes to it: the copy can be torn.
+Either stop the server first, or take an online copy with SQLite, which is
+consistent and does not block Sillage:
+
+```bash
+sqlite3 ~/.local/share/sillage/sillage.db ".backup '/backups/sillage.db'"
+```
+
+To restore, stop the server, put the files back in place (remove any
+`sillage.db-wal` and `sillage.db-shm` left next to the restored database), then
+start it. Restore onto the release that made the backup, or a newer one: an
+older release reports the database as migrated by a newer version.

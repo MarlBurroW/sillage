@@ -21,12 +21,10 @@ const configSchema = z.object({
       maxConcurrentSessions: z.number().int().min(1).default(10),
       sessionIdleTimeoutMin: z.number().int().min(1).default(30),
       ptyIdleTimeoutMin: z.number().int().min(1).default(60),
-      maxAttachmentBytes: z.number().int().default(20 * 1024 * 1024),
     })
     .default({}),
   retention: z
     .object({
-      archivedEventsDays: z.number().int().min(1).default(90),
       /** Inactivity days before read, idle conversations are archived. Zero disables automatic archiving while retaining the manual action. */
       autoArchiveDays: z.number().int().min(0).default(14),
       /** Archival cron expression. Defaults to early morning, offset from other housekeeping to avoid four jobs competing for SQLite's sole writer. */
@@ -91,6 +89,22 @@ export interface Paths {
   webRoot: string
 }
 
+/** Keys once documented that nothing ever read: named as such rather than as typos when an old config still carries them. */
+const RETIRED_KEYS: Record<string, string> = {
+  'retention.archivedEventsDays': 'archived events are kept until their conversation is deleted',
+  'limits.maxAttachmentBytes': 'the attachment limit is fixed (20 MB) and shared with the interface',
+}
+
+/** Keys present in the file that the schema dropped. `z.object` strips unknown keys, so a typo or a misplaced section silently did nothing while the user believed it applied. */
+function droppedKeys(input: unknown, output: unknown, prefix = ''): string[] {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return []
+  const kept = output !== null && typeof output === 'object' ? (output as Record<string, unknown>) : {}
+  return Object.entries(input as Record<string, unknown>).flatMap(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key
+    return key in kept ? droppedKeys(value, kept[key], path) : [path]
+  })
+}
+
 /** Example files and conventional TOML use `max_concurrent_sessions`, but schemas use camelCase. Without normalization, snake_case keys were silently ignored while users assumed their settings applied. Accept both spellings. */
 function camelizeKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(camelizeKeys)
@@ -150,13 +164,22 @@ export function loadConfig(): Config {
     }
   }
 
-  const parsed = configSchema.safeParse(camelizeKeys(raw))
+  const input = camelizeKeys(raw)
+  const parsed = configSchema.safeParse(input)
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n')
     throw new Error(`Configuration invalide (${configPath}):\n${issues}`)
   }
 
   const config = parsed.data
+  // Warned, not fatal: daemons restart unattended after an update, and a newly fatal typo would
+  // stop a working install.
+  for (const key of droppedKeys(input, config)) {
+    const retired = RETIRED_KEYS[key]
+    console.warn(retired
+      ? `sillage: ${configPath}: ${key} has no effect and can be removed (${retired}).`
+      : `sillage: ${configPath}: unknown setting ${key} is ignored.`)
+  }
 
   // Containers should not need TOML files just to change bind addresses:
   // the Docker image sets SILLAGE_HOST=0.0.0.0 and users
