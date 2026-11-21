@@ -111,6 +111,8 @@ const WAIT_POLL_MS = 1000
 const MAX_ACTION_LABEL_CHARS = 60
 const MAX_ACTION_COMMAND_CHARS = 4000
 const REQUEST_POLL_MS = 200
+/** Tests shorten every wait to exercise what happens when the caller gives up. */
+const REQUEST_WAIT_OVERRIDE_MS = Number(process.env.SILLAGE_MCP_REQUEST_WAIT_MS) || null
 
 /** Must match `MAX_LAUNCH_PROMPT_CHARS` in `agent-requests.ts`. */
 const MAX_LAUNCH_PROMPT_CHARS = 20000
@@ -2691,18 +2693,35 @@ async function requestDaemon(kind, payload) {
     .run(id, PROJECT_ID || null, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify({ ...payload, __apiTokenId: API_TOKEN_ID || undefined }), Date.now())
 
   const read = db.prepare('SELECT settled_at, result, is_error FROM agent_requests WHERE id = ?')
-  const deadline = Date.now() + REQUEST_WAIT_MS[kind]
+  const deadline = Date.now() + (REQUEST_WAIT_OVERRIDE_MS ?? REQUEST_WAIT_MS[kind])
   while (Date.now() < deadline) {
     await new Promise((done) => setTimeout(done, REQUEST_POLL_MS))
     const row = read.get(id)
     if (row?.settled_at) return { ...text(row.result ?? ''), ...(row.is_error ? { isError: true } : {}) }
   }
+  // Give up cleanly: a request the daemon has not claimed is withdrawn, so retrying cannot run
+  // it twice. One it already claimed keeps running; say so instead of inviting a retry.
+  // Matches `claim` in apps/server/src/sessions/agent-requests.ts.
+  const withdrawn = writeDb()
+    .prepare(
+      `UPDATE agent_requests SET settled_at = ?, result = ?, is_error = 1
+       WHERE id = ? AND settled_at IS NULL AND claimed_at IS NULL`,
+    )
+    .run(Date.now(), 'Cancelled: the caller stopped waiting before Sillage picked the request up.', id).changes
+  if (withdrawn === 1) {
+    return {
+      ...text('Sillage did not pick up the request in time, so it was cancelled and nothing happened. The service may be busy or not running: try again later.'),
+      isError: true,
+    }
+  }
+  const late = read.get(id)
+  if (late?.settled_at) return { ...text(late.result ?? ''), ...(late.is_error ? { isError: true } : {}) }
   const slow = {
-    start_session: 'Sillage has not finished starting the session (the CLI is slow to start, or the service is not running). Do not resubmit: check list_sessions later.',
+    start_session: 'Sillage has not finished starting the session (the CLI is slow to start). Do not resubmit: check list_sessions later.',
     list_models: 'The model catalogs are still loading: each CLI is probed once at first use, which can take a while on a cold start. Retry in a moment, or pass `agent` to list a single CLI.',
   }
   return {
-    ...text(slow[kind] ?? 'Sillage did not respond in time; the service may not be running. Try again later.'),
+    ...text(slow[kind] ?? 'Sillage is still handling this request. Do not resubmit it: check its effect later.'),
     isError: true,
   }
 }

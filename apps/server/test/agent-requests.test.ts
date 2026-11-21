@@ -140,6 +140,53 @@ async function harness(t: TestContext) {
   return { db, dir, requests, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value }, setCatalogDelay: (agent: string, ms: number) => { catalogDelay[agent] = ms } }
 }
 
+test('a request a previous daemon claimed is closed as interrupted, never run again', async (t) => {
+  const { db, requests, conversation } = await harness(t)
+  conversation('a')
+  db.insert(agentRequests).values({
+    id: 'cut', projectId: 'project', conversationId: 'a', kind: 'rename_session',
+    payload: JSON.stringify({ title: 'Renamed after the restart' }), createdAt: Date.now(), claimedAt: Date.now(),
+  }).run()
+  db.insert(agentRequests).values({
+    id: 'waiting', projectId: 'project', conversationId: 'a', kind: 'rename_session',
+    payload: JSON.stringify({ title: 'Picked up after the restart' }), createdAt: Date.now(),
+  }).run()
+
+  requests.start({ warn() {}, error() {} } as never)
+  t.after(() => requests.stop())
+  const cut = db.select().from(agentRequests).where(eq(agentRequests.id, 'cut')).get()!
+  assert.ok(cut.settledAt)
+  assert.equal(cut.isError, true)
+  assert.match(cut.result ?? '', /Interrupted/)
+
+  await requests.sweep()
+  // The interrupted one stays undone; the one nobody had claimed runs normally.
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'a')).get()!.title, 'Picked up after the restart')
+  assert.ok(db.select().from(agentRequests).where(eq(agentRequests.id, 'waiting')).get()!.claimedAt)
+})
+
+test('a caller that stops waiting withdraws an unclaimed request, so a retry cannot run it twice', async (t) => {
+  const { db, dir, requests, conversation } = await harness(t)
+  conversation('a')
+  // No sweep while the tool waits: the daemon is busy or restarting.
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
+    env: { ...process.env, SILLAGE_MCP_DB: join(dir, 'test.sqlite'), SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: 'a', SILLAGE_MCP_REQUEST_WAIT_MS: '300' },
+  })
+  let stdout = ''
+  child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'rename_session', arguments: { title: 'Too late' } } }) + '\n')
+  const deadline = Date.now() + 10000
+  while (!stdout.includes('\n') && Date.now() < deadline) await new Promise((done) => setTimeout(done, 50))
+  child.kill()
+  const reply = JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
+  assert.equal(reply.isError, true)
+  assert.match(reply.content[0]!.text, /cancelled and nothing happened/)
+
+  await requests.sweep()
+  assert.equal(db.select().from(conversations).where(eq(conversations.id, 'a')).get()!.title, 'Session a')
+  assert.match(db.select().from(agentRequests).get()!.result ?? '', /Cancelled/)
+})
+
 test('an agent names only its own session and broadcasts the title without changing its activity', async (t) => {
   const { db, conversation, mcp, titleEvents, statusBus } = await harness(t)
   conversation('self')

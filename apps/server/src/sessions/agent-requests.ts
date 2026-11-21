@@ -10,7 +10,7 @@ import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { memoryFileSchema, writeMemoryFileBodySchema, conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
 import { Cron } from 'croner'
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
@@ -201,6 +201,7 @@ export class AgentRequests {
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
+    this.closeInterrupted()
     this.timer = setInterval(() => void this.sweep(), POLL_MS)
     this.timer.unref()
   }
@@ -234,7 +235,7 @@ export class AgentRequests {
     const pending = this.ctx.db
       .select()
       .from(agentRequests)
-      .where(isNull(agentRequests.settledAt))
+      .where(and(isNull(agentRequests.settledAt), isNull(agentRequests.claimedAt)))
       .orderBy(asc(agentRequests.createdAt))
       .limit(20)
       .all()
@@ -247,10 +248,38 @@ export class AgentRequests {
         continue
       }
       if (started.length >= room) break
+      // Claim before any effect, and only if the caller has not cancelled meanwhile.
+      if (!this.claim(request.id)) continue
       this.inFlight.add(request.id)
       started.push(this.handle(request).finally(() => this.inFlight.delete(request.id)))
     }
     await Promise.all(started)
+  }
+
+  private claim(id: string): boolean {
+    return this.ctx.db
+      .update(agentRequests)
+      .set({ claimedAt: Date.now() })
+      .where(and(eq(agentRequests.id, id), isNull(agentRequests.settledAt), isNull(agentRequests.claimedAt)))
+      .run().changes === 1
+  }
+
+  /**
+   * Requests a previous daemon claimed and never settled: it stopped while handling them. Their
+   * effects may already exist (a session started, an issue published), so running them again
+   * would duplicate them for a caller long gone. Close them, saying what to check.
+   */
+  private closeInterrupted(): void {
+    const closed = this.ctx.db
+      .update(agentRequests)
+      .set({
+        settledAt: Date.now(),
+        isError: true,
+        result: 'Interrupted: Sillage restarted while handling this request, which may have partly taken effect. Check the result (list_sessions, list_cards…) before submitting it again.',
+      })
+      .where(and(isNull(agentRequests.settledAt), isNotNull(agentRequests.claimedAt)))
+      .run().changes
+    if (closed > 0) this.logger?.warn({ closed }, 'agent requests interrupted by the previous shutdown')
   }
 
   private async handle(request: AgentRequestRow): Promise<void> {

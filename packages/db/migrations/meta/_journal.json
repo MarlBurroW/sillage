@@ -498,6 +498,13 @@
       "when": 1795175879224,
       "tag": "0070_jazzy_young_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1795251209170,
+      "tag": "0071_nasty_iron_monger",
+      "breakpoints": true
     }
   ]
 }

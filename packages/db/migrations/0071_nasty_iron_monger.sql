@@ -1,0 +1,1 @@
+ALTER TABLE `agent_requests` ADD `claimed_at` integer;

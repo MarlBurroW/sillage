@@ -648,6 +648,13 @@ export const agentRequests = sqliteTable(
     /** Tool arguments as JSON, exactly as supplied by the agent. */
     payload: text('payload').notNull(),
     createdAt: timestamp('created_at').notNull(),
+    /**
+     * Set by the daemon when it starts handling the request, before any effect. A request claimed
+     * but never settled was cut by a restart: it is closed as interrupted, never run again, since
+     * its effects (a session, a GitHub issue) may already exist. The MCP caller that gives up
+     * waiting cancels only an unclaimed request, so a retry cannot run alongside it.
+     */
+    claimedAt: timestamp('claimed_at'),
     /** Set by the daemon when the request is processed, whether successful or not. */
     settledAt: timestamp('settled_at'),
     /** Text returned to the agent: the outcome, or what prevented it. */
