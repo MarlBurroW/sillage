@@ -16,6 +16,7 @@ import type { EventLog } from '../events/event-log.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import { readUserSettings } from '../settings/user-settings.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import { detach } from '../detach.js'
 
 /** Minute precision suffices: the CLI's reset time is itself rounded. */
 const TICK_MS = 30_000
@@ -65,9 +66,9 @@ export class UsageLimitResumeService {
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
     this.unsubscribe = this.log.subscribeAll((entry) => this.observe(entry))
-    this.timer = setInterval(() => void this.tick(), TICK_MS)
+    this.timer = setInterval(() => detach(this.tick(), 'usage-limit resume pass'), TICK_MS)
     this.timer.unref()
-    void this.tick()
+    detach(this.tick(), 'usage-limit resume pass')
   }
 
   stop(): void {

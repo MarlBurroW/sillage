@@ -136,7 +136,7 @@ test('A desktop instance stays local until remote access is enabled, then signs 
   // Browsers also send the Host with a port when Serve listens elsewhere than 443.
   assert.equal((await call('/api/me', { ...relayed, host: `${HOST}:8443`, origin: `https://${HOST}:8443` })).status, 200)
   // The cookie works on its own afterwards.
-  const session = (first.cookie ?? '').split(';')[0]
+  const session = (first.cookie ?? '').split(';')[0]!
   assert.equal((await call('/api/me', { ...relayed, cookie: session })).status, 200)
 
   // Someone else on the tailnet, a Funnel visitor (no identity header) and a foreign origin are refused.

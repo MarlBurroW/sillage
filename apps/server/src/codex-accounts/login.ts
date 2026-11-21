@@ -11,6 +11,7 @@ import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { CodexAccountHomes } from './homes.js'
 import type { CodexAccountIdentity, CodexAccountStore } from './store.js'
+import { detach } from '../detach.js'
 
 /** Additional Codex account login through an app-server launched in its home. Codex handles all OpenAI exchanges, writes `auth.json` and refreshes it later. Sillage subsequently sees neither tokens nor keys, only `account/read` information. Device codes are the only viable ChatGPT flow: browser login redirects to server-side `localhost:1455`, unreachable from the user's machine. Users must enable device login in ChatGPT security settings; Codex explains failures. Probed on 0.162.1: `account/login/start` returns URL and code before `auth.json` exists, followed by `account/login/completed`. */
 
@@ -56,7 +57,7 @@ export class CodexLoginService {
     const client = await this.open(accountId, (method, params) => {
       if (method !== 'account/login/completed') return
       const completed = params as AccountLoginCompletedNotification
-      void this.finish(accountId, completed.success ? null : (completed.error ?? 'Connexion refusée.'))
+      detach(this.finish(accountId, completed.success ? null : (completed.error ?? 'Connexion refusée.')), 'Codex sign-in completion')
     })
 
     let started: LoginAccountResponse
@@ -74,7 +75,7 @@ export class CodexLoginService {
     }
 
     const timer = setTimeout(() => {
-      void this.finish(accountId, 'Personne n’a saisi le code à temps : connexion abandonnée.')
+      detach(this.finish(accountId, 'Personne n’a saisi le code à temps : connexion abandonnée.'), 'Codex sign-in completion')
     }, LOGIN_TIMEOUT_MS)
     this.pending.set(accountId, { client, verificationUrl: started.verificationUrl, userCode: started.userCode, timer })
     return this.status(accountId)
@@ -174,7 +175,7 @@ export class CodexLoginService {
       onExit: () => {
         // App-server death while waiting for a code means login failed.
         if (this.pending.get(accountId)?.client === client) {
-          void this.finish(accountId, "L'app-server Codex s'est arrêté avant la fin de la connexion.")
+          detach(this.finish(accountId, "L'app-server Codex s'est arrêté avant la fin de la connexion."), 'Codex sign-in completion')
         }
       },
     })

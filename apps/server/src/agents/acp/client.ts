@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { launchOf } from '../launch.js'
 import { createInterface, type Interface } from 'node:readline'
 import type { InitializeRequest, InitializeResponse } from '@agentclientprotocol/sdk'
+import { detach } from '../../detach.js'
 
 /** Newline-delimited stdio JSON-RPC Agent Client Protocol used by editors such as Zed and Grok's `grok agent stdio`. Handwritten transport with official SDK types rather than `ClientSideConnection`, whose zod validation would reject agent-specific session/update variants (`_x.ai/…`) instead of showing unknown notices once. Like Codex app-server: minimal transport without business logic; runners decide translations. */
 
@@ -123,7 +124,7 @@ export class AcpClient {
     }
 
     if (message.method !== undefined && hasId) {
-      void this.answerRequest(message.id as RpcId, message.method, message.params)
+      detach(this.answerRequest(message.id as RpcId, message.method, message.params), 'answering an ACP request')
       return
     }
 

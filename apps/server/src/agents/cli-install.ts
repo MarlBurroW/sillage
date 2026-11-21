@@ -9,6 +9,7 @@ import {
 import { HttpError } from '../http/errors.js'
 import { resolveBinary } from './cli-binary.js'
 import { launchOf } from './launch.js'
+import { detach } from '../detach.js'
 
 /**
  * Sillage-managed agent CLI installation.
@@ -59,7 +60,7 @@ export class CliInstaller {
     const status = this.state(kind).status
     if (this.closed || status === 'running' || status === 'queued') return false
     this.states.set(kind, { status: 'queued', version: PREFERRED_CLI_RELEASES[kind].version, reason: 'installation' })
-    void this.drain()
+    detach(this.drain(), 'CLI installation queue')
     return true
   }
 
@@ -106,7 +107,7 @@ export class CliInstaller {
     } finally {
       this.draining = false
       if (!this.closed && [...this.states.values()].some((state) => state.status === 'queued')) {
-        this.timer = setTimeout(() => { this.timer = null; void this.drain() }, 1000)
+        this.timer = setTimeout(() => { this.timer = null; detach(this.drain(), 'CLI installation queue') }, 1000)
         this.timer.unref()
       }
     }

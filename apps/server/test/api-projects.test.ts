@@ -10,6 +10,7 @@ import type { ApiScope } from '@sillage/protocol'
 import { createApiToken, resolveApiToken, bearerSecret } from '../src/auth/api-tokens.js'
 import type { Config } from '../src/config.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
+import type { SessionManager } from '../src/sessions/session-manager.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerProjectCreationRoutes } from '../src/http/v1/projects.js'
 import { registerDiscoveryRoutes } from '../src/http/v1/discovery.js'
@@ -34,10 +35,10 @@ async function harness(t: TestContext, scopes: ApiScope[] = ['projects:read', 'p
   registerErrorHandler(app)
   const ctx = { db, config: {} as Config }
   registerProjectCreationRoutes(app, ctx)
-  registerDiscoveryRoutes(app, ctx, {} as AgentRegistry)
+  registerDiscoveryRoutes(app, ctx, {} as AgentRegistry, {} as SessionManager)
   t.after(() => app.close())
   const headers = { authorization: `Bearer ${secret}` }
-  const create = (payload: object, auth = headers) => app.inject({ method: 'POST', url: '/api/v1/projects', headers: auth, payload })
+  const create = (payload: object, auth: Record<string, string> = headers) => app.inject({ method: 'POST', url: '/api/v1/projects', headers: auth, payload })
   return { dir, app, db, ctx, token, headers, create }
 }
 

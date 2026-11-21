@@ -81,7 +81,7 @@ const before = (conv = CONV, key = 'tour-1') => checkpointRef(conv, key, 'before
 const after_ = (conv = CONV, key = 'tour-1') => checkpointRef(conv, key, 'after')
 
 const summary = (files: { path: string; kind: string }[]): [string, string][] =>
-  files.map((file) => [file.path, file.kind]).sort()
+  files.map((file): [string, string] => [file.path, file.kind]).sort()
 
 test('la capture ignore les fichiers ignorés et les gros fichiers non suivis, sans toucher à l’index ni à HEAD', async (t) => {
   const repo = createRepo(t)

@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads'
 import type { ExportField, ExportFinding, ExportRenderRequest, RedactionKind } from '@sillage/protocol'
 import { badRequest } from '../http/errors.js'
+import { detach } from '../detach.js'
 
 /** Rules run outside the HTTP event loop; cancellation also stops pathological input. */
 export function scanFields(fields: ExportField[], signal: AbortSignal, progress: (value: number) => void): Promise<ExportFinding[]> {
@@ -16,7 +17,7 @@ export function scanFields(fields: ExportField[], signal: AbortSignal, progress:
       done = true
       clearTimeout(timeout)
       signal.removeEventListener('abort', cancel)
-      void worker.terminate()
+      detach(worker.terminate(), 'redaction worker shutdown')
       if (findings) resolve(findings)
       else reject(badRequest('export_scan_failed', 'Private information could not be checked.'))
     }

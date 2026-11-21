@@ -17,7 +17,7 @@ test('a slow tool call does not delay the next one, and concurrent calls keep th
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
   t.after(() => sqlite.close())
   db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
-  for (const [id, name] of [['alpha', 'Alpha'], ['beta', 'Beta']]) {
+  for (const [id, name] of [['alpha', 'Alpha'], ['beta', 'Beta']] as const) {
     db.insert(projects).values({ id, name, workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
     db.insert(cards).values({ id: `card-${id}`, projectId: id, number: 1, title: `Card of ${name}`, description: '', column: 'todo', position: 0, createdBy: 'owner', createdAt: 1, updatedAt: 1 }).run()
   }

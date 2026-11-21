@@ -7,6 +7,7 @@ import { antigravityArgs } from '../agents/antigravity/launch.js'
 import { fields } from '../agents/acp/content.js'
 import { antigravityEnv, type AntigravityAccountHomes, writeAntigravityCredentials } from './homes.js'
 import type { AntigravityAccountStore } from './store.js'
+import { detach } from '../detach.js'
 
 const LOGIN_TIMEOUT = 15 * 60_000
 interface Login {
@@ -56,7 +57,7 @@ export class AntigravityLoginService {
     })
     const login: Login = { client, timer: setTimeout(() => this.fail(id, client, 'Google sign-in timed out.'), LOGIN_TIMEOUT), status: { state: 'pending', verificationUrl: null, error: null }, output: '' }
     this.pending.set(id, login)
-    void this.authenticate(id, client, input)
+    detach(this.authenticate(id, client, input), 'Antigravity sign-in')
     return login.status
   }
 

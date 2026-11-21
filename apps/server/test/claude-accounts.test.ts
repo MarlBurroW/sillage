@@ -14,6 +14,8 @@ import { CodexAccountHomes } from '../src/codex-accounts/homes.js'
 import { CodexAccountStore } from '../src/codex-accounts/store.js'
 import { GrokAccountHomes } from '../src/grok-accounts/homes.js'
 import { GrokAccountStore } from '../src/grok-accounts/store.js'
+import { AntigravityAccountHomes } from '../src/antigravity-accounts/homes.js'
+import { AntigravityAccountStore } from '../src/antigravity-accounts/store.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerAgentRoutes } from '../src/http/routes/agents.js'
 import { registerClaudeAccountRoutes } from '../src/http/routes/claude-accounts.js'
@@ -54,7 +56,7 @@ async function harness(t: TestContext) {
   })
   registerErrorHandler(app)
   registerClaudeAccountRoutes(app, store, {} as never)
-  registerAgentRoutes(app, { db } as AppContext, registry, {} as CliInstaller, store, { store: new CodexAccountStore(db), homes: new CodexAccountHomes(join(dir, 'codex')) }, { store: new GrokAccountStore(db), homes: new GrokAccountHomes(join(dir, 'grok')) })
+  registerAgentRoutes(app, { db } as AppContext, registry, {} as CliInstaller, store, { store: new CodexAccountStore(db), homes: new CodexAccountHomes(join(dir, 'codex')) }, { store: new GrokAccountStore(db), homes: new GrokAccountHomes(join(dir, 'grok')) }, { store: new AntigravityAccountStore(db), homes: new AntigravityAccountHomes(join(dir, 'antigravity')) })
   t.after(() => app.close())
   return { db, store, app, seen }
 }

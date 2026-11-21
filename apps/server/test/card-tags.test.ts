@@ -31,7 +31,7 @@ async function harness(t: TestContext) {
   const app = Fastify()
   app.addHook('onRequest', async (request) => {
     const userId = request.headers.authorization
-    if (userId) request.user = db.select().from(users).where(eq(users.id, userId)).get() ?? null
+    if (userId) request.user = db.select().from(users).where(eq(users.id, userId)).get()
   })
   registerErrorHandler(app)
   registerCardRoutes(app, { db, config: {} as Config }, {} as AttachmentStore)

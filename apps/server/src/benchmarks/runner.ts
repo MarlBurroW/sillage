@@ -64,6 +64,7 @@ import { runScript } from '../scheduler/check.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { listDeliverables } from './deliverables.js'
 import { readRunMetrics, readWaitingMs, RUN_METRICS_VERSION, upgradeSnapshot } from './metrics.js'
+import { detach } from '../detach.js'
 
 /**
  * Executes benchmarks: opens one fresh personal session per run, waits for it to settle, runs the
@@ -312,7 +313,7 @@ export class BenchmarkRunner {
     // A script killed with the previous process never reported: settle those runs again, which
     // reruns the script against the folder the session left.
     this.ctx.db.update(benchmarkRuns).set({ status: 'running' }).where(eq(benchmarkRuns.status, 'checking')).run()
-    this.timer = setInterval(() => void this.tick(), TICK_MS)
+    this.timer = setInterval(() => detach(this.tick(), 'benchmark runner pass'), TICK_MS)
     this.timer.unref()
   }
 
@@ -327,7 +328,7 @@ export class BenchmarkRunner {
       this.again = true
       return
     }
-    void this.tick()
+    detach(this.tick(), 'benchmark runner pass')
   }
 
   async tick(now = Date.now()): Promise<void> {
@@ -344,7 +345,7 @@ export class BenchmarkRunner {
     }
     if (this.again) {
       this.again = false
-      setImmediate(() => void this.tick())
+      setImmediate(() => detach(this.tick(), 'benchmark runner pass'))
     }
   }
 
@@ -802,7 +803,7 @@ export class BenchmarkRunner {
       if ((active.get(benchmark.id) ?? 0) >= limit) continue
       active.set(benchmark.id, (active.get(benchmark.id) ?? 0) + 1)
       // Do not await: CLI startup takes seconds and other benchmarks must not wait for it.
-      void this.launch(run, benchmark)
+      detach(this.launch(run, benchmark), 'benchmark run launch')
     }
   }
 
@@ -932,7 +933,7 @@ export class BenchmarkRunner {
       if (benchmark.checkScript) {
         // Do not await: a script may take minutes and other runs must keep settling meanwhile.
         this.ctx.db.update(benchmarkRuns).set({ status: 'checking' }).where(eq(benchmarkRuns.id, run.id)).run()
-        void this.check(run, benchmark, outcome)
+        detach(this.check(run, benchmark, outcome), 'benchmark run check')
         continue
       }
       await this.close(run, outcome, now)

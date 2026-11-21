@@ -86,25 +86,25 @@ test('a message is steered into a running session, and the reply wakes the idle 
   conversation('b', 'running')
 
   const sent = mcp('a', 'send_session_message', { to: 'b', body: 'Je touche à `schema.ts`, ne le modifie pas.' })
-  assert.ok(!sent.isError, sent.content[0].text)
+  assert.ok(!sent.isError, sent.content[0]!.text)
   await relay.sweep()
 
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].kind, 'steer')
-  assert.equal(calls[0].to, 'b')
+  assert.equal(calls[0]!.kind, 'steer')
+  assert.equal(calls[0]!.to, 'b')
   const first = db.select().from(sessionMessages).get()!
   assert.equal(first.deliveredVia, 'steer')
-  assert.ok(calls[0].text.includes(`reply_to="${first.id}"`))
+  assert.ok(calls[0]!.text.includes(`reply_to="${first.id}"`))
   // Interfaces must recover bubble senders and body content separately.
-  assert.deepEqual(parseSessionMessage(calls[0].text), {
+  assert.deepEqual(parseSessionMessage(calls[0]!.text), {
     kind: 'message', from: 'a', title: 'Session a', agent: 'claude', messageId: first.id,
     body: 'Je touche à `schema.ts`, ne le modifie pas.',
   })
 
   mcp('b', 'send_session_message', { to: 'a', body: 'Compris.', reply_to: first.id })
   await relay.sweep()
-  assert.equal(calls[1].kind, 'send')
-  assert.equal(calls[1].to, 'a')
+  assert.equal(calls[1]!.kind, 'send')
+  assert.equal(calls[1]!.to, 'a')
   const reply = db.select().from(sessionMessages).where(eq(sessionMessages.toConversationId, 'a')).get()!
   assert.equal(reply.deliveredVia, 'wake')
 
@@ -112,7 +112,7 @@ test('a message is steered into a running session, and the reply wakes the idle 
   await relay.sweep()
   assert.equal(calls.length, 2)
 
-  const history = mcp('a', 'read_session_messages', {}).content[0].text
+  const history = mcp('a', 'read_session_messages', {}).content[0]!.text
   assert.match(history, /sent to b/)
   assert.match(history, /received from b/)
 })
@@ -127,7 +127,7 @@ test('wakes are capped, held messages show in the thread once, and the tool read
   assert.equal(calls.length, 6)
 
   // Senders learn during send, not afterward.
-  const warned = mcp('a', 'send_session_message', { to: 'b', body: 'message 6' }).content[0].text
+  const warned = mcp('a', 'send_session_message', { to: 'b', body: 'message 6' }).content[0]!.text
   assert.match(warned, /will not resume the session/)
   mcp('a', 'send_session_message', { to: 'b', body: 'message 7' })
   await relay.sweep()
@@ -137,7 +137,7 @@ test('wakes are capped, held messages show in the thread once, and the tool read
   const held = journal('b').filter((event) => event.type === 'session_message.held')
   assert.equal(held.length, 2, 'announced once, however many sweeps')
 
-  const inbox = mcp('b', 'read_session_messages', { with: 'a' }).content[0].text
+  const inbox = mcp('b', 'read_session_messages', { with: 'a' }).content[0]!.text
   assert.match(inbox, /message 7/)
   assert.equal(db.select().from(sessionMessages).all().filter((row) => row.deliveredAt === null).length, 0)
 
@@ -218,7 +218,7 @@ test('a person can deliver or discard a held message', async (t) => {
   assert.equal(relay.discard('a', 'keep'), false, 'not addressed to this conversation')
 
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].to, 'b')
+  assert.equal(calls[0]!.to, 'b')
   const reasons = journal('b')
     .filter((event) => event.type === 'session_message.released')
     .map((event) => event.type === 'session_message.released' && [event.messageId, event.reason])
@@ -232,14 +232,14 @@ test('a broadcast reaches only the sessions at work, and never wakes one', async
   conversation('c', 'running')
   conversation('idle', 'idle')
 
-  const reply = mcp('a', 'broadcast_session_message', { body: 'Je redémarre Sillage dans 2 min.' }).content[0].text
+  const reply = mcp('a', 'broadcast_session_message', { body: 'Je redémarre Sillage dans 2 min.' }).content[0]!.text
   assert.match(reply, /2 working session/)
   // `c` completed between announcement and delivery.
   setStatus('c', 'idle')
   await relay.sweep()
 
   assert.deepEqual(calls.map((call) => [call.kind, call.to]), [['steer', 'b']])
-  assert.match(calls[0].text, /kind="broadcast"/)
+  assert.match(calls[0]!.text, /kind="broadcast"/)
   const toC = db.select().from(sessionMessages).where(eq(sessionMessages.toConversationId, 'c')).get()!
   assert.equal(toC.deliveredVia, 'skipped')
 })
@@ -254,9 +254,9 @@ test('notify_when_done wakes the watcher with the last word of the finished sess
     blocks: [{ type: 'text', text: 'Migration finie, `schema.ts` est libre.' }],
   })
 
-  assert.match(mcp('watcher', 'notify_when_done', { session: 'resting' }).content[0].text, /Nothing to wait for/)
-  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0].text, /Watch registered/)
-  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0].text, /already registered/)
+  assert.match(mcp('watcher', 'notify_when_done', { session: 'resting' }).content[0]!.text, /Nothing to wait for/)
+  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0]!.text, /Watch registered/)
+  assert.match(mcp('watcher', 'notify_when_done', { session: 'target' }).content[0]!.text, /already registered/)
 
   await relay.sweep()
   assert.equal(calls.length, 0, 'still working')
@@ -265,9 +265,9 @@ test('notify_when_done wakes the watcher with the last word of the finished sess
   setStatus('watcher', 'idle')
   await relay.sweep()
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].kind, 'send')
-  assert.equal(calls[0].to, 'watcher')
-  const envelope = parseSessionMessage(calls[0].text)!
+  assert.equal(calls[0]!.kind, 'send')
+  assert.equal(calls[0]!.to, 'watcher')
+  const envelope = parseSessionMessage(calls[0]!.text)!
   assert.equal(envelope.kind, 'done')
   assert.equal(envelope.from, 'target')
   assert.match(envelope.body, /> Migration finie/)
@@ -284,7 +284,7 @@ test('list_sessions tells the branch and the dirty files of each tree', async (t
   conversation('a', 'idle')
   conversation('b', 'running')
 
-  const listed = mcp('a', 'list_sessions', {}).content[0].text
+  const listed = mcp('a', 'list_sessions', {}).content[0]!.text
   assert.match(listed, /branch feature\/coord, \d+ modified file\(s\)/)
 })
 
@@ -316,7 +316,7 @@ test('a steer that misses the turn falls back to an ordinary message', async (t)
   mcp('a', 'send_session_message', { to: 'b', body: 'ping' })
   await relay.sweep()
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].kind, 'send')
+  assert.equal(calls[0]!.kind, 'send')
   assert.equal(db.select().from(sessionMessages).get()!.deliveredVia, 'queue')
 })
 

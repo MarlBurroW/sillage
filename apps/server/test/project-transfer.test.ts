@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm'
 import { conversationHandoffs, conversationProjectMoves, conversations, events, openDatabase, projects, runMigrations, users } from '@sillage/db'
 import { defaultConfigFor, agentKindSchema } from '@sillage/protocol'
 import { AgentRegistry, type AgentAdapter } from '../src/agents/registry.js'
-import type { AgentRunner, RunnerContext } from '../src/agents/types.js'
+import type { RunnerContext } from '../src/agents/types.js'
 import { loadConfig } from '../src/config.js'
 import { pendingProjectMove, requestProjectMove } from '../src/conversations/project-transfer.js'
 import { EventLog } from '../src/events/event-log.js'
@@ -19,8 +19,8 @@ import { registerErrorHandler } from '../src/http/errors.js'
 import { registerConversationRoutes } from '../src/http/routes/conversations.js'
 import { registerFileRoutes } from '../src/http/routes/files.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
-import { SessionManager } from '../src/sessions/session-manager.js'
 import { workspaceImagePath } from '../src/workspace-images.js'
+import { fakeRunner, makeSessionManager } from './session-support.js'
 
 async function until(check: () => boolean) {
   for (let i = 0; i < 200; i++) {
@@ -52,16 +52,15 @@ async function harness(t: TestContext) {
     cli: { managedDir: config.paths.agents, assertEnabled() {} },
     createRunner(context: RunnerContext) {
       contexts.push(context)
-      return {
-        appliedConfig: context.config,
+      return fakeRunner(context, {
         async start() { context.setAgentSessionId('native-' + contexts.length) },
         async send(text: string) { sent.push(text); context.setStatus('running') },
         async stop() { stops++ },
-      } as AgentRunner
+      })
     },
   } as unknown as AgentAdapter)))
   const log = new EventLog(db)
-  const manager = () => new SessionManager(db, log, config, registry, {} as never, {} as never, {} as never, {} as never, { homes: { sessions: () => join(root, 'antigravity') } } as never)
+  const manager = () => makeSessionManager({ db, log, config, registry, antigravityAccounts: { homes: { sessions: () => join(root, 'antigravity') } } as never })
   const sessions = manager()
   const create = (id = 'session', userId = 'owner', agent = 'codex' as typeof agentKindSchema.options[number]) => {
     db.insert(conversations).values({ id, projectId: 'source', userId, agent, config: JSON.stringify(defaultConfigFor(agent)), title: id, status: 'idle', createdAt: 1, updatedAt: 1 }).run()

@@ -30,7 +30,7 @@ const catalogs = (agent: string): AgentModelsDto => ({
   models: (agent === 'claude' ? ['alpha', 'beta', 'expensive'] : ['code']).map((value, index) => ({
     value, displayName: value.toUpperCase(), isDefault: index === 0, description: '', hint: null, supportsFastMode: false,
     defaultEffort: 'medium', efforts: ['low', 'medium', 'high'].map((value) => ({ value, label: value, hint: null })),
-  })), outputStyles: [],
+  })), outputStyles: [], modes: [], account: null, fastMode: null, agents: [], fetchedAt: 0,
 })
 
 async function harness(t: TestContext, options: { policy?: ApiExecutionPolicy | null; scopes?: ApiScope[] } = {}) {

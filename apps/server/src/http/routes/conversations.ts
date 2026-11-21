@@ -63,6 +63,7 @@ import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { detach } from '../../detach.js'
 
 /** Replay page limits (`EventLog.readForReplay`). Every page costs a round trip and clients load sequentially; 500-event pages required 147 requests for the largest conversation. Byte limits bound database payloads and daemon memory; row limits bound the preceding listing. Keep the cap at 16 MB: the largest conversations replay below 96 MB in a constrained heap, whereas old 500-event pages exceeded 128 MB. Larger pages save a few round trips at the expense of memory also needed by active sessions. */
 const PAGE_ROWS = 5000
@@ -764,7 +765,7 @@ export function registerConversationRoutes(
     if (body.pinned !== undefined) patch.pinned = body.pinned
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
     // Archived conversations have no turns left to undo: remove their snapshots from git.
-    if (body.archived === true && conversation.archivedAt === null) void sessions.dropCheckpoints(id)
+    if (body.archived === true && conversation.archivedAt === null) detach(sessions.dropCheckpoints(id), 'checkpoint cleanup on archive')
 
     if (body.cardId !== undefined) {
       if (body.cardId) {

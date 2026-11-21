@@ -95,7 +95,7 @@ function pageRun(id: string, variantId: string, durationMs: number, extra: Recor
   }
 }
 
-function sharePage(benchmark: BenchmarkDto, change: Partial<SharePage> & { options?: Record<string, unknown> } = {}): SharePage {
+function sharePage(benchmark: BenchmarkDto, change: Omit<Partial<SharePage>, 'options'> & { options?: Record<string, unknown> } = {}): SharePage {
   const { options, ...rest } = change
   return {
     benchmark, order: benchmark.variants.map((variant) => variant.id), sharedAt: Date.UTC(2026, 10, 16), live: false,
@@ -234,13 +234,15 @@ test('benchmark share page: comparisons, a data block that user text cannot clos
 })
 
 test('benchmark share order: a blind order is stable for one seed and keeps known variants in place', () => {
-  const lineup = { variants: ['v1', 'v2', 'v3', 'v4', 'v5'].map((id) => ({ id })) }
+  // Only ids matter to the order.
+  const variant = (id: string) => ({ id }) as BenchmarkDto['variants'][number]
+  const lineup = { variants: ['v1', 'v2', 'v3', 'v4', 'v5'].map(variant) }
   assert.deepEqual(displayOrder(lineup, { blind: false }, 'seed'), ['v1', 'v2', 'v3', 'v4', 'v5'])
   const blind = displayOrder(lineup, { blind: true }, 'seed')
   assert.deepEqual(displayOrder(lineup, { blind: true }, 'seed'), blind)
   assert.notDeepEqual(blind, ['v1', 'v2', 'v3', 'v4', 'v5'])
   // A variant added later slots in without reordering the others.
-  const grown = displayOrder({ variants: [...lineup.variants, { id: 'v6' }] }, { blind: true }, 'seed')
+  const grown = displayOrder({ variants: [...lineup.variants, variant('v6')] }, { blind: true }, 'seed')
   assert.deepEqual(grown.filter((id) => id !== 'v6'), blind)
 })
 

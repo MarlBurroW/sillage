@@ -87,6 +87,7 @@ import { CLIENT_INFO } from './client-info.js'
 import { describeTurnError } from './errors.js'
 import { fromCodexMcpStatus, toCodexThreadConfig, type CodexMcpStartup } from './mcp.js'
 import { describeWindow } from './quota.js'
+import { detach } from '../../detach.js'
 
 /**
  * Codex adapter (invariant I3) translates app-server to shared events so frontend need not
@@ -371,8 +372,8 @@ export class CodexRunner implements AgentRunner {
       },
       started,
     )
-    void this.publishMcpStatus()
-    void this.publishSkills()
+    detach(this.publishMcpStatus(), 'MCP status publication')
+    detach(this.publishSkills(), 'skills publication')
   }
 
   /**
@@ -691,14 +692,14 @@ export class CodexRunner implements AgentRunner {
       case 'mcpServer/startupStatus/updated': {
         const p = params as McpServerStatusUpdatedNotification
         this.mcpStartup.set(p.name, { status: p.status, error: p.error })
-        void this.publishMcpStatus()
+        detach(this.publishMcpStatus(), 'MCP status publication')
         return
       }
 
       // Content-free invalidation signal: notifications report skill-file changes;
       // skills/list supplies their actual contents.
       case 'skills/changed': {
-        void this.publishSkills()
+        detach(this.publishSkills(), 'skills publication')
         return
       }
 

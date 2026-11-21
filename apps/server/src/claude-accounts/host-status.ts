@@ -73,7 +73,7 @@ export class ClaudeHostStatus {
   start(logger: FastifyBaseLogger): void {
     if (this.timer || !this.enabled) return
     this.stopped = false
-    const tick = () => void this.check().catch(() => logger.warn('Could not deliver the Claude host sign-in warning.'))
+    const tick = () => { this.check().catch(() => logger.warn('Could not deliver the Claude host sign-in warning.')) }
     this.timer = setInterval(tick, CHECK_MS)
     this.timer.unref()
     tick()

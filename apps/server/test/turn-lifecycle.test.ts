@@ -54,7 +54,7 @@ test('the watchdog belongs to the turn it was armed for', async () => {
   f.turn.end({ stopReason: 'interrupted' }, first)
   f.turn.begin()
   await new Promise((resolve) => setTimeout(resolve, 40))
-  assert.deepEqual(fired, [])
+  assert.equal(fired.length, 0)
   const second = f.turn.token!
   f.turn.armWatchdog(10, (token) => { fired.push(token); f.turn.end({ stopReason: 'cancelled' }, token) })
   await new Promise((resolve) => setTimeout(resolve, 30))

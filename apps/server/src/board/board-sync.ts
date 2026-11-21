@@ -29,6 +29,7 @@ import {
   type GitHubComment,
   type GitHubIssue,
 } from './github-issues.js'
+import { detach } from '../detach.js'
 
 /** Send Sillage changes quickly; poll GitHub less often. */
 const TICK_MS = 15_000
@@ -147,9 +148,9 @@ export class BoardSync {
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
-    this.timer = setInterval(() => void this.tick(), TICK_MS)
+    this.timer = setInterval(() => detach(this.tick(), 'board sync pass'), TICK_MS)
     this.timer.unref()
-    void this.tick()
+    detach(this.tick(), 'board sync pass')
   }
 
   stop(): void {
@@ -783,9 +784,9 @@ export class BoardSync {
     const next = previous.catch(() => {}).then(body)
     const settled = next.catch(() => {})
     this.queues.set(projectId, settled)
-    void settled.then(() => {
+    detach(settled.then(() => {
       if (this.queues.get(projectId) === settled) this.queues.delete(projectId)
-    })
+    }), 'board queue cleanup')
     return next
   }
 }

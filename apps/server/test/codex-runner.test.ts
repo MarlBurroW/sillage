@@ -98,7 +98,7 @@ test('plans, outils récents, événements inconnus et clôtures orphelines rest
   assert.deepEqual(plan, { type: 'plan.updated', items: [{ text: 'Inspect the CLI', status: 'in_progress' }] })
   assert.ok(f.events.some((event) => event.type === 'tool.started' && event.name === 'functions/exec'))
   assert.ok(f.events.some((event) => event.type === 'tool.started' && event.name === 'Codex/futureTool'))
-  const notices = f.events.filter((event) => event.type === 'agent.notice' && event.code === 'future/progress')
+  const notices = f.events.filter((event) => event.type === 'agent.notice').filter((event) => event.code === 'future/progress')
   assert.equal(notices.length, 2)
   assert.equal(notices[0]!.id, notices[1]!.id)
   assert.equal(f.events.filter((event) => event.type === 'turn.completed').length, 1)

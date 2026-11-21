@@ -133,7 +133,7 @@ export class ClaudeLoginService {
     // URLs arrive within a second; longer means CLIs failed to start or
     // printed something else; output is the only clue.
     await this.until(loginId, (current) => current.status.state !== 'starting', 20_000).catch(() => {
-      this.finish(loginId, `Le CLI n'a pas imprimé d'URL d'autorisation : ${login.output.trim().slice(-300) || 'aucune sortie'}`)
+      detach(this.finish(loginId, `Le CLI n'a pas imprimé d'URL d'autorisation : ${login.output.trim().slice(-300) || 'aucune sortie'}`), 'Claude sign-in completion')
     })
     return login.status
   }

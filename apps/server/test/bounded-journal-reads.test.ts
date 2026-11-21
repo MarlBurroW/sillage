@@ -28,7 +28,7 @@ const said = (messageId: string, text: string): SillageEvent =>
 const bash = (toolCallId: string, command: string): SillageEvent =>
   ({ type: 'tool.started', toolCallId, name: 'Bash', input: { command }, parentToolCallId: null })
 const delta = (toolCallId: string, text: string): SillageEvent =>
-  ({ type: 'tool.output_delta', toolCallId, text }) as SillageEvent
+  ({ type: 'tool.output_delta', toolCallId, chunk: text })
 const done = (toolCallId: string, output: unknown): SillageEvent =>
   ({ type: 'tool.completed', toolCallId, output, isError: false, durationMs: 5 })
 const turnEnd = (stopReason: string): SillageEvent => ({

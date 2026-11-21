@@ -57,6 +57,7 @@ import {
   QUESTION_TOOL,
   type AcpDiff,
 } from './tools.js'
+import { detach } from '../../detach.js'
 
 /** Grok Build adapter (invariant I3) normalizing `grok agent stdio` ACP. One process per conversation like Codex; turns are `session/prompt` requests responding only at completion with stop reasons and usage. Model, effort and permission mode change live; web tools, skills and MCP servers are launch-time settings. Grok extends ACP with `_x.ai/…` notifications and requests (`_x.ai/ask_user_question`, `_x.ai/exit_plan_mode`, `_x.ai/mcp/elicit`). Read only extensions adding otherwise unavailable state; ignore interface noise such as tips and TUI queues. All claims probed on Grok Build 1.0.62 and checked in public xai-org/grok-build Apache-2.0 sources. */
 
@@ -776,7 +777,7 @@ export class GrokRunner implements AgentRunner {
     const prompt = command && this.commandNames.has(command.name)
       ? [{ type: 'text' as const, text }]
       : this.promptBlocks(text, attachments, mentions)
-    void this.runPrompt(prompt, this.turn.begin())
+    detach(this.runPrompt(prompt, this.turn.begin()), 'Grok prompt')
   }
 
   /** `token` binds the answer to its own turn: a cancelled prompt answering late must not close the next one. */

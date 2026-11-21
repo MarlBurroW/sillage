@@ -24,7 +24,7 @@ function turn(log: EventLog, id: string, raw = true): number {
   log.append('c', { type: 'turn.started' })
   const entry = log.append(
     'c',
-    { type: 'turn.completed', stopReason: 'completed', costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    { type: 'turn.completed', stopReason: 'completed', costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
     raw ? { threadId: 't', turn: { id, status: 'completed', items: [] } } : undefined,
     raw ? 'codex-app-server@v2' : undefined,
   )

@@ -17,12 +17,15 @@ test('Codex pre-authorizes only the built-in session naming tool', () => {
   assert.equal(builtinMcpServer({ enabled: true, config: { ...DEFAULT_CODEX_CONFIG, sillageMcp: false }, databasePath: '/tmp/test.sqlite', projectId: 'project', conversationId: 'self', memoryDir: null }), null)
 })
 
+/** A Codex inventory entry with nothing reported beyond its name and discovery error. */
+const codexStatus = (name: string, toolsError: string | null = null): CodexMcpServerStatus => ({
+  name, authStatus: 'unsupported', tools: {}, resources: [], resourceTemplates: [],
+  runtimeStatus: null, pluginId: null, httpOrigin: null, serverInfo: null,
+  serverCapabilities: null, toolListMeta: null, toolsError,
+})
+
 test('Codex distinguishes failed discovery from a healthy empty catalog and clears it on recovery', () => {
-  const inventory: CodexMcpServerStatus = {
-    name: 'catalog', authStatus: 'unsupported', tools: {}, resources: [], resourceTemplates: [],
-    runtimeStatus: null, pluginId: null, httpOrigin: null, serverInfo: null,
-    serverCapabilities: null, toolsError: 'tools/list: upstream unavailable',
-  }
+  const inventory = codexStatus('catalog', 'tools/list: upstream unavailable')
   const startup = new Map([['catalog', { status: 'ready', error: null }]])
   const failed = fromCodexMcpStatus([inventory], [], startup)[0]!
   assert.equal(failed.state, 'connected')
@@ -49,8 +52,8 @@ test('Codex keeps user HTTP servers separate from its built-in transport and inv
   assert.equal(overrides.sillage_builtin!.command, process.execPath)
   assert.equal(isReservedMcpServerName('SILLAGE_BUILTIN'), true)
   const statuses = fromCodexMcpStatus([
-    { name: 'sillage_builtin', authStatus: 'unsupported', tools: {}, resources: [], resourceTemplates: [] },
-    { name: 'sillage', authStatus: 'unsupported', tools: {}, resources: [], resourceTemplates: [] },
+    codexStatus('sillage_builtin'),
+    codexStatus('sillage'),
   ], [builtin], new Map([['sillage_builtin', { status: 'ready', error: null }]]))
   assert.deepEqual(statuses.map(({ name, state, external }) => ({ name, state, external })), [
     { name: 'sillage_builtin', state: 'connected', external: false },

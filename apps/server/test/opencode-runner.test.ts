@@ -31,7 +31,7 @@ test('un tour : texte en deltas, outil normalisé, sortie en flux, édition, con
   assert.equal(f.count('turn.completed'), 1, 'le double `session.idle` ne clôt le tour qu\'une fois')
   assert.deepEqual(f.events.filter((event) => event.type === 'message.delta').map((event) => event.text), ['Bon', 'jour'])
   assert.deepEqual(f.events.filter((event) => event.type === 'thinking.delta').map((event) => event.text), ['Hmm'])
-  const messages = f.events.filter((event) => event.type === 'message.completed' && event.role === 'assistant')
+  const messages = f.events.filter((event) => event.type === 'message.completed').filter((event) => event.role === 'assistant')
   assert.deepEqual(messages.map((event) => event.blocks), [[{ type: 'thinking', text: 'Hmm' }], [{ type: 'text', text: 'Bonjour' }]])
 
   const started = f.events.filter((event) => event.type === 'tool.started')
@@ -149,7 +149,10 @@ test('permissions : portées traduites, demande close par opencode, expiration �
   assert.equal(f.count('error'), 0, 'une interruption n\'est pas une panne')
   assert.equal(f.statuses.at(-1), 'idle')
 
-  await until(async () => (await f.records()).filter((record) => record.path.startsWith('/permission/')).length === 2).catch(() => {})
+  // The replies are written asynchronously: wait for both (`until` takes a synchronous check).
+  for (let tries = 0; tries < 500 && (await f.records()).filter((record) => record.path.startsWith('/permission/')).length < 2; tries++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
   const replies = (await f.records()).filter((record) => record.path.startsWith('/permission/'))
   assert.deepEqual(replies.map((record) => [record.path, record.body.reply]).sort(), [
     ['/permission/per_1/reply', 'always'],
@@ -220,7 +223,7 @@ test('sous-agent : sa session se rattache à l\'appel task et ne clôt pas le to
   assert.equal(f.count('turn.completed'), 1)
   const started = f.events.filter((event) => event.type === 'tool.started')
   assert.deepEqual(started.map((event) => [event.name, event.parentToolCallId]), [['Agent', null], ['Read', 'call_task']])
-  const text = f.events.filter((event) => event.type === 'message.completed' && event.role === 'assistant')
+  const text = f.events.filter((event) => event.type === 'message.completed').filter((event) => event.role === 'assistant')
   assert.deepEqual(text.map((event) => event.parentToolCallId), ['call_task'])
   // Subagent usage counts toward turns but not context gauges.
   const usage = f.events.find((event) => event.type === 'usage.updated')

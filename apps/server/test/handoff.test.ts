@@ -69,16 +69,16 @@ test('repli : messages du fil principal, outils avec leur sortie, tours interrom
   ]))
 
   assert.deepEqual(items.map((item) => item.kind), ['user', 'tool', 'assistant', 'user', 'tool', 'interrupted'])
-  const tool = items[1]
+  const tool = items[1]!
   assert.ok(tool.kind === 'tool')
   assert.equal(tool.output, 'ok')
   assert.equal(tool.input, '{"command":"npm test"}')
   // Combine two `message.completed` entries for one message, excluding reasoning.
-  const message = items[2]
+  const message = items[2]!
   assert.ok(message.kind === 'assistant')
   assert.equal(message.text, 'Je regarde\n\nFait.')
   // Unfinished calls remain without output, describing interrupted work.
-  const pending = items[4]
+  const pending = items[4]!
   assert.ok(pending.kind === 'tool' && pending.output === '')
 })
 
@@ -207,7 +207,7 @@ test('journal : la sélection se lit par pages, sans les sorties volumineuses', 
 
     const items = readHandoffItems(log, 'src')
     assert.deepEqual(items.map((item) => item.kind), ['user', 'tool', 'assistant'])
-    const tool = items[1]
+    const tool = items[1]!
     assert.ok(tool?.kind === 'tool' && tool.output.includes('not transferred'))
   } finally {
     sqlite.close()

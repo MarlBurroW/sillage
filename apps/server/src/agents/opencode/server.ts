@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:net'
 import type { Config, Event } from '@sillage/opencode-bindings'
 import { assertSupportedOpencode } from './version-guard.js'
+import { detach } from '../../detach.js'
 
 /**
  * opencode serve and HTTP client.
@@ -129,7 +130,7 @@ export class OpencodeServer {
     const body = await this.connectStream()
     let connected!: () => void
     const ready = new Promise<void>((resolve) => { connected = resolve })
-    void this.consume(body, connected)
+    detach(this.consume(body, connected), 'reading the CLI stream')
     await ready
   }
 

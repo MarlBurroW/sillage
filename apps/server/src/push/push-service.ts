@@ -5,6 +5,7 @@ import webpush from 'web-push'
 import { pushSubscriptions, type Db } from '@sillage/db'
 import { randomUUID } from 'node:crypto'
 import type { PushDeliveryDto, PushDeviceDto, PushPayload, PushServiceKind, PushTestDto } from '@sillage/protocol'
+import { detach } from '../detach.js'
 
 /** Web Push notifications. The server needs no third-party account: VAPID authenticates directly with browser push services without Google or Apple accounts. Instance-specific key pairs are generated on first startup. Notify only what users cannot see: agents requesting decisions or turns ending while attention is elsewhere. Notifying everything would mean nobody reads anything. */
 
@@ -163,8 +164,8 @@ export class PushService {
     const test = { id: randomUUID(), userId, sendAt: Date.now() + delaySeconds * 1000, deliveries: null as PushDeliveryDto[] | null }
     this.tests.set(test.id, test)
     const timer = setTimeout(() => {
-      void this.notify(userId, { title: 'Sillage', body: 'Notification test', url: '/settings/notifications', tag: `test-${test.id}`, kind: 'test' })
-        .then((deliveries) => { test.deliveries = deliveries })
+      detach(this.notify(userId, { title: 'Sillage', body: 'Notification test', url: '/settings/notifications', tag: `test-${test.id}`, kind: 'test' })
+        .then((deliveries) => { test.deliveries = deliveries }), 'test push notification')
       const cleanup = setTimeout(() => this.tests.delete(test.id), TEST_RETENTION_MS)
       cleanup.unref()
     }, delaySeconds * 1000)

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src", "test"],
+  // Run by tsx as standalone scripts, with `.ts` import paths the compiler refuses.
+  "exclude": ["test/fixtures"]
+}

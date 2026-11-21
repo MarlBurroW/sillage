@@ -4,6 +4,7 @@ import { deleteCheckpoints } from '../checkpoints.js'
 import type { Config } from '../config.js'
 import { readAppSettings } from '../settings/app-settings.js'
 import { resolveConversationCwd } from '../workspace.js'
+import { detach } from '../detach.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -67,7 +68,7 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
 
   // Archived conversations have no turns left to undo: remove snapshots without
   // delaying the pass; missing or slow repositories must not fail it.
-  void (async () => {
+  detach((async () => {
     for (const row of stale) {
       try {
         await deleteCheckpoints(resolveConversationCwd(db, row), row.id)
@@ -75,7 +76,7 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
         // Missing project directory or unusable repository: its refs disappear with it.
       }
     }
-  })()
+  })(), 'checkpoint cleanup after auto-archive')
 
   return result.changes
 }

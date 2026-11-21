@@ -47,10 +47,10 @@ async function runnerFixture(t: TestContext, overrides: Partial<RunnerContext> =
     cwd, ctx, events, raw, statuses, runner, count,
     rpc: () => lines('rpc.jsonl') as Promise<{ method?: string; params?: any; answer?: { method: string; result: any } }[]>,
     launch: async () => JSON.parse(await readFile(join(cwd, 'launch.json'), 'utf8')) as { args: string[]; env: Record<string, string> },
-    play: (scenario: Record<string, unknown>) => runner.send(`fixture:${JSON.stringify(scenario)}`, [], [], []),
+    play: (scenario: Record<string, unknown>) => runner.send(`fixture:${JSON.stringify(scenario)}`, [], []),
     turn: async (scenario: Record<string, unknown>) => {
       const before = count('turn.completed')
-      await runner.send(`fixture:${JSON.stringify(scenario)}`, [], [], [])
+      await runner.send(`fixture:${JSON.stringify(scenario)}`, [], [])
       await until(() => count('turn.completed') > before, 'turn.completed')
     },
   }
@@ -95,7 +95,7 @@ test('un tour : réflexion, texte, outils normalisés, sortie en flux, édition,
   })
 
   assert.deepEqual(f.events.filter((event) => event.type === 'thinking.delta').map((event) => event.text), ['Hm', 'm'])
-  const messages = f.events.filter((event) => event.type === 'message.completed' && event.role === 'assistant')
+  const messages = f.events.filter((event) => event.type === 'message.completed').filter((event) => event.role === 'assistant')
   assert.deepEqual(messages.map((event) => event.blocks), [
     [{ type: 'thinking', text: 'Hmm' }], [{ type: 'text', text: 'Je lis.' }], [{ type: 'text', text: 'Fini.' }],
   ])
@@ -297,9 +297,9 @@ test('plan soumis : validé avec la suite « laisser décider », le mode suit',
 
 test('steer par _x.ai/interject, compaction par _x.ai/compact_conversation', async (t) => {
   const f = await runnerFixture(t)
-  assert.equal(await f.runner.steer('Hors tour', [], [], []), false, 'sans tour en cours, rien à infléchir')
+  assert.equal(await f.runner.steer('Hors tour', []), false, 'sans tour en cours, rien à infléchir')
   await f.play({ steps: [{ wait: 300 }] })
-  assert.equal(await f.runner.steer('Aussi ceci', [], [], []), true)
+  assert.equal(await f.runner.steer('Aussi ceci', []), true)
   await until(() => f.count('turn.completed') > 0)
   const rpc = await f.rpc()
   assert.deepEqual(rpc.find((entry) => entry.method === '_x.ai/interject')!.params, { sessionId: 'ses_fixture', text: 'Aussi ceci' })

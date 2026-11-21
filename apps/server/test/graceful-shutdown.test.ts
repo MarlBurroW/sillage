@@ -7,12 +7,11 @@ import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, runMigrations, users } from '@sillage/db'
 import { defaultConfigFor } from '@sillage/protocol'
-import { AgentRegistry, type AgentAdapter } from '../src/agents/registry.js'
-import type { AgentRunner, RunnerContext } from '../src/agents/types.js'
+import type { RunnerContext } from '../src/agents/types.js'
 import { loadConfig } from '../src/config.js'
 import { createPersonalWorkspace } from '../src/conversations/personal-workspaces.js'
 import { EventLog } from '../src/events/event-log.js'
-import { SessionManager } from '../src/sessions/session-manager.js'
+import { fakeAdapter, fakeRunner, makeSessionManager } from './session-support.js'
 
 /** Shutdown closes every turn in progress itself, refuses new work, and survives a runner that fails to stop. */
 
@@ -34,28 +33,23 @@ async function harness(t: TestContext) {
   config.paths = { ...config.paths, data: root, agents: join(root, 'agents'), memory: join(root, 'memory') }
   const contexts = new Map<string, RunnerContext>()
   const stopped: string[] = []
-  const adapter = {
-    kind: 'codex', label: 'Codex', binary: 'sillage-test-no-cli', rawFormat: 'test',
-    cli: { managedDir: config.paths.agents, assertEnabled() {} },
-    createRunner(ctx: RunnerContext) {
-      contexts.set(ctx.conversationId, ctx)
-      return {
-        appliedConfig: ctx.config,
-        async start() {},
-        async send() { ctx.setStatus('running') },
-        async interrupt() {},
-        // The first conversation's CLI refuses to die: the others must still be stopped.
-        async stop() {
-          stopped.push(ctx.conversationId)
-          if (ctx.conversationId === 'a') throw new Error('kill EPERM')
-        },
-      } as unknown as AgentRunner
-    },
-  } as unknown as AgentAdapter
+  const adapter = fakeAdapter('codex', config.paths.agents, (ctx) => {
+    contexts.set(ctx.conversationId, ctx)
+    return fakeRunner(ctx, {
+      async start() {},
+      async send() { ctx.setStatus('running') },
+      async interrupt() {},
+      // The first conversation's CLI refuses to die: the others must still be stopped.
+      async stop() {
+        stopped.push(ctx.conversationId)
+        if (ctx.conversationId === 'a') throw new Error('kill EPERM')
+      },
+    })
+  })
   const log = new EventLog(db)
-  const sessions = new SessionManager(db, log, config, new AgentRegistry([adapter]), {} as never, {} as never, {} as never, {} as never, {} as never)
+  const sessions = makeSessionManager({ db, log, config, adapters: [adapter] })
   t.after(async () => { sqlite.close(); await rm(root, { recursive: true, force: true }) })
-  const deliveries = (sessions as unknown as { pendingDeliveries: Set<string> }).pendingDeliveries
+  const deliveries = (sessions as unknown as { pendingDeliveries: Map<string, unknown> }).pendingDeliveries
   const status = (id: string) => db.select().from(conversations).where(eq(conversations.id, id)).get()!.status
   return { sessions, log, contexts, stopped, deliveries, status }
 }

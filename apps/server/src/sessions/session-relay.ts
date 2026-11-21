@@ -13,6 +13,7 @@ import {
 import { formatSessionMessage } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { SessionManager } from './session-manager.js'
+import { detach } from '../detach.js'
 
 /** Delivers inter-session messages. MCP deposits messages in databases because it lacks runners; relay sweeps inject by steering working recipients or ordinary messages waking idle ones. Also handles `notify_when_done` watches, turning session completions into messages. Poll because processes share only SQLite without cross-process notifications. Two seconds are negligible beside agent turns, and queries use indexes. */
 
@@ -55,7 +56,7 @@ export class SessionRelay {
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
-    this.timer = setInterval(() => void this.sweep(), POLL_MS)
+    this.timer = setInterval(() => detach(this.sweep(), 'session message relay pass'), POLL_MS)
     this.timer.unref()
   }
 

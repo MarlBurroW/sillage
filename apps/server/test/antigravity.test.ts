@@ -103,13 +103,13 @@ test('Switching default and managed Google accounts preserves committed WAL hist
   await prepareAntigravityResume(managed, homes.sessions('owner'), 'session')
   first.sqlite.close()
   const next = openDatabase(join(managed, 'antigravity-acp', 'conversations', 'session.db'))
-  assert.equal(next.sqlite.prepare('SELECT value FROM steps').get()?.value, 'before switch')
+  assert.equal((next.sqlite.prepare('SELECT value FROM steps').get() as { value: string } | undefined)?.value, 'before switch')
   next.sqlite.exec("INSERT INTO steps VALUES ('after switch')")
   await rememberAntigravityStorage(managed, homes.sessions('owner'), 'session')
   await prepareAntigravityResume(native, homes.sessions('owner'), 'session')
   next.sqlite.close()
   const back = openDatabase(history)
-  try { assert.equal(back.sqlite.prepare('SELECT count(*) AS count FROM steps').get()?.count, 2) }
+  try { assert.equal((back.sqlite.prepare('SELECT count(*) AS count FROM steps').get() as { count: number } | undefined)?.count, 2) }
   finally { back.sqlite.close() }
   await assert.rejects(prepareAntigravityResume(native, homes.sessions('owner'), '../escape'))
 })
@@ -172,10 +172,10 @@ test('Background command output arrives after the turn without a false interrupt
   const state = emptyChatState()
   f.events.forEach((event, index) => applyEvent(state, index + 1, Date.now(), event))
   assert.equal(state.background[0]?.id, 'background')
-  assert.equal(state.items.find((item) => item.kind === 'tool' && item.id === 'background')?.status, 'running')
+  assert.equal(state.items.filter((item) => item.kind === 'tool').find((item) => item.id === 'background')?.status, 'running')
   await f.turn([{ update: { sessionUpdate: 'tool_call_update', toolCallId: 'background', status: 'completed', rawOutput: { commandLine: 'npm test', exitCode: 0, combinedOutput: 'All checks passed' } } }])
   assert.equal(f.events.filter((event) => event.type === 'tool.completed' && event.toolCallId === 'background').length, 1)
-  assert.equal(f.events.find((event) => event.type === 'tool.completed' && event.toolCallId === 'background')?.output, 'All checks passed')
+  assert.equal(f.events.filter((event) => event.type === 'tool.completed').find((event) => event.toolCallId === 'background')?.output, 'All checks passed')
   assert.deepEqual(f.events.filter((event) => event.type === 'background.updated').at(-1)?.tasks, [])
 })
 

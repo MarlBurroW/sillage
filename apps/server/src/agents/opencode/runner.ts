@@ -46,6 +46,7 @@ import { describeSessionError, isAbort, type SessionError } from './errors.js'
 import { parseModel } from './model.js'
 import { OpencodeServer } from './server.js'
 import { describePermission, describeTool, fileEdits, QUESTION_TOOL } from './tools.js'
+import { detach } from '../../detach.js'
 
 /**
  * opencode adapter (I3): translate opencode serve stream to common event schema.
@@ -193,7 +194,7 @@ export class OpencodeRunner implements AgentRunner {
           this.notice('translation_failed', `Impossible de lire l'événement opencode ${event.type} : ${error instanceof Error ? error.message : String(error)}`, 'warning', event)
         }
       },
-      onReconnect: () => void this.resync(),
+      onReconnect: () => detach(this.resync(), 'opencode resync after reconnect'),
       onExit: (code) => this.onProcessExit(code),
     })
 
@@ -218,8 +219,8 @@ export class OpencodeRunner implements AgentRunner {
       },
       session,
     )
-    void this.publishMcpStatus()
-    void this.publishCommands()
+    detach(this.publishMcpStatus(), 'MCP status publication')
+    detach(this.publishCommands(), 'slash command publication')
   }
 
   /**
@@ -428,7 +429,7 @@ export class OpencodeRunner implements AgentRunner {
       }
 
       case 'mcp.tools.changed':
-        void this.publishMcpStatus()
+        detach(this.publishMcpStatus(), 'MCP status publication')
         return
 
       default: {
@@ -484,7 +485,7 @@ export class OpencodeRunner implements AgentRunner {
         this.compacting = false
       },
     })
-    if (closed && this.reloadPending) void this.reloadInstance()
+    if (closed && this.reloadPending) detach(this.reloadInstance(), 'opencode instance reload')
   }
 
   private reportError(error: SessionError | undefined, raw: unknown): void {
@@ -927,7 +928,7 @@ export class OpencodeRunner implements AgentRunner {
     this.reloading ??= server
       .reloadInstance()
       .then(() => {
-        void this.publishMcpStatus()
+        detach(this.publishMcpStatus(), 'MCP status publication')
         return this.publishCommands()
       })
       .catch((err: unknown) => {

@@ -7,13 +7,12 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { conversations, openDatabase, runMigrations, users } from '@sillage/db'
 import { defaultConfigFor, type SillageEvent } from '@sillage/protocol'
-import { AgentRegistry, type AgentAdapter } from '../src/agents/registry.js'
-import type { AgentRunner, RunnerContext } from '../src/agents/types.js'
+import type { RunnerContext } from '../src/agents/types.js'
 import { captureSnapshot, checkpointRef, readSnapshot, restoreSnapshot } from '../src/checkpoints.js'
 import { loadConfig } from '../src/config.js'
 import { createPersonalWorkspace } from '../src/conversations/personal-workspaces.js'
 import { EventLog } from '../src/events/event-log.js'
-import { SessionManager } from '../src/sessions/session-manager.js'
+import { fakeAdapter, fakeRunner, makeSessionManager } from './session-support.js'
 
 /** Restoring a turn rewrites a whole directory: it must keep what it replaces and not run under another session's feet. */
 
@@ -54,16 +53,12 @@ test('a restoration refuses while another session works there, keeps what it rep
   const config = loadConfig()
   config.paths = { ...config.paths, data: root, agents: join(root, 'agents'), memory: join(root, 'memory') }
   const contexts = new Map<string, RunnerContext>()
-  const adapter = {
-    kind: 'codex', label: 'Codex', binary: 'sillage-test-no-cli', rawFormat: 'test',
-    cli: { managedDir: config.paths.agents, assertEnabled() {} },
-    createRunner(ctx: RunnerContext) {
-      contexts.set(ctx.conversationId, ctx)
-      return { appliedConfig: ctx.config, async start() {}, async send() { ctx.setStatus('running') }, async stop() {} } as unknown as AgentRunner
-    },
-  } as unknown as AgentAdapter
+  const adapter = fakeAdapter('codex', config.paths.agents, (ctx) => {
+    contexts.set(ctx.conversationId, ctx)
+    return fakeRunner(ctx)
+  })
   const log = new EventLog(db)
-  const sessions = new SessionManager(db, log, config, new AgentRegistry([adapter]), {} as never, {} as never, {} as never, {} as never, {} as never)
+  const sessions = makeSessionManager({ db, log, config, adapters: [adapter] })
   t.after(async () => { await sessions.stopAll(); sqlite.close(); rmSync(root, { recursive: true, force: true }) })
 
   // Turn of A: captured before, then it edits a file and creates one.
@@ -80,7 +75,7 @@ test('a restoration refuses while another session works there, keeps what it rep
   await assert.rejects(sessions.restoreCheckpoint('a', KEY), { code: 'checkpoint_workspace_busy' })
   assert.equal(readFileSync(join(repo, 'a.txt'), 'utf8'), 'written by the turn\n')
   // B's delivery is detached and waits for its own turn capture: let it hand over, then end its turn.
-  const deliveries = (sessions as unknown as { pendingDeliveries: Set<string> }).pendingDeliveries
+  const deliveries = (sessions as unknown as { pendingDeliveries: Map<string, unknown> }).pendingDeliveries
   await until(() => !deliveries.has('b'))
   contexts.get('b')!.setStatus('idle')
 

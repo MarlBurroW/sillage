@@ -145,8 +145,8 @@ test('Codex final web arguments replace the empty start in live folding and repl
   for (const sample of cases) {
     const final = { ...start, query: sample.query, action: sample.action, results: [{ type: 'text_result', snippet: 'Found result' }] } as ThreadItem
     const completed = completedItem(final, '/project', 12, null)
-    assert.equal(completed[0].type, 'tool.input_updated')
-    assert.equal(completed[1].type, 'tool.completed')
+    assert.equal(completed[0]!.type, 'tool.input_updated')
+    assert.equal(completed[1]!.type, 'tool.completed')
     const events = [...startedItem(start, null), ...completed]
     const replay = (entries: typeof events) => entries.reduce((state, event, i) => applyEvent(state, i + 1, i, event), emptyChatState()).items.find((item): item is ToolItem => item.kind === 'tool')!
     for (const item of [replay(events), replay(JSON.parse(JSON.stringify(events)))]) {

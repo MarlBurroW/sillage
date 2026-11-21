@@ -7,6 +7,7 @@ import {
 } from '@sillage/protocol/chat-state'
 import type { EventLog } from './event-log.js'
 import { coalesceDeltas } from './coalesce.js'
+import { detach } from '../detach.js'
 
 /** Bump whenever fold semantics or the stored projection format change. */
 export const THREAD_PROJECTION_VERSION = 4
@@ -36,7 +37,7 @@ export class ThreadProjection {
     this.queue.add(id)
     if (!this.working) {
       this.working = true
-      setTimeout(() => void this.drain(), 60).unref()
+      setTimeout(() => detach(this.drain(), 'thread projection'), 60).unref()
     }
   }
 

@@ -420,7 +420,7 @@ test('maintenance triggers: new issues and comments without the Sillage marker, 
   github.comment(1, 'Old comment')
   await app.inject({ method: 'PUT', url: '/api/projects/project/board-link', payload: { ...LINK, onIssue: true, onComment: true } })
   await board.syncNow('project')
-  assert.deepEqual(events, [], 'What was there before the link is history, not news')
+  assert.equal(events.length, 0, 'What was there before the link is history, not news')
 
   const marker = '<!-- sillage:session=11111111-2222-4333-8444-555555555555 -->'
   github.add({ number: 2, title: 'From a stranger', body: 'Crash' })
@@ -445,13 +445,13 @@ test('maintenance triggers: new issues and comments without the Sillage marker, 
   await app.inject({ method: 'POST', url: `/api/cards/${old.id}/notes`, payload: { body: 'Thanks!', publish: true } })
   await board.syncNow('project')
   await board.syncNow('project')
-  assert.deepEqual(events, [])
+  assert.equal(events.length, 0)
 
   // Disabled triggers launch nothing.
   await app.inject({ method: 'PUT', url: '/api/projects/project/board-link', payload: LINK })
   github.comment(1, 'Anyone?', 'stranger')
   await board.syncNow('project')
-  assert.deepEqual(events, [])
+  assert.equal(events.length, 0)
 })
 
 test('maintenance sessions: one per issue, comments follow it, archive restarts, hourly cap', async (t) => {

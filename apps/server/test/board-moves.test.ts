@@ -7,7 +7,7 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import { cardNotes, cards, conversations, openDatabase, projects, runMigrations, users, worktrees } from '@sillage/db'
-import type { WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
+import type { ConversationStatus, WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
 import { closeMergedCards } from '../src/worktrees/merged-cards.js'
 
 /** Cards changing columns without user actions: agent MCP move_card, worktree merges and column arrival timestamps maintained by migration 0047 triggers. */
@@ -28,7 +28,7 @@ function harness(t: TestContext) {
     }).run()
     return `card-${number}`
   }
-  const session = (id: string, cardId: string | null, status = 'idle') => {
+  const session = (id: string, cardId: string | null, status: ConversationStatus = 'idle') => {
     db.insert(conversations).values({
       id, projectId: 'project', userId: 'owner', title: id, agent: 'claude', config: '{}', status,
       cardId, createdAt: 2000, updatedAt: 2000,
@@ -99,9 +99,9 @@ function list(tree: Partial<WorktreeStatusDto>): WorktreeStatusListDto {
     worktrees: [{
       id: 'tree', name: 'feat/x', path: '/tmp/feat-x', branch: 'feat/x', external: false, state: 'merged',
       ahead: 0, behind: 0, modified: 0, untracked: 0, conflicts: false, lastCommitAt: 9000, lastEditAt: null,
-      conversations: [{ id: 'worker', link: 'worktree' }],
+      conversations: [{ id: 'worker', link: 'worktree', lastActiveAt: 9000 }],
       ...tree,
-    }],
+    } as WorktreeStatusDto],
   }
 }
 

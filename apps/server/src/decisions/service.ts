@@ -28,6 +28,7 @@ import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import { detach } from '../detach.js'
 
 /** Minute precision suffices for deadlines and delayed deliveries. */
 const TICK_MS = 30_000
@@ -74,9 +75,9 @@ export class DecisionService {
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
-    this.timer = setInterval(() => void this.tick(), TICK_MS)
+    this.timer = setInterval(() => detach(this.tick(), 'decision expiry pass'), TICK_MS)
     this.timer.unref()
-    void this.tick()
+    detach(this.tick(), 'decision expiry pass')
   }
 
   stop(): void {

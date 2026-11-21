@@ -16,6 +16,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, notFound } from '../errors.js'
 import { parseRange } from '../range.js'
 import { requireUser } from '../require-user.js'
+import { detach } from '../../detach.js'
 
 /** Personal benchmarks: each account sees and controls only its own, like its discussions. */
 export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, runner: BenchmarkRunner): void {
@@ -136,7 +137,7 @@ export function registerBenchmarkRoutes(app: FastifyInstance, ctx: AppContext, r
     const user = requireUser(request)
     const archive = await shares.archive((request.params as { id: string }).id, user.id, shareOptionsParam(request.query))
     const stream = streamArchive(archive.items)
-    stream.once('close', () => void archive.dispose())
+    stream.once('close', () => detach(archive.dispose(), 'benchmark archive cleanup'))
     return reply
       .header('content-type', 'application/zip')
       .header('content-disposition', attachmentHeader(archive.filename))

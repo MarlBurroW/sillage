@@ -544,7 +544,7 @@ export class SessionManager {
 
   /** Same notification as runner events, for journal entries written elsewhere, such as an agent's MCP proposal posted by `AgentRequests`. */
   notifyRequest(conversationId: string, event: SillageEvent): void {
-    void this.notifyIfAway(conversationId, event)
+    detach(this.notifyIfAway(conversationId, event), 'notification of an absent user')
   }
 
   /** Notifies owners unless viewing conversations. Sockets are the only reliable presence signal: subscribed tabs already receive live events, so additional system pushes would announce content being read. Errors never propagate because notification failures must not interrupt agents (invariant I1). */
@@ -1116,7 +1116,7 @@ export class SessionManager {
         if (event.type === 'turn.completed' && conversation.projectId === null && !conversation.benchmarkId) {
           void readPersonalMemory(this.db, personalMemoryDir(this.config.paths.memory, conversation.userId), conversation.userId, conversationId).catch(err => console.warn('Personal memory refresh failed', err))
         }
-        void this.notifyIfAway(conversationId, event)
+        detach(this.notifyIfAway(conversationId, event), 'notification of an absent user')
         // Journals suffice for open conversations folding events; conversation lists and
         // other processes have only conversation rows to determine
         // that work continues elsewhere.

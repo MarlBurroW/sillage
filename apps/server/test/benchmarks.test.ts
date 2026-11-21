@@ -9,7 +9,6 @@ import { join } from 'node:path'
 import Fastify from 'fastify'
 import { deliverableKind, BENCHMARK_PREVIEW_PREFIX } from '@sillage/protocol'
 import { listDeliverables, previewType } from '../src/benchmarks/deliverables.js'
-import type { BenchmarkRunner } from '../src/benchmarks/runner.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerBenchmarkRoutes } from '../src/http/routes/benchmarks.js'
 import { runScript } from '../src/scheduler/check.js'
@@ -662,7 +661,7 @@ test('benchmark follow-up: the run reopens in its session, measures add up, each
   assert.equal((await followUp(['run', 'running'])).statusCode, 409)
   assert.equal((await followUp(['missing'])).statusCode, 404)
   assert.equal((await followUp(['run'], '   ')).statusCode, 400)
-  assert.deepEqual(sent, [])
+  assert.equal(sent.length, 0)
 
   const reopened = await followUp(['run'])
   assert.equal(reopened.statusCode, 200, reopened.body)

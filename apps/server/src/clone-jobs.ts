@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { CloneError, cloneRepository, setCredentialHelper, type CloneProgress } from './git.js'
+import { detach } from './detach.js'
 
 export interface CloneJob {
   id: string
@@ -45,7 +46,7 @@ export class CloneJobs {
     }
     this.jobs.set(job.id, { ownerId: params.ownerId, job })
 
-    void this.run(job, params)
+    detach(this.run(job, params), 'clone job')
     return job
   }
 

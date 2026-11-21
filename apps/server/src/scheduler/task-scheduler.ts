@@ -61,7 +61,7 @@ export class TaskScheduler {
       .set({ status: 'failed', finishedAt: Date.now(), error: 'Interrupted by a Sillage restart during the check.' })
       .where(eq(scheduledRuns.status, 'checking'))
       .run()
-    this.timer = setInterval(() => void this.tick(), TICK_MS)
+    this.timer = setInterval(() => detach(this.tick(), 'scheduled task pass'), TICK_MS)
     this.timer.unref()
   }
 
@@ -86,7 +86,7 @@ export class TaskScheduler {
     }
     if (this.again) {
       this.again = false
-      setImmediate(() => void this.tick())
+      setImmediate(() => detach(this.tick(), 'scheduled task pass'))
     }
   }
 
@@ -96,7 +96,7 @@ export class TaskScheduler {
       this.again = true
       return
     }
-    void this.tick()
+    detach(this.tick(), 'scheduled task pass')
   }
 
   /** Whether sessions run, launch or already have queued calls. */

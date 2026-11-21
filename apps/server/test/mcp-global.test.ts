@@ -25,7 +25,7 @@ async function harness(t: TestContext) {
   t.after(() => sqlite.close())
 
   db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'Owner', passwordHash: '', createdAt: 1, isAdmin: true }).run()
-  for (const [id, name] of [['alpha', 'Alpha'], ['beta', 'Beta app'], ['gamma', 'Beta api']]) {
+  for (const [id, name] of [['alpha', 'Alpha'], ['beta', 'Beta app'], ['gamma', 'Beta api']] as const) {
     db.insert(projects).values({ id, name, workspacePath: join(dir, id), ownerId: 'owner', visibility: 'private', instructionsMode: 'sillage', createdAt: 1 }).run()
   }
 

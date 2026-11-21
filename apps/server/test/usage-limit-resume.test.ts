@@ -101,8 +101,9 @@ test('usage limit: only a turn the limit stopped counts, and the account decides
     kind: 'usageLimit', conversationId: HUMAN, projectId: 'project', conversationTitle: 'Session 1', resetsAt: soon, resumeAt: null, reason: 'disabled',
   })
   const [notice] = notices(HUMAN)
-  assert.equal(notice!.type === 'agent.notice' && notice.code, 'usage_limit_stop')
-  assert.deepEqual(notice!.type === 'agent.notice' && notice.details, { resetsAt: soon, resumeAt: null, reason: 'disabled' })
+  assert.ok(notice?.type === 'agent.notice')
+  assert.equal(notice.code, 'usage_limit_stop')
+  assert.deepEqual(notice.details, { resetsAt: soon, resumeAt: null, reason: 'disabled' })
 
   // Enabled: scheduled slightly after the reset, with the account's text.
   prefs({ enabled: true, message: 'Carry on.' })
@@ -111,7 +112,9 @@ test('usage limit: only a turn the limit stopped counts, and the account decides
   assert.equal(row!.status, 'scheduled')
   assert.ok(row!.resumeAt! > soon && row!.resumeAt! <= soon + 60_000)
   assert.equal(row!.message, 'Carry on.')
-  assert.equal(dispatched.at(-1)!.notification.toast!.kind === 'usageLimit' && dispatched.at(-1)!.notification.toast!.resumeAt, row!.resumeAt)
+  const toast = dispatched.at(-1)!.notification.toast
+  assert.ok(toast?.kind === 'usageLimit')
+  assert.equal(toast.resumeAt, row!.resumeAt)
 
   // Not due yet: the pass sends nothing.
   await service.tick()

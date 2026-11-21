@@ -7,6 +7,7 @@ import type {
   InitializeResponse,
   RequestId,
 } from '@sillage/codex-bindings'
+import { detach } from '../../detach.js'
 
 /**
  * Methods and parameters come from the generated union: nonexistent methods or incorrect parameter
@@ -136,7 +137,7 @@ export class CodexAppServerClient {
 
     if (message.method !== undefined && message.id !== undefined) {
       this.serverRequests.add(message.id)
-      void this.answerServerRequest(message.id, message.method, message.params)
+      detach(this.answerServerRequest(message.id, message.method, message.params), 'answering a Codex server request')
       return
     }
 

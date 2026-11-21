@@ -173,8 +173,8 @@ test('sub-agent consumption gets its own row, under its model or the session\'s'
   ])
   // Benchmarks fold the same events into a run's measures.
   const metrics = computeRunMetrics([
-    { seq: 1, ts: 100, event: completed(5, 7) },
-    { seq: 2, ts: 150, event: consumed('gpt-6-luna', 4) },
+    { conversationId: 'c', seq: 1, ts: 100, event: completed(5, 7) },
+    { conversationId: 'c', seq: 2, ts: 150, event: consumed('gpt-6-luna', 4) },
   ], 'codex')
   assert.deepEqual([metrics.inputTokens, metrics.outputTokens, metrics.cacheReadTokens], [5 + 4 + 10, 10, 10])
 })

@@ -53,6 +53,7 @@ import { WorktreeCleanup } from './worktrees/cleanup.js'
 import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
 import { WorktreeRemoteStatus } from './worktrees/remote-status.js'
+import { detach } from './detach.js'
 
 /** Below the Desktop launcher's 15 s grace and systemd's TimeoutStopSec, so the process ends on its own terms. */
 const SHUTDOWN_DEADLINE_MS = 12_000
@@ -217,7 +218,8 @@ async function main(): Promise<void> {
     const port = typeof address === 'object' && address ? address.port : config.server.port
     announceToLauncher(port, await openDesktopSession(db), Boolean(app.remoteAccess?.allowed()))
     // After the announcement: the Tailscale CLI may take seconds, and the window must not wait.
-    void app.remoteAccess?.listening(port)
+    const listening = app.remoteAccess?.listening(port)
+    if (listening) detach(listening, 'remote access announcement')
   }
 
   // Git helper launchers describe this process's Node and release. Rewrite every
@@ -284,13 +286,13 @@ async function main(): Promise<void> {
       console.error('sillage: shutdown failed', err)
       process.exit(1)
     })
-  process.on('SIGINT', () => void requestShutdown('SIGINT'))
-  process.on('SIGTERM', () => void requestShutdown('SIGTERM'))
+  process.on('SIGINT', () => detach(requestShutdown('SIGINT'), 'shutdown'))
+  process.on('SIGTERM', () => detach(requestShutdown('SIGTERM'), 'shutdown'))
   // Desktop requests shutdown by closing stdin: Windows has no appropriate signal,
   // and killing servers would orphan session CLIs.
   // Stdin also closes on unexpected app death, taking the server with it.
   if (INSTANCE_PROFILE === 'desktop') {
-    process.stdin.on('end', () => void requestShutdown('launcher'))
+    process.stdin.on('end', () => detach(requestShutdown('launcher'), 'shutdown'))
     process.stdin.resume()
   }
 }

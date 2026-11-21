@@ -12,14 +12,14 @@ import { CachedProbe, CachedProbeMap } from '../src/agents/cached-probe.js'
 import { CliInstaller } from '../src/agents/cli-install.js'
 import { CliBinary } from '../src/agents/cli-binary.js'
 import { AgentRegistry, type AgentAdapter } from '../src/agents/registry.js'
-import type { AgentRunner, RunnerContext } from '../src/agents/types.js'
+import type { RunnerContext } from '../src/agents/types.js'
 import { loadConfig } from '../src/config.js'
 import { createConversation } from '../src/conversations/create.js'
 import { createPersonalWorkspace } from '../src/conversations/personal-workspaces.js'
 import { EventLog } from '../src/events/event-log.js'
 import { registerAgentRoutes } from '../src/http/routes/agents.js'
 import { registerErrorHandler } from '../src/http/errors.js'
-import { SessionManager } from '../src/sessions/session-manager.js'
+import { fakeAdapter, fakeRunner, makeSessionManager } from './session-support.js'
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void
@@ -148,20 +148,15 @@ test('Session maintenance waits for startup, turns, questions and detached work,
   const contexts: RunnerContext[] = []
   let stops = 0
   let sent = 0
-  const adapter = {
-    kind: 'codex', label: 'Codex', binary: 'sillage-test-no-cli', rawFormat: 'test',
-    cli: { managedDir: config.paths.agents, assertEnabled() {} },
-    createRunner(ctx: RunnerContext) {
-      contexts.push(ctx)
-      return {
-        appliedConfig: ctx.config,
-        async start() { await startup.promise; ctx.setAgentSessionId('native-session') },
-        async send() { sent++; ctx.setStatus('running') },
-        async stop() { stops++ },
-      } as AgentRunner
-    },
-  } as unknown as AgentAdapter
-  const sessions = new SessionManager(db, new EventLog(db), config, new AgentRegistry([adapter]), {} as never, {} as never, {} as never, {} as never, {} as never)
+  const adapter = fakeAdapter('codex', config.paths.agents, (ctx) => {
+    contexts.push(ctx)
+    return fakeRunner(ctx, {
+      async start() { await startup.promise; ctx.setAgentSessionId('native-session') },
+      async send() { sent++; ctx.setStatus('running') },
+      async stop() { stops++ },
+    })
+  })
+  const sessions = makeSessionManager({ db, log: new EventLog(db), config, adapters: [adapter] })
   t.after(async () => { await sessions.stopAll(); sqlite.close(); await rm(root, { recursive: true, force: true }) })
   const send = sessions.sendMessage('conversation', 'first', 'hello')
   await until(() => contexts.length > 0)
@@ -207,7 +202,7 @@ test('Disabled CLIs are refused before anything is journaled or spawned', async 
     createRunner() { runners++; throw new Error('A disabled CLI must never be launched') },
   } as unknown as AgentAdapter
   const log = new EventLog(db)
-  const sessions = new SessionManager(db, log, config, new AgentRegistry([adapter]), {} as never, {} as never, {} as never, {} as never, {} as never)
+  const sessions = makeSessionManager({ db, log, config, adapters: [adapter] })
   t.after(async () => { await sessions.stopAll(); sqlite.close(); await rm(root, { recursive: true, force: true }) })
 
   await assert.rejects(sessions.sendMessage('conversation', 'first', 'hello'), { statusCode: 503, code: 'cli_disabled' })

@@ -3,6 +3,7 @@ import { priceCatalogs, type Db } from '@sillage/db'
 import type { PriceCatalogStatus } from '@sillage/protocol'
 import bundled from './bundled.json' with { type: 'json' }
 import { findName, findPrice, hasNames, ratesOf, reduceLitellm, reduceModelsDev, type ModelPrice, type PriceTable } from './prices.js'
+import { detach } from '../detach.js'
 
 const HOUR = 60 * 60 * 1000
 /** Prices change a few times a year: a daily check is already generous. */
@@ -77,7 +78,7 @@ export class PriceCatalog {
       const unnamed = !this.namesRequested && !hasNames(this.loaded.get('modelsdev')!.table)
       if (reference.checkedAt === null || this.now() - reference.checkedAt >= CHECK_EVERY || unnamed) {
         this.namesRequested = true
-        void this.refresh()
+        detach(this.refresh(), 'price catalog refresh')
       }
     }
     check()

@@ -96,6 +96,7 @@ import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
 import { resolveConversationCwd } from '../workspace.js'
 import type { SessionManager } from './session-manager.js'
+import { detach } from '../detach.js'
 
 /** Handles MCP daemon requests: session launches, cards, scheduling and model catalogs. MCP only has database access, deposits requests and waits for this sweep to write results. Sweep faster than relays because agents await replies. Responses are model-facing English like other tools; errors explain corrections. */
 
@@ -202,7 +203,7 @@ export class AgentRequests {
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
     this.closeInterrupted()
-    this.timer = setInterval(() => void this.sweep(), POLL_MS)
+    this.timer = setInterval(() => detach(this.sweep(), 'agent request pass'), POLL_MS)
     this.timer.unref()
   }
 

@@ -64,7 +64,9 @@ for (const mode of ['manual', 'bypassPermissions'] as const) {
       // must not imply live application.
       const nextMode = mode === 'manual' ? 'bypassPermissions' : 'manual'
       assert.equal(await runner.applyConfig({ ...config, permissionMode: nextMode }), false)
-      assert.equal(runner.appliedConfig.permissionMode, mode)
+      const applied = runner.appliedConfig
+      assert.ok(applied.agent === 'claude')
+      assert.equal(applied.permissionMode, mode)
     })
   }
 }

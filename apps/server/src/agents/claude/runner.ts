@@ -66,6 +66,7 @@ import {
 } from './prompts.js'
 import { describeFastMode, describePluginErrors, translateSignal } from './signals.js'
 import { claudeTurnCost } from '../../consumption/turn-usage.js'
+import { detach } from '../../detach.js'
 
 /**
  * Native messages intentionally ignored: internal progress (session state changes) adds nothing to
@@ -320,10 +321,10 @@ export class ClaudeRunner implements AgentRunner {
     // Same for loops, which die with process. Hook restores them after first turn if CLI restored
     // any on resume.
     this.ctx.emit({ type: 'loops.updated', loops: [] })
-    void this.publishMcpStatus()
+    detach(this.publishMcpStatus(), 'MCP status publication')
 
     // Consumed in background: runner outlives creating HTTP request.
-    void this.consume()
+    detach(this.consume(), 'reading the CLI stream')
   }
 
   private async consume(): Promise<void> {
@@ -567,7 +568,7 @@ export class ClaudeRunner implements AgentRunner {
           this.ctx.setAgentSessionId(message.session_id)
           // Init `slash_commands` has names only. Completion needs descriptions/argument shapes,
           // supplied only by this request.
-          if (first) void this.publishSupportedCommands()
+          if (first) detach(this.publishSupportedCommands(), 'slash command publication')
           // CLI emits init every turn, not just launch: database counted equal `session.started`
           // and turns. Only first is startup; later journaled only on session/model changes,
           // revealing typed `/model`, fallback, `/clear` opening another session.
@@ -763,7 +764,7 @@ export class ClaudeRunner implements AgentRunner {
         this.publishFastMode(message.fast_mode_state, message.fast_mode_disabled_reason)
         // Context requires CLI query; `result` omits it. Query afterward to avoid delaying turn
         // completion.
-        void this.emitContextUsage()
+        detach(this.emitContextUsage(), 'context usage publication')
         return
       }
 
@@ -1016,7 +1017,7 @@ export class ClaudeRunner implements AgentRunner {
       })
       // Servers may fail or finish authentication mid-session; otherwise inventory would remain
       // startup snapshot.
-      void this.publishMcpStatus()
+      detach(this.publishMcpStatus(), 'MCP status publication')
     }
     return { continue: true }
   }
@@ -1341,9 +1342,9 @@ export class ClaudeRunner implements AgentRunner {
     if (!session) return
     const failed = this.lastMcpStatus.filter((server) => server.state === 'failed')
     if (failed.length === 0) return
-    void Promise.allSettled(failed.map((server) => session.reconnectMcpServer(server.name))).then(() =>
+    detach(Promise.allSettled(failed.map((server) => session.reconnectMcpServer(server.name))).then(() =>
       this.publishMcpStatus(),
-    )
+    ), 'retrying failed MCP servers')
   }
 
   /**
