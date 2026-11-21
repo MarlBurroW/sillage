@@ -9,6 +9,8 @@ import type { WorktreeRemoteStatus } from './remote-status.js'
 import { isUnder } from '../agents/paths.js'
 
 /** Recalculate lists older than this limit and reuse fresher ones. Keep short because sessions modify trees, but sidebar reads on every turn end would otherwise launch dozens of git processes. */
+/** How long a new database entry may wait for `git worktree add` (its own timeout) before a missing directory means anything. */
+const CREATING_MS = 130_000
 const TTL_MS = 30_000
 
 /** Concurrent worktree assessments: each launches several git processes, costly for large repositories. */
@@ -189,6 +191,9 @@ export class WorktreeStatusService {
       if (known) {
         known.id = row.id
         known.name = known.branch ?? row.name
+      } else if (Date.now() - row.createdAt < CREATING_MS && !(await isDirectory(row.path))) {
+        // `createWorktree` claims the name before git builds the tree: not there yet is not gone.
+        continue
       } else if (entries.length > 0 && !(await isDirectory(row.path))) {
         // Git listed its trees without this one and the directory is gone: someone ran
         // `git worktree remove` (or pruned) outside Sillage, typically an agent tidying up.

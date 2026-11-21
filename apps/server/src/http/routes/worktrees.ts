@@ -187,35 +187,47 @@ export async function createWorktree(
   const existing = ctx.db
     .select()
     .from(worktrees)
-    .where(and(eq(worktrees.projectId, project.id), eq(worktrees.name, name)))
+    .where(and(eq(worktrees.projectId, project.id), eq(worktrees.name, name), isNull(worktrees.removedAt)))
     .get()
-  if (existing && !existing.removedAt) {
+  if (existing) {
     throw conflict('worktree_exists', 'Worktree {name} already exists.', { name })
   }
 
   // Worktrees live in the data directory, outside projects:
   // they must not clutter the tree users see in their editor.
   const path = join(ctx.config.paths.worktrees, project.id, name.replace(/\//g, '__'))
-  const { reusedBranch } = await addWorktree(project.workspacePath, path, name, baseRef).catch(
-    (err: unknown) => {
-      if (err instanceof GitError) throw badRequest('git_failed', err.message)
-      throw err
-    },
-  )
-
   const row: WorktreeRow = {
     id: randomUUID(),
     projectId: project.id,
     name,
     path,
-    baseRef: reusedBranch ? name : baseRef,
+    baseRef,
     createdBy: userId,
     createdAt: Date.now(),
     removedAt: null,
   }
 
-  // A previously deleted entry has the same name, which the unique index would reject.
-  if (existing) ctx.db.delete(worktrees).where(eq(worktrees.id, existing.id)).run()
-  ctx.db.insert(worktrees).values(row).run()
+  // Claim the name in the database first, then let git create the tree: the other order left a
+  // directory and a branch behind whenever the insert failed, and every retry then stopped on
+  // "already exists". A removed entry of the same name stays (the index covers live trees only).
+  try {
+    ctx.db.insert(worktrees).values(row).run()
+  } catch (err) {
+    if (/UNIQUE constraint failed/.test(err instanceof Error ? err.message : '')) {
+      throw conflict('worktree_exists', 'Worktree {name} already exists.', { name })
+    }
+    throw err
+  }
+  try {
+    const { reusedBranch } = await addWorktree(project.workspacePath, path, name, baseRef)
+    if (reusedBranch) {
+      row.baseRef = name
+      ctx.db.update(worktrees).set({ baseRef: name }).where(eq(worktrees.id, row.id)).run()
+    }
+  } catch (err) {
+    ctx.db.delete(worktrees).where(eq(worktrees.id, row.id)).run()
+    if (err instanceof GitError) throw badRequest('git_failed', err.message)
+    throw err
+  }
   return row
 }

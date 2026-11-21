@@ -175,7 +175,10 @@ export const worktrees = sqliteTable(
     createdAt: timestamp('created_at').notNull(),
     removedAt: timestamp('removed_at'),
   },
-  (t) => [uniqueIndex('idx_worktrees_project_name').on(t.projectId, t.name)],
+  // Unique among live trees only: a removed one stays for the conversations that worked in it,
+  // and must not stop the same name from being created again (the board responder reuses
+  // `issue-<n>`). Deleting it was impossible while a conversation still referenced it.
+  (t) => [uniqueIndex('idx_worktrees_project_name').on(t.projectId, t.name).where(sql`${t.removedAt} IS NULL`)],
 )
 
 /**

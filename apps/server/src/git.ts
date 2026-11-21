@@ -5,6 +5,8 @@ import type { FileState } from '@sillage/protocol'
 const run = promisify(execFile)
 
 const GIT_TIMEOUT_MS = 5000
+/** Creating or removing a worktree checks out or deletes a whole tree: on a large repository, with LFS or an antivirus, that outlasts the 5 s sized for state reads, and git was killed halfway every time. */
+const WORKTREE_TIMEOUT_MS = 120_000
 
 /**
  * For `git status` run on our behalf: by default it refreshes the index stat cache, which takes
@@ -13,10 +15,10 @@ const GIT_TIMEOUT_MS = 5000
  */
 const NO_OPTIONAL_LOCKS = { GIT_OPTIONAL_LOCKS: '0' }
 
-async function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
+async function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeout = GIT_TIMEOUT_MS): Promise<string> {
   const { stdout } = await run('git', args, {
     cwd,
-    timeout: GIT_TIMEOUT_MS,
+    timeout,
     maxBuffer: 4 * 1024 * 1024,
     ...(env ? { env: { ...process.env, ...env } } : {}),
   })
@@ -57,11 +59,16 @@ export class GitError extends Error {
   }
 }
 
-/** Extracts git errors, far more useful than 'exit code 128'. */
+/** Extracts git errors, far more useful than 'exit code 128'. A timeout says so: the partial stderr of a killed git ("Preparing worktree") read like its answer. */
 function gitMessage(err: unknown): string {
+  if (killedByTimeout(err)) return `git a dépassé ${WORKTREE_TIMEOUT_MS / 1000} s et a été interrompu.`
   const stderr = (err as { stderr?: string }).stderr
   const text = stderr?.trim() || (err instanceof Error ? err.message : String(err))
   return text.split('\n').slice(0, 3).join(' ').trim()
+}
+
+function killedByTimeout(err: unknown): boolean {
+  return (err as { killed?: boolean }).killed === true
 }
 
 /** Creates worktrees. `git worktree add` rejects existing branches, so attach them instead of requiring new names: resuming branches is common. */
@@ -80,6 +87,8 @@ export async function addWorktree(
       reusedBranch
         ? ['worktree', 'add', path, branch]
         : ['worktree', 'add', path, '-b', branch, baseRef],
+      undefined,
+      WORKTREE_TIMEOUT_MS,
     )
   } catch (err) {
     const message = gitMessage(err)
@@ -97,9 +106,17 @@ export async function addWorktree(
 
 export async function removeWorktree(repo: string, path: string, force: boolean): Promise<void> {
   try {
-    await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+    await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path], undefined, WORKTREE_TIMEOUT_MS)
   } catch (err) {
-    throw new GitError(gitMessage(err))
+    if (!killedByTimeout(err)) throw new GitError(gitMessage(err))
+    // Killed halfway, git leaves its administrative entry behind with part of the files: finish
+    // the removal rather than leave a ghost the next listing shows as missing.
+    try {
+      // Same mode as asked: forcing an unforced removal could delete modified files.
+      await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path], undefined, WORKTREE_TIMEOUT_MS)
+    } catch (again) {
+      throw new GitError(gitMessage(again))
+    }
   }
 }
 

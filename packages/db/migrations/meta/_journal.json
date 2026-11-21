@@ -505,6 +505,13 @@
       "when": 1795251209170,
       "tag": "0071_nasty_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1795268801646,
+      "tag": "0072_neat_gargoyle",
+      "breakpoints": true
     }
   ]
 }
