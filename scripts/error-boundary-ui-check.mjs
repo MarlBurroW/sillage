@@ -144,9 +144,11 @@ try {
   const fits = await phone.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)
   assert.ok(fits, 'no horizontal scroll on the phone')
   await phone.page.screenshot({ path: join(data, 'page-crash-phone.png') })
-  // The broken page drew the phone's menu button: the way home must lead back to working navigation.
-  await phone.page.getByRole('button', { name: "Retour à l'accueil", exact: true }).click()
+  // The broken page drew the phone's menu button: the way out must lead to a working page. Home
+  // would redirect to this same conversation once it is remembered as the last one.
+  await phone.page.getByRole('button', { name: 'Quitter cette page', exact: true }).click()
   await crash.waitFor({ state: 'hidden' })
+  await phone.page.waitForURL(`**/p/${phone.project.id}/board`)
   assert.deepEqual(phone.errors, [])
   console.log('OK : erreurs contenues sur grand écran et au téléphone.')
 } finally {

@@ -4222,7 +4222,7 @@ export const fr: Catalog = {
   'crash.item': "Cet élément n'a pas pu s'afficher.",
   'crash.retry': 'Réessayer',
   'crash.reload': 'Recharger',
-  'crash.home': "Retour à l'accueil",
+  'crash.home': 'Quitter cette page',
   'crash.details': 'Détails (version {version})',
   'checkpoint.restore.action': "Revenir à l'état d'avant ce tour",
   'checkpoint.restore.title': "Remettre le workspace tel qu'il était avant ce tour",

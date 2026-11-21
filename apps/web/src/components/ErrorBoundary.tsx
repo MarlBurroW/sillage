@@ -1,6 +1,6 @@
 import { AlertTriangle, Home, RefreshCw, RotateCcw } from 'lucide-react'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslate } from '../lib/i18n'
 import { reloadForUpdate } from '../lib/lazy-reload'
 import { Button } from './ui'
@@ -66,10 +66,16 @@ export function AppCrash({ error, reset }: { error: Error; reset: () => void }) 
   )
 }
 
-/** A broken page inside the shell: navigation stays usable, and leaving the page clears it. On a phone the broken page may have been the one drawing the menu button, hence the way home. */
+/**
+ * A broken page inside the shell: navigation stays usable, and leaving the page clears it. On a
+ * phone the broken page may have been the one drawing the menu button, hence a way out. Not `/`:
+ * home redirects to the last conversation, often the broken one, which drew the same error again.
+ */
 export function PageCrash({ error, reset }: { error: Error; reset: () => void }) {
   const t = useTranslate()
   const navigate = useNavigate()
+  const project = /^\/p\/([^/]+)\//.exec(useLocation().pathname)?.[1]
+  const exit = project ? `/p/${project}/board` : '/discussions/new'
   return (
     <div role="alert" className="mx-auto flex max-w-md flex-col gap-3 p-6">
       <h2 className="flex items-center gap-2 font-semibold">
@@ -81,7 +87,7 @@ export function PageCrash({ error, reset }: { error: Error; reset: () => void })
       <div className="flex flex-wrap gap-2">
         <Button size="sm" icon={<RotateCcw size={14} />} onClick={reset}>{t('crash.retry')}</Button>
         <Button size="sm" variant="secondary" icon={<RefreshCw size={14} />} onClick={() => void reloadForUpdate()}>{t('crash.reload')}</Button>
-        <Button size="sm" variant="ghost" icon={<Home size={14} />} onClick={() => navigate('/')}>{t('crash.home')}</Button>
+        <Button size="sm" variant="ghost" icon={<Home size={14} />} onClick={() => navigate(exit)}>{t('crash.home')}</Button>
       </div>
     </div>
   )

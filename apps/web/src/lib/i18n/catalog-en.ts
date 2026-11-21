@@ -4231,7 +4231,7 @@ export const en = {
   'crash.item': 'This element could not be displayed.',
   'crash.retry': 'Try again',
   'crash.reload': 'Reload',
-  'crash.home': 'Back to home',
+  'crash.home': 'Leave this page',
   'crash.details': 'Details (version {version})',
   'checkpoint.restore.action': 'Revert to before this turn',
   'checkpoint.restore.title': 'Put the workspace back as it was before this turn',
