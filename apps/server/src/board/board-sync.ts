@@ -134,6 +134,8 @@ export class BoardSync {
   private readonly queues = new Map<string, Promise<unknown>>()
   private readonly syncing = new Set<string>()
   private readonly kickTimers = new Map<string, NodeJS.Timeout>()
+  /** Projects whose link GitHub refused (token, rate limit): automatic passes wait until then. "Sync now" does not. */
+  private readonly pausedUntil = new Map<string, number>()
 
   constructor(
     private readonly ctx: AppContext,
@@ -306,6 +308,7 @@ export class BoardSync {
     await this.serialized(projectId, async () => {
       const link = this.link(projectId)
       if (!link) return
+      if (!raise && (this.pausedUntil.get(projectId) ?? 0) > Date.now()) return
       this.syncing.add(projectId)
       const started = Date.now()
       try {
@@ -318,6 +321,7 @@ export class BoardSync {
           this.prune(link)
           notice = await this.answer(events)
         }
+        this.pausedUntil.delete(projectId)
         this.ctx.db
           .update(boardLinks)
           .set({ lastError: refused ?? notice, ...(pull ? { lastSyncedAt: started } : {}) })
@@ -326,6 +330,11 @@ export class BoardSync {
       } catch (err) {
         const code = err instanceof BoardGitHubError ? err.code : 'board_github_unreachable'
         if (!(err instanceof BoardGitHubError)) this.logger?.warn({ err, projectId }, 'synchronisation du board en échec')
+        // A refused token or a rate limit fails every request alike: retrying each tick would
+        // only extend the limit. Wait as long as GitHub asks, or until the next pull.
+        if (err instanceof BoardGitHubError && err.scope === 'link' && (err.retryAfterMs !== null || !err.transient)) {
+          this.pausedUntil.set(projectId, Date.now() + (err.retryAfterMs ?? PULL_EVERY_MS))
+        }
         // Failure counts as a pass: retry next pass rather than every tick.
         this.ctx.db
           .update(boardLinks)
@@ -359,22 +368,90 @@ export class BoardSync {
       if (!columnMatches(card.column, remote, link)) Object.assign(patch, statePatch(desiredState(card.column, remote, link), remote))
       if (Object.keys(patch).length === 0) continue
 
+      let updated: GitHubIssue
       try {
-        const updated = await client.updateIssue(issue.number, patch)
-        this.ctx.db.update(cardIssues).set(issueColumns(updated, link.signature)).where(eq(cardIssues.cardId, card.id)).run()
+        updated = await client.updateIssue(issue.number, patch)
       } catch (err) {
-        if (!(err instanceof BoardGitHubError) || err.transient) throw err
-        // On permanent rejections (permissions, locked or deleted issues), restore cards
-        // from GitHub instead of retrying every pass, and display the error.
-        this.ctx.db
-          .update(cards)
-          .set({ title: issue.title, description: issue.body, column: impliedColumn(remote, link), updatedAt: Date.now() })
-          .where(eq(cards.id, card.id))
-          .run()
+        // Link-wide failures (token, rate limits, GitHub down) end the pass and keep every local
+        // edit pending: they say nothing about this issue, and restoring would erase the edit.
+        if (!(err instanceof BoardGitHubError) || err.transient || err.scope === 'link') throw err
+        // This issue refused the change (locked, deleted, invalid): restore the card from GitHub
+        // instead of retrying every pass, keep what was discarded in a note, and show the error.
+        this.restoreRefused(link, card, issue, err.code)
         refused = err.code
+        continue
       }
+      this.afterPush(link, card, issue, patch, updated)
     }
     return refused
+  }
+
+  /**
+   * GitHub's answer to a PATCH also carries what was edited there since the last pull. Apply
+   * those fields to the card and record the answer as the snapshot: recording it alone made the
+   * remote edit look already known, and the next pass sent the stale card value back over it.
+   * Fields just sent stay as the card has them, even when GitHub normalized their whitespace,
+   * so the next pass does not send them again.
+   */
+  private afterPush(
+    link: BoardLinkRow,
+    card: CardRow,
+    before: CardIssueRow,
+    patch: Parameters<GitHubIssues['updateIssue']>[1],
+    updated: GitHubIssue,
+  ): void {
+    const snapshot = issueColumns(updated, link.signature)
+    const change: Partial<typeof cards.$inferInsert> = {}
+    if (patch.title !== undefined) {
+      if (snapshot.title.trim() === card.title.trim()) snapshot.title = card.title
+    } else if (snapshot.title !== before.title) {
+      change.title = snapshot.title
+    }
+    if (patch.body !== undefined) {
+      if (snapshot.body.trimEnd() === card.description.trimEnd()) snapshot.body = card.description
+    } else if (snapshot.body !== before.body) {
+      change.description = snapshot.body
+    }
+    if (patch.state === undefined && patch.labels === undefined) {
+      const after = issueRemote(updated)
+      if (columnStateChanged(remoteOf(before), after, link) && !columnMatches(card.column, after, link)) {
+        change.column = impliedColumn(after, link)
+        change.position = this.endOf(card.projectId, change.column)
+      }
+    }
+    this.ctx.db.update(cardIssues).set(snapshot).where(eq(cardIssues.cardId, card.id)).run()
+    if (Object.keys(change).length === 0) return
+    this.ctx.db.update(cards).set({ ...change, updatedAt: Date.now() }).where(eq(cards.id, card.id)).run()
+    if (change.description !== undefined) syncCardReferences(this.ctx.db, card, change.description)
+  }
+
+  /** Puts the issue's fields back on a card whose change GitHub refused, keeping discarded text in a local note so nothing typed is lost. A column move is not kept: it is one gesture to redo, and the note would also keep the card when the board is unlinked. */
+  private restoreRefused(link: BoardLinkRow, card: CardRow, issue: CardIssueRow, code: string): void {
+    const column = impliedColumn(remoteOf(issue), link)
+    const discarded = [
+      card.title !== issue.title ? `Titre : ${card.title}` : null,
+      card.description !== issue.body ? `Description :\n\n${card.description}` : null,
+    ].filter(Boolean)
+    const now = Date.now()
+    writeTransaction(this.ctx.db, (tx) => {
+      tx.update(cards)
+        .set({ title: issue.title, description: issue.body, column, updatedAt: now })
+        .where(eq(cards.id, card.id))
+        .run()
+      if (discarded.length === 0) return
+      tx.insert(cardNotes)
+        .values({
+          id: randomUUID(),
+          cardId: card.id,
+          conversationId: null,
+          userId: null,
+          body: `GitHub a refusé la modification de l'issue #${issue.number} (${code}) : la carte reprend son état sur GitHub. Version écartée :\n\n${discarded.join('\n\n')}`,
+          createdAt: now,
+          // Local: publishing it would retry the very change GitHub refused.
+          publication: null,
+        })
+        .run()
+    })
   }
 
   /** Publishes queued notes as comments on their card's issue. */
@@ -412,7 +489,8 @@ export class BoardSync {
           .where(eq(cardNotes.id, note.id))
           .run()
       } catch (err) {
-        if (!(err instanceof BoardGitHubError) || err.transient) throw err
+        // A refused token or a rate limit is not this note's fault: it stays pending.
+        if (!(err instanceof BoardGitHubError) || err.transient || err.scope === 'link') throw err
         this.ctx.db
           .update(cardNotes)
           .set({ publication: 'failed', publicationError: err.code })
@@ -696,7 +774,7 @@ export class BoardSync {
 
   private client(userId: string, repo: string): GitHubIssues {
     const credential = this.credentials.resolve(userId, 'github.com')
-    if (!credential) throw new BoardGitHubError('board_github_no_credential', 'No GitHub credential for this account.')
+    if (!credential) throw new BoardGitHubError('board_github_no_credential', 'No GitHub credential for this account.', false, 'link')
     return new GitHubIssues(credential.token, repo, this.fetcher)
   }
 

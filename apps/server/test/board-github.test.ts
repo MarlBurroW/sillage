@@ -43,6 +43,8 @@ function fakeGitHub() {
   let clock = Date.now()
   let nextComment = 1000
   let deny: number | null = null
+  /** Answer every request this way, as GitHub does when the token is refused or a limit applies. */
+  let outage: { status: number; headers?: Record<string, string>; message: string } | null = null
   const tick = () => (clock += 1000)
   const iso = (ms: number) => new Date(ms).toISOString()
   const issueJson = (issue: FakeIssue) => ({
@@ -75,6 +77,7 @@ function fakeGitHub() {
     const url = new URL(input)
     const method = init?.method ?? 'GET'
     calls.push(`${method} ${url.pathname}${url.search}`)
+    if (outage) return new Response(JSON.stringify({ message: outage.message }), { status: outage.status, headers: { 'content-type': 'application/json', ...outage.headers } })
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
     const path = url.pathname.replace('/repos/acme/app', '')
     const since = url.searchParams.get('since')
@@ -142,7 +145,11 @@ function fakeGitHub() {
     comments.push({ id: nextComment++, issue, body, user, created: created ?? tick(), updated: tick() })
     issues.get(issue)!.updated = clock
   }
-  return { fetcher, issues, comments, calls, add, edit, comment, denyPatch: (number: number | null) => (deny = number) }
+  return {
+    fetcher, issues, comments, calls, add, edit, comment,
+    denyPatch: (number: number | null) => (deny = number),
+    fail: (next: typeof outage) => (outage = next),
+  }
 }
 
 async function harness(t: TestContext) {
@@ -347,6 +354,64 @@ test('linked board: import, local cards, two-way columns, comments, publishing, 
   assert.equal(after.find((card) => card.id === dark.id), undefined)
   assert.ok(after.find((card) => card.id === forcedLocal.id))
   assert.equal(db.select().from(cardNotes).where(eq(cardNotes.publication, 'pending')).all().length, 0)
+})
+
+test('link failures keep local edits, refused issues keep the discarded text, remote edits are not reverted', async (t) => {
+  const { app, db, board, github, byIssue, notesOf } = await harness(t)
+  github.add({ number: 1, title: 'Crash on start', body: 'Steps to reproduce' })
+  github.add({ number: 2, title: 'Locked', body: 'Original text' })
+  await app.inject({ method: 'PUT', url: '/api/projects/project/board-link', payload: LINK })
+  await board.syncNow('project')
+  const crash = (await byIssue(1))!
+  const lastError = () => db.select().from(boardLinks).get()!.lastError
+
+  // The token is refused: the edit stays on the card, the error stays visible, nothing restores.
+  github.fail({ status: 401, message: 'Bad credentials' })
+  await app.inject({ method: 'PATCH', url: `/api/cards/${crash.id}`, payload: { description: 'Rewritten while the token was expired' } })
+  await board.tick()
+  assert.equal((await byIssue(1))?.description, 'Rewritten while the token was expired')
+  assert.equal(lastError(), 'board_github_token_rejected')
+  // Automatic passes wait instead of failing every fifteen seconds; the error does not clear.
+  github.fail(null)
+  const before = github.calls.length
+  await board.tick()
+  assert.equal(github.calls.length, before)
+  assert.equal(lastError(), 'board_github_token_rejected')
+  // "Sync now" does not wait, and the kept edit finally reaches GitHub.
+  await board.syncNow('project')
+  assert.equal(github.issues.get(1)!.body, 'Rewritten while the token was expired')
+  assert.equal(lastError(), null)
+
+  // A secondary rate limit (403 with retry-after) is a limit, not a refusal of the issue.
+  github.fail({ status: 403, headers: { 'retry-after': '30' }, message: 'You have exceeded a secondary rate limit.' })
+  await app.inject({ method: 'PATCH', url: `/api/cards/${crash.id}`, payload: { title: 'Crash on start (macOS)' } })
+  await assert.rejects(board.syncNow('project'))
+  assert.equal((await byIssue(1))?.title, 'Crash on start (macOS)')
+  assert.equal(lastError(), 'board_github_rate_limited')
+  github.fail(null)
+  await board.syncNow('project')
+  assert.equal(github.issues.get(1)!.title, 'Crash on start (macOS)')
+
+  // Someone edits the body on GitHub; before the next pull, the card moves in Sillage. The push
+  // answer carries the remote body: the card takes it, and the next pass does not send it back.
+  github.edit(1, { body: 'Edited on GitHub' })
+  await app.inject({ method: 'PATCH', url: `/api/cards/${crash.id}`, payload: { column: 'review' } })
+  await board.syncNow('project')
+  assert.deepEqual(github.issues.get(1)!.labels, ['review'])
+  assert.equal((await byIssue(1))?.description, 'Edited on GitHub')
+  await board.syncNow('project')
+  assert.equal(github.issues.get(1)!.body, 'Edited on GitHub')
+
+  // A refusal of one issue still restores it, and the discarded text survives in a local note.
+  github.denyPatch(2)
+  const locked = (await byIssue(2))!
+  await app.inject({ method: 'PATCH', url: `/api/cards/${locked.id}`, payload: { description: 'Long text the user typed' } })
+  await board.syncNow('project')
+  assert.equal((await byIssue(2))?.description, 'Original text')
+  assert.equal(lastError(), 'board_github_forbidden')
+  const kept = (await notesOf(locked.id)).at(-1)!
+  assert.match(kept.body, /Long text the user typed/)
+  assert.equal(kept.publication, null)
 })
 
 test('maintenance triggers: new issues and comments without the Sillage marker, nothing else', async (t) => {

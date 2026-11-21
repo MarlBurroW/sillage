@@ -49,17 +49,29 @@ export interface GitHubPullRequest {
   base: { ref: string; repo: { full_name: string } }
 }
 
-/** Codes are translated by the interface; `transient` determines whether retries help. */
+/**
+ * Codes are translated by the interface; `transient` determines whether retries help. `scope`
+ * tells a refusal of one issue (locked, deleted, invalid content) from one that concerns the
+ * whole link (token, rate limits, GitHub down): only the first may undo a card's local edit.
+ * `retryAfterMs` is GitHub's own estimate of when to try again.
+ */
 export class BoardGitHubError extends Error {
   constructor(
     readonly code: string,
     message: string,
     readonly transient = false,
+    readonly scope: 'issue' | 'link' = 'issue',
+    readonly retryAfterMs: number | null = null,
   ) {
     super(message)
     this.name = 'BoardGitHubError'
   }
 }
+
+/** Secondary limits answer 403 or 429 with `retry-after`, or only say so in the message. */
+const SECONDARY_LIMIT = /secondary rate limit|abuse detection/i
+/** Wait applied when GitHub reports a limit without saying for how long. */
+const DEFAULT_RETRY_MS = 60_000
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -159,20 +171,34 @@ export class GitHubIssues {
         signal: AbortSignal.timeout(20_000),
       })
     } catch {
-      throw new BoardGitHubError('board_github_unreachable', 'GitHub could not be reached.', true)
+      throw new BoardGitHubError('board_github_unreachable', 'GitHub could not be reached.', true, 'link')
     }
     if (response.ok) return (await response.json()) as T
 
-    if (response.status === 401) throw new BoardGitHubError('board_github_token_rejected', 'GitHub rejected the token.')
-    if ((response.status === 403 || response.status === 429) && response.headers.get('x-ratelimit-remaining') === '0') {
-      throw new BoardGitHubError('board_github_rate_limited', 'GitHub rate limit reached.', true)
+    if (response.status === 401) throw new BoardGitHubError('board_github_token_rejected', 'GitHub rejected the token.', false, 'link')
+    if (response.status === 403 || response.status === 429) {
+      const limited = await rateLimit(response)
+      if (limited !== null) throw new BoardGitHubError('board_github_rate_limited', 'GitHub rate limit reached.', true, 'link', limited)
     }
     if (response.status === 403) throw new BoardGitHubError('board_github_forbidden', 'GitHub refused the request.')
     if (response.status === 404) throw new BoardGitHubError('board_github_not_found', 'Repository or issue not found.')
     if (response.status === 410) throw new BoardGitHubError('board_github_issues_disabled', 'Issues are disabled on this repository.')
     if (response.status === 422) throw new BoardGitHubError('board_github_invalid', 'GitHub refused the content.')
-    throw new BoardGitHubError('board_github_unreachable', `GitHub answered ${response.status}.`, response.status >= 500)
+    throw new BoardGitHubError('board_github_unreachable', `GitHub answered ${response.status}.`, response.status >= 500, response.status >= 500 ? 'link' : 'issue')
   }
+}
+
+/** Milliseconds to wait when a 403 or 429 is a rate limit, primary or secondary; null when it is a real refusal. */
+async function rateLimit(response: Response): Promise<number | null> {
+  const retryAfter = Number(response.headers.get('retry-after'))
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000
+  if (response.headers.get('x-ratelimit-remaining') === '0') {
+    const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000
+    return Number.isFinite(reset) && reset > Date.now() ? reset - Date.now() : DEFAULT_RETRY_MS
+  }
+  if (response.status === 429) return DEFAULT_RETRY_MS
+  const message = await response.text().catch(() => '')
+  return SECONDARY_LIMIT.test(message) ? DEFAULT_RETRY_MS : null
 }
 
 export function labelNames(issue: GitHubIssue): string[] {
