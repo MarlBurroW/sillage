@@ -223,6 +223,34 @@ test('Unclosed file reads are shown from disk and late bare closings add nothing
   assert.equal(f.events.filter((event) => event.type === 'tool.started').length, 3)
 })
 
+test('Mirrored reads of huge or binary files stay bounded', async (t) => {
+  const f = await fixture(t)
+  // Larger than the scanned prefix: the first lines are still shown, the rest is not read.
+  const line = `${'x'.repeat(99)}\n`
+  await writeFile(join(f.root, 'huge.log'), `first\nsecond\n${line.repeat(60_000)}`)
+  await writeFile(join(f.root, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x0d, 0x0a]))
+  await f.turn([
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'head', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'huge.log'), StartLine: 1, EndLine: 2 } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'head', status: 'completed' } },
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'tail', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'huge.log'), StartLine: 59_000, EndLine: 59_001 } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'tail', status: 'completed' } },
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'whole', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'huge.log') } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'whole', status: 'completed' } },
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'binary', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'image.png') } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'binary', status: 'completed' } },
+  ])
+  const output = (id: string) => {
+    const event = f.events.find((entry) => entry.type === 'tool.completed' && entry.toolCallId === id)
+    return event?.type === 'tool.completed' ? event.output : undefined
+  }
+  assert.equal(output('head'), 'first\nsecond')
+  assert.ok(!output('tail'), 'lines past the scanned prefix are not invented')
+  const whole = String(output('whole'))
+  assert.ok(whole.endsWith('… (truncated)'))
+  assert.ok(whole.length <= 512 * 1024 + 20)
+  assert.ok(!output('binary'), 'binary content is not decoded into the journal')
+})
+
 test('A dead command sandbox is explained once', async (t) => {
   const f = await fixture(t)
   const error = 'error executing cascade step: CORTEX_STEP_TYPE_RUN_COMMAND: connecting to sandbox server: read unix @ -> @: recvmsg: connection reset by peer'

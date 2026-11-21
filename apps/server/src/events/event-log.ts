@@ -1,6 +1,6 @@
 import { ThreadProjection } from './thread-projection.js'
 import { EventEmitter } from 'node:events'
-import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, lte, notInArray, sql } from 'drizzle-orm'
 import { conversationPaths, conversations, events, writeTransaction, type Db, type Tx } from '@sillage/db'
 import {
   sillageEventSchema,
@@ -241,9 +241,10 @@ export class EventLog {
     return { uuids, startedToolCallIds, completedToolCallIds, subAgentIds }
   }
 
+  /** Bounded by rows only: callers keep `limit` small. Never reads `raw`, which only native readers need. */
   read(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {
     const rows = this.db
-      .select()
+      .select({ seq: events.seq, ts: events.ts, payload: events.payload })
       .from(events)
       .where(and(eq(events.conversationId, conversationId), gt(events.seq, afterSeq)))
       .orderBy(asc(events.seq))
@@ -251,7 +252,7 @@ export class EventLog {
       .all()
 
     return rows.map((row) => ({
-      conversationId: row.conversationId,
+      conversationId,
       seq: row.seq,
       ts: row.ts,
       event: this.parseStored(row.seq, row.payload),
@@ -262,24 +263,38 @@ export class EventLog {
   readForReplay(
     conversationId: string,
     afterSeq: number,
-    limits: { rows: number; bytes: number; bodies?: boolean; unfiltered?: boolean; throughSeq?: number; onlyTypes?: string[]; maxEventBytes?: number },
-  ): { entries: JournalEntry[]; nextAfter: number } {
+    limits: {
+      rows: number
+      bytes: number
+      bodies?: boolean
+      /** Stored payloads, untouched: for callers whose contract promises complete events, such as the public API. Pages stay bounded in bytes. */
+      stored?: boolean
+      unfiltered?: boolean
+      throughSeq?: number
+      onlyTypes?: string[]
+      exceptTypes?: string[]
+      maxEventBytes?: number
+    },
+  ): { entries: JournalEntry[]; nextAfter: number; cut: boolean } {
     // Returning to an unchanged projected thread needs no historical supersession index.
     const lastSeq = this.db.select({ seq: conversations.lastSeq }).from(conversations).where(eq(conversations.id, conversationId)).get()?.seq ?? 0
-    if (afterSeq >= lastSeq) return { entries: [], nextAfter: afterSeq }
+    if (afterSeq >= lastSeq) return { entries: [], nextAfter: afterSeq, cut: false }
+    const payload = limits.stored ? events.payload : limits.bodies ? bodyPayload : replayPayload
+    const weight = limits.stored ? sql<number>`octet_length(${events.payload})` : limits.bodies ? bodyWeight : replayWeight
     const index = limits.unfiltered ? null : this.supersessionIndex(conversationId)
     const listed = this.db
       .select({
         seq: events.seq,
         type: events.type,
-        bytes: limits.bodies ? bodyWeight : replayWeight,
+        bytes: weight,
         toolCallId: sql<string | null>`case when ${events.type} = 'tool.output_delta'
           then ${events.payload} ->> '$.toolCallId' end`,
       })
       .from(events)
       .where(and(eq(events.conversationId, conversationId), gt(events.seq, afterSeq),
         limits.throughSeq === undefined ? undefined : lte(events.seq, limits.throughSeq),
-        limits.onlyTypes ? inArray(events.type, limits.onlyTypes) : undefined))
+        limits.onlyTypes ? inArray(events.type, limits.onlyTypes) : undefined,
+        limits.exceptTypes ? notInArray(events.type, limits.exceptTypes) : undefined))
       .orderBy(asc(events.seq))
       .limit(limits.rows)
       .all()
@@ -287,13 +302,17 @@ export class EventLog {
     const kept: number[] = []
     let bytes = 0
     let nextAfter = afterSeq
+    let cut = false
     for (const row of listed) {
       if (!index || !isSuperseded(index, row)) {
-        if (kept.length > 0 && bytes + row.bytes > limits.bytes) break
+        if (kept.length > 0 && bytes + row.bytes > limits.bytes) {
+          cut = true
+          break
+        }
         // Export must fail explicitly before a giant message crosses into the daemon heap.
         // Large image/tool rows can still be small after the body projection.
         if (limits.maxEventBytes && row.bytes > limits.maxEventBytes) {
-          const projected = this.db.select({ bytes: sql<number>`octet_length(${limits.bodies ? bodyPayload : replayPayload})` })
+          const projected = this.db.select({ bytes: sql<number>`octet_length(${payload})` })
             .from(events).where(and(eq(events.conversationId, conversationId), eq(events.seq, row.seq))).get()!.bytes
           if (projected > limits.maxEventBytes) throw new RangeError('Replay event exceeds the byte limit.')
         }
@@ -303,10 +322,10 @@ export class EventLog {
       nextAfter = row.seq
     }
 
-    if (kept.length === 0) return { entries: [], nextAfter }
+    if (kept.length === 0) return { entries: [], nextAfter, cut }
 
     const rows = this.db
-      .select({ seq: events.seq, ts: events.ts, payload: limits.bodies ? bodyPayload : replayPayload })
+      .select({ seq: events.seq, ts: events.ts, payload })
       .from(events)
       .where(and(eq(events.conversationId, conversationId), inArray(events.seq, kept)))
       .orderBy(asc(events.seq))
@@ -317,9 +336,10 @@ export class EventLog {
         conversationId,
         seq: row.seq,
         ts: row.ts,
-        event: this.parseStored(row.seq, row.payload, limits.bodies),
+        event: this.parseStored(row.seq, row.payload, limits.bodies && !limits.stored),
       })),
       nextAfter,
+      cut,
     }
   }
 
@@ -412,9 +432,10 @@ export class EventLog {
   }
 
   /** Latest events of selected types, newest first. Replaying entire journals to report present state would pay full-history costs on every call. Recent entries suffice, bounded by `limit`. */
-  latest(conversationId: string, types: string[], limit: number): JournalEntry[] {
+  /** `bodies` serves the lazy projection: images become URLs and large tool bodies previews, for readers that only need the shape of recent events. Never reads `raw`. */
+  latest(conversationId: string, types: string[], limit: number, opts: { bodies?: boolean } = {}): JournalEntry[] {
     const rows = this.db
-      .select()
+      .select({ seq: events.seq, ts: events.ts, payload: opts.bodies ? bodyPayload : events.payload })
       .from(events)
       .where(and(eq(events.conversationId, conversationId), inArray(events.type, types)))
       .orderBy(desc(events.seq))
@@ -422,10 +443,10 @@ export class EventLog {
       .all()
 
     return rows.map((row) => ({
-      conversationId: row.conversationId,
+      conversationId,
       seq: row.seq,
       ts: row.ts,
-      event: this.parseStored(row.seq, row.payload),
+      event: this.parseStored(row.seq, row.payload, opts.bodies),
     }))
   }
 
@@ -542,43 +563,35 @@ export class EventLog {
     return [...live.values()]
   }
 
-  /** Copies journal prefixes into forked conversations. Copy `raw` too because later forks need transcript identifiers (invariant I3). Renumber `seq` from 1 for the new conversation. Without this copy, displayed forks would be empty while agents remember history, violating invariant I2. */
-  copyThrough(fromConversationId: string, toConversationId: string, throughSeq: number): number {
-    const rows = this.db
-      .select()
-      .from(events)
-      .where(and(eq(events.conversationId, fromConversationId), lte(events.seq, throughSeq)))
-      .orderBy(asc(events.seq))
-      .all()
+  /**
+   * Copies journal prefixes into forked conversations. Copy `raw` too because later forks need transcript identifiers (invariant I3). Renumber `seq` from 1 for the new conversation. Without this copy, displayed forks would be empty while agents remember history, violating invariant I2.
+   *
+   * The copy stays inside SQLite: forks are made of long conversations, whose prefix can outweigh the daemon heap, and reading it into JavaScript aborted the process. Pass `tx` to make the copy part of the caller's fork transaction.
+   */
+  copyThrough(fromConversationId: string, toConversationId: string, throughSeq: number, tx?: Tx): number {
+    const copy = (run: Tx) => {
+      run.run(sql`INSERT INTO ${events} (conversation_id, seq, ts, type, payload, raw, raw_format)
+        SELECT ${toConversationId}, row_number() OVER (ORDER BY seq), ts, type, payload, raw, raw_format
+        FROM ${events}
+        WHERE conversation_id = ${fromConversationId} AND seq <= ${throughSeq}
+        ORDER BY seq`)
+      // `octet_length` measures stored UTF-8 like `byteSize`, without reading bodies into the heap.
+      const copied = run.get<{ count: number; bytes: number }>(sql`SELECT count(*) AS count,
+          coalesce(sum(octet_length(payload) + coalesce(octet_length(raw), 0)), 0) AS bytes
+        FROM ${events} WHERE conversation_id = ${toConversationId}`)
+      const count = copied?.count ?? 0
 
-    writeTransaction(this.db, (tx) => {
-      let bytes = 0
-      rows.forEach((row, index) => {
-        bytes += byteSize(row.payload, row.raw)
-        tx.insert(events)
-          .values({
-            conversationId: toConversationId,
-            seq: index + 1,
-            ts: row.ts,
-            type: row.type,
-            payload: row.payload,
-            raw: row.raw,
-            rawFormat: row.rawFormat,
-          })
-          .run()
-      })
-
-      tx.update(conversations)
-        .set({ lastSeq: rows.length, journalBytes: bytes, turnCount: TURN_COUNT })
+      run.update(conversations)
+        .set({ lastSeq: count, journalBytes: copied?.bytes ?? 0, turnCount: TURN_COUNT })
         .where(eq(conversations.id, toConversationId))
         .run()
 
       // Copying bypasses `append`: without this line, forks would remain
       // unfindable in search despite retaining complete thread contents.
-      indexConversation(tx, toConversationId)
-    })
-
-    return rows.length
+      indexConversation(run, toConversationId)
+      return count
+    }
+    return tx ? copy(tx) : writeTransaction(this.db, copy)
   }
 
   /** Latest native payload of a given type through `throughSeq`. Claude forks use transcript cut-point identifiers available only in `raw`. `topLevelOnly` excludes subagent events carrying `parentToolCallId`: their sidechain raw entries target different files. Legacy events without the field remain included. */

@@ -1,6 +1,6 @@
 import { antigravitySkills } from './skills.js'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -30,24 +30,51 @@ interface ClosedTool { update: Record<string, unknown>; isError: boolean }
 
 /** Mirrored file reads stay bounded like the agent's own view. */
 const MIRRORED_READ_MAX_BYTES = 512 * 1024
+/** Bytes read from disk to find the requested lines. The whole file used to be read: an agent viewing a few lines of a log of hundreds of megabytes aborted the daemon on its heap limit. */
+const MIRRORED_READ_SCAN_BYTES = 4 * 1024 * 1024
 
 function outputOf(update: Record<string, unknown>): string {
   const combined = fields(update.rawOutput).combinedOutput
   return typeof update.rawOutput === 'string' ? update.rawOutput : typeof combined === 'string' ? combined : contentText(update.content)
 }
 
-/** The content a view_file showed the model, read again from disk; null when unreadable. Antigravity's line bounds are 1-based and inclusive. */
+/** The content a view_file showed the model, read again from disk; null when unreadable, binary, or when the requested lines lie beyond the scanned prefix. Antigravity's line bounds are 1-based and inclusive. */
 function mirrorRead(raw: unknown): string | null {
   const input = fields(raw)
   if (typeof input.file_path !== 'string') return null
   try {
-    if (!statSync(input.file_path).isFile()) return null
-    let text = readFileSync(input.file_path, 'utf8')
+    const info = statSync(input.file_path)
+    if (!info.isFile()) return null
+    const fd = openSync(input.file_path, 'r')
+    let prefix: Buffer
+    try {
+      prefix = Buffer.alloc(Math.min(info.size, MIRRORED_READ_SCAN_BYTES))
+      prefix = prefix.subarray(0, readSync(fd, prefix, 0, prefix.length, 0))
+    } finally {
+      closeSync(fd)
+    }
+    // A NUL byte means binary content: decoding it would journal garbage, not what the model saw.
+    if (prefix.includes(0)) return null
+    const partial = info.size > prefix.length
+    let text = prefix.toString('utf8')
+    let cut = partial
     const start = Number(input.offset), end = Number(input.end_line)
     if (Number.isFinite(start) || Number.isFinite(end)) {
-      text = text.split('\n').slice(Number.isFinite(start) && start > 0 ? start - 1 : 0, Number.isFinite(end) && end > 0 ? end : undefined).join('\n')
+      const lines = text.split('\n')
+      // Of a partial read, the last line may be incomplete: only the ones before it are whole.
+      const whole = partial ? lines.length - 1 : lines.length
+      const from = Number.isFinite(start) && start > 0 ? start - 1 : 0
+      const to = Number.isFinite(end) && end > 0 ? end : undefined
+      // Lines past the scanned prefix are unknown, which is not the same as empty.
+      if (partial && from >= whole) return null
+      cut = partial && (to === undefined || to > whole)
+      text = lines.slice(from, to).join('\n')
     }
-    return text.length > MIRRORED_READ_MAX_BYTES ? `${text.slice(0, MIRRORED_READ_MAX_BYTES)}\n… (truncated)` : text
+    if (text.length > MIRRORED_READ_MAX_BYTES) {
+      text = text.slice(0, MIRRORED_READ_MAX_BYTES)
+      cut = true
+    }
+    return cut ? `${text}\n… (truncated)` : text
   } catch { return null }
 }
 

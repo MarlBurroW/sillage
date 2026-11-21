@@ -42,6 +42,9 @@ import { taskToDto, taskToSummaryDto } from './task-view.js'
 
 const NOISY = new Set<string>(V1_NOISY_EVENT_TYPES)
 
+/** Byte bound of an events page, like the interface's replay pages. */
+const V1_PAGE_BYTES = 16 * 1024 * 1024
+
 export function registerTaskRoutes(
   app: FastifyInstance,
   ctx: AppContext,
@@ -259,27 +262,31 @@ export function registerTaskRoutes(
     const { token, user } = requireScope(request, 'tasks:read')
     const { id } = request.params as { id: string }
     const query = taskEventsQuerySchema.parse(request.query)
-    loadTaskForToken(ctx, token, user.id, id)
+    const task = loadTaskForToken(ctx, token, user.id, id)
 
     const wanted = query.types
-      ? new Set(query.types.split(',').map((type) => type.trim()).filter(Boolean))
+      ? [...new Set(query.types.split(',').map((type) => type.trim()).filter(Boolean))]
       : null
 
-    // Read a page before filtering it: advance over everything read, otherwise a
-    // verbose conversation would leave callers looping on an unchanged `nextAfter`.
-    // Request one extra entry to determine whether more remain; a full page alone
-    // would incorrectly promise another page whenever the total is an exact multiple.
-    const page = log.read(id, query.after, query.limit + 1)
-    const hasMore = page.length > query.limit
-    const read = hasMore ? page.slice(0, query.limit) : page
-    const kept = read.filter((entry) =>
-      wanted ? wanted.has(entry.event.type) : !NOISY.has(entry.event.type),
-    )
+    // Filter in SQL and bound the page in bytes: a few hundred complete tool events can weigh
+    // more than the daemon heap. Events stay complete, as the API promises; a page holds at
+    // least one, however large. Ask for one extra entry to tell whether more remain: a full
+    // page alone would promise another page whenever the total is an exact multiple.
+    const page = log.readForReplay(id, query.after, {
+      rows: query.limit + 1,
+      bytes: V1_PAGE_BYTES,
+      stored: true,
+      unfiltered: true,
+      ...(wanted ? { onlyTypes: wanted } : { exceptTypes: [...NOISY] }),
+    })
+    const hasMore = page.entries.length > query.limit || page.cut
+    const kept = page.entries.slice(0, query.limit)
 
     const payload: TaskEventsPageDto = {
       taskId: id,
       events: kept.map((entry) => ({ seq: entry.seq, ts: entry.ts, event: entry.event })),
-      nextAfter: read.at(-1)?.seq ?? query.after,
+      // Past everything examined, so a filtered read never loops on an unchanged cursor.
+      nextAfter: kept.at(-1)?.seq ?? (hasMore ? query.after : Math.max(query.after, page.nextAfter, task.lastSeq)),
       hasMore,
     }
     return payload

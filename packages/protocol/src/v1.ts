@@ -199,6 +199,7 @@ export interface TaskEventsPageDto {
   events: { seq: number; ts: number; event: SillageEvent }[]
   /** Cursor to pass as `after` on the next request. */
   nextAfter: number
+  /** Pages are bounded in rows (`limit`) and in bytes (about 16 MiB, at least one event): a page can be shorter than `limit` and still have more. */
   hasMore: boolean
 }
 

@@ -73,7 +73,9 @@ interface Digest {
  * the view bounded instead of replaying the full history on every read.
  */
 function digest(log: EventLog, conversationId: string): Digest {
-  const entries = log.latest(conversationId, DIGEST_TYPES, DIGEST_WINDOW)
+  // Lazy bodies: the digest reads ids, names and message text, never tool outputs or images,
+  // and three hundred complete events could weigh hundreds of megabytes.
+  const entries = log.latest(conversationId, DIGEST_TYPES, DIGEST_WINDOW, { bodies: true })
 
   const completedToolCalls = new Set<string>()
   const resolvedRequests = new Set<string>()

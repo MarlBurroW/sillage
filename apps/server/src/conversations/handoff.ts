@@ -323,15 +323,25 @@ export function buildHandoff(
   }
 }
 
-/** Conversation elements read in pages like conversation replay. */
+/** The only events `collectHandoffItems` folds: filtering in SQL keeps output deltas, usage and the rest off the heap. */
+const HANDOFF_EVENT_TYPES = ['message.completed', 'tool.started', 'tool.completed', 'turn.completed']
+
+/** Conversation elements read in pages like conversation replay. Pages are folded as they arrive: gathering every page first held the whole journal at once, which a long conversation can make larger than the daemon heap. */
 export function readHandoffItems(log: EventLog, conversationId: string, throughSeq = Infinity): HandoffItem[] {
-  const entries: JournalEntry[] = []
+  return collectHandoffItems(handoffEntries(log, conversationId, throughSeq))
+}
+
+function* handoffEntries(log: EventLog, conversationId: string, throughSeq: number): Generator<JournalEntry> {
   let after = 0
   for (;;) {
-    const page = log.readForReplay(conversationId, after, { rows: PAGE_ROWS, bytes: PAGE_BYTES })
-    entries.push(...page.entries.filter((entry) => entry.seq <= throughSeq))
-    if (page.nextAfter === after || page.nextAfter >= throughSeq) break
+    const page = log.readForReplay(conversationId, after, {
+      rows: PAGE_ROWS,
+      bytes: PAGE_BYTES,
+      onlyTypes: HANDOFF_EVENT_TYPES,
+      ...(Number.isFinite(throughSeq) ? { throughSeq } : {}),
+    })
+    yield* page.entries
+    if (page.nextAfter === after || page.nextAfter >= throughSeq) return
     after = page.nextAfter
   }
-  return collectHandoffItems(entries)
 }

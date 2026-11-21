@@ -460,25 +460,31 @@ export function registerConversationRoutes(
       createdAt: now,
       updatedAt: now,
     }
-    ctx.db.insert(conversations).values(row).run()
+    // One transaction: a fork row without its journal shows an empty thread while the agent
+    // remembers the whole history (invariant I2), and nothing would ever fill it in.
+    const copied = writeTransaction(ctx.db, (tx) => {
+      tx.insert(conversations).values(row).run()
 
-    for (const move of moves) ctx.db.insert(conversationProjectMoves).values({
-      ...move, id: randomUUID(), conversationId: row.id, throughSeq: Math.min(move.throughSeq!, body.throughSeq),
-    }).run()
+      for (const move of moves) tx.insert(conversationProjectMoves).values({
+        ...move, id: randomUUID(), conversationId: row.id, throughSeq: Math.min(move.throughSeq!, body.throughSeq),
+      }).run()
 
-    // Without this copy the fork would appear empty while the agent
-    // remembers the entire retained history (invariant I2).
-    const copied = log.copyThrough(id, row.id, body.throughSeq)
+      const count = log.copyThrough(id, row.id, body.throughSeq, tx)
+
+      // Forks of continuations remain continuations: context arrives through the system
+      // prompt on every start and would be lost without a dedicated row.
+      if (portable) {
+        tx.insert(conversationHandoffs).values({ conversationId: row.id, fromConversationId: id, throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens, text: portable.text, createdAt: now }).run()
+      } else if (handoff) {
+        tx.insert(conversationHandoffs).values({ ...handoff, conversationId: row.id }).run()
+      }
+      return count
+    })
     // Copied turn markers must reference the same snapshots.
     await sessions.inheritCheckpoints(id, row.id)
-
-    // Forks of continuations remain continuations: context arrives through the system
-    // prompt on every start and would be lost without a dedicated row.
+    // After the commit: `append` opens its own transaction and broadcasts once it commits.
     if (portable) {
-      ctx.db.insert(conversationHandoffs).values({ conversationId: row.id, fromConversationId: id, throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens, text: portable.text, createdAt: now }).run()
       log.append(row.id, { type: 'agent.notice', code: moves.length ? 'project_move_fork' : 'portable_fork', level: 'info', message: 'This fork receives the retained conversation as portable context.', details: { throughSeq: body.throughSeq, budgetTokens: portable.budgetTokens } })
-    } else if (handoff) {
-      ctx.db.insert(conversationHandoffs).values({ ...handoff, conversationId: row.id }).run()
     }
 
     // Forks inherit card attachment: they explore the same work differently.
