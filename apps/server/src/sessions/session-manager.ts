@@ -102,6 +102,19 @@ interface ManagedRunner {
   loops: number
   /** Reason a runner needs restarting when settings cannot apply live during turns. Restart waits for turn completion; otherwise null. See `reloadConfig`. */
   pendingRestart: string | null
+  /** Identity of this runner's context: see `RunnerLease`. */
+  lease: RunnerLease
+}
+
+/**
+ * Ties a runner's context to that runner rather than to its conversation. A stopped runner keeps
+ * unwinding for a moment (Claude's stream ends after `stop`, then journals `session.ended` and
+ * sets `idle`); when a successor already serves the conversation, those late calls would close
+ * its turn and mark it idle mid-work. Calls are dropped once another lease holds the
+ * conversation. Without a successor they still land: they are what closes the stopped turn.
+ */
+interface RunnerLease {
+  readonly conversationId: string
 }
 
 /** Send deduplication window (invariant I5). See sendMessage(). */
@@ -893,13 +906,19 @@ export class SessionManager {
     }
   }
 
-  private buildContext(conversation: ConversationRow): RunnerContext {
+  private buildContext(conversation: ConversationRow, lease?: RunnerLease): RunnerContext {
     const memoryDirOrNull = (agent: ConversationRow['agent'], dir: string | null, sillageMcp: boolean) =>
       agent !== 'claude' && dir ? memoryAppendixForCodex(dir, sillageMcp, 'project', true, agent !== 'antigravity') : null
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
     const cwd = this.resolveCwd(conversation)
+    // History imports run without a lease: nothing to be superseded by.
+    const superseded = () => {
+      if (!lease) return false
+      const live = this.runners.get(conversationId)
+      return live !== undefined && live.lease !== lease
+    }
     // Reread on every call rather than fix here: modes may change between runner
     // starts and depend on directory contents for legacy projects.
     const instructions = () => {
@@ -1029,6 +1048,7 @@ export class SessionManager {
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SillageEvent, raw?: unknown) => {
+        if (superseded()) return
         const entry = this.log.append(conversationId, event, raw, adapter.rawFormat)
         this.usage?.observe(conversationId, entry, raw)
         if (event.type === 'turn.completed' && conversation.projectId === null && !conversation.benchmarkId) {
@@ -1103,9 +1123,12 @@ export class SessionManager {
         }
       },
 
-      setStatus: (status) => this.setStatus(conversationId, status),
+      setStatus: (status) => {
+        if (!superseded()) this.setStatus(conversationId, status)
+      },
 
       setAgentSessionId: (sessionId) => {
+        if (superseded()) return
         this.db
           .update(conversations)
           .set({ agentSessionId: sessionId })
@@ -1114,6 +1137,7 @@ export class SessionManager {
       },
 
       updateConfig: (config) => {
+        if (superseded()) return
         this.db
           .update(conversations)
           .set({ config: JSON.stringify(config) })
@@ -1171,8 +1195,11 @@ export class SessionManager {
     // Loop rather than stop once: lowering limits through the interface can leave
     // more live runners than available capacity.
     while (this.runners.size >= limit) {
+      // A runner still starting, or about to receive a message, reads as idle: evicting it would
+      // cut a launch in progress.
       const idle = [...this.runners.entries()]
-        .filter(([, managed]) => managed.status === 'idle' || managed.status === 'interrupted')
+        .filter(([id, managed]) => (managed.status === 'idle' || managed.status === 'interrupted') &&
+          !this.startingRunners.has(id) && !this.pendingDeliveries.has(id))
         .sort((a, b) => a[1].lastActivity - b[1].lastActivity)
 
       const oldest = idle[0]
@@ -1213,7 +1240,8 @@ export class SessionManager {
     const fresh = this.loadConversation(conversationId)
     // Last guard before spawning: queued deliveries outlive the check made when they were accepted.
     this.assertCliEnabled(fresh.agent)
-    const context = this.buildContext(fresh)
+    const lease: RunnerLease = { conversationId }
+    const context = this.buildContext(fresh, lease)
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
 
     this.runners.set(conversationId, {
@@ -1224,6 +1252,7 @@ export class SessionManager {
       background: 0,
       loops: 0,
       pendingRestart: null,
+      lease,
     })
 
     try {
@@ -1231,10 +1260,16 @@ export class SessionManager {
     } catch (err) {
       // Failed starts must not occupy live slots; otherwise later sends would retry
       // nonexistent processes.
-      this.runners.delete(conversationId)
+      if (this.runners.get(conversationId)?.lease === lease) this.runners.delete(conversationId)
       this.clearActivity(conversationId)
       await runner.stop().catch(() => undefined)
       throw err
+    }
+    // Stopped while it was starting (terminate, a deletion): its entry is gone, and a runner
+    // nobody tracks would keep a CLI alive that no interrupt, reaper or shutdown can reach.
+    if (this.runners.get(conversationId)?.lease !== lease) {
+      await runner.stop().catch(() => undefined)
+      throw new Error('The session was stopped while its CLI was starting.')
     }
     return runner
   }
@@ -1893,7 +1928,9 @@ export class SessionManager {
     this.closeDetachedWork(conversationId, managed.loops > 0)
 
     // Runner expiry does not change status: broadcast cold state or interfaces
-    // would keep showing nonexistent warm sessions.
+    // would keep showing nonexistent warm sessions. Unless a successor already serves the
+    // conversation (a configuration restart, a project move): it owns the status now.
+    if (this.runners.has(conversationId)) return
     this.broadcastStatus(conversationId, managed.status, false)
   }
 
