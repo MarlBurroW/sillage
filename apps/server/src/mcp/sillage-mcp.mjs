@@ -1,4 +1,5 @@
 /** Sillage MCP server exposes platform knowledge unavailable to CLIs. Each CLI conversation starts without knowledge of previous conversations, whereas Sillage retains their journals and project board; these tools expose that memory and state within the current project. Any session can edit project cards and relations without attachment; notes retain work history while descriptions hold current requirements. Content and relation edits go through the daemon to share interface validation. Inter-session messages are only deposited here: this process holds a database, no runners; the daemon delivers them by steering or waking recipients (`apps/server/src/sessions/session-relay.ts`). Keep this as `.mjs`, like probes, rather than compiled TypeScript: CLIs launch it directly, and excluding it from the server module graph prevents accidental imports from bundling half the app. Its only dependency is existing `better-sqlite3`. Reads use the database directly, read-only, avoiding HTTP tokens and ports; the environment carries scope, never secrets. This is convenience rather than a security boundary because agents already have shell and disk access. Conversation mode is project-scoped and acts as that session. Manual launches without `SILLAGE_MCP_PROJECT` are global (`docs/mcp.md`): tools accept `project`, `list_projects` lists projects, and writes use `SILLAGE_MCP_USER` rather than a session. Session-only messaging, watches and decisions are omitted. */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -11,18 +12,27 @@ const DB_PATH = process.env.SILLAGE_MCP_DB
 const GLOBAL = !process.env.SILLAGE_MCP_PROJECT
 /** In-app personal sessions retain their identity while targeting accessible projects. */
 const PERSONAL = GLOBAL && process.env.SILLAGE_MCP_PERSONAL === '1'
-/** Served project: fixed for conversation-mode processes, set from each tool call's `project` parameter in global mode. Serialize calls to prevent interference. */
-let PROJECT_ID = process.env.SILLAGE_MCP_PROJECT ?? ''
+/** Served project of conversation-mode processes; empty in global mode, where each call names its own. */
+const HOME_PROJECT_ID = process.env.SILLAGE_MCP_PROJECT ?? ''
 // Keep the reference prefix aligned with packages/protocol/src/session-references.ts.
 const sessionReference = (id) => `session:${id}`
 /** Exclude from results so agents do not reread themselves and loop. */
 const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
 /** Project memory directory shared with Claude automatic memory. In global mode, `SILLAGE_MCP_MEMORY` identifies the memory root (default `memory/` beside the database, like the daemon), and each call selects its project's directory. */
-let MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
+const HOME_MEMORY_DIR = GLOBAL ? '' : (process.env.SILLAGE_MCP_MEMORY ?? '')
 const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
-/** Conversation-mode project and memory, restored after each call that targeted another project. */
-const HOME_PROJECT_ID = PROJECT_ID
-const HOME_MEMORY_DIR = MEMORY_DIR
+/**
+ * Project and memory directory of the tool call being handled. Each call starts from the home
+ * ones and may switch to another project (global mode, cross-project tools) for itself only.
+ * Held per call rather than in module variables: those forced every call to wait for the previous
+ * one, so a 100 s `wait_for_session` stalled unrelated reads, and callers timed out on a healthy
+ * server.
+ */
+const callScopes = new AsyncLocalStorage()
+const outsideCalls = { projectId: HOME_PROJECT_ID, memoryDir: HOME_MEMORY_DIR }
+function callScope() {
+  return callScopes.getStore() ?? outsideCalls
+}
 const MEMORY_ROOT = GLOBAL && DB_PATH ? (PERSONAL ? process.env.SILLAGE_MCP_MEMORY_ROOT : process.env.SILLAGE_MCP_MEMORY) || join(dirname(DB_PATH), 'memory') : ''
 /** Global write identity: configured username or the database's sole account. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
@@ -1176,19 +1186,19 @@ function globalTools() {
   ]
 }
 
-/** Global call project set in `PROJECT_ID` and `MEMORY_DIR`, or rejection returned unchanged. Resolve by ID, exact name, then unique approximate name; guessing between two would write to the wrong project. */
+/** Global call project set in `callScope().projectId` and `callScope().memoryDir`, or rejection returned unchanged. Resolve by ID, exact name, then unique approximate name; guessing between two would write to the wrong project. */
 function selectProject(name, args) {
   if (name === 'list_projects') return null
   if (PERSONAL && (['rename_session', 'create_project', 'continue_in_project'].includes(name) || (PERSONAL_DEFAULT_TOOLS.has(name) && !args?.project))) {
-    PROJECT_ID = ''
-    MEMORY_DIR = join(MEMORY_ROOT, 'users', USER.id)
+    callScope().projectId = ''
+    callScope().memoryDir = join(MEMORY_ROOT, 'users', USER.id)
     return null
   }
   const wanted = typeof args?.project === 'string' ? args.project.trim() : ''
   if (!wanted) {
     if (name === 'count_active_sessions' || (PROJECT_OPTIONAL_TOOLS.has(name) && (args?.scope === 'global' || (PERSONAL && args?.scope !== 'project')))) {
-      PROJECT_ID = ''
-      MEMORY_DIR = ''
+      callScope().projectId = ''
+      callScope().memoryDir = ''
       return null
     }
     return { ...text('The `project` parameter is required: a project name or ID from list_projects.'), isError: true }
@@ -1208,8 +1218,8 @@ function selectProject(name, args) {
       isError: true,
     }
   }
-  PROJECT_ID = found[0].id
-  MEMORY_DIR = join(MEMORY_ROOT, 'projects', PROJECT_ID)
+  callScope().projectId = found[0].id
+  callScope().memoryDir = join(MEMORY_ROOT, 'projects', callScope().projectId)
   return null
 }
 
@@ -1284,11 +1294,11 @@ function selectCrossProject(name, args) {
       isError: true,
     }
   }
-  PROJECT_ID = found[0].id
-  const mode = db.prepare('SELECT memory_mode AS mode FROM projects WHERE id = ?').get(PROJECT_ID)?.mode
+  callScope().projectId = found[0].id
+  const mode = db.prepare('SELECT memory_mode AS mode FROM projects WHERE id = ?').get(callScope().projectId)?.mode
   // Project memory directories are siblings under the memory root; a native-memory project has none.
   const root = HOME_MEMORY_DIR ? dirname(dirname(HOME_MEMORY_DIR)) : join(dirname(DB_PATH), 'memory')
-  MEMORY_DIR = mode === 'native' ? '' : join(root, 'projects', PROJECT_ID)
+  callScope().memoryDir = mode === 'native' ? '' : join(root, 'projects', callScope().projectId)
   return null
 }
 
@@ -1296,7 +1306,7 @@ function selectCrossProject(name, args) {
 function elsewhereHint(id) {
   if (GLOBAL || !id) return ''
   const bare = id.replace(/^session:/, '').trim()
-  const row = db.prepare('SELECT project_id AS projectId FROM conversations WHERE id = ? AND project_id IS NOT NULL AND project_id != ?').get(bare, PROJECT_ID)
+  const row = db.prepare('SELECT project_id AS projectId FROM conversations WHERE id = ? AND project_id IS NOT NULL AND project_id != ?').get(bare, callScope().projectId)
   const project = row && visibleProjects().find((entry) => entry.id === row.projectId)
   if (!project) return ''
   return crossProjectsOpen()
@@ -1347,7 +1357,7 @@ const clock = (ts) => new Date(ts).toTimeString().slice(0, 5)
 /** Projects work_log covers: the targeted one, or without `project` every project this session may reach (plus personal discussions outside a project session). */
 function workLogScope(args) {
   const named = typeof args?.project === 'string' && args.project.trim() !== ''
-  if (PROJECT_ID && (named || (GLOBAL && !PERSONAL))) return { projects: [PROJECT_ID], personal: false, note: '' }
+  if (callScope().projectId && (named || (GLOBAL && !PERSONAL))) return { projects: [callScope().projectId], personal: false, note: '' }
   if (GLOBAL) return { projects: visibleProjects().map((row) => row.id), personal: PERSONAL, note: '' }
   if (crossProjectsOpen()) return { projects: visibleProjects().map((row) => row.id), personal: false, note: '' }
   return { projects: [HOME_PROJECT_ID], personal: false, note: `Only this project is listed. ${CROSS_PROJECTS_OFF}` }
@@ -1481,9 +1491,9 @@ function toMatchQuery(input) {
 /** Project conversations with matching messages. Retain only each conversation's highest-ranked message because agents seek conversations to open, not isolated messages; overfetch SQL results then trim. Read server-maintained `search_messages` (`apps/server/src/search/search-index.ts`), a derived index rather than authority, repairable with `pnpm search:reindex`. */
 /** Bound visibility in SQL before selecting transcripts or search excerpts. */
 function conversationScope(alias = 'c') {
-  return PERSONAL && !PROJECT_ID
+  return PERSONAL && !callScope().projectId
     ? { sql: `((${alias}.project_id IS NULL AND ${alias}.user_id = ?) OR ${alias}.project_id IN (SELECT id FROM projects WHERE owner_id = ? OR visibility = 'shared'))`, args: [USER.id, USER.id] }
-    : { sql: `${alias}.project_id = ?`, args: [PROJECT_ID] }
+    : { sql: `${alias}.project_id = ?`, args: [callScope().projectId] }
 }
 
 function searchHistory(query, limit) {
@@ -1632,7 +1642,7 @@ function broadcast(body) {
       `SELECT c.id AS id FROM conversations AS c
        WHERE c.project_id = ? AND c.id != ? AND c.archived_at IS NULL AND ${WORKING}`,
     )
-    .all(PROJECT_ID, CURRENT_CONVERSATION)
+    .all(callScope().projectId, CURRENT_CONVERSATION)
   if (targets.length === 0) return 0
 
   const insert = writeDb().prepare(
@@ -1642,7 +1652,7 @@ function broadcast(body) {
   )
   const now = Date.now()
   writeDb().transaction(() => {
-    for (const target of targets) insert.run(randomUUID(), PROJECT_ID, CURRENT_CONVERSATION, target.id, body, now)
+    for (const target of targets) insert.run(randomUUID(), callScope().projectId, CURRENT_CONVERSATION, target.id, body, now)
   })()
   return targets.length
 }
@@ -1661,7 +1671,7 @@ function watch(target) {
       `INSERT INTO session_watches (id, project_id, watcher_conversation_id, target_conversation_id, created_at)
        VALUES (?, ?, ?, ?, ?)`,
     )
-    .run(randomUUID(), PROJECT_ID, CURRENT_CONVERSATION, target, Date.now())
+    .run(randomUUID(), callScope().projectId, CURRENT_CONVERSATION, target, Date.now())
   return true
 }
 
@@ -1691,7 +1701,7 @@ function oldestOutsideWindow({ path, byName, withinMinutes }) {
         : `e.payload ->> '$.path' = ?`,
   ].filter(Boolean)
 
-  const params = [PROJECT_ID, CURRENT_CONVERSATION]
+  const params = [callScope().projectId, CURRENT_CONVERSATION]
   if (worktree !== undefined) params.push(worktree)
   params.push(Date.now() - withinMinutes * 60_000)
   if (path !== null) params.push(path)
@@ -1740,7 +1750,7 @@ function queryEdits({ path, byName, withinMinutes }) {
         : `e.payload ->> '$.path' = ?`,
   ].filter(Boolean)
 
-  const params = [PROJECT_ID, CURRENT_CONVERSATION]
+  const params = [callScope().projectId, CURRENT_CONVERSATION]
   if (worktree !== undefined) params.push(worktree)
   params.push(Date.now() - withinMinutes * 60_000)
   if (path !== null) params.push(path)
@@ -1785,7 +1795,7 @@ function countActiveSessions() {
        FROM conversations AS c
        WHERE c.archived_at IS NULL`,
     )
-    .get(PROJECT_ID)
+    .get(callScope().projectId)
 
   const self = db
     .prepare(`SELECT 1 AS yes FROM conversations AS c WHERE c.id = ? AND ${WORKING}`)
@@ -1934,7 +1944,7 @@ function listCards(column, tag) {
                 c.position
        LIMIT ?`,
     )
-    .all(PROJECT_ID, column, column, tag ? -1 : CARD_LIMIT + 1)
+    .all(callScope().projectId, column, column, tag ? -1 : CARD_LIMIT + 1)
   const tags = cardTagsOf(rows.map((row) => row.id))
   for (const row of rows) row.tags = tags.get(row.id) ?? []
   if (!tag) return rows
@@ -1971,8 +1981,8 @@ function tagCatalog() {
                 (SELECT COUNT(*) FROM card_tag_links AS l WHERE l.tag_id = t.id) AS cards
          FROM card_tags AS t WHERE t.project_id = ? ORDER BY t.name_key`,
       )
-      .all(PROJECT_ID)
-    const project = db.prepare('SELECT agent_card_tags AS open FROM projects WHERE id = ?').get(PROJECT_ID)
+      .all(callScope().projectId)
+    const project = db.prepare('SELECT agent_card_tags AS open FROM projects WHERE id = ?').get(callScope().projectId)
     return { tags, open: Boolean(project?.open ?? 1) }
   } catch {
     return { tags: [], open: true }
@@ -1997,7 +2007,7 @@ function listActions() {
        WHERE project_id = ?
        ORDER BY created_at`,
     )
-    .all(PROJECT_ID)
+    .all(callScope().projectId)
 }
 
 function renderActions(actions) {
@@ -2021,7 +2031,7 @@ function readCard(number) {
       `SELECT id, number, title, column, description, created_at AS createdAt
        FROM cards WHERE project_id = ? AND number = ?`,
     )
-    .get(PROJECT_ID, number)
+    .get(callScope().projectId, number)
   if (!card) return null
 
   card.sessions = db
@@ -2062,7 +2072,7 @@ function readCard(number) {
     `SELECT r.source_id AS sourceId, r.kind, c.number, c.title, c.column
      FROM card_relations r JOIN cards c ON c.id = CASE WHEN r.source_id = ? THEN r.target_id ELSE r.source_id END
      WHERE (r.source_id = ? OR r.target_id = ?) AND c.project_id = ? ORDER BY c.number`
-  ).all(card.id, card.id, card.id, PROJECT_ID).map(r => ({
+  ).all(card.id, card.id, card.id, callScope().projectId).map(r => ({
     ...r, label: labels[r.kind]?.[r.sourceId === card.id ? 0 : 1] ?? r.kind,
   }))
 
@@ -2082,7 +2092,7 @@ function boardLink() {
         `SELECT repo, new_cards AS newCards, identity, signature
          FROM board_links WHERE project_id = ?`,
       )
-      .get(PROJECT_ID) ?? null
+      .get(callScope().projectId) ?? null
   )
 }
 
@@ -2109,7 +2119,7 @@ function describeBoardLink(link) {
 
 /** Card handled by the current conversation, if any. None while a call targets another project: that card belongs to the home board. */
 function currentCard() {
-  if (PROJECT_ID !== HOME_PROJECT_ID) return null
+  if (callScope().projectId !== HOME_PROJECT_ID) return null
   return (
     db
       .prepare(
@@ -2180,7 +2190,7 @@ function moveCard(cardId, column) {
   const db = writeDb()
   const { last } = db
     .prepare('SELECT MAX(position) AS last FROM cards WHERE project_id = ? AND "column" = ?')
-    .get(PROJECT_ID, column)
+    .get(callScope().projectId, column)
   db.prepare('UPDATE cards SET "column" = ?, position = ?, updated_at = ? WHERE id = ?').run(
     column,
     (last ?? 0) + 1,
@@ -2198,14 +2208,14 @@ function setProjectImage(mimeType, data, provisional) {
          mime_type = excluded.mime_type, data = excluded.data,
          provisional = excluded.provisional, updated_at = excluded.updated_at`,
     )
-    .run(PROJECT_ID, mimeType, data, provisional ? 1 : 0, Date.now())
+    .run(callScope().projectId, mimeType, data, provisional ? 1 : 0, Date.now())
 }
 
 /** Project instruction mode. Must match `resolveInstructionsMode` in `apps/server/src/instructions/store.ts`: projects predating this setting follow repositories when instruction files exist. */
 function projectInstructionsMode() {
   const project = db
     .prepare('SELECT instructions_mode AS mode, workspace_path AS path FROM projects WHERE id = ?')
-    .get(PROJECT_ID)
+    .get(callScope().projectId)
   if (!project) return { mode: 'repo', chosen: true }
   if (project.mode) return { mode: project.mode, chosen: true }
   const hasFile = REPO_INSTRUCTION_FILES.some((name) => {
@@ -2224,9 +2234,9 @@ function projectInstructionsMode() {
  * twin of `assertScopeWriter` in `apps/server/src/http/scope-access.ts`, with which it must agree.
  */
 function actingAccountOwnsProject() {
-  if (!PROJECT_ID) return false
+  if (!callScope().projectId) return false
   const actor = USER?.id ?? (CURRENT_CONVERSATION ? db.prepare('SELECT user_id AS userId FROM conversations WHERE id = ?').get(CURRENT_CONVERSATION)?.userId : null)
-  const owner = db.prepare('SELECT owner_id AS ownerId FROM projects WHERE id = ?').get(PROJECT_ID)?.ownerId
+  const owner = db.prepare('SELECT owner_id AS ownerId FROM projects WHERE id = ?').get(callScope().projectId)?.ownerId
   return Boolean(actor) && actor === owner
 }
 
@@ -2277,7 +2287,7 @@ function saveInstructions(projectId, transform, fixMode) {
     if (fixMode) {
       write
         .prepare(`UPDATE projects SET instructions_mode = 'sillage' WHERE id = ? AND instructions_mode IS NULL`)
-        .run(PROJECT_ID)
+        .run(callScope().projectId)
     }
     return { content: result }
   })()
@@ -2285,7 +2295,7 @@ function saveInstructions(projectId, transform, fixMode) {
 
 /** Requested scope or rejection returned unchanged. `writing` distinguishes globally readable sections, matching the interface. */
 function instructionsTarget(args, writing) {
-  const scope = args?.scope === 'global' || (PERSONAL && !PROJECT_ID) ? 'global' : 'project'
+  const scope = args?.scope === 'global' || (PERSONAL && !callScope().projectId) ? 'global' : 'project'
   if (scope === 'global') {
     if (writing && !(USER ? Boolean(USER.admin) : conversationOwnerIsAdmin())) {
       return {
@@ -2309,7 +2319,7 @@ function instructionsTarget(args, writing) {
         "This project's SILLAGE.md section belongs to the project owner, and this session runs for another account. Tell the user: the owner can record the instruction, here or in the project page.",
     }
   }
-  return { scope, projectId: PROJECT_ID, fixMode: !chosen }
+  return { scope, projectId: callScope().projectId, fixMode: !chosen }
 }
 
 const scopeLabel = (scope) => (scope === 'global' ? 'global section' : 'project section')
@@ -2318,7 +2328,7 @@ const scopeLabel = (scope) => (scope === 'global' ? 'global section' : 'project 
 function memoryFiles() {
   let names = []
   try {
-    names = readdirSync(MEMORY_DIR)
+    names = readdirSync(callScope().memoryDir)
   } catch {
     return []
   }
@@ -2329,7 +2339,7 @@ function memoryFiles() {
 
 function readMemoryFile(file) {
   try {
-    return readFileSync(join(MEMORY_DIR, file), 'utf8')
+    return readFileSync(join(callScope().memoryDir, file), 'utf8')
   } catch {
     return null
   }
@@ -2349,7 +2359,7 @@ function indexNote(file, content) {
   const name = frontmatterField(content, 'name') ?? file.replace(/\.md$/, '')
   const description = frontmatterField(content, 'description')
   const line = `- [${name}](${file})${description ? ` — ${description}` : ''}`
-  writeFileSync(join(MEMORY_DIR, MEMORY_INDEX), index.trimEnd() ? `${index.trimEnd()}\n${line}\n` : `${line}\n`)
+  writeFileSync(join(callScope().memoryDir, MEMORY_INDEX), index.trimEnd() ? `${index.trimEnd()}\n${line}\n` : `${line}\n`)
   return true
 }
 
@@ -2364,7 +2374,7 @@ function peerConversation(id) {
          FROM conversations AS c
          WHERE c.id = ? AND c.project_id = ?`,
       )
-      .get(id, PROJECT_ID) ?? null
+      .get(id, callScope().projectId) ?? null
   )
 }
 
@@ -2376,7 +2386,7 @@ function sendSessionMessage({ to, body, replyTo }) {
          (id, project_id, from_conversation_id, to_conversation_id, body, reply_to, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, PROJECT_ID, CURRENT_CONVERSATION, to, body, replyTo, Date.now())
+    .run(id, callScope().projectId, CURRENT_CONVERSATION, to, body, replyTo, Date.now())
   return id
 }
 
@@ -2647,7 +2657,7 @@ const text = (value) => ({ content: [{ type: 'text', text: value }] })
 function listMcpServers() {
   const rows = db
     .prepare('SELECT id, name, enabled, transport, project_id AS projectId FROM mcp_servers WHERE project_id IS NULL OR project_id = ? ORDER BY project_id IS NULL DESC, name')
-    .all(PROJECT_ID || '')
+    .all(callScope().projectId || '')
   let selected = new Set()
   if (CURRENT_CONVERSATION) {
     const row = db.prepare('SELECT config FROM conversations WHERE id = ?').get(CURRENT_CONVERSATION)
@@ -2690,7 +2700,7 @@ async function requestDaemon(kind, payload) {
       `INSERT INTO agent_requests (id, project_id, conversation_id, user_id, kind, payload, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, PROJECT_ID || null, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify({ ...payload, __apiTokenId: API_TOKEN_ID || undefined }), Date.now())
+    .run(id, callScope().projectId || null, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify({ ...payload, __apiTokenId: API_TOKEN_ID || undefined }), Date.now())
 
   const read = db.prepare('SELECT settled_at, result, is_error FROM agent_requests WHERE id = ?')
   const deadline = Date.now() + (REQUEST_WAIT_OVERRIDE_MS ?? REQUEST_WAIT_MS[kind])
@@ -2734,7 +2744,7 @@ function targetCard(args) {
   if (number === null) return null
   const card = db
     .prepare('SELECT id, number, title FROM cards WHERE project_id = ? AND number = ?')
-    .get(PROJECT_ID, number)
+    .get(callScope().projectId, number)
   return card ?? null
 }
 
@@ -2763,7 +2773,7 @@ function sessionRow(id) {
          FROM conversations AS c LEFT JOIN worktrees AS w ON w.id = c.worktree_id
          WHERE c.id = ? AND c.project_id = ? AND c.archived_at IS NULL`,
       )
-      .get(id, PROJECT_ID) ?? null
+      .get(id, callScope().projectId) ?? null
   )
 }
 
@@ -2863,7 +2873,7 @@ async function callTool(name, args) {
   if (name === 'move_session') return requestDaemon(name, args ?? {})
   if (PERSONAL && !db.prepare('SELECT id FROM conversations WHERE id = ? AND user_id = ? AND project_id IS NULL').get(CURRENT_CONVERSATION, USER.id)) return { ...text('The personal discussion no longer exists.'), isError: true }
   if (PERSONAL && PERSONAL_TOOLS.some(tool => tool.name === name)) return requestDaemon(name, args ?? {})
-  if (PERSONAL && !PROJECT_ID && (name === 'write_memory' || name === 'delete_memory')) return requestDaemon(name === 'write_memory' ? 'write_personal_memory' : 'delete_personal_memory', args ?? {})
+  if (PERSONAL && !callScope().projectId && (name === 'write_memory' || name === 'delete_memory')) return requestDaemon(name === 'write_memory' ? 'write_personal_memory' : 'delete_personal_memory', args ?? {})
 
   if (name === 'list_projects') {
     if (GLOBAL) return text(renderProjects(listProjects()))
@@ -3010,7 +3020,7 @@ async function callTool(name, args) {
     }
     const card = db
       .prepare('SELECT id, number, title, "column" AS column FROM cards WHERE project_id = ? AND number = ?')
-      .get(PROJECT_ID, target.number)
+      .get(callScope().projectId, target.number)
     if (!card) {
       return {
         ...text(`No card #${target.number} in this project. Use list_cards to see available cards.`),
@@ -3121,7 +3131,7 @@ async function callTool(name, args) {
     if (!peer && !GLOBAL) {
       peer = replyPeer(to)
       // Filed under the recipient's project, like any message it receives.
-      if (peer) PROJECT_ID = peer.projectId
+      if (peer) callScope().projectId = peer.projectId
     }
     if (!peer) {
       return {
@@ -3307,17 +3317,17 @@ async function callTool(name, args) {
   }
 
   if (name === 'read_memory' || name === 'write_memory' || name === 'delete_memory') {
-    if (!MEMORY_DIR) return { ...text('Memory is unavailable in this session.'), isError: true }
+    if (!callScope().memoryDir) return { ...text('Memory is unavailable in this session.'), isError: true }
     const file = typeof args?.file === 'string' ? args.file.trim() : ''
 
     if (name === 'read_memory') {
       if (!file) {
         const files = memoryFiles()
-        if (files.length === 0) return text(`Memory is empty (${MEMORY_DIR}).`)
+        if (files.length === 0) return text(`Memory is empty (${callScope().memoryDir}).`)
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `${PERSONAL && !PROJECT_ID ? 'Personal' : 'Project'} memory in ${MEMORY_DIR}:`,
+            `${PERSONAL && !callScope().projectId ? 'Personal' : 'Project'} memory in ${callScope().memoryDir}:`,
             index ? `${MEMORY_INDEX}:\n\n${index.trim()}` : `No ${MEMORY_INDEX}.`,
             `Notes: ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'none'}.`,
           ].join('\n\n'),
@@ -3337,12 +3347,12 @@ async function callTool(name, args) {
 
     if (name === 'delete_memory') {
       if (readMemoryFile(file) === null) return { ...text(`No note “${file}”.`), isError: true }
-      rmSync(join(MEMORY_DIR, file), { force: true })
+      rmSync(join(callScope().memoryDir, file), { force: true })
       if (file !== MEMORY_INDEX) {
         const index = readMemoryFile(MEMORY_INDEX)
         if (index !== null) {
           const kept = index.split('\n').filter((line) => !line.includes(`](${file})`))
-          writeFileSync(join(MEMORY_DIR, MEMORY_INDEX), kept.join('\n'))
+          writeFileSync(join(callScope().memoryDir, MEMORY_INDEX), kept.join('\n'))
         }
       }
       return text(`Note “${file}” removed from memory.`)
@@ -3352,8 +3362,8 @@ async function callTool(name, args) {
     if (args.content.length > MAX_MEMORY_FILE_CHARS) {
       return { ...text(`Note too long (${args.content.length} characters, maximum ${MAX_MEMORY_FILE_CHARS}).`), isError: true }
     }
-    mkdirSync(MEMORY_DIR, { recursive: true })
-    writeFileSync(join(MEMORY_DIR, file), args.content)
+    mkdirSync(callScope().memoryDir, { recursive: true })
+    writeFileSync(join(callScope().memoryDir, file), args.content)
     const indexed = file !== MEMORY_INDEX && indexNote(file, args.content)
     return text(
       `Note “${file}” written to project memory${indexed ? ` and added to ${MEMORY_INDEX}` : ''}. Future sessions across CLIs will see it.`,
@@ -3408,10 +3418,8 @@ async function callTool(name, args) {
   return { ...text(`Unknown tool: ${name}`), isError: true }
 }
 
-log(GLOBAL ? `ready, global mode, account=${USER.username}` : `ready, project=${PROJECT_ID}`)
+log(GLOBAL ? `ready, global mode, account=${USER.username}` : `ready, project=${callScope().projectId}`)
 
-/** Serialize tool calls. Calls are normally fast and CLIs seldom overlap them, but global projects are process state: interleaved calls on different projects would write into each other's project. */
-let calls = Promise.resolve()
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
   if (!line.trim()) return
@@ -3448,13 +3456,15 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       ? personalTools()
       : GLOBAL
       ? globalTools()
-      : [LIST_PROJECTS, ...projectTools(TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (MEMORY_DIR || !MEMORY_TOOLS.has(tool.name))))]
+      : [LIST_PROJECTS, ...projectTools(TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (callScope().memoryDir || !MEMORY_TOOLS.has(tool.name))))]
     send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
     return
   }
 
   if (msg.method === 'tools/call') {
-    calls = calls.then(async () => {
+    // Concurrent: each call has its own project scope, so a slow call (waiting on a session or
+    // on the daemon) no longer holds the others back.
+    void callScopes.run({ projectId: HOME_PROJECT_ID, memoryDir: HOME_MEMORY_DIR }, async () => {
       const name = msg.params?.name
       const args = msg.params?.arguments ?? {}
       let result
@@ -3467,10 +3477,6 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         // protocol errors provide no useful guidance.
         log(`tool ${name} failed: ${err.message}`)
         result = { ...text(`Tool call failed: ${err.message}`), isError: true }
-      }
-      if (!GLOBAL) {
-        PROJECT_ID = HOME_PROJECT_ID
-        MEMORY_DIR = HOME_MEMORY_DIR
       }
       send({ jsonrpc: '2.0', id: msg.id, result })
     })

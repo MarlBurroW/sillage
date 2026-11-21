@@ -75,6 +75,10 @@ class McpSession {
       waiting.resolve(message)
     })
     createInterface({ input: child.stderr! }).on('line', (line) => log.debug({ mcpSession: this.id }, line))
+    // A child that fails to spawn, or a write to a closing stdin (EPIPE), must not become an
+    // uncaught exception: the exit handler below already answers whatever was pending.
+    child.on('error', (err) => log.warn({ err, mcpSession: this.id }, 'MCP server process error'))
+    child.stdin?.on('error', (err) => log.debug({ err, mcpSession: this.id }, 'MCP server stdin closed'))
     child.on('exit', (code) => {
       this.closed = true
       for (const [id, waiting] of this.pending) {
