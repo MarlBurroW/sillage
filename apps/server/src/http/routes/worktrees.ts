@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { and, count, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -15,8 +14,7 @@ import {
   type WorktreeDto,
   type WorktreeStatusListDto,
 } from '@sillage/protocol'
-import { GitError, addWorktree, readGitStatus, removeWorktree } from '../../git.js'
-import type { TerminalManager } from '../../terminals/terminal-manager.js'
+import { GitError, addWorktree, readGitStatus } from '../../git.js'
 import type { WorktreeCleanup } from '../../worktrees/cleanup.js'
 import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 import type { AppContext } from '../context.js'
@@ -27,7 +25,6 @@ import { requireUser } from '../require-user.js'
 export function registerWorktreeRoutes(
   app: FastifyInstance,
   ctx: AppContext,
-  terminals: TerminalManager,
   worktreeStatus: WorktreeStatusService,
   cleanup: WorktreeCleanup,
 ): void {
@@ -172,51 +169,6 @@ export function registerWorktreeRoutes(
     worktreeStatus.forget(project.id)
 
     return reply.status(201).send(await toDto(row))
-  })
-
-  app.delete('/api/worktrees/:id', async (request, reply) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    const force = (request.query as { force?: string }).force === '1'
-
-    const row = ctx.db.select().from(worktrees).where(eq(worktrees.id, id)).get()
-    if (!row || row.removedAt) throw notFound('worktree_not_found', 'Worktree not found.')
-
-    const project = loadProject(row.projectId, user.id)
-    if (project.ownerId !== user.id) {
-      throw forbidden('worktree_delete_forbidden', 'Only the project owner can delete a worktree.')
-    }
-
-    // Deleting loses uncommitted work: disclose this and require explicit confirmation
-    // rather than deciding for the user.
-    const status = await readGitStatus(row.path)
-    if (status?.isDirty && !force) {
-      throw conflict(
-        'worktree_dirty',
-        'Worktree {name} has uncommitted changes.',
-        { name: row.name },
-      )
-    }
-
-    // Shells whose directory is about to disappear have no purpose: close them before
-    // removing it rather than leave them running in a deleted cwd.
-    terminals.closeForCwd(row.path)
-
-    try {
-      await removeWorktree(project.workspacePath, row.path, force)
-    } catch (err) {
-      if (!(err instanceof GitError)) throw err
-      // The directory may have disappeared outside Sillage: still clean up its record
-      // rather than leave an undeletable ghost entry.
-      await rm(row.path, { recursive: true, force: true }).catch(() => {})
-    }
-
-    // Attached conversations become read-only rather than being deleted:
-    // their history remains available.
-    ctx.db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, id)).run()
-    worktreeStatus.forget(project.id)
-
-    return reply.status(204).send()
   })
 }
 

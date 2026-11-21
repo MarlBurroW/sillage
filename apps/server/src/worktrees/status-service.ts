@@ -193,10 +193,12 @@ export class WorktreeStatusService {
         // `git worktree remove` (or pruned) outside Sillage, typically an agent tidying up.
         // Record the removal rather than flag a tree nobody can act on. `missing` stays for
         // directories that vanished while git still lists them, the one state worth attention.
-        // An empty git list means git failed, not that every tree is gone: leave rows alone.
+        // `listWorktrees` throws when git fails, so this list is git's real answer.
         this.recordRemoval(project.id, row)
       } else {
-        unified.set(row.path, { id: row.id, name: row.name, path: row.path, branch: null, head: null, prunable: true })
+        // The directory is still there but git no longer lists it: not `prunable`, which would
+        // read as "already gone" and let cleanup delete whatever it holds.
+        unified.set(row.path, { id: row.id, name: row.name, path: row.path, branch: null, head: null, prunable: false })
       }
     }
 

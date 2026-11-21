@@ -17,6 +17,9 @@ import { scanServiceProcesses, stopServiceProcess, type ServiceProcess } from '.
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import type { WorktreeStatusService } from './status-service.js'
 
+/** Git's answer for a path it does not track as a worktree (`fatal: '…' is not a working tree`). */
+const NOT_A_WORKTREE = /is not a working tree/i
+
 /** One-step worktree cleanup: stop its processes, archive sessions, remove tree and branch. Separate planning from execution so nothing disappears silently: confirmation shows the plan, then execution repeats discovery rather than trusting potentially stale lists. */
 export class WorktreeCleanup {
   private readonly origins: ProcessOrigins
@@ -182,8 +185,9 @@ export class WorktreeCleanup {
     try {
       await removeWorktree(project.workspacePath, tree.path, true)
     } catch (err) {
-      if (!(err instanceof GitError)) throw err
-      // Git no longer knows this database-only entry: remove just its directory.
+      // Delete the directory ourselves only when git says it does not know it (a database-only
+      // entry). Any other failure, a timeout or a locked tree, is no proof the work is elsewhere.
+      if (!(err instanceof GitError) || !NOT_A_WORKTREE.test(err.message)) throw err
       if (await stat(tree.path).then((s) => s.isDirectory()).catch(() => false)) {
         await rm(tree.path, { recursive: true, force: true })
       }

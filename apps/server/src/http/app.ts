@@ -295,7 +295,7 @@ export async function buildApp(
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerAntigravityAccountRoutes(app, antigravityAccounts.store, antigravityLogin)
-  registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
+  registerWorktreeRoutes(app, ctx, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments, board)
   registerBoardLinkRoutes(app, ctx, board)
   registerUserRoutes(app, ctx)

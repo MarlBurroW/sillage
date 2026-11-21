@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { lstat, stat } from 'node:fs/promises'
+import { lstat, readdir, stat } from 'node:fs/promises'
 import { join, posix, win32 } from 'node:path'
 import type { WorktreeFileDto, WorktreeState } from '@sillage/protocol'
 
@@ -63,16 +63,28 @@ export interface WorktreeEntry {
   prunable: boolean
 }
 
-/** Git-known worktrees, main tree first. Empty outside repositories. */
-export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
-  let raw: string
-  try {
-    raw = await out(repo, ['worktree', 'list', '--porcelain', '-z'])
-  } catch {
-    return []
+/** Git could not list the trees of a repository: a timeout, git missing from PATH, a damaged repository. */
+export class WorktreeListError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorktreeListError'
   }
+}
 
-  return parseWorktreeList(raw)
+/**
+ * Git-known worktrees, main tree first. Empty outside repositories, a normal case since projects
+ * may target any directory. Any other failure throws: an empty list used to read as "every tree
+ * is gone", and cleanup then deleted directories that still held work.
+ */
+export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
+  const listed = await git(repo, ['worktree', 'list', '--porcelain', '-z']).catch((err: unknown) => {
+    throw new WorktreeListError(`git worktree list failed: ${err instanceof Error ? err.message : String(err)}`)
+  })
+  if (listed.code === 0) return parseWorktreeList(listed.stdout)
+
+  const repository = await git(repo, ['rev-parse', '--git-dir']).catch(() => null)
+  if (repository && repository.code !== 0) return []
+  throw new WorktreeListError(`git worktree list answered ${listed.code}`)
 }
 
 /** NUL mode preserves accented characters and newlines in paths. Git uses forward slashes even on Windows, whereas Sillage stores node:path paths; normalize to native format before comparing. */
@@ -174,6 +186,23 @@ const MISSING: WorktreeAssessment = {
   fingerprint: null,
   commitsInBase: false,
   ownCommits: null,
+}
+
+/**
+ * A directory that exists but that git cannot describe: a database entry git no longer lists
+ * (its administrative files were removed), or no base to compare with. Nothing proves its files
+ * are elsewhere, so it reads as uncommitted work, which cleanup and unforced removal refuse.
+ * Its top-level entries are listed so the user can recognise it.
+ */
+async function unassessed(path: string): Promise<WorktreeAssessment> {
+  const names = await readdir(path).catch(() => [] as string[])
+  const visible = names.filter((name) => name !== '.git').sort()
+  return {
+    ...MISSING,
+    state: 'dirty',
+    untracked: visible.length,
+    files: visible.slice(0, MAX_FILES_LISTED).map((name) => ({ path: name, kind: 'untracked' as const })),
+  }
 }
 
 /** Tree the base would have after receiving `ref`, and whether merging succeeds. With `mergeBase`, merge a specific delta from `mergeBase` to `ref` rather than full history, allowing stash assessment when its commit has only HEAD as parent. */
@@ -293,9 +322,11 @@ export async function assessWorktree(
   /** Forces the pre-git-2.40 path in tests; otherwise inferred from installed version. */
   options: { legacyGit?: boolean; mergedHead?: boolean } = {},
 ): Promise<WorktreeAssessment> {
-  if (entry.prunable || !entry.head) return MISSING
+  // `missing` lets cleanup delete without asking, so it requires the directory to be gone.
+  if (entry.prunable) return MISSING
   const dir = await stat(entry.path).catch(() => null)
   if (!dir?.isDirectory()) return MISSING
+  if (!entry.head) return unassessed(entry.path)
 
   const [baseTree, counts, lastCommit, status] = await Promise.all([
     line(repo, ['rev-parse', `${base}^{tree}`]),

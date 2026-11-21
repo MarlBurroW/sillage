@@ -10,7 +10,7 @@ import { cards, conversationPaths, conversations, openDatabase, projects, runMig
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { EventLog } from '../src/events/event-log.js'
 import { touchedPaths } from '../src/events/touched-paths.js'
-import { assessWorktree, defaultBase, listWorktrees, parseWorktreeList } from '../src/worktrees/assess.js'
+import { assessWorktree, defaultBase, listWorktrees, parseWorktreeList, WorktreeListError } from '../src/worktrees/assess.js'
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
@@ -355,6 +355,80 @@ test('introuvable : dossier disparu, entrée prunable', async (t) => {
   assert.ok(entry?.prunable)
   assert.equal((await assessWorktree(repo, 'main', entry)).state, 'missing')
   assert.equal((await assessWorktree(repo, 'main', { path: join(trees, 'nowhere'), head: null, prunable: false })).state, 'missing')
+})
+
+test('a git failure is not an empty list, and cleanup then deletes nothing', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-failure-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const project = db.select().from(projects).get()!
+  const work = addTree(repo, trees, 'feat/work')
+  db.insert(worktrees).values({ id: 'wt-work', projectId: 'project', name: 'feat/work', path: work, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
+  write(work, 'src/wip.ts', 'export const wip = 1\n')
+
+  const status = new WorktreeStatusService(db, new EventLog(db))
+  const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => {})
+  assert.equal((await status.current(project)).worktrees.find((tree) => tree.path === work)?.state, 'dirty')
+
+  // Only `git worktree list` fails, as when it times out under memory pressure: every other
+  // git call still works, so the base is found and the trees get assessed.
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim()
+  const shim = join(dir, 'bin')
+  mkdirSync(shim)
+  writeFileSync(join(shim, 'git'), `#!/bin/sh\nif [ "$1" = worktree ] && [ "$2" = list ]; then exit 128; fi\nexec ${real} "$@"\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${shim}:${path}`
+  try {
+    await assert.rejects(listWorktrees(repo), WorktreeListError)
+    // It used to read as "no tree left": every tree became `missing`, and cleanup removed it.
+    status.invalidate(project.id)
+    await assert.rejects(cleanup.runMany(project, { paths: [work], deleteBranch: true, archiveSessions: false, stopServices: false }))
+  } finally {
+    process.env.PATH = path
+  }
+  assert.ok(existsSync(join(work, 'src/wip.ts')), 'uncommitted work survives')
+  assert.equal(db.select().from(worktrees).where(sqlEq(worktrees.id, 'wt-work')).get()?.removedAt, null)
+  // Outside a repository the list is still legitimately empty.
+  assert.deepEqual(await listWorktrees(dir), [])
+})
+
+test('a directory git no longer lists reads as uncommitted work, not as missing', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-unlisted-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const project = db.select().from(projects).get()!
+  // A tree whose administrative files git lost, still holding files.
+  const orphan = addTree(repo, trees, 'feat/orphan')
+  write(orphan, 'notes.md', 'precious\n')
+  rmSync(join(repo, '.git', 'worktrees', 'feat__orphan'), { recursive: true, force: true })
+  db.insert(worktrees).values({ id: 'wt-orphan', projectId: 'project', name: 'feat/orphan', path: orphan, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
+
+  const status = new WorktreeStatusService(db, new EventLog(db))
+  const tree = (await status.current(project)).worktrees.find((entry) => entry.path === orphan)!
+  assert.equal(tree.state, 'dirty')
+  assert.ok(tree.files.some((file) => file.path === 'notes.md'))
+
+  const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => {})
+  const bulk = await cleanup.runMany(project, { paths: [orphan], deleteBranch: true, archiveSessions: false, stopServices: false })
+  assert.deepEqual(bulk.items.map((item) => [item.outcome, item.outcome === 'skipped' ? item.reason : null]), [['skipped', 'changed']])
+  assert.ok(existsSync(join(orphan, 'notes.md')))
+
+  // Removing it on purpose still works: git says it is not a working tree, so the directory goes.
+  const removed = (await cleanup.run(project, { path: orphan, deleteBranch: false, archiveSessions: false, stopServices: false }))!
+  assert.equal(removed.removed, true)
+  assert.ok(!existsSync(orphan))
 })
 
 test('la liste de git : arbre principal en tête, branche et HEAD détachée', async (t) => {

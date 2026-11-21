@@ -675,7 +675,6 @@ GET    /api/projects/:id/branches           git branch --list
 GET    /api/projects/:id/files              ?q=&worktreeId=  mention autocomplete
 GET    /api/projects/:id/worktrees
 POST   /api/projects/:id/worktrees          { name, baseRef }
-DELETE /api/worktrees/:id                   { force?: boolean }
 
 GET    /api/conversations                   all visible conversations
 GET    /api/projects/:id/conversations      ?archived=
