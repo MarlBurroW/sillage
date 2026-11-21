@@ -35,6 +35,7 @@ import type {
   QuestionAnswer,
   RunnerContext,
 } from '../types.js'
+import { TurnLifecycle } from '../turn-lifecycle.js'
 import { PendingInteractions } from '../interactions.js'
 import { failedStatuses } from '../mcp-registry.js'
 import { describeOutgoingMessage } from '../outgoing.js'
@@ -121,14 +122,13 @@ export class OpencodeRunner implements AgentRunner {
   private readonly children = new Map<string, string | null>()
   private readonly noticed = new Set<string>()
 
-  private turnActive = false
-  private turn = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+  private readonly turn: TurnLifecycle
+  private usage = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   private turnAborted = false
   private turnFailed = false
   /** Compaction announced but not closed. */
   private compacting = false
   private lastAssistantMessageId: string | null = null
-  private interruptWatchdog: NodeJS.Timeout | null = null
 
   /** Context windows per provider/model, read at launch. */
   private readonly contextLimits = new Map<string, number>()
@@ -149,6 +149,7 @@ export class OpencodeRunner implements AgentRunner {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as OpencodeConfig
     this.interactions = new PendingInteractions(ctx)
+    this.turn = new TurnLifecycle(ctx, this.interactions)
   }
 
   private launchConfig(config: OpencodeConfig): { launch: Config; servers: McpServer[]; failures: McpServerStatus[] } {
@@ -283,8 +284,7 @@ export class OpencodeRunner implements AgentRunner {
    */
   private onProcessExit(code: number | null): void {
     this.server = null
-    this.turnActive = false
-    this.clearInterruptWatchdog()
+    this.turn.abandon()
 
     // Death during startup: session never existed, start fails and manager reports. Journaling here
     // would end a conversation that never started.
@@ -307,7 +307,7 @@ export class OpencodeRunner implements AgentRunner {
       const statuses = await this.server.get<ResponseBody<'session.status'>>('/session/status')
       // Idle sessions are absent from table, not marked idle.
       const status = statuses[this.sessionId]
-      if (this.turnActive && (!status || status.type === 'idle')) this.endTurn()
+      if (this.turn.open && (!status || status.type === 'idle')) this.endTurn()
     } catch {
       // Reconnected stream reports subsequent events.
     }
@@ -408,7 +408,7 @@ export class OpencodeRunner implements AgentRunner {
         if (!requestId) return
         this.settledNatively.add(event.properties.requestID)
         this.interactions.expire(requestId)
-        if (this.turnActive) this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'running')
+        if (this.turn.open) this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'running')
         return
       }
 
@@ -448,13 +448,11 @@ export class OpencodeRunner implements AgentRunner {
   }
 
   private beginTurn(): void {
-    if (this.turnActive) return
-    this.turnActive = true
+    if (this.turn.open) return
     this.turnAborted = false
     this.turnFailed = false
-    this.turn = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-    this.ctx.emit({ type: 'turn.started' })
-    this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'running')
+    this.usage = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+    this.turn.begin()
   }
 
   /**
@@ -464,35 +462,29 @@ export class OpencodeRunner implements AgentRunner {
    * without permission.replied. Close everything here without waiting further.
    */
   private endTurn(): void {
-    if (!this.turnActive) return
-    this.turnActive = false
-    this.clearInterruptWatchdog()
-
-    for (const id of [...this.openParts.keys()]) this.closePart(id)
-    for (const id of [...this.tools.keys()]) {
-      this.tools.delete(id)
-      boundedAdd(this.closedTools, id)
-      this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution aborted', isError: true, durationMs: 0 })
-    }
-    for (const native of this.nativeRequests.keys()) this.settledNatively.add(native)
-    this.interactions.expireAll()
-    this.compacting = false
-
-    this.ctx.emit(
-      {
-        type: 'turn.completed',
-        stopReason: this.turnAborted ? 'interrupted' : this.turnFailed ? 'failed' : 'completed',
-        costUsd: this.turn.cost,
-        inputTokens: this.turn.input,
-        outputTokens: this.turn.output,
-        cacheReadTokens: this.turn.cacheRead,
-        cacheCreationTokens: this.turn.cacheWrite,
+    const closed = this.turn.end({
+      stopReason: this.turnAborted ? 'interrupted' : this.turnFailed ? 'failed' : 'completed',
+      usage: {
+        costUsd: this.usage.cost,
+        inputTokens: this.usage.input,
+        outputTokens: this.usage.output,
+        cacheReadTokens: this.usage.cacheRead,
+        cacheCreationTokens: this.usage.cacheWrite,
       },
       // Last turn message provides fork cut.
-      { sessionID: this.sessionId, messageID: this.lastAssistantMessageId },
-    )
-    this.ctx.setStatus('idle')
-    if (this.reloadPending) void this.reloadInstance()
+      raw: { sessionID: this.sessionId, messageID: this.lastAssistantMessageId },
+      close: () => {
+        for (const id of [...this.openParts.keys()]) this.closePart(id)
+        for (const id of [...this.tools.keys()]) {
+          this.tools.delete(id)
+          boundedAdd(this.closedTools, id)
+          this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution aborted', isError: true, durationMs: 0 })
+        }
+        for (const native of this.nativeRequests.keys()) this.settledNatively.add(native)
+        this.compacting = false
+      },
+    })
+    if (closed && this.reloadPending) void this.reloadInstance()
   }
 
   private reportError(error: SessionError | undefined, raw: unknown): void {
@@ -673,11 +665,11 @@ export class OpencodeRunner implements AgentRunner {
   /** Model step ends with usage. input excludes cache: context occupancy sums all three. */
   private onStepFinish(part: PartOf<'step-finish'>, model: string | null): void {
     const { tokens } = part
-    this.turn.cost += part.cost
-    this.turn.input += tokens.input
-    this.turn.output += tokens.output + tokens.reasoning
-    this.turn.cacheRead += tokens.cache.read
-    this.turn.cacheWrite += tokens.cache.write
+    this.usage.cost += part.cost
+    this.usage.input += tokens.input
+    this.usage.output += tokens.output + tokens.reasoning
+    this.usage.cacheRead += tokens.cache.read
+    this.usage.cacheWrite += tokens.cache.write
 
     const used = tokens.input + tokens.cache.read + tokens.cache.write
     const limit = model ? this.contextLimits.get(model) : undefined
@@ -827,7 +819,7 @@ export class OpencodeRunner implements AgentRunner {
     try {
       await this.server.post(`/session/${this.sessionId}/prompt_async`, this.promptBody(promptText, attachments, mentions))
     } catch (error) {
-      if (!this.turnActive && this.server) this.ctx.setStatus('idle')
+      if (!this.turn.open && this.server) this.ctx.setStatus('idle')
       throw error
     }
   }
@@ -852,7 +844,7 @@ export class OpencodeRunner implements AgentRunner {
         message: err instanceof Error ? err.message : String(err),
         recoverable: true,
       })
-      if (!this.turnActive) this.ctx.setStatus('idle')
+      if (!this.turn.open) this.ctx.setStatus('idle')
     })
   }
 
@@ -863,7 +855,7 @@ export class OpencodeRunner implements AgentRunner {
    * step inside same busy → idle interval.
    */
   async steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<boolean> {
-    if (!this.server || !this.sessionId || !this.turnActive) return false
+    if (!this.server || !this.sessionId || !this.turn.open) return false
 
     const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     await this.server.post(`/session/${this.sessionId}/prompt_async`, this.promptBody(promptText, attachments, mentions))
@@ -885,7 +877,7 @@ export class OpencodeRunner implements AgentRunner {
         if (!this.server) return
         this.compacting = false
         this.notice('compaction_failed', `La compaction a échoué : ${err instanceof Error ? err.message : String(err)}`, 'warning')
-        if (!this.turnActive) this.ctx.setStatus('idle')
+        if (!this.turn.open) this.ctx.setStatus('idle')
       })
     return true
   }
@@ -911,7 +903,7 @@ export class OpencodeRunner implements AgentRunner {
    * would kill active turns, so wait for idle.
    */
   async reloadSkillLibrary(): Promise<void> {
-    if (this.turnActive) {
+    if (this.turn.open) {
       this.reloadPending = true
       return
     }
@@ -952,29 +944,21 @@ export class OpencodeRunner implements AgentRunner {
   async interrupt(): Promise<void> {
     // No active turn means nothing to interrupt, but action remains escape hatch: falsely busy
     // conversations must become idle.
-    if (!this.server || !this.sessionId || !this.turnActive) {
-      this.interactions.expireAll()
-      this.ctx.setStatus('idle')
+    if (!this.server || !this.sessionId || !this.turn.open) {
+      this.turn.settleWithoutTurn()
       return
     }
     await this.server.post(`/session/${this.sessionId}/abort`)
 
     // session.idle authoritative closure; fallback covers missing event.
-    this.clearInterruptWatchdog()
-    this.interruptWatchdog = setTimeout(() => {
+    this.turn.armWatchdog(INTERRUPT_GRACE_MS, () => {
       this.turnAborted = true
       this.endTurn()
-    }, INTERRUPT_GRACE_MS)
-    this.interruptWatchdog.unref()
-  }
-
-  private clearInterruptWatchdog(): void {
-    if (this.interruptWatchdog) clearTimeout(this.interruptWatchdog)
-    this.interruptWatchdog = null
+    })
   }
 
   async stop(): Promise<void> {
-    this.clearInterruptWatchdog()
+    this.turn.dispose()
     // Server leaves with its requests: no need deny individually.
     const server = this.server
     this.server = null

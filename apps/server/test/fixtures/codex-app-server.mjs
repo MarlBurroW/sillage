@@ -68,6 +68,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       break
     }
     case 'turn/interrupt':
+      // `silent`: a wedged app-server that never answers; `ack`: answers but never closes the turn.
+      if (process.env.FIXTURE_INTERRUPT === 'silent') break
+      if (process.env.FIXTURE_INTERRUPT === 'ack') { send({ id, result: {} }); break }
       if (turn) notify('turn/completed', { threadId: 'root', turn: { ...turn, status: 'interrupted' } })
       send({ id, result: {} })
       break

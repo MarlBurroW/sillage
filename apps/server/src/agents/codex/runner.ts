@@ -107,8 +107,6 @@ type ExperimentalTurnStartParams = TurnStartParams & {
  * Deliberately ignored internal or redundant notifications already covered by item/completed. Keep
  * a named list rather than silent default branches so unknown notifications remain visible.
  */
-/** Time allowed for interrupted CLI turns to close before forcing idle. */
-const INTERRUPT_GRACE_MS = 15_000
 
 /**
  * Translate messages and attachments for app-server; shared modules produce journal blocks. Codex
@@ -173,6 +171,8 @@ function toQuestions(params: ToolRequestUserInputParams): AgentQuestion[] {
 }
 
 export class CodexRunner implements AgentRunner {
+  /** Time allowed for an interrupted turn to close before it is closed for the CLI; tests shorten it. */
+  static interruptGraceMs = 15_000
   readonly conversationId: string
 
   private client: CodexAppServerClient | null = null
@@ -482,6 +482,7 @@ export class CodexRunner implements AgentRunner {
     // Sub-agents cut off mid-turn still consumed what they reported.
     for (const id of this.subAgentUsage.unsettled()) this.settleSubAgent(id)
     this.client = null
+    const cut = this.turnId !== null
     this.turnId = null
     this.clearInterruptWatchdog()
 
@@ -491,6 +492,15 @@ export class CodexRunner implements AgentRunner {
     // and error state for a conversation that never started.
     if (!this.threadId) return
 
+    if (cut) {
+      // What was streamed stays readable, and what the dead turn consumed is still counted:
+      // `session.ended` closes the turn but carries neither.
+      this.closeCutAnswers(null)
+      const usage = this.turnUsage.finish()
+      if (usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens > 0) {
+        this.ctx.emit({ type: 'usage.consumed', model: this.config.model ?? null, costUsd: 0, ...usage })
+      }
+    }
     this.interactions.expireAll()
     this.asyncQuestions.expireAll()
     // Update status before journaling so rejected writes cannot leave a
@@ -732,8 +742,6 @@ export class CodexRunner implements AgentRunner {
         this.completedTurns.add(p.turn.id)
         if (this.completedTurns.size > 64) this.completedTurns.delete(this.completedTurns.values().next().value!)
         if (this.turnId && this.turnId !== p.turn.id) return
-        this.turnId = null
-        this.clearInterruptWatchdog()
         // Failed turns carry causes. Exhausted quota previously stopped conversations
         // silently because turn.completed alone says no more
         // than a successful completion.
@@ -748,21 +756,7 @@ export class CodexRunner implements AgentRunner {
         // Close those prompts when the turn ends.
         this.expireTurnRequests(p.threadId, p.turn.id)
         if (p.turn.status !== 'completed') this.asyncQuestions.expireAll()
-        // Fallback: interrupted replies without steering close before the turn's
-        // completion event, preserving their position within the same logged turn.
-        this.closeCutAnswers(p)
-        this.ctx.emit(
-          {
-            type: 'turn.completed',
-            stopReason: p.turn.status,
-            // App-server reports no cost, unbilled on subscriptions anyway:
-            // inventing one is worse than omission.
-            costUsd: 0,
-            ...this.turnUsage.finish(),
-          },
-          p,
-        )
-        this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'idle')
+        this.endTurn(p.turn.status, p)
         return
       }
 
@@ -860,6 +854,23 @@ export class CodexRunner implements AgentRunner {
 
   private notice(code: string, message: string, level: 'info' | 'warning', details?: unknown, id?: string): void {
     this.ctx.emit({ type: 'agent.notice', id, code, message, level, details }, { method: code, params: details })
+  }
+
+  /**
+   * The one way a turn ends, whether Codex reports it or the interrupt fallback gives up on it:
+   * replies cut mid-stream are kept as messages, usage is counted, `turn.completed` is journaled.
+   */
+  private endTurn(stopReason: string, raw: unknown): void {
+    if (this.turnId) this.completedTurns.add(this.turnId)
+    if (this.completedTurns.size > 64) this.completedTurns.delete(this.completedTurns.values().next().value!)
+    this.turnId = null
+    this.clearInterruptWatchdog()
+    // Interrupted replies without steering close before the turn's completion event,
+    // preserving their position within the same logged turn.
+    this.closeCutAnswers(raw)
+    // App-server reports no cost, unbilled on subscriptions anyway: inventing one is worse than omission.
+    this.ctx.emit({ type: 'turn.completed', stopReason, costUsd: 0, ...this.turnUsage.finish() }, raw)
+    this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'idle')
   }
 
   private beginTurn(id: string): void {
@@ -1413,22 +1424,39 @@ export class CodexRunner implements AgentRunner {
       return
     }
     const interrupted = this.turnId
-    await this.client.call('turn/interrupt', { threadId: this.threadId, turnId: this.turnId })
+    const client = this.client
 
-    // Do not set idle here: app-server sends authoritative turn/completed.
+    // Do not set idle on the reply: app-server sends authoritative turn/completed.
     // Announcing earlier would flush queued messages while interrupted turns
     // still finish. The fallback covers completions that never arrive,
     // such as unanswered approval requests; otherwise conversations
     // would stay busy until idle timeout and subsequent messages
-    // would queue needlessly.
+    // would queue needlessly. Armed before asking: the request itself can
+    // go unanswered, and nothing else would close the turn.
     this.clearInterruptWatchdog()
     this.interruptWatchdog = setTimeout(() => {
+      this.interruptWatchdog = null
       if (this.turnId !== interrupted) return
-      this.turnId = null
       this.interactions.expireAll()
-      this.ctx.setStatus('idle')
-    }, INTERRUPT_GRACE_MS)
+      this.endTurn('interrupted', null)
+    }, CodexRunner.interruptGraceMs)
     this.interruptWatchdog.unref()
+
+    try {
+      await client.call('turn/interrupt', { threadId: this.threadId, turnId: interrupted })
+    } catch (err) {
+      // An RPC error is an answer (the turn had already ended, for one): the watchdog stays in charge.
+      if (err instanceof CodexRpcError || this.client !== client) return
+      // No answer within the request timeout: the app-server is wedged and would hang the next
+      // turn/start the same way. Close the turn, then retire the process like a crash, so the
+      // next message starts a fresh one on the same thread.
+      if (this.turnId === interrupted) {
+        this.interactions.expireAll()
+        this.endTurn('interrupted', null)
+      }
+      client.close()
+      this.onProcessExit(null)
+    }
   }
 
   private clearInterruptWatchdog(): void {

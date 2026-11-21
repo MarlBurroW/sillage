@@ -24,7 +24,6 @@ export type CodexParams<M extends CodexMethod> = Extract<ClientRequest, { method
  * transcription.
  */
 
-const REQUEST_TIMEOUT_MS = 30_000
 
 /** Preserve RPC codes: CLI rejection is not transport failure. */
 export class CodexRpcError extends Error {
@@ -57,6 +56,8 @@ export interface CodexClientOptions {
 }
 
 export class CodexAppServerClient {
+  /** How long a call waits for its answer; tests shorten it. */
+  static requestTimeoutMs = 30_000
   private readonly child: ChildProcessWithoutNullStreams
   private readonly reader: Interface
   private readonly pending = new Map<number, PendingCall>()
@@ -187,7 +188,7 @@ export class CodexAppServerClient {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         reject(new Error(`Délai dépassé sur ${method}.`))
-      }, REQUEST_TIMEOUT_MS)
+      }, CodexAppServerClient.requestTimeoutMs)
 
       this.pending.set(id, {
         resolve: resolve as (value: unknown) => void,

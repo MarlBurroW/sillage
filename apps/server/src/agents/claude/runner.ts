@@ -83,8 +83,6 @@ const IGNORED_SUBTYPES = new Set(['session_state_changed'])
  */
 const THINKING_TOKENS_STEP = 100
 
-/** Time allowed for CLI to close turns suspected of producing no `result`. See `armTurnWatchdog`. */
-const TURN_CLOSE_GRACE_MS = 15_000
 
 /**
  * Plan-approval continuations. IDs are Claude permission modes proposed/revalidated by this
@@ -153,6 +151,8 @@ interface TaskOutputReader {
 }
 
 export class ClaudeRunner implements AgentRunner {
+  /** Time allowed for CLI to close turns suspected of producing no `result`; tests shorten it. See `armTurnWatchdog`. */
+  static turnCloseGraceMs = 15_000
   readonly conversationId: string
 
   private readonly input = new AsyncQueue<SDKUserMessage>()
@@ -414,7 +414,7 @@ export class ClaudeRunner implements AgentRunner {
         cacheReadTokens: 0,
       })
       this.ctx.setStatus('idle')
-    }, TURN_CLOSE_GRACE_MS)
+    }, ClaudeRunner.turnCloseGraceMs)
     this.turnWatchdog.unref()
   }
 
@@ -424,11 +424,17 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   private translate(message: SDKMessage): void {
-    this.clearTurnWatchdog()
-
-    // Any CLI work message opens a turn: these three types carry agent text, tools, results.
-    if (message.type === 'stream_event' || message.type === 'assistant' || message.type === 'user') {
-      this.openTurn()
+    // A sub-agent speaking says nothing about the main turn: a background agent keeps streaming
+    // after the main `result`, and once interrupted a sub-agent can still flush. Opening a turn for
+    // it left one that no `result` would close; disarming the watchdog for it kept an interrupted
+    // turn open as long as the sub-agent talked.
+    const subAgent = 'parent_tool_use_id' in message && message.parent_tool_use_id != null
+    if (!subAgent) {
+      this.clearTurnWatchdog()
+      // Any CLI work message opens a turn: these three types carry agent text, tools, results.
+      if (message.type === 'stream_event' || message.type === 'assistant' || message.type === 'user') {
+        this.openTurn()
+      }
     }
 
     switch (message.type) {

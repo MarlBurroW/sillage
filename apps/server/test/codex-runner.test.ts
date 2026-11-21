@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_CODEX_CONFIG, sillageEventSchema } from '@sillage/protocol'
 import { CodexRunner } from '../src/agents/codex/runner.js'
+import { CodexAppServerClient } from '../src/agents/codex/app-server-client.js'
 import { runnerFixture, asyncMessage, context, done, fixture, itemEvent } from './codex-support.js'
 
 test('session references reach CLI sends and steering without changing the journal text', async t => {
@@ -290,6 +291,47 @@ test('une réponse coupée sans item/completed est close avant la fin du tour', 
   // Ordinary CLI-completed messages close only once.
   await f.emit([itemEvent(answer('whole', ''), 'item/started'), delta('whole', 'ok'), itemEvent(answer('whole', 'ok')), done('turn-2')])
   assert.equal(f.events.filter((event) => event.type === 'message.completed' && event.messageId === 'whole').length, 1)
+})
+
+/** Starts a runner on a fixture whose `turn/interrupt` misbehaves, with a reply cut mid-stream. */
+async function interruptedFixture(t: import('node:test').TestContext, mode: 'ack' | 'silent') {
+  const transport = await fixture(t)
+  const state = context({ ...transport, processEnv: { FIXTURE_INTERRUPT: mode } })
+  const runner = new CodexRunner(state.ctx)
+  transport.onClose(() => runner.stop())
+  await runner.start()
+  await runner.send(`fixture:${JSON.stringify({ notifications: [itemEvent(answer('cut', ''), 'item/started'), delta('cut', 'partiel')] })}`, [], [], [])
+  return { ...state, runner }
+}
+
+const kinds = (events: { type: string }[]) => events.map((event) => event.type === 'message.completed' ? 'message.completed' : event.type)
+
+test('an interrupt Codex acknowledges but never completes still closes the turn in the journal', async (t) => {
+  const grace = CodexRunner.interruptGraceMs
+  CodexRunner.interruptGraceMs = 50
+  t.after(() => { CodexRunner.interruptGraceMs = grace })
+  const f = await interruptedFixture(t, 'ack')
+  await f.runner.interrupt()
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  const types = kinds(f.events)
+  const completed = f.events.filter((event) => event.type === 'turn.completed')
+  assert.deepEqual(completed.map((event) => event.type === 'turn.completed' && event.stopReason), ['interrupted'])
+  // The streamed text is kept as a message, inside the turn.
+  assert.ok(types.indexOf('message.completed') !== -1 && types.indexOf('message.completed') < types.indexOf('turn.completed'))
+  assert.equal(f.statuses.at(-1), 'idle')
+})
+
+test('an interrupt Codex never answers closes the turn and retires the wedged process', async (t) => {
+  const timeout = CodexAppServerClient.requestTimeoutMs
+  CodexAppServerClient.requestTimeoutMs = 50
+  t.after(() => { CodexAppServerClient.requestTimeoutMs = timeout })
+  const f = await interruptedFixture(t, 'silent')
+  await f.runner.interrupt()
+  const types = kinds(f.events)
+  assert.ok(types.indexOf('turn.completed') !== -1 && types.indexOf('turn.completed') < types.indexOf('session.ended'))
+  assert.ok(f.events.some((event) => event.type === 'error' && event.code === 'runner_failed'))
+  assert.equal(f.statuses.at(-1), 'error')
+  for (const event of f.events) sillageEventSchema.parse(event)
 })
 
 for (const resumeSessionId of [null, 'existing-thread']) {

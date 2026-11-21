@@ -23,6 +23,7 @@ import { persistAntigravityArtifacts, prepareAntigravityResume, rememberAntigrav
 import { antigravityArgs } from './launch.js'
 import { configOption, optionsOf } from './catalog.js'
 import { describeAntigravityTool } from './tools.js'
+import { TurnLifecycle } from '../turn-lifecycle.js'
 
 interface ToolTrack { update: Record<string, unknown>; input: string; output: string; diffs: AcpDiff[]; settle: NodeJS.Timeout | null }
 /** Frame closed during the current turn: Google may re-announce or re-close it. */
@@ -92,8 +93,7 @@ export class AntigravityRunner implements AgentRunner {
   static readSettleMs = 3_000
   private early: [string, unknown][] | null = []
   private open: { id: string; kind: 'text' | 'thinking'; text: string } | null = null
-  private active = false
-  private watchdog: NodeJS.Timeout | null = null
+  private readonly turn: TurnLifecycle
   private commands = new Set<string>()
   private suggested: string | null = null
   private launchedMcp = ''
@@ -117,6 +117,7 @@ export class AntigravityRunner implements AgentRunner {
     this.config = ctx.config as AntigravityConfig
     this.sessionId = ctx.resumeSessionId
     this.interactions = new PendingInteractions(ctx)
+    this.turn = new TurnLifecycle(ctx, this.interactions)
   }
   get appliedConfig(): AgentConfig { return this.config }
 
@@ -141,8 +142,7 @@ export class AntigravityRunner implements AgentRunner {
       onExit: (code) => {
         if (this.client !== client) return
         this.client = null
-        this.clearWatchdog()
-        this.active = false
+        this.turn.abandon()
         this.interactions.expireAll()
         this.ctx.setStatus('error')
         journalDeath(this.ctx, { type: 'error', code: 'runner_failed', message: `Antigravity stopped unexpectedly (${code ?? 'unknown'}).`, recoverable: true })
@@ -234,8 +234,8 @@ export class AntigravityRunner implements AgentRunner {
       this.closeText()
       this.endTurn({ stopReason: 'end_turn' }, null)
       this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks: [{ type: 'text', text: String(fields(update.content).text ?? '') }], parentToolCallId: null }, params)
-      this.active = true
-      this.ctx.emit({ type: 'turn.started' })
+      // Replayed history: the turn is journaled, the conversation is not working.
+      this.turn.begin({ status: false })
     } else if (kind !== 'user_message_chunk') this.notice(String(kind), `Antigravity: ${String(kind)}`, params)
   }
 
@@ -386,7 +386,7 @@ export class AntigravityRunner implements AgentRunner {
   }
 
   async send(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[], skills: string[] = []): Promise<void> {
-    if (this.active) throw new Error('Antigravity already has an active turn.')
+    if (this.turn.open) throw new Error('Antigravity already has an active turn.')
     if (this.refreshSkills || !this.client) {
       const old = this.client; this.client = null; await old?.closeAndWait()
       await this.start(); this.refreshSkills = false
@@ -416,9 +416,7 @@ export class AntigravityRunner implements AgentRunner {
       }
     }
     // The manager journaled the message before starting this runner.
-    this.active = true
-    this.ctx.emit({ type: 'turn.started' })
-    this.ctx.setStatus('running')
+    const token = this.turn.begin()
     const client = this.client!
     void client.request('session/prompt', { sessionId: this.sessionId, prompt }, null).then(
       async (result) => {
@@ -430,56 +428,54 @@ export class AntigravityRunner implements AgentRunner {
           await client.closeAndWait()
           await this.persistArtifacts()
         }
-        this.endTurn(fields(result), result)
+        this.endTurn(fields(result), result, token)
       },
       (error: unknown) => {
         if (this.client !== client) return
         this.ctx.emit({ type: 'error', code: 'turn_failed', message: error instanceof Error ? error.message : String(error), recoverable: true })
-        this.endTurn({ stopReason: 'failed' }, null)
+        this.endTurn({ stopReason: 'failed' }, null, token)
       },
     ).catch((error: unknown) => {
       this.ctx.emit({ type: 'error', code: 'account_logout_failed', message: error instanceof Error ? error.message : String(error), recoverable: true })
-      this.endTurn({ stopReason: 'failed' }, null)
+      this.endTurn({ stopReason: 'failed' }, null, token)
     })
   }
-  private endTurn(response: Record<string, unknown>, raw: unknown): void {
-    if (!this.active) return
-    this.active = false
-    this.clearWatchdog()
-    this.closeText()
-    for (const [id, tool] of this.tools) {
-      if (tool.settle) { clearTimeout(tool.settle); tool.settle = null }
-      if ((this.client && this.background.has(id)) || (response.stopReason === 'end_turn' && !this.replaying && tool.update.kind === 'execute' && tool.update.status === 'in_progress')) {
-        this.background.set(id, String(tool.update.title ?? id))
-        continue
-      }
-      // A clean end means the read happened; only its closing notification is missing.
-      const mirrored = response.stopReason === 'end_turn' && describeAntigravityTool(tool.update).name === 'Read' ? mirrorRead(describeAntigravityTool(tool.update).input) : null
-      this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: mirrored ?? 'Tool execution interrupted', isError: mirrored === null, durationMs: this.durations.stop(id) })
-      this.tools.delete(id)
-      this.background.delete(id)
-    }
-    this.closed.clear()
-    this.publishBackground()
-    this.interactions.expireAll()
+  private endTurn(response: Record<string, unknown>, raw: unknown, token?: number): void {
     const usage = fields(response.usage)
-    this.ctx.emit({ type: 'turn.completed', stopReason: response.stopReason === 'end_turn' ? 'completed' : response.stopReason === 'cancelled' ? 'interrupted' : String(response.stopReason ?? 'completed'), costUsd: 0, inputTokens: Number(usage.inputTokens ?? 0), outputTokens: Number(usage.outputTokens ?? 0) + Number(usage.thoughtTokens ?? 0), cacheReadTokens: Number(usage.cachedReadTokens ?? 0), cacheCreationTokens: Number(usage.cachedWriteTokens ?? 0) }, raw)
-    this.ctx.setStatus('idle')
+    this.turn.end({
+      stopReason: response.stopReason === 'end_turn' ? 'completed' : response.stopReason === 'cancelled' ? 'interrupted' : String(response.stopReason ?? 'completed'),
+      usage: { costUsd: 0, inputTokens: Number(usage.inputTokens ?? 0), outputTokens: Number(usage.outputTokens ?? 0) + Number(usage.thoughtTokens ?? 0), cacheReadTokens: Number(usage.cachedReadTokens ?? 0), cacheCreationTokens: Number(usage.cachedWriteTokens ?? 0) },
+      raw,
+      close: () => {
+        this.closeText()
+        for (const [id, tool] of this.tools) {
+          if (tool.settle) { clearTimeout(tool.settle); tool.settle = null }
+          if ((this.client && this.background.has(id)) || (response.stopReason === 'end_turn' && !this.replaying && tool.update.kind === 'execute' && tool.update.status === 'in_progress')) {
+            this.background.set(id, String(tool.update.title ?? id))
+            continue
+          }
+          // A clean end means the read happened; only its closing notification is missing.
+          const mirrored = response.stopReason === 'end_turn' && describeAntigravityTool(tool.update).name === 'Read' ? mirrorRead(describeAntigravityTool(tool.update).input) : null
+          this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: mirrored ?? 'Tool execution interrupted', isError: mirrored === null, durationMs: this.durations.stop(id) })
+          this.tools.delete(id)
+          this.background.delete(id)
+        }
+        this.closed.clear()
+        this.publishBackground()
+      },
+    }, token)
   }
-  private clearWatchdog(): void { if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = null }
   async interrupt(): Promise<void> {
+    if (!this.turn.open) { this.turn.settleWithoutTurn(); return }
     this.interactions.expireAll()
-    if (!this.active) return
     this.client?.notify('session/cancel', { sessionId: this.sessionId })
-    this.clearWatchdog()
-    this.watchdog = setTimeout(() => {
+    this.turn.armWatchdog(15_000, (token) => {
       const client = this.client; this.client = null; client?.close()
-      this.endTurn({ stopReason: 'cancelled' }, null)
-    }, 15_000)
-    this.watchdog.unref()
+      this.endTurn({ stopReason: 'cancelled' }, null, token)
+    })
   }
   async applyConfig(config: AgentConfig): Promise<boolean> {
-    if (config.agent !== 'antigravity' || !this.client || this.active) return false
+    if (config.agent !== 'antigravity' || !this.client || this.turn.open) return false
     if (config.account !== this.config.account || config.skillLibrary !== this.config.skillLibrary || JSON.stringify(config.additionalDirectories) !== JSON.stringify(this.config.additionalDirectories) || JSON.stringify(this.ctx.resolveMcpServers(config).servers) !== this.launchedMcp) return false
     await this.applyOptions(config)
     this.config = config
@@ -497,7 +493,7 @@ export class AntigravityRunner implements AgentRunner {
   async compact(): Promise<boolean> { return false }
   async stopBackgroundTask(): Promise<boolean> { return false }
   async stop(): Promise<void> {
-    this.clearWatchdog()
+    this.turn.dispose()
     for (const tool of this.tools.values()) if (tool.settle) { clearTimeout(tool.settle); tool.settle = null }
     this.interactions.expireAll()
     const client = this.client; this.client = null

@@ -25,6 +25,7 @@ import {
   type PlanFollowUpOption,
   type SillageEvent,
 } from '@sillage/protocol'
+import { TurnLifecycle } from '../turn-lifecycle.js'
 import { AcpClient, AcpRpcError } from '../acp/client.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { PendingInteractions } from '../interactions.js'
@@ -152,8 +153,7 @@ export class GrokRunner implements AgentRunner {
   private lastContext = 0
   private readonly noticed = new Set<string>()
 
-  private turnActive = false
-  private cancelWatchdog: NodeJS.Timeout | null = null
+  private readonly turn: TurnLifecycle
   /** Sillage-requested compaction in progress. */
   private compacting: 'manual' | 'auto' | null = null
   /** Per-model context windows from session catalogs. */
@@ -173,6 +173,7 @@ export class GrokRunner implements AgentRunner {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as GrokConfig
     this.interactions = new PendingInteractions(ctx)
+    this.turn = new TurnLifecycle(ctx, this.interactions)
   }
 
   private launchFor(config: GrokConfig): GrokLaunch {
@@ -326,8 +327,7 @@ export class GrokRunner implements AgentRunner {
   private onProcessExit(code: number | null, stderr: string): void {
     this.client = null
     const wasStarted = this.sessionId !== null
-    this.turnActive = false
-    this.clearCancelWatchdog()
+    this.turn.abandon()
     // Death during startup makes `start()` fail; managers report it.
     if (!wasStarted) return
 
@@ -776,17 +776,11 @@ export class GrokRunner implements AgentRunner {
     const prompt = command && this.commandNames.has(command.name)
       ? [{ type: 'text' as const, text }]
       : this.promptBlocks(text, attachments, mentions)
-    this.beginTurn()
-    void this.runPrompt(prompt)
+    void this.runPrompt(prompt, this.turn.begin())
   }
 
-  private beginTurn(): void {
-    this.turnActive = true
-    this.ctx.emit({ type: 'turn.started' })
-    this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'running')
-  }
-
-  private async runPrompt(prompt: AcpContentBlock[]): Promise<void> {
+  /** `token` binds the answer to its own turn: a cancelled prompt answering late must not close the next one. */
+  private async runPrompt(prompt: AcpContentBlock[], token: number): Promise<void> {
     const client = this.client
     if (!client) return
     try {
@@ -794,7 +788,7 @@ export class GrokRunner implements AgentRunner {
       const meta = fields(response._meta)
       // Permission rejections end turns as `cancelled`: rejection, not interruption.
       const stopReason = meta.cancellationCategory === 'PermissionRejected' ? 'permission_denied' : response.stopReason
-      this.endTurn(stopReason, meta.usage as PromptUsage | undefined, response)
+      this.endTurn(stopReason, meta.usage as PromptUsage | undefined, response, token)
     } catch (error) {
       // Process death is reported through onProcessExit.
       if (!this.client) return
@@ -804,25 +798,14 @@ export class GrokRunner implements AgentRunner {
         message: error instanceof Error ? error.message : String(error),
         recoverable: true,
       })
-      this.endTurn('failed', undefined, null)
+      this.endTurn('failed', undefined, null, token)
     }
   }
 
-  private endTurn(stopReason: string, usage: PromptUsage | undefined, raw: unknown): void {
-    if (!this.turnActive) return
-    this.turnActive = false
-    this.clearCancelWatchdog()
-    this.closeText()
-    for (const [id] of this.tools) {
-      this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution aborted', isError: true, durationMs: this.durations.stop(id) })
-    }
-    this.tools.clear()
-    this.interactions.expireAll()
-
-    this.ctx.emit(
-      {
-        type: 'turn.completed',
-        stopReason: stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : stopReason,
+  private endTurn(stopReason: string, usage: PromptUsage | undefined, raw: unknown, token: number): void {
+    this.turn.end({
+      stopReason: stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : stopReason,
+      usage: {
         costUsd: (usage?.costUsdTicks ?? 0) * USD_PER_TICK,
         // Grok `inputTokens` includes cache usage reported separately;
         // journals separate both like other CLIs.
@@ -832,14 +815,19 @@ export class GrokRunner implements AgentRunner {
         cacheCreationTokens: usage?.cacheCreationTokens ?? 0,
       },
       raw,
-    )
-    this.ctx.setStatus('idle')
+      close: () => {
+        this.closeText()
+        for (const [id] of this.tools) {
+          this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution aborted', isError: true, durationMs: this.durations.stop(id) })
+        }
+        this.tools.clear()
+      },
+    }, token)
   }
 
   async interrupt(): Promise<void> {
-    if (!this.client || !this.sessionId || !this.turnActive) {
-      this.interactions.expireAll()
-      this.ctx.setStatus('idle')
+    if (!this.client || !this.sessionId || !this.turn.open) {
+      this.turn.settleWithoutTurn()
       return
     }
     // Pending requests block turns. Grok drops them on cancellation,
@@ -848,19 +836,12 @@ export class GrokRunner implements AgentRunner {
     this.client.notify('session/cancel', { sessionId: this.sessionId })
     // `session/prompt` canceled responses end turns;
     // safeguards cover responses that never arrive.
-    this.clearCancelWatchdog()
-    this.cancelWatchdog = setTimeout(() => this.endTurn('cancelled', undefined, null), CANCEL_GRACE_MS)
-    this.cancelWatchdog.unref()
-  }
-
-  private clearCancelWatchdog(): void {
-    if (this.cancelWatchdog) clearTimeout(this.cancelWatchdog)
-    this.cancelWatchdog = null
+    this.turn.armWatchdog(CANCEL_GRACE_MS, (token) => this.endTurn('cancelled', undefined, null, token))
   }
 
   /** Steers through `_x.ai/interject`, injecting text at the next safe point (probed). Another `session/prompt` would queue until completion. Attachments use paths. */
   async steer(text: string, attachments: OutgoingAttachment[]): Promise<boolean> {
-    if (!this.client || !this.sessionId || !this.turnActive) return false
+    if (!this.client || !this.sessionId || !this.turn.open) return false
     const { blocks, promptText } = describeOutgoingMessage(text, attachments.map((attachment) => ({ ...attachment, inlineImage: false })), this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     await this.client.request('_x.ai/interject', { sessionId: this.sessionId, text: promptText })
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
@@ -870,7 +851,7 @@ export class GrokRunner implements AgentRunner {
   /** Compacts through `_x.ai/compact_conversation`, responding after summary persistence. `auto_compact_completed` reports before/after sizes. */
   async compact(): Promise<boolean> {
     const client = this.client
-    if (!client || !this.sessionId || this.turnActive) return false
+    if (!client || !this.sessionId || this.turn.open) return false
     this.compacting = 'manual'
     this.ctx.emit({ type: 'context.compaction_started' })
     client.request('_x.ai/compact_conversation', { sessionId: this.sessionId }, null).then(
@@ -944,7 +925,7 @@ export class GrokRunner implements AgentRunner {
   }
 
   async stop(): Promise<void> {
-    this.clearCancelWatchdog()
+    this.turn.dispose()
     const client = this.client
     this.client = null
     this.interactions.expireAll()
