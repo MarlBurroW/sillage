@@ -213,7 +213,12 @@ export function benchmarksToDto(db: Db, rows: BenchmarkRow[], prices: PriceCatal
     if ((metrics.version ?? 0) >= RUN_METRICS_VERSION) continue
     const benchmark = rows.find((row) => row.id === run.benchmarkId)!
     const agent = readVariants(benchmark.variants).find((variant) => variant.id === run.variantId)?.config.agent
-    const updated = run.conversationId
+    // A deleted thread keeps its id here (no foreign key): folding its missing journal would
+    // replace the stored measures with nulls stamped current, beyond any later repair.
+    const journal = run.conversationId
+      ? db.select({ lastSeq: conversations.lastSeq }).from(conversations).where(eq(conversations.id, run.conversationId)).get()
+      : undefined
+    const updated = run.conversationId && journal && journal.lastSeq > 0
       ? readRunMetrics(log ??= new EventLog(db), run.conversationId, agent, run.finishedAt)
       : upgradeSnapshot(metrics)
     run.metrics = JSON.stringify(updated)

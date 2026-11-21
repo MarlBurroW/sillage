@@ -501,6 +501,8 @@ test('benchmark API: legacy snapshots are repaired once and exclude post-benchma
   db.insert(benchmarkRuns).values([
     { id: 'run', benchmarkId: 'bench', variantId: 'v', conversationId: 'c', repetition: 1, status: 'succeeded', finishedAt: 1_000_200, metrics: JSON.stringify(legacy) },
     { id: 'deleted', benchmarkId: 'bench', variantId: 'v', repetition: 2, status: 'succeeded', finishedAt: 1_000_200, metrics: JSON.stringify(legacy) },
+    // What production writes when a run's thread is deleted: the id stays, the conversation goes.
+    { id: 'dangling', benchmarkId: 'bench', variantId: 'v', conversationId: 'gone', repetition: 3, status: 'succeeded', finishedAt: 1_000_200, metrics: JSON.stringify(legacy) },
   ]).run()
   const ctx = { db, config: {} } as AppContext
   const runner = new BenchmarkRunner(ctx, {} as never, {} as never, {} as never, {} as never)
@@ -518,6 +520,7 @@ test('benchmark API: legacy snapshots are repaired once and exclude post-benchma
     assert.equal(run.metrics.version, RUN_METRICS_VERSION)
   }
   assert.equal(result.runs.find((run: { id: string }) => run.id === 'run').metrics.durationMs, 100)
+  assert.equal(result.runs.find((run: { id: string }) => run.id === 'dangling').metrics.outputTokens, 50, 'measures of a deleted thread survive the upgrade')
   const stored = db.select().from(benchmarkRuns).where(eq(benchmarkRuns.id, 'run')).get()!.metrics
   db.delete(events).where(eq(events.conversationId, 'c')).run()
   assert.deepEqual((await app.inject({ url: '/api/benchmarks' })).json()[0].runs, result.runs)
