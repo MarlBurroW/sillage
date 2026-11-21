@@ -17,6 +17,7 @@ import { QuestionPrompt } from './QuestionPrompt'
 import { TaskResult } from './TaskResult'
 import { ToolCall, ToolCallGroup } from './ToolCall'
 import { TurnChanges } from './TurnChanges'
+import { ErrorBoundary, ItemCrash } from '../ErrorBoundary'
 
 /**
  * Additional content beneath translated Sillage error titles. Full messages serve log readers
@@ -111,7 +112,16 @@ export function ChatThread({
     </>
   )
 
+  /** Each element behind its own boundary: one view that cannot draw a payload (a CLI update changed its shape) must not take the thread, the composer and Stop with it. */
   function renderRow(row: ChatRow | NoticeRow) {
+    return (
+      <ErrorBoundary key={row.key} label="thread item" fallback={(error) => <ItemCrash error={error} />}>
+        {renderRowContent(row)}
+      </ErrorBoundary>
+    )
+  }
+
+  function renderRowContent(row: ChatRow | NoticeRow) {
         if (row.kind === 'notice-group') return <NoticeGroup key={row.key} row={row} />
         if (row.kind === 'tool-group') {
           return <ToolCallGroup quiet={concentration} key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />

@@ -1,7 +1,8 @@
 import { PanelEmptyState } from './PanelEmptyState'
 import { Tooltip, TooltipButton } from '../ui/Tooltip'
 import { Check, Code2, Download, Eye, FileDiff, Loader, MoreHorizontal, RotateCcw, Save, Search, WrapText, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazyWithReload } from '../../lib/lazy-reload'
 import {
   OPENABLE_MODEL_EXTENSIONS,
   VIEWABLE_DOCUMENT_TYPES,
@@ -44,7 +45,7 @@ import { indentationOf, lineBreakOf } from './editor-setup'
 import { MediaView } from './MediaView'
 
 /** Lazy-load the viewer because three exceeds the rest of the app's size. */
-const ModelView = lazy(() => import('./ModelView').then((m) => ({ default: m.ModelView })))
+const ModelView = lazyWithReload(() => import('./ModelView').then((m) => ({ default: m.ModelView })))
 
 /** Tab drag transfer type distinct from explorer entries. */
 const TAB_DRAG_TYPE = 'application/x-sillage-tab'

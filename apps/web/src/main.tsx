@@ -4,7 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from './components/ui/Tooltip'
 import { DesktopTitleBar } from './components/DesktopTitleBar'
 import { App } from './App'
+import { AppCrash, ErrorBoundary } from './components/ErrorBoundary'
 import { initLocale } from './lib/i18n'
+import { reloadOnPreloadError } from './lib/lazy-reload'
 import { watchThemeColor } from './lib/theme'
 import './styles/index.css'
 
@@ -19,6 +21,7 @@ const queryClient = new QueryClient({
 
 if (window.sillageDesktop?.window) document.documentElement.dataset.desktopChrome = window.sillageDesktop.window.platform
 watchThemeColor()
+reloadOnPreloadError()
 
 const container = document.getElementById('root')
 if (!container) throw new Error('Élément #root absent du document.')
@@ -29,9 +32,11 @@ if (!container) throw new Error('Élément #root absent du document.')
 void initLocale().then(() => {
   createRoot(container).render(
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider><DesktopTitleBar /><App /></TooltipProvider>
-      </QueryClientProvider>
+      <ErrorBoundary label="interface" fallback={(error, reset) => <AppCrash error={error} reset={reset} />}>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider><DesktopTitleBar /><App /></TooltipProvider>
+        </QueryClientProvider>
+      </ErrorBoundary>
     </StrictMode>,
   )
 })

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Outlet, useMatch } from 'react-router-dom'
+import { Outlet, useLocation, useMatch } from 'react-router-dom'
+import { ErrorBoundary, PageCrash } from './ErrorBoundary'
 import { useAppearanceSync } from '../lib/appearance-sync'
 import { useConcentration } from '../lib/concentration'
 import { useRevalidateLists } from '../lib/conversation-status'
@@ -29,6 +30,7 @@ import { cx } from './ui'
 export function AppShell() {
   useDecisionsLive()
   const t = useTranslate()
+  const location = useLocation()
   useAppearanceSync()
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -171,7 +173,10 @@ export function AppShell() {
 
         {/* The root layer never scrolls: views own scrolling. Supply it here for settings pages without their own. */}
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-          <Outlet />
+          {/* A broken page keeps the shell: navigation stays, and leaving the page clears the error. */}
+          <ErrorBoundary label="page" resetKeys={[location.pathname]} fallback={(error, reset) => <PageCrash error={error} reset={reset} />}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       {/* Outside the main column so decisions and toasts overlay every view including sidebar. */}

@@ -2,7 +2,8 @@ import { DiscussionFilesPage } from './routes/DiscussionFilesPage'
 import { PersonalMemoryPage } from './routes/PersonalMemoryPage'
 import { BenchmarksPage } from './routes/BenchmarksPage'
 import { NewsSettingsPage } from './routes/NewsSettingsPage'
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
+import { lazyWithReload } from './lib/lazy-reload'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { dismissBootMark } from './lib/boot-mark'
@@ -21,16 +22,16 @@ import { ProjectPage } from './routes/ProjectPage'
 import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
 // Load on demand: explorer and script editor are used only here and the main bundle has no precache headroom.
-const AutomationPage = lazy(() => import('./routes/AutomationPage').then((module) => ({ default: module.AutomationPage })))
+const AutomationPage = lazyWithReload(() => import('./routes/AutomationPage').then((module) => ({ default: module.AutomationPage })))
 // The wall pulls its own styles and query tooling: keep them out of the main bundle, close to the precache limit.
-const ConsumptionPage = lazy(() => import('./routes/ConsumptionPage').then((module) => ({ default: module.ConsumptionPage })))
-const WallPage = lazy(() => import('./routes/WallPage').then((module) => ({ default: module.WallPage })))
+const ConsumptionPage = lazyWithReload(() => import('./routes/ConsumptionPage').then((module) => ({ default: module.ConsumptionPage })))
+const WallPage = lazyWithReload(() => import('./routes/WallPage').then((module) => ({ default: module.WallPage })))
 // Onboarding runs once per account: its code, including QR generation, does not belong in the main bundle.
-const OnboardingPage = lazy(() => import('./routes/OnboardingPage').then((module) => ({ default: module.OnboardingPage })))
+const OnboardingPage = lazyWithReload(() => import('./routes/OnboardingPage').then((module) => ({ default: module.OnboardingPage })))
 // The benchmark form carries the lineup editor and presets: only people creating a benchmark load them.
-const NewBenchmarkPage = lazy(() => import('./routes/NewBenchmarkPage').then((module) => ({ default: module.NewBenchmarkPage })))
+const NewBenchmarkPage = lazyWithReload(() => import('./routes/NewBenchmarkPage').then((module) => ({ default: module.NewBenchmarkPage })))
 // Same for a benchmark's page, with its tables, comparison and outputs viewer.
-const BenchmarkPage = lazy(() => import('./routes/BenchmarkPage').then((module) => ({ default: module.BenchmarkPage })))
+const BenchmarkPage = lazyWithReload(() => import('./routes/BenchmarkPage').then((module) => ({ default: module.BenchmarkPage })))
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'

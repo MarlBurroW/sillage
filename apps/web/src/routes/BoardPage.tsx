@@ -21,7 +21,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { ArrowDownUp, Check, ChevronDown, ChevronRight, Plus, Search, Settings2, Tag, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { lazyWithReload } from '../lib/lazy-reload'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type BoardLinkDto, type BoardOrder, type CardColumn, type CardDto } from '@sillage/protocol'
 import { BoardLinkDialog } from '../components/board/BoardLinkDialog'
@@ -49,7 +50,7 @@ import { PanelToggle } from '../components/panel/PanelToggle'
 /** Same breakpoint as the shell: beyond it, sidebar and columns fit side by side. */
 const WIDE = '(min-width: 768px)'
 
-const SidePanel = lazy(() =>
+const SidePanel = lazyWithReload(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
 

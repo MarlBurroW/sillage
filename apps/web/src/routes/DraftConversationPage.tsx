@@ -1,6 +1,7 @@
 import { conversationPath } from '@sillage/protocol'
 import { EyeOff, History, SquareKanban, X } from 'lucide-react'
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
+import { lazyWithReload } from '../lib/lazy-reload'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
@@ -45,7 +46,7 @@ import { uuidv4 } from '../lib/uuid'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 import { PanelToggle } from '../components/panel/PanelToggle'
 
-const SidePanel = lazy(() =>
+const SidePanel = lazyWithReload(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
 

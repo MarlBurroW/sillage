@@ -1,5 +1,6 @@
 import { Pencil, ChevronDown, CopyPlus, Download, Eye, EyeOff, FileText, FlaskConical, ListPlus, MessageSquareReply, MonitorPlay, RotateCcw, Share2, Square, Trash2 } from 'lucide-react'
-import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazyWithReload } from '../lib/lazy-reload'
 import { Link, useNavigate, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import {
   MAX_BENCHMARK_COMPARISON_VARIANTS,
@@ -47,9 +48,9 @@ import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 
 // Only people who share, continue or compare pay for these: they stay out of the page's chunk.
-const BenchmarkShareDialog = lazy(() => import('../components/benchmark/BenchmarkShareDialog'))
-const LineupDialog = lazy(() => import('../components/benchmark/LineupDialog'))
-const ComparisonView = lazy(() => import('../components/benchmark/ComparisonView'))
+const BenchmarkShareDialog = lazyWithReload(() => import('../components/benchmark/BenchmarkShareDialog'))
+const LineupDialog = lazyWithReload(() => import('../components/benchmark/LineupDialog'))
+const ComparisonView = lazyWithReload(() => import('../components/benchmark/ComparisonView'))
 
 type Tab = 'measures' | 'compare' | 'chart' | 'outputs' | 'history'
 const TABS: Tab[] = ['measures', 'compare', 'chart', 'outputs', 'history']

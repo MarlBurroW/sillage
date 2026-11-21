@@ -26,8 +26,9 @@ import {
   Shrink,
   Terminal,
 } from 'lucide-react'
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-const ExportDialog = lazy(() => import('../components/chat/ExportDialog'))
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazyWithReload } from '../lib/lazy-reload'
+const ExportDialog = lazyWithReload(() => import('../components/chat/ExportDialog'))
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES } from '@sillage/protocol'
@@ -107,7 +108,7 @@ import { PanelToggle } from '../components/panel/PanelToggle'
  * Lazy-loaded: the editor bundles CodeMirror, and including it initially would charge every
  * conversation opening for a panel users may never open.
  */
-const SidePanel = lazy(() =>
+const SidePanel = lazyWithReload(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
 
