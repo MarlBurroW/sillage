@@ -429,8 +429,15 @@ export class AgentRequests {
         request.kind === 'reply_session'
       ) {
         this.settle(request.id, await this.actOnSession(request.kind, requester, payload), false)
-      } else {
+      } else if (request.kind === 'list_models') {
         this.settle(request.id, await this.listModels(requester, project, payload), false)
+      } else {
+        // Written by `sillage-mcp.mjs`, outside the type graph, or by another daemon version: an
+        // unknown kind says so. It used to fall through to the model catalog, which read as a
+        // tool silently returning the wrong answer. `webhook_launch` rows are written settled by the
+        // scheduler and never come here; a new kind without a branch above fails to compile.
+        const unhandled: 'webhook_launch' = request.kind
+        throw new Refusal(`Sillage does not handle “${String(unhandled)}” requests. It may need updating.`)
       }
     } catch (err) {
       if (!(err instanceof Refusal) && !(err instanceof HttpError)) {

@@ -1,4 +1,4 @@
-/** Sillage MCP server exposes platform knowledge unavailable to CLIs. Each CLI conversation starts without knowledge of previous conversations, whereas Sillage retains their journals and project board; these tools expose that memory and state within the current project. Any session can edit project cards and relations without attachment; notes retain work history while descriptions hold current requirements. Content and relation edits go through the daemon to share interface validation. Inter-session messages are only deposited here: this process holds a database, no runners; the daemon delivers them by steering or waking recipients (`apps/server/src/sessions/session-relay.ts`). Keep this as `.mjs`, like probes, rather than compiled TypeScript: CLIs launch it directly, and excluding it from the server module graph prevents accidental imports from bundling half the app. Its only dependency is existing `better-sqlite3`. Reads use the database directly, read-only, avoiding HTTP tokens and ports; the environment carries scope, never secrets. This is convenience rather than a security boundary because agents already have shell and disk access. Conversation mode is project-scoped and acts as that session. Manual launches without `SILLAGE_MCP_PROJECT` are global (`docs/mcp.md`): tools accept `project`, `list_projects` lists projects, and writes use `SILLAGE_MCP_USER` rather than a session. Session-only messaging, watches and decisions are omitted. */
+/** Sillage MCP server exposes platform knowledge unavailable to CLIs. Each CLI conversation starts without knowledge of previous conversations, whereas Sillage retains their journals and project board; these tools expose that memory and state within the current project. Any session can edit project cards and relations without attachment; notes retain work history while descriptions hold current requirements. Content and relation edits go through the daemon to share interface validation. Inter-session messages are only deposited here: this process holds a database, no runners; the daemon delivers them by steering or waking recipients (`apps/server/src/sessions/session-relay.ts`). Keep this as `.mjs`, like probes, rather than compiled TypeScript: CLIs launch it directly, and excluding it from the server module graph prevents accidental imports from bundling half the app. Its only dependency is existing `better-sqlite3`. Outside the type graph, its copies of protocol constants, its request kinds and its raw SQL are held to the protocol, the daemon and the migrated schema by `test/mcp-parity.test.ts`. Reads use the database directly, read-only, avoiding HTTP tokens and ports; the environment carries scope, never secrets. This is convenience rather than a security boundary because agents already have shell and disk access. Conversation mode is project-scoped and acts as that session. Manual launches without `SILLAGE_MCP_PROJECT` are global (`docs/mcp.md`): tools accept `project`, `list_projects` lists projects, and writes use `SILLAGE_MCP_USER` rather than a session. Session-only messaging, watches and decisions are omitted. */
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
@@ -1651,9 +1651,10 @@ function broadcast(body) {
      VALUES (?, ?, ?, ?, 'broadcast', ?, ?)`,
   )
   const now = Date.now()
+  // Immediate, like `writeTransaction` in packages/db: take the write lock up front so busy_timeout applies.
   writeDb().transaction(() => {
     for (const target of targets) insert.run(randomUUID(), callScope().projectId, CURRENT_CONVERSATION, target.id, body, now)
-  })()
+  }).immediate()
   return targets.length
 }
 
@@ -2290,7 +2291,10 @@ function saveInstructions(projectId, transform, fixMode) {
         .run(callScope().projectId)
     }
     return { content: result }
-  })()
+    // Immediate, like `writeTransaction` in packages/db: this reads then writes, and a deferred
+    // transaction upgrading after the daemon committed fails at once with SQLITE_BUSY_SNAPSHOT,
+    // without waiting for busy_timeout.
+  }).immediate()
 }
 
 /** Requested scope or rejection returned unchanged. `writing` distinguishes globally readable sections, matching the interface. */

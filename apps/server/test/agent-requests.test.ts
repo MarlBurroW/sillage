@@ -165,6 +165,18 @@ test('a request a previous daemon claimed is closed as interrupted, never run ag
   assert.ok(db.select().from(agentRequests).where(eq(agentRequests.id, 'waiting')).get()!.claimedAt)
 })
 
+test('a request kind this daemon does not know is refused by name, not answered with the model catalog', async (t) => {
+  const { db, requests, conversation } = await harness(t)
+  conversation('a')
+  db.insert(agentRequests).values({
+    id: 'unknown', projectId: 'project', conversationId: 'a', kind: 'summon_dragon' as never, payload: '{}', createdAt: Date.now(),
+  }).run()
+  await requests.sweep()
+  const row = db.select().from(agentRequests).where(eq(agentRequests.id, 'unknown')).get()!
+  assert.equal(row.isError, true)
+  assert.match(row.result ?? '', /does not handle “summon_dragon”/)
+})
+
 test('a caller that stops waiting withdraws an unclaimed request, so a retry cannot run it twice', async (t) => {
   const { db, dir, requests, conversation } = await harness(t)
   conversation('a')
