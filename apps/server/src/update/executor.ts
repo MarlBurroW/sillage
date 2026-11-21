@@ -1,6 +1,8 @@
 import { execFile, spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { mkdir, readdir, rename, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -94,6 +96,7 @@ export class UpdateExecutor {
       // renaming to the release directory only when complete.
       await execFileAsync('tar', ['-xzf', archive, '--strip-components=1', '-C', stagingDir])
       await this.ensureNativeModules(stagingDir)
+      await this.proveStarts(stagingDir)
       await rm(releaseDir, { recursive: true, force: true })
       await rename(stagingDir, releaseDir)
       await rm(archive, { force: true })
@@ -149,6 +152,57 @@ export class UpdateExecutor {
     this.append('Module natif recompilé.')
   }
 
+  /**
+   * Starts the new version on a throwaway data directory and waits for its health route before
+   * switching to it. Loading a native module is not starting: a bundle that throws at boot or a
+   * missing dependency used to be activated anyway, leaving the service restarting on a release
+   * that never answers, with the interface that could act gone. Nothing here touches the real
+   * database: it has its own directory, port and configuration.
+   */
+  private async proveStarts(dir: string): Promise<void> {
+    const scratch = await mkdtemp(join(tmpdir(), 'sillage-update-probe-'))
+    const port = await freePort()
+    await writeFile(join(scratch, 'config.toml'), '')
+    const env: NodeJS.ProcessEnv = { ...process.env }
+    // Settings of the running service would point the probe at its directories.
+    for (const key of Object.keys(env)) if (key.startsWith('SILLAGE_')) delete env[key]
+    Object.assign(env, {
+      NODE_ENV: 'production',
+      SILLAGE_DATA_DIR: join(scratch, 'data'),
+      SILLAGE_CONFIG: join(scratch, 'config.toml'),
+      SILLAGE_HOST: '127.0.0.1',
+      SILLAGE_PORT: String(port),
+    })
+    const child = spawn(process.execPath, [join(dir, 'server', 'main.js')], { cwd: dir, env, stdio: ['ignore', 'ignore', 'pipe'] })
+    let stderr = ''
+    child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-2000) })
+    let exited = false
+    child.on('exit', () => { exited = true })
+    try {
+      const deadline = Date.now() + 60_000
+      while (Date.now() < deadline && !exited) {
+        const ok = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) })
+          .then((response) => response.ok, () => false)
+        if (ok) {
+          this.append('Nouvelle version démarrée à l’essai : elle répond.')
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      throw new Error(
+        `La nouvelle version ne démarre pas${exited ? '' : ' dans le délai'} : ${stderr.trim().split('\n').slice(-3).join(' ') || 'aucun message'}. La version en place est conservée.`,
+      )
+    } finally {
+      if (!exited) {
+        child.kill('SIGTERM')
+        const killer = setTimeout(() => child.kill('SIGKILL'), 5000)
+        await new Promise<void>((resolve) => (exited ? resolve() : child.once('exit', () => resolve())))
+        clearTimeout(killer)
+      }
+      await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
   /** Retains current and two previous versions, deleting others. */
   private async pruneOldReleases(root: string, target: string): Promise<void> {
     const entries = await readdir(join(root, 'releases'))
@@ -195,4 +249,16 @@ export class UpdateError extends Error {
   ) {
     super(message)
   }
+}
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      server.close(() => resolve(port))
+    })
+  })
 }

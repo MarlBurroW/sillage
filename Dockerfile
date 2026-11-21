@@ -20,9 +20,10 @@ RUN pnpm install --frozen-lockfile --offline
 ARG SILLAGE_VERSION=dev
 RUN SILLAGE_VERSION=$SILLAGE_VERSION pnpm build \
  && SILLAGE_VERSION=$SILLAGE_VERSION node scripts/stage-runtime.mjs /out \
+# `npm ci` installs exactly the committed shrinkwrap staged next to package.json.
 # --legacy-peer-deps: Claude SDK declares zod@^4 peer while project uses Zod 3;
 # pnpm tolerates this mismatch, strict npm resolution does not.
- && cd /out && npm install --omit=dev --legacy-peer-deps \
+ && cd /out && npm ci --omit=dev --legacy-peer-deps --no-audit --no-fund \
 # Optional packages contain only the `claude` binary, 263 MB per architecture.
 # Runner always supplies `pathToClaudeCodeExecutable`, resolved to system or
 # Sillage-installed CLI, bypassing SDK internal resolution; this binary is unused.

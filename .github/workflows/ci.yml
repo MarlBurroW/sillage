@@ -4,6 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The release runs these checks before publishing anything. `quick` keeps only the main
+  # job: the release builds and launches the archives and desktop apps itself.
+  workflow_call:
+    inputs:
+      quick:
+        type: boolean
+        default: false
 
 env:
   # Electron binary only launches desktop app from repository.
@@ -27,6 +34,8 @@ jobs:
       # Likewise for OpenCode: script starts disposable `opencode serve` to read OpenAPI.
       - run: npm install --global opencode-ai@1.19.5
       - run: pnpm opencode:types:check
+      # The shipped runtime tree must be the one pnpm-lock.yaml describes.
+      - run: pnpm runtime:lock:check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test:desktop-mac-install
@@ -37,6 +46,7 @@ jobs:
     # End-to-end macOS installation, impossible to try from Linux: release-style
     # archive, then install.sh/launchd agent on Apple Silicon Mac. Archive remains
     # an artifact for real-machine trials with SILLAGE_ARCHIVE.
+    if: ${{ !inputs.quick }}
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +87,7 @@ jobs:
     # output must not be discovered broken on release day. Windows-specific paths
     # (npm launchers, shells) cannot be tested elsewhere. Packages remain run artifacts.
     # Updates are checked too; macOS can be checked with a manual Desktop workflow run.
+    if: ${{ !inputs.quick }}
     uses: ./.github/workflows/desktop.yml
     with:
       version: v0.0.0-ci

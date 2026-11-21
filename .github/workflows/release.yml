@@ -20,7 +20,15 @@ env:
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
 jobs:
+  # Nothing is published from a commit whose tests, types, lint or build fail: a tag pushed
+  # before CI finished, or on a red commit, used to ship anyway.
+  checks:
+    uses: ./.github/workflows/ci.yml
+    with:
+      quick: true
+
   tarball:
+    needs: checks
     # Native architecture runners: compiling node-pty under QEMU is slow/fragile.
     # ubuntu-22.04 fixes baseline glibc (2.35, Debian 12+). macos-15 runs Apple Silicon,
     # the only macOS target.
@@ -61,6 +69,7 @@ jobs:
           if-no-files-found: error
 
   docker:
+    needs: checks
     strategy:
       matrix:
         include:

@@ -29,12 +29,14 @@ runs:
       env:
         SILLAGE_VERSION: ${{ inputs.version }}
     # npm instead of pnpm produces flat node_modules without symlinks, surviving
-    # tar archiving. --legacy-peer-deps because Claude SDK declares zod@^4 peer,
+    # tar archiving. `npm ci` installs exactly the committed shrinkwrap (direct
+    # versions from pnpm-lock.yaml) and fails if it is stale: every job ships the
+    # same tree. --legacy-peer-deps because Claude SDK declares zod@^4 peer,
     # which pnpm tolerates but npm rejects. Windows skips install scripts: see
     # `desktop.yml`. Prebuilt better-sqlite3/node-pty suffice, proven below.
     - name: Install production dependencies
       shell: bash
-      run: npm install --omit=dev --legacy-peer-deps ${{ inputs.platform == 'win32' && '--ignore-scripts' || '' }}
+      run: npm ci --omit=dev --legacy-peer-deps --no-audit --no-fund ${{ inputs.platform == 'win32' && '--ignore-scripts' || '' }}
       working-directory: out/sillage
     # These optional Claude SDK packages contain only the `claude` binary, 263 MB
     # per architecture. Sillage now launches system CLI resolved through PATH and
@@ -62,6 +64,32 @@ runs:
           shell.onExit(({ exitCode }) => process.exit(exitCode === 3 ? 0 : 1))
           setTimeout(() => process.exit(2), 10000).unref()
         '
+    # Loading modules is not starting: boot the packaged daemon on a throwaway data
+    # directory and wait for its health route, so a release that cannot start
+    # fails here rather than on users' machines. Windows runs the server only
+    # inside the Desktop app, which desktop.yml launches.
+    - name: Smoke test (the packaged daemon starts and answers)
+      if: inputs.platform != 'win32'
+      shell: bash
+      run: |
+        data="$(mktemp -d)"
+        port=$(node -e 'const s = require("net").createServer().listen(0, () => { console.log(s.address().port); s.close() })')
+        printf '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n' > "$data/config.toml"
+        # NODE_ENV as the service units set it: otherwise the logger wants pino-pretty,
+        # a development dependency the runtime tree does not carry.
+        NODE_ENV=production SILLAGE_DATA_DIR="$data/data" SILLAGE_CONFIG="$data/config.toml" SILLAGE_HOST=127.0.0.1 SILLAGE_PORT="$port" \
+          node out/sillage/server/main.js > "$data/server.log" 2>&1 &
+        server=$!
+        for _ in $(seq 1 120); do
+          if curl -fsS "http://127.0.0.1:$port/api/health" > /dev/null 2>&1; then break; fi
+          if ! kill -0 "$server" 2> /dev/null; then break; fi
+          sleep 0.5
+        done
+        status=0
+        curl -fsS "http://127.0.0.1:$port/api/health" || status=1
+        kill "$server" 2> /dev/null || true
+        wait "$server" 2> /dev/null || true
+        if [ "$status" -ne 0 ]; then tail -n 50 "$data/server.log"; exit 1; fi
     # macOS tar would otherwise add extended attributes as ._* archive entries.
     - name: Pack
       id: pack
