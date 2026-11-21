@@ -135,7 +135,7 @@ async function main(): Promise<void> {
   // Session launches and cards requested by agents through MCP.
   const agentRequests = new AgentRequests({ db, config }, sessions, registry, actions, encryptionKey, board, decisions, log, worktreeStatus, attachments, terminals, worktreeCleanup)
   // User- or agent-scheduled tasks executed in fresh sessions.
-  const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
+  const tasks = new TaskScheduler({ db, config }, sessions, registry, log, notifications)
   // Model benchmarks: fresh personal sessions measured from their journals.
   const benchmarkRunner = new BenchmarkRunner({ db, config }, sessions, registry, log, attachments, prices)
 

@@ -19,6 +19,7 @@ const TITLES = {
     decision: 'Décision à prendre',
     usageLimit: "Limite d'usage atteinte",
     credentialExpiry: 'Connexion Claude à renouveler',
+    scheduleFailed: 'Une tâche planifiée échoue',
     test: 'Notification de test',
   },
   en: {
@@ -30,6 +31,7 @@ const TITLES = {
     decision: 'Decision to make',
     usageLimit: 'Usage limit reached',
     credentialExpiry: 'Claude sign-in needs attention',
+    scheduleFailed: 'A scheduled task is failing',
     test: 'Test notification',
   },
 }

@@ -1012,7 +1012,7 @@ export interface PushPayload {
    * What the notification announces, so the service worker can compose a title in the device
    * language; `title` remains the fallback.
    */
-  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall' | 'turnCompleted' | 'decision' | 'test' | 'usageLimit' | 'credentialExpiry'
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall' | 'turnCompleted' | 'decision' | 'test' | 'usageLimit' | 'credentialExpiry' | 'scheduleFailed'
   /** Host CLI sign-in expiry, for a warning composed in the device language. */
   loginExpiresAt?: string
   /** `usageLimit` only: when the limit lifts and when the session resumes, for a body composed in the device language. */

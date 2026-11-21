@@ -31,6 +31,7 @@ import { runCheck } from '../src/scheduler/check.js'
 import { approveScheduleCheck, createScheduledTask, deleteScheduledTask, updateScheduledTask } from '../src/scheduler/tasks.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
+import type { Notifications, OutgoingNotification } from '../src/notifications/dispatcher.js'
 
 const MINUTE = 60_000
 
@@ -71,7 +72,9 @@ async function harness(t: TestContext) {
     server: { publicUrl: 'https://sillage.example/' },
   } as unknown as Config
   const log = new EventLog(db)
-  const scheduler = new TaskScheduler({ db, config }, sessions, registry, log)
+  const notified: { userId: string; notification: OutgoingNotification }[] = []
+  const notifications = { dispatch: async (userId: string, notification: OutgoingNotification) => { notified.push({ userId, notification }) } } as unknown as Notifications
+  const scheduler = new TaskScheduler({ db, config }, sessions, registry, log, notifications)
 
   const task = (cadence: ScheduleCadence, overlapPolicy: ScheduleOverlapPolicy = 'skip', maxDurationMinutes = 30) =>
     createScheduledTask(
@@ -134,8 +137,9 @@ async function harness(t: TestContext) {
   const reload = (id: string) => db.select().from(scheduledTasks).where(eq(scheduledTasks.id, id)).get()!
 
   return {
-    db, dir, dbPath, sessions, registry, config, scheduler, task, checkedTask, settled, finish, runs, reload, sent, terminated,
+    db, dir, dbPath, sessions, registry, config, scheduler, task, checkedTask, settled, finish, runs, reload, sent, terminated, notified,
     failNextSends: () => { failSend = true },
+    restoreSends: () => { failSend = false },
   }
 }
 
@@ -269,6 +273,32 @@ test('a one-off task fires once and pauses itself; a failed launch is recorded, 
   // The unneeded conversation was removed; the task awaits its next slot.
   assert.equal(db.select().from(conversations).where(eq(conversations.scheduleId, broken.id)).all().length, 0)
   assert.ok(reload(broken.id).nextRunAt! > broken.nextRunAt!)
+})
+
+test('the owner hears when a task starts failing, once per series of failures', async (t) => {
+  const { scheduler, task, runs, finish, notified, failNextSends, restoreSends } = await harness(t)
+  const nightly = task({ kind: 'interval', minutes: 60 })
+
+  // The CLI is gone: three runs fail in a row, one notification.
+  failNextSends()
+  for (let i = 0; i < 3; i++) await scheduler.runNow(nightly.id)
+  assert.equal(runs().filter((run) => run.status === 'failed').length, 3)
+  assert.equal(notified.length, 1)
+  assert.equal(notified[0]!.userId, 'owner')
+  const toast = notified[0]!.notification.toast
+  assert.equal(toast?.kind === 'scheduleFailed' ? toast.taskName : null, 'Veille')
+  assert.match(toast?.kind === 'scheduleFailed' ? toast.error ?? '' : '', /CLI introuvable/)
+  assert.equal(notified[0]!.notification.push.url, `/p/project/schedules/${nightly.id}`)
+
+  // It works again, then breaks again: a new series, a new notification.
+  restoreSends()
+  const run = await scheduler.runNow(nightly.id)
+  finish(run.conversationId!, 'Rien de neuf.')
+  await scheduler.tick(Date.now())
+  assert.equal(runs().at(-1)!.status, 'succeeded')
+  failNextSends()
+  await scheduler.runNow(nightly.id)
+  assert.equal(notified.length, 2)
 })
 
 test('run now refuses to double a run in flight and leaves the schedule alone', async (t) => {

@@ -25,6 +25,7 @@ function keyOf(notification: InAppNotification): string {
   if (notification.kind === 'decision') return `decision:${notification.decisionId}`
   if (notification.kind === 'usageLimit') return `limit:${notification.conversationId}`
   if (notification.kind === 'credentialExpiry') return `expiry:${notification.agent}`
+  if (notification.kind === 'scheduleFailed') return `schedule:${notification.taskId}`
   return `cli:${notification.conversationId}`
 }
 

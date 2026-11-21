@@ -1,5 +1,5 @@
 import { conversationPath } from '@sillage/protocol'
-import { CircleHelp, Hourglass, KeyRound, ShieldQuestion, X } from 'lucide-react'
+import { CalendarX2, CircleHelp, Hourglass, KeyRound, ShieldQuestion, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { CliRequestKind } from '@sillage/protocol'
@@ -64,24 +64,27 @@ function ToastCard({ toast }: { toast: Toast }) {
   const decision = notification.kind === 'decision'
   const limit = notification.kind === 'usageLimit'
   const expiry = notification.kind === 'credentialExpiry'
+  const schedule = notification.kind === 'scheduleFailed'
 
   return (
     <div role="status" className="surface pointer-events-auto flex gap-3 rounded-xl border border-accent/40 p-3.5 shadow-pop">
       <span className="mt-0.5 shrink-0 text-accent">
-        {decision ? <CircleHelp size={18} /> : limit ? <Hourglass size={18} /> : expiry ? <KeyRound size={18} /> : <ShieldQuestion size={18} />}
+        {decision ? <CircleHelp size={18} /> : limit ? <Hourglass size={18} /> : expiry ? <KeyRound size={18} /> : schedule ? <CalendarX2 size={18} /> : <ShieldQuestion size={18} />}
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-accent">
-          {decision ? t('toast.decision.title') : limit ? t('toast.usageLimit.title') : expiry ? t('claudeAccounts.host.attention') : t(REQUEST_TITLES[notification.request])}
+          {decision ? t('toast.decision.title') : limit ? t('toast.usageLimit.title') : expiry ? t('claudeAccounts.host.attention') : schedule ? t('toast.scheduleFailed.title') : t(REQUEST_TITLES[notification.request])}
         </p>
         <p className="mt-0.5 line-clamp-2 text-sm font-medium text-ink">
-          {decision ? toastQuestion(notification, t) : expiry ? t('claudeAccounts.host.expires', { date: new Date(notification.loginExpiresAt).toLocaleDateString(locale()) }) : notification.conversationTitle}
+          {decision ? toastQuestion(notification, t) : expiry ? t('claudeAccounts.host.expires', { date: new Date(notification.loginExpiresAt).toLocaleDateString(locale()) }) : schedule ? notification.taskName : notification.conversationTitle}
         </p>
         <p className="mt-0.5 truncate text-xs text-ink-faint">
           {decision
             ? [notification.sourceLabel, notification.projectName].filter(Boolean).join(' · ')
             : expiry
               ? t('claudeAccounts.host.estimate')
+              : schedule
+              ? notification.error
               : limit
               ? describeUsageLimitStop(notification)
               : notification.detail}
@@ -93,10 +96,11 @@ function ToastCard({ toast }: { toast: Toast }) {
               dismissToast(toast.id)
               if (notification.kind === 'decision') openDecision(notification.decisionId)
               else if (notification.kind === 'credentialExpiry') navigate('/settings/comptes-claude')
+              else if (notification.kind === 'scheduleFailed') navigate(`/p/${notification.projectId}/schedules/${notification.taskId}`)
               else navigate(conversationPath({ projectId: notification.projectId, id: notification.conversationId }))
             }}
           >
-            {t(decision ? 'toast.decision.answer' : expiry ? 'claudeAccounts.host.open' : 'toast.cli.open')}
+            {t(decision ? 'toast.decision.answer' : expiry ? 'claudeAccounts.host.open' : schedule ? 'toast.scheduleFailed.open' : 'toast.cli.open')}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => dismissToast(toast.id)}>
             {t('toast.later')}

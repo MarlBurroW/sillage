@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notInArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, notInArray } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
@@ -25,6 +25,7 @@ import { launchRefusal } from '../sessions/agent-requests.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
 import { detach } from '../detach.js'
+import type { Notifications } from '../notifications/dispatcher.js'
 
 /** Executes scheduled tasks by opening fresh project sessions with task prompts and monitoring completion or maximum duration. Sweep database state in `next_run_at` rather than arm per-task `Cron` instances like housekeeping `Scheduler`: route/MCP creation, edits and pauses apply on the next sweep without rearming, and runs missed during downtime remain visible after restart. */
 
@@ -47,6 +48,8 @@ export class TaskScheduler {
     private readonly sessions: SessionManager,
     private readonly registry: AgentRegistry,
     private readonly log: EventLog,
+    /** Announces a task that starts failing; absent in tests that do not care. */
+    private readonly notifications?: Notifications,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -256,13 +259,11 @@ export class TaskScheduler {
       }
       if (result.verdict === 'error') {
         const detail = firstLine(result.stderr)
-        update({
-          status: 'failed',
-          finishedAt: now,
-          error: result.timedOut
-            ? `Check interrupted after ${task.checkTimeoutSeconds} s.`
-            : `Check failed (code ${result.exitCode ?? '?'})${detail ? ` : ${detail}` : ''}.`,
-        })
+        const error = result.timedOut
+          ? `Check interrupted after ${task.checkTimeoutSeconds} s.`
+          : `Check failed (code ${result.exitCode ?? '?'})${detail ? ` : ${detail}` : ''}.`
+        update({ status: 'failed', finishedAt: now, error })
+        this.announceFailure(task.id, run.id, error)
         return
       }
 
@@ -273,11 +274,9 @@ export class TaskScheduler {
       const conversationId = await this.openSession(current, run.trigger, run.startedAt, undefined, result.stdout)
       update({ status: 'running', conversationId })
     } catch (err) {
-      update({
-        status: 'failed',
-        finishedAt: Date.now(),
-        error: `Lancement impossible : ${err instanceof Error ? err.message : String(err)}`,
-      })
+      const error = `Lancement impossible : ${err instanceof Error ? err.message : String(err)}`
+      update({ status: 'failed', finishedAt: Date.now(), error })
+      this.announceFailure(task.id, run.id, error)
       this.logger?.warn({ err, task: task.id }, 'tir planifié en échec à la vérification')
     } finally {
       this.firing.delete(task.id)
@@ -383,6 +382,7 @@ export class TaskScheduler {
     }
 
     this.ctx.db.insert(scheduledRuns).values(run).run()
+    if (run.status === 'failed') this.announceFailure(task.id, run.id, run.error)
     if (delivery) {
       setDeliveryOutcome(this.ctx.db, delivery.id, run.conversationId
         ? { verdict: 'launched', runId: run.id, conversationId: run.conversationId }
@@ -554,6 +554,38 @@ export class TaskScheduler {
       })
       .where(eq(scheduledRuns.id, run.id))
       .run()
+    if (status !== 'succeeded') this.announceFailure(run.taskId, run.id, error)
+  }
+
+  /**
+   * Tells the owner a task started failing: a failed launch, a failed check, a run that failed or
+   * ran out of time. Only the first failure of a series: an hourly task failing for a day would
+   * otherwise send 24 notifications. Skipped runs (the check found nothing to do) are neither
+   * failures nor successes and do not end a series. Before this, failures only reached the run
+   * history, and a nightly task could fail for days before anyone opened its page.
+   */
+  private announceFailure(taskId: string, runId: string, error: string | null): void {
+    if (!this.notifications) return
+    try {
+      const task = this.ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, taskId)).get()
+      if (!task) return
+      const previous = this.ctx.db
+        .select({ status: scheduledRuns.status })
+        .from(scheduledRuns)
+        .where(and(eq(scheduledRuns.taskId, taskId), ne(scheduledRuns.id, runId), inArray(scheduledRuns.status, ['succeeded', 'failed', 'timed_out'])))
+        .orderBy(desc(scheduledRuns.startedAt))
+        .limit(1)
+        .get()
+      if (previous && previous.status !== 'succeeded') return
+      const url = `/p/${task.projectId}/schedules/${task.id}`
+      detach(this.notifications.dispatch(task.userId, {
+        kind: 'scheduleFailed',
+        push: { title: 'Une tâche planifiée échoue', body: task.name, url, tag: `schedule-${task.id}`, kind: 'scheduleFailed' },
+        toast: { kind: 'scheduleFailed', taskId: task.id, projectId: task.projectId, taskName: task.name, error },
+      }), 'scheduled task failure notification')
+    } catch (err) {
+      this.logger?.warn({ err, task: taskId }, 'scheduled task failure notification failed')
+    }
   }
 }
 

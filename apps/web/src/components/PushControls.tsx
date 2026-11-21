@@ -234,6 +234,7 @@ const KINDS: Array<{ kind: NotificationKind; label: MessageKey; hint: MessageKey
   { kind: 'turnCompleted', label: 'push.prefs.turnCompleted', hint: 'push.prefs.turnCompleted.hint' },
   { kind: 'usageLimit', label: 'push.prefs.usageLimit', hint: 'push.prefs.usageLimit.hint' },
   { kind: 'credentialExpiry', label: 'push.prefs.credentialExpiry', hint: 'push.prefs.credentialExpiry.hint' },
+  { kind: 'scheduleFailed', label: 'push.prefs.scheduleFailed', hint: 'push.prefs.scheduleFailed.hint' },
 ]
 
 function Preferences() {

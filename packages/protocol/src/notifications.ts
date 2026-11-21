@@ -9,7 +9,7 @@ import type { UsageLimitResumeReason } from './usage-limit-resume.js'
  */
 
 /** Notification kinds, individually disableable by each account. */
-export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted', 'usageLimit', 'credentialExpiry'])
+export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted', 'usageLimit', 'credentialExpiry', 'scheduleFailed'])
 export type NotificationKind = z.infer<typeof notificationKindSchema>
 
 export const notificationPrefsSchema = z.object({
@@ -19,10 +19,11 @@ export const notificationPrefsSchema = z.object({
   /** Added later: stored preferences predating it lack the key and must keep parsing. */
   usageLimit: z.boolean().default(true),
   credentialExpiry: z.boolean().default(true),
+  scheduleFailed: z.boolean().default(true),
 })
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>
 
-export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true, usageLimit: true, credentialExpiry: true }
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { decision: true, cliRequest: true, turnCompleted: true, usageLimit: true, credentialExpiry: true, scheduleFailed: true }
 
 /** What a CLI is waiting for, used in toast labels. */
 export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan' | 'mcpInstall'
@@ -65,6 +66,15 @@ export type InAppNotification =
       resumeAt: number | null
       /** Why it will not, when `resumeAt` is null. */
       reason: UsageLimitResumeReason | null
+    }
+  | {
+      /** A scheduled task or automation started failing: it failed to launch, its check failed, or its run failed or ran out of time. */
+      kind: 'scheduleFailed'
+      taskId: string
+      projectId: string
+      taskName: string
+      /** What the run history records, in English as stored. */
+      error: string | null
     }
 
 /** Subscription push service inferred from its address, indicating the device type. */
