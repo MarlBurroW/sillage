@@ -36,6 +36,25 @@ export function writeTransaction<T>(db: Db, body: (tx: Tx) => T): T {
   return db.transaction(body, { behavior: 'immediate' })
 }
 
+/**
+ * Holds an exclusive lock on a sidecar SQLite file, or returns null when another connection holds
+ * it. SQLite's locks are released by the operating system when the process dies, on every
+ * platform, which Node's own file APIs cannot offer. Used to keep a single server per database.
+ */
+export function tryExclusiveLock(file: string): { close(): void } | null {
+  mkdirSync(dirname(file), { recursive: true })
+  const handle = new Database(file, { timeout: 0 })
+  try {
+    handle.pragma('locking_mode = EXCLUSIVE')
+    handle.exec('BEGIN EXCLUSIVE')
+    return { close: () => handle.close() }
+  } catch (err) {
+    handle.close()
+    if ((err as { code?: string }).code === 'SQLITE_BUSY') return null
+    throw err
+  }
+}
+
 export function openDatabase(file: string): { db: Db; sqlite: SqliteHandle } {
   mkdirSync(dirname(file), { recursive: true })
 

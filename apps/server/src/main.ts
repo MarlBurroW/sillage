@@ -15,6 +15,8 @@ import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { announceToLauncher, openDesktopSession, scrubLauncherEnv } from './instance/desktop.js'
 import { INSTANCE_PROFILE } from './instance/profile.js'
+import { acquireInstanceLock } from './instance/lock.js'
+import { CURRENT_VERSION } from './update/version.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { Notifications } from './notifications/dispatcher.js'
@@ -64,6 +66,9 @@ async function main(): Promise<void> {
     mkdirSync(dir, { recursive: true })
   }
 
+  // Before anything touches the database: migrations, purges and restart recovery all rewrite
+  // state a running daemon owns. Held for the life of the process.
+  const lock = await acquireInstanceLock(config.paths.database, { role: 'daemon', version: CURRENT_VERSION })
   const { db, sqlite } = openDatabase(config.paths.database)
   runPendingMigrations(db, migrationsFolder())
   backfillCommandPaths(db)
@@ -251,6 +256,7 @@ async function main(): Promise<void> {
     await terminals.shutdown()
     await app.close()
     sqlite.close()
+    lock.release()
     process.exit(code)
   }
   stopForFault = () => shutdown('uncaughtException', 1)
