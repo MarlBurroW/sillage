@@ -24,6 +24,7 @@ import { eventOf, setDeliveryOutcome } from '../automations/webhooks.js'
 import { launchRefusal } from '../sessions/agent-requests.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
+import { detach } from '../detach.js'
 
 /** Executes scheduled tasks by opening fresh project sessions with task prompts and monitoring completion or maximum duration. Sweep database state in `next_run_at` rather than arm per-task `Cron` instances like housekeeping `Scheduler`: route/MCP creation, edits and pauses apply on the next sweep without rearming, and runs missed during downtime remain visible after restart. */
 
@@ -215,7 +216,7 @@ export class TaskScheduler {
       return run
     }
     this.ctx.db.insert(scheduledRuns).values(run).run()
-    void this.completeCheck(task, run)
+    detach(this.completeCheck(task, run), 'scheduled task check')
     return run
   }
 

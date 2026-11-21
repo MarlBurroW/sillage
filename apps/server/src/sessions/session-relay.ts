@@ -64,6 +64,7 @@ export class SessionRelay {
     this.timer = null
   }
 
+  /** Runs from a timer every two seconds: an exception here must be logged, never left to reject, or one bad row stops the daemon at every boot. Each message is isolated so it cannot block the rest of the mailbox. */
   async sweep(): Promise<void> {
     if (this.busy) return
     this.busy = true
@@ -79,14 +80,20 @@ export class SessionRelay {
         .all()
 
       for (const message of pending) {
-        if (message.createdAt < Date.now() - STALE_MS) {
-          this.settle(message.id, message.kind === 'broadcast' ? 'skipped' : 'expired')
-          continue
+        try {
+          if (message.createdAt < Date.now() - STALE_MS) {
+            this.settle(message.id, message.kind === 'broadcast' ? 'skipped' : 'expired')
+            continue
+          }
+          await this.attempt(message, false)
+        } catch (err) {
+          this.logger?.error({ err, message: message.id }, 'inter-session message sweep failed')
         }
-        await this.attempt(message, false)
       }
 
       this.closeHeld()
+    } catch (err) {
+      this.logger?.error({ err }, 'inter-session relay sweep failed')
     } finally {
       this.busy = false
     }
@@ -170,11 +177,15 @@ export class SessionRelay {
 
     for (const message of closed) {
       const via = message.deliveredVia
-      this.log.append(message.toConversationId, {
-        type: 'session_message.released',
-        messageId: message.id,
-        reason: via === 'read' || via === 'discarded' || via === 'expired' ? via : 'delivered',
-      })
+      // A deleted recipient has no thread to close the notice in. Appending would throw at
+      // every sweep, and `heldAt` would keep the row selected forever.
+      if (this.conversation(message.toConversationId)) {
+        this.log.append(message.toConversationId, {
+          type: 'session_message.released',
+          messageId: message.id,
+          reason: via === 'read' || via === 'discarded' || via === 'expired' ? via : 'delivered',
+        })
+      }
       this.db
         .update(sessionMessages)
         .set({ heldAt: null })

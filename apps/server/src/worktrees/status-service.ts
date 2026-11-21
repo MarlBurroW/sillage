@@ -134,6 +134,10 @@ export class WorktreeStatusService {
         .finally(() => {
           entry.pending = null
         })
+      // Served stale below, nobody awaits this computation: a git failure (a tree being removed,
+      // a timeout) must leave the previous list in place, not reject unobserved. Callers that
+      // do await it still receive the rejection.
+      entry.pending.catch((err: unknown) => console.warn('[worktrees] status refresh failed:', err))
     }
     // Return known stale lists immediately with their stale marker;
     // the new calculation serves the next read.

@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { openDatabase, projects } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
+import { installFaultPolicy } from './detach.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
 import { WebhookService } from './webhooks/service.js'
 import { purgeExpiredSessions } from './auth/sessions.js'
@@ -52,6 +53,11 @@ import { WorktreeStatusService } from './worktrees/status-service.js'
 import { WorktreeRemoteStatus } from './worktrees/remote-status.js'
 
 async function main(): Promise<void> {
+  // Installed first so a rejection during boot is logged too. Until the services exist, a fatal
+  // error has nothing to stop: the process just exits.
+  let stopForFault: (() => Promise<void>) | null = null
+  installFaultPolicy({ onFatal: () => stopForFault?.() ?? Promise.resolve() })
+
   const config = loadConfig()
   if (INSTANCE_PROFILE === 'desktop') scrubLauncherEnv()
   for (const dir of [config.paths.attachments, config.paths.worktrees, config.paths.logs]) {
@@ -226,7 +232,7 @@ async function main(): Promise<void> {
   // Shutdown requests may overlap (signals followed by desktop closing stdin):
   // the second must not close resources already closed by the first.
   let stopping = false
-  const shutdown = async (signal: string) => {
+  const shutdown = async (signal: string, code = 0) => {
     if (stopping) return
     stopping = true
     app.log.info({ signal }, 'arrêt en cours')
@@ -245,15 +251,23 @@ async function main(): Promise<void> {
     await terminals.shutdown()
     await app.close()
     sqlite.close()
-    process.exit(0)
+    process.exit(code)
   }
-  process.on('SIGINT', () => void shutdown('SIGINT'))
-  process.on('SIGTERM', () => void shutdown('SIGTERM'))
+  stopForFault = () => shutdown('uncaughtException', 1)
+  // A failed step used to end the process through the unhandled rejection; now that rejections
+  // are only logged, exit explicitly or the daemon would linger half stopped.
+  const requestShutdown = (signal: string) =>
+    shutdown(signal).catch((err: unknown) => {
+      console.error('sillage: shutdown failed', err)
+      process.exit(1)
+    })
+  process.on('SIGINT', () => void requestShutdown('SIGINT'))
+  process.on('SIGTERM', () => void requestShutdown('SIGTERM'))
   // Desktop requests shutdown by closing stdin: Windows has no appropriate signal,
   // and killing servers would orphan session CLIs.
   // Stdin also closes on unexpected app death, taking the server with it.
   if (INSTANCE_PROFILE === 'desktop') {
-    process.stdin.on('end', () => void shutdown('launcher'))
+    process.stdin.on('end', () => void requestShutdown('launcher'))
     process.stdin.resume()
   }
 }

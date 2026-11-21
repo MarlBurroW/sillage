@@ -12,6 +12,7 @@ import {
 import type { JournalEntry, WebhookFailureReason, WebhookPayload } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import { detach } from '../detach.js'
 
 /** Task webhook delivery and response-deadline monitoring. Listen to all journal events but retain only API tasks whose token or task declares a URL. Persist deliveries before their first attempt so restarts retry unsent notifications, whose loss callers cannot detect. Always deliver regardless of humans viewing conversations: never inherit push `isWatched` filtering, designed for humans already at their screens rather than machine callers. */
 
@@ -72,9 +73,9 @@ export class WebhookService {
 
   start(): void {
     this.unsubscribe = this.log.subscribeAll((entry) => this.onEvent(entry))
-    this.timer = setInterval(() => void this.deliverDue(), SCAN_INTERVAL_MS)
+    this.timer = setInterval(() => detach(this.deliverDue(), 'webhook delivery'), SCAN_INTERVAL_MS)
     this.timer.unref()
-    void this.deliverDue()
+    detach(this.deliverDue(), 'webhook delivery')
   }
 
   stop(): void {
@@ -213,7 +214,7 @@ export class WebhookService {
     this.disarmDeadline(requestId)
     const timer = setTimeout(() => {
       this.deadlines.delete(requestId)
-      void this.expireReply(conversationId, requestId)
+      detach(this.expireReply(conversationId, requestId), 'API reply deadline')
     }, seconds * 1000)
     timer.unref()
     this.deadlines.set(requestId, timer)
@@ -346,7 +347,7 @@ export class WebhookService {
       })
       .run()
 
-    void this.deliverDue()
+    detach(this.deliverDue(), 'webhook delivery')
   }
 
   /** Attempts all due deliveries, one pass at a time. */

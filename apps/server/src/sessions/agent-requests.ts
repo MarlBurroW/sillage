@@ -218,6 +218,16 @@ export class AgentRequests {
    * still observe their own request settled.
    */
   async sweep(): Promise<void> {
+    // Runs from a timer: a failure (a busy database, a project move that throws) is logged and
+    // retried at the next poll, never left to reject.
+    try {
+      await this.sweepOnce()
+    } catch (err) {
+      this.logger?.error({ err }, 'agent request sweep failed')
+    }
+  }
+
+  private async sweepOnce(): Promise<void> {
     await this.sessions.applyPendingProjectMoves?.()
     const room = MAX_IN_FLIGHT - this.inFlight.size
     if (room <= 0) return

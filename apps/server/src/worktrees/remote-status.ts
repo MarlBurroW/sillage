@@ -8,6 +8,7 @@ import type { Paths } from '../config.js'
 import { credentialEnv } from '../git-credential/helper.js'
 import { githubRepoFromRemote } from '../git-credentials/github.js'
 import type { GitCredentialStore } from '../git-credentials/store.js'
+import { detach } from '../detach.js'
 
 const exec = promisify(execFile)
 const REFRESH_MS = 2 * 60_000
@@ -38,7 +39,7 @@ export class WorktreeRemoteStatus {
     if (!entry.pending && Date.now() - entry.at > REFRESH_MS) {
       entry.pending = true
       const current = entry
-      void this.refresh(project, branches, link).then((pulls) => {
+      detach(this.refresh(project, branches, link).then((pulls) => {
         current.pulls = pulls
       }).catch(() => {
         // Missing credentials or an offline forge must not turn unknown into merged.
@@ -47,7 +48,7 @@ export class WorktreeRemoteStatus {
         current.at = Date.now()
         current.pending = false
         if (this.cache.get(project.id) === current) this.onRefreshed(project.id)
-      })
+      }), 'pull request status refresh')
     }
     return entry.pulls
   }

@@ -1,3 +1,4 @@
+import { detach } from '../detach.js'
 import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
 import { conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
@@ -352,12 +353,12 @@ export class SessionManager {
     // Turn just finished: the only point when queued messages can leave without
     // mixing into previous-turn context, and promised restarts can happen
     // without interrupting work.
-    if (status === 'idle') void this.settleIdle(conversationId)
+    if (status === 'idle') detach(this.settleIdle(conversationId), 'queue flush after a turn')
 
     // Errored runners are irrecoverably dead: retaining them routes subsequent
     // messages to unusable processes. Stop to free capacity;
     // the next message resumes through a fresh session.
-    if (status === 'error') void this.stopRunner(conversationId)
+    if (status === 'error') detach(this.stopRunner(conversationId), 'stopping a failed runner')
   }
 
   /** Broadcasts status. Pass `warm` explicitly: stopping runners announces cold sessions while the map still contains warm entries. */
@@ -1085,7 +1086,7 @@ export class SessionManager {
           this.log.refreshTurnCount(conversationId)
           // CLIs summarize sessions only after turns finish,
           // the first moment useful titles exist.
-          void this.adoptSuggestedTitle(conversationId)
+          detach(this.adoptSuggestedTitle(conversationId), 'title adoption')
           // SQL increments rather than memory additions: `conversation` was read at runner
           // creation, so reusing it would overwrite previous turns.
           this.db
@@ -1264,7 +1265,7 @@ export class SessionManager {
       return
     }
 
-    void this.stopRunner(conversationId)
+    detach(this.stopRunner(conversationId), 'idle runner reaping')
   }
 
   /** Resolves client mentions to absolute paths within working directories. Reject escaping `../` rather than truncate so agents never receive files different from those named. */
@@ -1360,9 +1361,9 @@ export class SessionManager {
     this.announce(prepared.conversation, text, attachments)
     // Detached: the reply is 'accepted' and the thread already shows the message. The CLI start
     // that follows is what took seconds on Windows.
-    void this.deliver(prepared.conversation, prepared.release, text, attachments, prepared.resolved, skills).then((delivered) => {
+    detach(this.deliver(prepared.conversation, prepared.release, text, attachments, prepared.resolved, skills).then((delivered) => {
       if (!delivered) this.releaseClientMessage(conversationId, clientMessageId)
-    })
+    }), 'message delivery')
   }
 
   /** Journals the user's message and opens the turn before any CLI work. Starting a CLI takes seconds on Windows, MCP servers included, and users saw nothing until then: the thread shows the message and the activity indicator at Enter, for every CLI alike. Runners therefore no longer echo in `send`. `isBusy` holds until the hand-over so a second message queues instead of racing the start. */
@@ -1400,12 +1401,18 @@ export class SessionManager {
       return true
     } catch (err) {
       this.checkpoints.delete(conversationId)
-      this.log.append(conversationId, {
-        type: 'error',
-        code: 'send_failed',
-        message: `The message could not be handed to the CLI: ${err instanceof Error ? err.message : String(err)}`,
-        recoverable: true,
-      })
+      // The failure may be the journal itself, or a conversation deleted while its CLI started:
+      // journaling must not throw past the status reset below, or the thread stays busy.
+      try {
+        this.log.append(conversationId, {
+          type: 'error',
+          code: 'send_failed',
+          message: `The message could not be handed to the CLI: ${err instanceof Error ? err.message : String(err)}`,
+          recoverable: true,
+        })
+      } catch (journalErr) {
+        console.error('sillage: send failure not journaled', journalErr)
+      }
       this.pendingDeliveries.delete(conversationId)
       this.setStatus(conversationId, 'idle')
       return false
@@ -1465,11 +1472,11 @@ export class SessionManager {
     this.checkpoints.set(conversation.id, entry)
     this.log.append(conversation.id, { type: 'checkpoint.started', key })
     if (settled === null) {
-      void capture.then((ok) => {
+      detach(capture.then((ok) => {
         if (ok || this.checkpoints.get(conversation.id) !== entry) return
         this.checkpoints.delete(conversation.id)
         this.failCheckpoint(conversation.id, key, 'The workspace could not be captured before the turn.')
-      })
+      }), 'late checkpoint capture')
     }
   }
 

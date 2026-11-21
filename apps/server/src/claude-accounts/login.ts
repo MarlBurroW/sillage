@@ -7,6 +7,7 @@ import { launchOf } from '../agents/launch.js'
 import { claudeSecretKind, type ClaudeLoginStatusDto } from '@sillage/protocol'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { ClaudeAccountStore } from './store.js'
+import { detach } from '../detach.js'
 
 /** Guided Claude subscription login through `claude setup-token` in a pseudo-terminal. No nonterminal subscription flow exists: setup-token opens browsers or prints authorization URLs, waits for pasted codes, then prints tokens. Probed on 2.1.296 under `script`: URLs use OSC 8 links followed by 'Paste code here if prompted'; wrong codes yield 'OAuth error: Invalid code … Press Enter to retry'; configuration directories remain untouched. Sillage mirrors this dialogue. Use disposable configuration directories to avoid reading or writing host authentication; tokens exist only in memory until encrypted into accounts created at that point. One login is enough: the same token feeds sessions and the usage gauge (see `ClaudeUsageReader.readForToken`). A second `claude auth login` once supplied the gauge, at the cost of a second page and code. */
 
@@ -208,11 +209,11 @@ export class ClaudeLoginService {
     const login = this.logins.get(loginId)
     if (!login) return
     if (this.adoptToken(loginId)) return
-    void this.finish(
+    detach(this.finish(
       loginId,
       login.status.error ??
         `claude setup-token s'est arrêté (code ${exitCode}) sans conclure. Sa sortie : ${diagnostic(login.output)}`,
-    )
+    ), 'Claude login cleanup')
   }
 
   async cancel(ownerId: string, loginId: string): Promise<boolean> {
@@ -292,7 +293,7 @@ export class ClaudeLoginService {
     const label = this.store.labelFree(login.ownerId, login.label) ? login.label : `${login.label} ${new Date().toLocaleDateString('fr-FR')}`
     const account = this.store.create(login.ownerId, label, token)
     login.status = { ...login.status, state: 'done', error: null, account }
-    void this.finish(loginId, null)
+    detach(this.finish(loginId, null), 'Claude login cleanup')
     return true
   }
 

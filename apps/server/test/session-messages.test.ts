@@ -6,11 +6,13 @@ import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
-import { conversations, openDatabase, projects, runMigrations, sessionMessages, users } from '@sillage/db'
+import { conversations, openDatabase, projects, runMigrations, sessionMessages, sessionWatches, users } from '@sillage/db'
 import { formatSessionMessage, parseSessionMessage } from '@sillage/protocol'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { SessionRelay } from '../src/sessions/session-relay.js'
 import { EventLog } from '../src/events/event-log.js'
+import type { AttachmentStore } from '../src/attachments/store.js'
+import { deleteConversation } from '../src/conversations/delete.js'
 
 type Status = 'idle' | 'running' | 'awaiting_input' | 'interrupted' | 'error'
 
@@ -142,6 +144,53 @@ test('wakes are capped, held messages show in the thread once, and the tool read
   await relay.sweep()
   const released = journal('b').filter((event) => event.type === 'session_message.released')
   assert.deepEqual(released.map((event) => event.type === 'session_message.released' && event.reason), ['read', 'read'])
+})
+
+test('a held message to a deleted session no longer fails every sweep', async (t) => {
+  const { db, conversation, mcp, relay } = await harness(t)
+  conversation('a', 'idle')
+  conversation('b', 'idle')
+  for (let i = 0; i < 7; i++) mcp('a', 'send_session_message', { to: 'b', body: `message ${i}` })
+  await relay.sweep()
+  const held = db.select().from(sessionMessages).all().filter((row) => row.heldAt !== null)
+  assert.equal(held.length, 1)
+
+  // Deleted behind the relay's back, as the MCP or an older daemon could: closing the notice
+  // used to journal into the missing thread, throw, and stop the daemon at every boot.
+  db.delete(conversations).where(eq(conversations.id, 'b')).run()
+  await relay.sweep()
+  await relay.sweep()
+
+  const row = db.select().from(sessionMessages).where(eq(sessionMessages.id, held[0]!.id)).get()!
+  assert.equal(row.deliveredVia, 'failed')
+  assert.equal(row.heldAt, null)
+})
+
+test('deleting a session settles its mailbox', async (t) => {
+  const { db, conversation, mcp, relay, setStatus } = await harness(t)
+  conversation('a', 'idle')
+  conversation('b', 'idle')
+  conversation('c', 'running')
+  for (let i = 0; i < 7; i++) mcp('a', 'send_session_message', { to: 'b', body: `message ${i}` })
+  await relay.sweep()
+  // Only a working session can be watched.
+  setStatus('b', 'running')
+  assert.ok(!mcp('b', 'notify_when_done', { session: 'c' }).isError)
+  assert.ok(!mcp('a', 'notify_when_done', { session: 'b' }).isError)
+
+  const sessions = { terminate: async () => {}, dropCheckpoints: async () => {} } as unknown as SessionManager
+  const attachments = { removeForConversations: async () => {} } as unknown as AttachmentStore
+  await deleteConversation(db, sessions, attachments, 'b')
+
+  const toB = db.select().from(sessionMessages).where(eq(sessionMessages.toConversationId, 'b')).all()
+  assert.ok(toB.every((row) => row.deliveredAt !== null && row.heldAt === null))
+  const watches = db.select().from(sessionWatches).all()
+  // B's own watch is closed; A's watch on B stays open so the relay can say B is gone.
+  assert.ok(watches.find((watch) => watch.watcherConversationId === 'b')!.firedAt !== null)
+  assert.equal(watches.find((watch) => watch.watcherConversationId === 'a')!.firedAt, null)
+  await relay.sweep()
+  const told = db.select().from(sessionMessages).where(eq(sessionMessages.toConversationId, 'a')).all()
+  assert.ok(told.some((row) => row.kind === 'done' && row.body.includes('no longer exists')))
 })
 
 test('a person can deliver or discard a held message', async (t) => {

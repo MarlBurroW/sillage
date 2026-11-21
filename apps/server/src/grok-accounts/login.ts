@@ -10,6 +10,7 @@ import { GROK_ISOLATION_ENV } from '../agents/grok/launch.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { GrokAccountHomes } from './homes.js'
 import type { GrokAccountStore } from './store.js'
+import { detach } from '../detach.js'
 
 /** Additional Grok account login through Grok launched in its home. Grok handles xAI exchanges, writes `auth.json` and refreshes it later; Sillage subsequently sees neither tokens nor keys. Device login uses `grok login --device-auth` (probed on 1.0.62): without a terminal it prints `https://accounts.x.ai/oauth2/device?user_code=…` and a code, waits for confirmation, then prints '✓ Signed in as <email>' and exits 0. Browser login is excluded for Codex's same reason: redirects target the unreachable server. API-key login uses ACP `xai.api_key`; Grok reads `XAI_API_KEY` and stores it in the home's `auth.json` (`store_api_key` in its source). */
 
@@ -105,7 +106,7 @@ export class GrokLoginService {
         }
         if (code === 0 && this.homes.connected(accountId)) {
           const email = /Signed in as (\S+)/.exec(output)?.[1] ?? null
-          void this.finish(accountId, email)
+          detach(this.finish(accountId, email), 'Grok login completion')
         } else {
           this.fail(accountId, output.trim().split('\n').slice(-2).join(' ') || `grok login a rendu ${code}.`)
         }

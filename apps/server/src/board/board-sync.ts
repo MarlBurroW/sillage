@@ -199,6 +199,9 @@ export class BoardSync {
         const due = !link.lastSyncedAt || Date.now() - link.lastSyncedAt >= PULL_EVERY_MS
         await this.run(link.projectId, due).catch(() => {})
       }
+    } catch (err) {
+      // Like its sibling ticks: a busy or failing database is retried at the next tick.
+      this.logger?.error({ err }, 'board sync tick failed')
     } finally {
       this.ticking = false
     }
