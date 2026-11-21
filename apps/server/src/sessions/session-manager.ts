@@ -91,6 +91,34 @@ interface QueuedMessage {
   skills: string[]
 }
 
+/**
+ * Where a conversation stands. That state is spread over the runner map, the delivery and the
+ * start in progress and the move lock; every decision (queue or send, evict, reap, move, update
+ * the CLI, release) reads it through `phase` instead of testing its own subset of those maps, which
+ * is how eviction once ignored deliveries and a stop during a cold start was lost.
+ */
+type ConversationPhase =
+  /** No CLI process and nothing on the way. */
+  | 'cold'
+  /** A CLI is starting outside a send (compaction on a cold conversation). */
+  | 'starting'
+  /** A message is announced and on its way to the CLI, whose start it may be waiting for. */
+  | 'delivering'
+  /** The conversation is changing project; its runner is being stopped. */
+  | 'moving'
+  | 'running'
+  | 'awaiting'
+  /** A warm CLI with no turn: idle, interrupted, or failed and about to be stopped. */
+  | 'idle'
+
+/** A message announced by `announce`, until `deliver` has handed it over or given up. */
+interface Delivery {
+  /** The CLI has been given the message: from then on only the CLI can stop the turn. */
+  handing: boolean
+  /** Stop asked before the hand-over. The turn is already closed in the journal; `deliver` drops the message, and with `terminate` stops the CLI it may have started. */
+  cancel: 'interrupt' | 'terminate' | null
+}
+
 interface ManagedRunner {
   runner: AgentRunner
   lastActivity: number
@@ -200,7 +228,7 @@ export class SessionManager {
   private readonly queues = new Map<string, QueuedMessage[]>()
   private readonly checkpoints = new Map<string, ActiveCheckpoint>()
   /** Conversations whose announced message has not reached the CLI yet; see `announce`. */
-  private readonly pendingDeliveries = new Set<string>()
+  private readonly pendingDeliveries = new Map<string, Delivery>()
   /** Set by `stopAll`: the daemon is going away, nothing new starts and stopped runners write nothing more. */
   private closing = false
   private readonly projectMoveLocks = new Set<string>()
@@ -603,7 +631,7 @@ export class SessionManager {
   async prepareCliUpdate(kind: AgentKind): Promise<(() => void) | null> {
     if (this.updatingClis.has(kind) || this.cliOperations.has(kind)) return null
     const runners = [...this.runners].filter(([, managed]) => managed.runner.appliedConfig.agent === kind)
-    if (runners.some(([id, managed]) => this.isBusy(id) || managed.background > 0 || managed.loops > 0 || this.queues.has(id))) return null
+    if (runners.some(([id]) => !this.isQuiescent(id) || this.hasDetachedWork(id) || this.queues.has(id))) return null
     this.updatingClis.add(kind)
     try {
       await Promise.all(runners.map(([id]) => this.stopRunner(id, { keepQueue: true })))
@@ -624,12 +652,32 @@ export class SessionManager {
     return [...this.runners.keys()]
   }
 
-  /** Whether messages sent now would not reach CLIs immediately. */
+  private phase(conversationId: string): ConversationPhase {
+    if (this.projectMoveLocks.has(conversationId)) return 'moving'
+    if (this.pendingDeliveries.has(conversationId)) return 'delivering'
+    if (this.startingRunners.has(conversationId)) return 'starting'
+    const managed = this.runners.get(conversationId)
+    if (!managed) return 'cold'
+    if (managed.status === 'running') return 'running'
+    if (managed.status === 'awaiting_input') return 'awaiting'
+    return 'idle'
+  }
+
+  /** Whether messages sent now would not reach CLIs immediately: the CLI, or a hand-over to it, has control. */
   private isBusy(conversationId: string): boolean {
-    if (this.projectMoveLocks.has(conversationId)) return true
-    if (this.pendingDeliveries.has(conversationId)) return true
-    const status = this.runners.get(conversationId)?.status
-    return status === 'running' || status === 'awaiting_input'
+    const phase = this.phase(conversationId)
+    return phase === 'moving' || phase === 'delivering' || phase === 'running' || phase === 'awaiting'
+  }
+
+  /** Work living in the CLI process beyond turns (dev servers, loops): stopping the process ends it. */
+  private hasDetachedWork(conversationId: string): boolean {
+    const managed = this.runners.get(conversationId)
+    return Boolean(managed && (managed.background > 0 || managed.loops > 0))
+  }
+
+  /** Nothing would be lost by stopping this CLI now, apart from detached work, which callers weigh. */
+  private isQuiescent(conversationId: string): boolean {
+    return this.phase(conversationId) === 'idle'
   }
 
   /** On returning idle, apply pending restarts before flushing queues. Restarts call `setStatus('idle')` and reenter here; clear flags beforehand so reentry goes directly to queues and pending messages reach reconfigured runners. */
@@ -672,7 +720,8 @@ export class SessionManager {
   }
 
   private async applyProjectMove(conversationId: string): Promise<void> {
-    if (this.isBusy(conversationId) || this.startingRunners.has(conversationId) || this.backgroundCount(conversationId) || this.loopCount(conversationId)) return
+    const phase = this.phase(conversationId)
+    if ((phase !== 'idle' && phase !== 'cold') || this.hasDetachedWork(conversationId)) return
     const pending = pendingProjectMove(this.db, conversationId)
     if (!pending) return
     this.projectMoveLocks.add(conversationId)
@@ -787,6 +836,14 @@ export class SessionManager {
       reason: 'cancelled',
     })
     return true
+  }
+
+  /** Pending messages that can no longer depart: journaled as expired, rather than lost silently at the next message. */
+  private expireQueue(conversationId: string): void {
+    for (const entry of this.queues.get(conversationId) ?? []) {
+      this.log.append(conversationId, { type: 'message.dequeued', queueId: entry.queueId, reason: 'expired' })
+    }
+    this.queues.delete(conversationId)
   }
 
   /** Closes messages left queued at daemon shutdown. Memory queues are lost; without events, replay would show them pending forever for sends that cannot happen. */
@@ -1200,12 +1257,12 @@ export class SessionManager {
     // Loop rather than stop once: lowering limits through the interface can leave
     // more live runners than available capacity.
     while (this.runners.size >= limit) {
-      // A runner still starting, or about to receive a message, reads as idle: evicting it would
-      // cut a launch in progress.
+      // A runner still starting, or about to receive a message, has an idle status: the phase
+      // tells it apart, evicting it would cut a launch in progress. Runners hosting a dev server
+      // or a loop go last, since stopping them ends that work too.
       const idle = [...this.runners.entries()]
-        .filter(([id, managed]) => (managed.status === 'idle' || managed.status === 'interrupted') &&
-          !this.startingRunners.has(id) && !this.pendingDeliveries.has(id))
-        .sort((a, b) => a[1].lastActivity - b[1].lastActivity)
+        .filter(([id]) => this.isQuiescent(id))
+        .sort((a, b) => Number(this.hasDetachedWork(a[0])) - Number(this.hasDetachedWork(b[0])) || a[1].lastActivity - b[1].lastActivity)
 
       const oldest = idle[0]
       if (!oldest) {
@@ -1304,7 +1361,7 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return
 
-    if (this.isBusy(conversationId) || managed.background > 0 || managed.loops > 0) {
+    if (!this.isQuiescent(conversationId) || this.hasDetachedWork(conversationId)) {
       this.armIdleTimer(conversationId, managed)
       return
     }
@@ -1416,7 +1473,7 @@ export class SessionManager {
     const { blocks } = describeOutgoingMessage(text, attachments)
     this.log.append(conversation.id, { type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     this.log.append(conversation.id, { type: 'turn.started' })
-    this.pendingDeliveries.add(conversation.id)
+    this.pendingDeliveries.set(conversation.id, { handing: false, cancel: null })
     this.setStatus(conversation.id, 'running')
   }
 
@@ -1430,11 +1487,17 @@ export class SessionManager {
     skills: string[],
   ): Promise<boolean> {
     const conversationId = conversation.id
+    const delivery = this.pendingDeliveries.get(conversationId)
     const started = Date.now()
     try {
       // Cold starts and the before snapshot are independent, and both are slow on Windows:
       // overlap them rather than paying for one after the other.
       const [runner] = await Promise.all([this.ensureRunner(conversation), this.openCheckpoint(conversation)])
+      if (delivery?.cancel) {
+        await this.dropDelivery(conversationId, delivery.cancel)
+        return false
+      }
+      if (delivery) delivery.handing = true
       const prepared = Date.now()
       await runner.send(text, attachments, resolved, skills)
       // Only slow hand-overs are worth a log line: the Desktop keeps stderr, and this is what
@@ -1446,6 +1509,11 @@ export class SessionManager {
       return true
     } catch (err) {
       this.checkpoints.delete(conversationId)
+      // Stopped while its CLI was starting: the stop explains the failure and has closed the turn.
+      if (delivery?.cancel) {
+        await this.dropDelivery(conversationId, delivery.cancel)
+        return false
+      }
       // The failure may be the journal itself, or a conversation deleted while its CLI started:
       // journaling must not throw past the status reset below, or the thread stays busy.
       try {
@@ -1465,6 +1533,32 @@ export class SessionManager {
       this.pendingDeliveries.delete(conversationId)
       release()
     }
+  }
+
+  /**
+   * Stop asked while a message was on its way and the CLI did not have it yet: a cold start takes
+   * seconds on Windows, and the message used to reach the CLI anyway once it was up. Closes the turn
+   * `announce` opened, now, so Stop takes effect at once; `deliver` then drops the message.
+   */
+  private cancelDelivery(conversationId: string, kind: 'interrupt' | 'terminate'): boolean {
+    const delivery = this.pendingDeliveries.get(conversationId)
+    if (!delivery || delivery.handing) return false
+    if (delivery.cancel) return true
+    delivery.cancel = kind
+    this.log.append(conversationId, { type: 'turn.completed', stopReason: 'interrupted', costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
+    return true
+  }
+
+  /** `deliver`'s side of a cancellation: the message is dropped, a terminated conversation loses its CLI, an interrupted one keeps it warm and sends what was queued meanwhile. */
+  private async dropDelivery(conversationId: string, kind: 'interrupt' | 'terminate'): Promise<void> {
+    this.pendingDeliveries.delete(conversationId)
+    this.closeCheckpoint(conversationId)
+    if (kind === 'terminate') {
+      await this.stopRunner(conversationId)
+      this.expireQueue(conversationId)
+      return
+    }
+    await this.settleIdle(conversationId)
   }
 
   /** Synchronous part of a send: the conversation, the CLI lock and the mentions. Invalid mentions must reject sends rather than leave launched sessions with lost messages. */
@@ -1593,7 +1687,7 @@ export class SessionManager {
     const cwd = this.workingDirectory(conversationId)
     // Sessions sharing the directory (the project root, typically) would have their files
     // rewritten in the middle of a turn without knowing it.
-    const sharing = [...new Set([...this.runners.keys(), ...this.pendingDeliveries])].find((id) =>
+    const sharing = [...new Set([...this.runners.keys(), ...this.pendingDeliveries.keys()])].find((id) =>
       id !== conversationId && this.isBusy(id) && this.workingDirectoryOrNull(id) === cwd,
     )
     if (sharing) {
@@ -1693,6 +1787,11 @@ export class SessionManager {
   }
 
   async interrupt(conversationId: string): Promise<void> {
+    if (this.cancelDelivery(conversationId, 'interrupt')) {
+      // Idle now, though the queue waits for `deliver` to let go of the conversation.
+      this.setStatus(conversationId, 'idle')
+      return
+    }
     const managed = this.runners.get(conversationId)
     if (!managed) {
       this.setStatus(conversationId, 'idle')
@@ -1703,8 +1802,13 @@ export class SessionManager {
 
   /** Permanently stops unwatched conversations: turn, process, background work and loops. `interrupt` alone leaves CLI-hosted work alive indefinitely, unsuitable for overlong scheduled runs. */
   async terminate(conversationId: string): Promise<void> {
+    // A CLI still starting has no turn to interrupt: stopping it is enough, and `deliver` will not hand it the message.
+    const starting = this.cancelDelivery(conversationId, 'terminate')
     const managed = this.runners.get(conversationId)
-    if (managed) {
+    if (managed && starting) {
+      this.expireOpenPrompts(conversationId)
+      await this.stopRunner(conversationId)
+    } else if (managed) {
       await managed.runner.interrupt().catch(() => undefined)
       this.expireOpenPrompts(conversationId)
       await this.stopRunner(conversationId)
@@ -1898,7 +2002,7 @@ export class SessionManager {
 
   /** Stops running conversation runners and reports release. Transcript resynchronization needs this because warm context ignores external CLI turns, while resume loads complete files. Refuse active turns: although callers check before reading, turns may start meanwhile; interruption loses work and adds `[Request interrupted by user]` messages later reimported. Live activity takes precedence. */
   async releaseRunner(conversationId: string): Promise<boolean> {
-    if (this.isBusy(conversationId)) return false
+    if (this.isBusy(conversationId) || this.phase(conversationId) === 'starting') return false
 
     await this.stopRunner(conversationId)
     return true
@@ -1914,16 +2018,7 @@ export class SessionManager {
 
     // Pending messages cannot depart after runner shutdown: leaving them queued
     // would silently lose them at the next message.
-    if (!keepQueue) {
-      for (const entry of this.queues.get(conversationId) ?? []) {
-        this.log.append(conversationId, {
-          type: 'message.dequeued',
-          queueId: entry.queueId,
-          reason: 'expired',
-        })
-      }
-      this.queues.delete(conversationId)
-    }
+    if (!keepQueue) this.expireQueue(conversationId)
 
     this.runners.delete(conversationId)
     this.usage?.forget(conversationId)
@@ -1955,12 +2050,17 @@ export class SessionManager {
    */
   async stopAll(): Promise<void> {
     this.closing = true
-    for (const [conversationId, managed] of this.runners) {
-      const busy = managed.status === 'running' || managed.status === 'awaiting_input' || this.pendingDeliveries.has(conversationId)
-      if (!busy) continue
+    // A delivery waiting for its CLI has no runner in the map yet, but its turn is open all the same.
+    for (const conversationId of new Set([...this.runners.keys(), ...this.pendingDeliveries.keys()])) {
+      const phase = this.phase(conversationId)
+      if (phase !== 'running' && phase !== 'awaiting' && phase !== 'delivering') continue
       try {
         this.closeInterruptedTurn(conversationId, 'The daemon stopped during this conversation. The agent was interrupted.')
-        managed.status = 'interrupted'
+        const delivery = this.pendingDeliveries.get(conversationId)
+        // A CLI that comes up after this snapshot is stopped by `deliver` instead of receiving the message.
+        if (delivery && !delivery.handing) delivery.cancel = 'terminate'
+        const managed = this.runners.get(conversationId)
+        if (managed) managed.status = 'interrupted'
         // Already expired from the journal: `stopRunner` would announce them a second time.
         this.queues.delete(conversationId)
       } catch (err) {

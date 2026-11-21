@@ -100,6 +100,9 @@ test('a runner stopped while its CLI starts is stopped, not left running untrack
 
   assert.equal(h.stops(), 2, 'stopped by terminate, then again once its start returned')
   assert.equal(h.sessions.activeCount(), 0)
-  const failed = h.log.read('c', 0, 1000).map((entry) => entry.event).find((event) => event.type === 'error')
-  assert.equal(failed?.type === 'error' ? failed.code : null, 'send_failed')
+  // The stop explains the outcome: the turn is closed as interrupted, not as a failed send.
+  const events = h.log.read('c', 0, 1000).map((entry) => entry.event)
+  assert.equal(events.some((event) => event.type === 'error' && event.code === 'send_failed'), false)
+  assert.equal(events.filter((event) => event.type === 'turn.completed' && event.stopReason === 'interrupted').length, 1)
+  assert.equal(h.status(), 'interrupted')
 })
