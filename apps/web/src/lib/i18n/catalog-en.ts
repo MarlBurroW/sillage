@@ -2995,6 +2995,7 @@ export const en = {
   "error.project_move_pending": "A move to another project is already pending.",
   "error.project_move_changed": "The source project changed before the move.",
   "error.project_move_failed": "The session could not be moved. See the notice in the conversation.",
+  "error.server_stopping": "Sillage is stopping: send again once it is back.",
   "error.checkpoint_previous_project": "This checkpoint belongs to the previous project and cannot be restored here.",
   "error.checkpoint_workspace_busy": "Another session is working in this directory: wait for its turn to finish before reverting.",
   "sillageTool.move_session": "Move the session to another project",

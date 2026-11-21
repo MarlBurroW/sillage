@@ -28,6 +28,8 @@ Environment=PATH=__NODE_DIR__:__HOME__/.local/bin:__HOME__/.npm-global/bin:__HOM
 # systemd to relaunch the new version.
 Restart=always
 RestartSec=2
+# Shutdown ends itself within 12 s (SHUTDOWN_DEADLINE_MS); beyond this, systemd kills it.
+TimeoutStopSec=30
 
 # Guardrail, not reservation: beyond this, kernel throttles service instead of
 # letting the entire machine run out of memory. Agents and their dev servers

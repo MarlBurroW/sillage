@@ -54,6 +54,9 @@ import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
 import { WorktreeRemoteStatus } from './worktrees/remote-status.js'
 
+/** Below the Desktop launcher's 15 s grace and systemd's TimeoutStopSec, so the process ends on its own terms. */
+const SHUTDOWN_DEADLINE_MS = 12_000
+
 async function main(): Promise<void> {
   // Installed first so a rejection during boot is logged too. Until the services exist, a fatal
   // error has nothing to stop: the process just exits.
@@ -241,21 +244,35 @@ async function main(): Promise<void> {
     if (stopping) return
     stopping = true
     app.log.info({ signal }, 'arrêt en cours')
+    // A step that hangs (a client socket that never closes, a CLI that ignores its signal) must
+    // not keep the process alive until systemd kills it: the Desktop launcher gives it 15 s.
+    setTimeout(() => {
+      console.error('sillage: shutdown did not finish in time, exiting')
+      process.exit(code || 1)
+    }, SHUTDOWN_DEADLINE_MS).unref()
+    // Each step on its own: one that throws used to skip the rest, leaving CLIs unstopped and
+    // the database open.
+    const step = async (name: string, run: () => unknown) => {
+      try {
+        await run()
+      } catch (err) {
+        app.log.error({ err, step: name }, 'étape d’arrêt en échec')
+      }
+    }
     // Before stopAll expires requests: statuses still identify in-flight work,
     // and persisted deliveries will send at next startup.
-    webhooks.shutdownFlush()
-    webhooks.stop()
-    scheduler.stop()
-    relay.stop()
-    agentRequests.stop()
-    tasks.stop()
-    board.stop()
-    decisions.stop()
-    await antigravityLogin.closeAll()
-    await sessions.stopAll()
-    await terminals.shutdown()
-    await app.close()
-    sqlite.close()
+    await step('webhooks', () => { webhooks.shutdownFlush(); webhooks.stop() })
+    // Every producer of new work stops before the runners do, or it could start a CLI after the
+    // snapshot `stopAll` takes. `stopAll` itself refuses any new runner from then on.
+    for (const [name, service] of [['scheduler', scheduler], ['relay', relay], ['agentRequests', agentRequests], ['tasks', tasks],
+      ['board', board], ['decisions', decisions], ['benchmarks', benchmarkRunner], ['usageLimits', usageLimits]] as const) {
+      await step(name, () => service.stop())
+    }
+    await step('antigravityLogin', () => antigravityLogin.closeAll())
+    await step('sessions', () => sessions.stopAll())
+    await step('terminals', () => terminals.shutdown())
+    await step('http', () => app.close())
+    await step('database', () => sqlite.close())
     lock.release()
     process.exit(code)
   }

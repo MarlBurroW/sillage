@@ -201,6 +201,8 @@ export class SessionManager {
   private readonly checkpoints = new Map<string, ActiveCheckpoint>()
   /** Conversations whose announced message has not reached the CLI yet; see `announce`. */
   private readonly pendingDeliveries = new Set<string>()
+  /** Set by `stopAll`: the daemon is going away, nothing new starts and stopped runners write nothing more. */
+  private closing = false
   private readonly projectMoveLocks = new Set<string>()
   /** Set later because the WebSocket hub tracking viewers does not exist when managers are constructed. */
   private notifier: ConversationNotifier | null = null
@@ -916,6 +918,9 @@ export class SessionManager {
     // History imports run without a lease: nothing to be superseded by.
     const superseded = () => {
       if (!lease) return false
+      // Shutdown has journaled each turn's end itself: a runner unwinding after `stop` must not
+      // mark its conversation idle, which hid it from restart recovery and from schedules.
+      if (this.closing) return true
       const live = this.runners.get(conversationId)
       return live !== undefined && live.lease !== lease
     }
@@ -1234,6 +1239,8 @@ export class SessionManager {
   }
 
   private async startRunner(conversationId: string): Promise<AgentRunner> {
+    // A CLI started now would outlive the `stopAll` snapshot, with nothing left to stop it.
+    this.assertOpen()
     await this.makeRoom()
 
     // Reread from the database: previous runners may have set agentSessionId.
@@ -1365,6 +1372,7 @@ export class SessionManager {
     mentions: string[] = [],
     skills: string[] = [],
   ): Promise<void> {
+    this.assertOpen()
     if (pendingProjectMove(this.db, conversationId)) await this.applyProjectMove(conversationId)
     if (!this.claimClientMessage(conversationId, clientMessageId)) return
 
@@ -1921,7 +1929,12 @@ export class SessionManager {
     this.usage?.forget(conversationId)
     this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
-    await managed.runner.stop()
+    try {
+      await managed.runner.stop()
+    } catch (err) {
+      // The rest still has to run: background work closed in the journal, cold status announced.
+      console.error(`sillage: stopping the runner of ${conversationId} failed`, err)
+    }
     // After shutdown, CLIs can no longer overwrite our final list;
     // synchronous writes persist even when daemon shutdown
     // follows immediately.
@@ -1934,8 +1947,40 @@ export class SessionManager {
     this.broadcastStatus(conversationId, managed.status, false)
   }
 
+  /**
+   * Daemon shutdown. Each turn in progress is closed in the journal and marked interrupted here,
+   * as restart recovery would, rather than left to a race: a runner unwinding after `stop` could
+   * mark its conversation idle before the process exited, and the interrupted turn then escaped
+   * recovery, schedules and benchmarks. One runner failing to stop does not keep the others alive.
+   */
   async stopAll(): Promise<void> {
-    await Promise.all([...this.runners.keys()].map((id) => this.stopRunner(id)))
+    this.closing = true
+    for (const [conversationId, managed] of this.runners) {
+      const busy = managed.status === 'running' || managed.status === 'awaiting_input' || this.pendingDeliveries.has(conversationId)
+      if (!busy) continue
+      try {
+        this.closeInterruptedTurn(conversationId, 'The daemon stopped during this conversation. The agent was interrupted.')
+        managed.status = 'interrupted'
+        // Already expired from the journal: `stopRunner` would announce them a second time.
+        this.queues.delete(conversationId)
+      } catch (err) {
+        console.error(`sillage: closing the turn of ${conversationId} failed`, err)
+      }
+    }
+    await Promise.allSettled([...this.runners.keys()].map((id) => this.stopRunner(id)))
+  }
+
+  /** What a turn cut by the daemon leaves in the journal and the row, as `recoverInterrupted` writes it after a crash. */
+  private closeInterruptedTurn(conversationId: string, message: string): void {
+    this.log.append(conversationId, { type: 'error', code: 'daemon_restarted', message, recoverable: true })
+    this.expireOpenPrompts(conversationId)
+    this.expireQueuedMessages(conversationId)
+    this.log.append(conversationId, { type: 'session.ended', reason: 'interrupted' })
+    this.db.update(conversations).set({ status: 'interrupted' }).where(eq(conversations.id, conversationId)).run()
+  }
+
+  private assertOpen(): void {
+    if (this.closing) throw new HttpError(503, 'server_stopping', 'Sillage is stopping: send again once it is back.')
   }
 
   activeCount(): number {

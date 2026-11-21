@@ -2987,6 +2987,7 @@ export const fr: Catalog = {
   "error.project_move_pending": "Un déplacement vers un autre projet est déjà prévu.",
   "error.project_move_changed": "Le projet source a changé avant le déplacement.",
   "error.project_move_failed": "La session n’a pas pu être déplacée. Consulte le message dans la conversation.",
+  "error.server_stopping": "Sillage est en train de s’arrêter : renvoie ton message quand il sera revenu.",
   "error.checkpoint_previous_project": "Ce point de reprise appartient au projet précédent et ne peut pas être restauré ici.",
   "error.checkpoint_workspace_busy": "Une autre session travaille dans ce dossier : attends la fin de son tour avant de revenir en arrière.",
   "sillageTool.move_session": "Déplacer la session vers un autre projet",
