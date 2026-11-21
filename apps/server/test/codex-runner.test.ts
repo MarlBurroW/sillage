@@ -322,10 +322,11 @@ test('an interrupt Codex acknowledges but never completes still closes the turn 
 })
 
 test('an interrupt Codex never answers closes the turn and retires the wedged process', async (t) => {
+  const f = await interruptedFixture(t, 'silent')
+  // Shortened only now: on a slow runner, start-up calls such as `initialize` outlast 50 ms.
   const timeout = CodexAppServerClient.requestTimeoutMs
   CodexAppServerClient.requestTimeoutMs = 50
   t.after(() => { CodexAppServerClient.requestTimeoutMs = timeout })
-  const f = await interruptedFixture(t, 'silent')
   await f.runner.interrupt()
   const types = kinds(f.events)
   assert.ok(types.indexOf('turn.completed') !== -1 && types.indexOf('turn.completed') < types.indexOf('session.ended'))
