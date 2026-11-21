@@ -317,8 +317,8 @@ export function ConversationPage() {
   const [forking, setForking] = useState(false)
   /** Message offered for forking: too uncommon an action to trigger directly. */
   const [forkTarget, setForkTarget] = useState<MessageItem | null>(null)
-  /** Turn whose workspace changes are proposed for undo. */
-  const [restoreTarget, setRestoreTarget] = useState<TurnCheckpoint | null>(null)
+  /** Turn whose workspace changes are proposed for undo, or whose restoration is proposed for cancelling. */
+  const [restoreTarget, setRestoreTarget] = useState<{ checkpoint: TurnCheckpoint; undo: boolean } | null>(null)
   /** Failure of a one-off conversation action: fork or compaction. */
   const [actionError, setActionError] = useState<string | null>(null)
   const [compacting, setCompacting] = useState(false)
@@ -1260,8 +1260,9 @@ export function ConversationPage() {
 
         <RestoreCheckpointDialog
           conversationId={conversationId}
-          checkpoint={restoreTarget}
-          openerText={restoreTarget?.openerText ?? ''}
+          checkpoint={restoreTarget?.checkpoint ?? null}
+          undo={restoreTarget?.undo ?? false}
+          openerText={restoreTarget?.checkpoint.openerText ?? ''}
           onClose={() => setRestoreTarget(null)}
         />
 
@@ -1380,7 +1381,7 @@ export function ConversationPage() {
                   anchors={turnAnchors}
                   checkpoints={stream.state.checkpoints}
                   onShowChanges={(checkpoint) => showCheckpoint(checkpoint.key)}
-                  onRestoreCheckpoint={isOwner && !stream.state.turnRunning ? setRestoreTarget : undefined}
+                  onRestoreCheckpoint={isOwner && !stream.state.turnRunning ? (checkpoint, undo) => setRestoreTarget({ checkpoint, undo }) : undefined}
                 />
               </WorkflowTasksContext.Provider>
     

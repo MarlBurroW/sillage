@@ -107,7 +107,8 @@ function stripPrefix(repo: Repo, path: string): string {
   return repo.prefix && path.startsWith(repo.prefix) ? path.slice(repo.prefix.length) : path
 }
 
-export type CheckpointPhase = 'before' | 'after'
+/** `undo` holds the workspace as it was just before the last restoration of this turn, so that restoration can be undone. */
+export type CheckpointPhase = 'before' | 'after' | 'undo'
 
 function refBase(conversationId: string): string {
   return `refs/sillage/checkpoints/${conversationId}`
@@ -350,6 +351,8 @@ export interface RestoreResult {
   written: number
   deleted: number
   indexRestored: boolean
+  /** Paths that could not be removed (permissions, a directory in the way): reported, not fatal. */
+  skipped: number
 }
 
 /** Removes directories left empty by deletion without ascending beyond the root. */
@@ -389,12 +392,20 @@ export async function restoreSnapshot(cwd: string, ref: string): Promise<Restore
     const untracked = splitZ(await read(repo.top, ['ls-files', '-z', '-o', '--exclude-standard', ...scope]))
 
     const deleted: string[] = []
+    let skipped = 0
     for (const path of [...tracked, ...untracked]) {
       if (captured.has(path)) continue
       const info = await lstat(join(repo.top, path)).catch(() => null)
       if (!info) continue
       if (info.isFile() && info.size > MAX_UNTRACKED_BYTES && !tracked.has(path)) continue
-      await unlink(join(repo.top, path))
+      // One path that resists must not stop halfway: files already rewritten would be left
+      // beside an untouched index, a state neither before nor after the turn.
+      try {
+        await unlink(join(repo.top, path))
+      } catch {
+        skipped += 1
+        continue
+      }
       await pruneEmptyDirs(repo.top, path)
       deleted.push(path)
     }
@@ -422,10 +433,18 @@ export async function restoreSnapshot(cwd: string, ref: string): Promise<Restore
       if (drop.length > 0) await read(repo.top, ['update-index', '-z', '--force-remove', '--stdin'], undefined, `${drop.join('\0')}\0`)
     }
 
-    return { written: changed.length, deleted: deleted.length, indexRestored: snapshot.indexTree !== null }
+    return { written: changed.length, deleted: deleted.length, indexRestored: snapshot.indexTree !== null, skipped }
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }
+}
+
+/** Points `to` at the snapshot `from` holds and drops `from`, in one ref transaction. */
+export async function moveSnapshot(cwd: string, from: string, to: string): Promise<void> {
+  const repo = await locate(cwd)
+  if (!repo) throw new CheckpointError('checkpoint_not_repository', 'This directory is not inside a git repository.')
+  const object = (await read(repo.top, ['rev-parse', '--verify', from])).trim()
+  await read(repo.top, ['update-ref', '--stdin'], undefined, `update ${to} ${object}\ndelete ${from}\n`)
 }
 
 /** Gives forked conversations their source snapshots. Copied journals use the same keys and would otherwise show markers with no target. Refs point to the same trees without duplicating object-store data; conversations then retain independent refs so cleaning either does not affect the other. */

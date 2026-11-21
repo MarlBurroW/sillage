@@ -4,6 +4,7 @@ import { conversations } from '@sillage/db'
 import {
   checkpointFileDiffQuerySchema,
   checkpointKeySchema,
+  checkpointRestoreBodySchema,
   type CheckpointRestoreDto,
   type GitFileDiffDto,
 } from '@sillage/protocol'
@@ -67,8 +68,9 @@ export function registerCheckpointRoutes(app: FastifyInstance, ctx: AppContext, 
       throw new HttpError(403, 'conversation_write_forbidden', 'Only the conversation owner can restore its workspace.')
     }
 
+    const body = checkpointRestoreBodySchema.parse(request.body ?? {})
     try {
-      return await sessions.restoreCheckpoint(id, parseKey(key))
+      return await sessions.restoreCheckpoint(id, parseKey(key), { undo: body.undo })
     } catch (err) {
       return translate(err)
     }

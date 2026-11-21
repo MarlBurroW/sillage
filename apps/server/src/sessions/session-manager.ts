@@ -73,6 +73,8 @@ import {
   copyCheckpoints,
   deleteCheckpoints,
   diffCheckpoint,
+  moveSnapshot,
+  readSnapshot,
   restoreSnapshot,
 } from '../checkpoints.js'
 import { serialized } from '../git-workflow.js'
@@ -1526,10 +1528,17 @@ export class SessionManager {
   }
 
   /** Restores pre-turn workspace state. Reject during active turns to avoid racing agent writes. Serialize with Git tab actions on the same repository. Agents still remember the turn; adjacent fork actions also rewind conversation context. */
+  /**
+   * Restores the workspace to its state before a turn, or with `undo` puts it back as it was just
+   * before the turn's last restoration. Either way the current state is captured first: a
+   * restoration rewrites the whole directory, including work made since by the user or another
+   * session, and nothing else would keep it.
+   */
   async restoreCheckpoint(
     conversationId: string,
     key: string,
-  ): Promise<{ written: number; deleted: number; indexRestored: boolean }> {
+    options: { undo?: boolean } = {},
+  ): Promise<{ written: number; deleted: number; indexRestored: boolean; skipped: number }> {
     if (checkpointBeforeProjectMove(this.db, conversationId, key)) throw new HttpError(409, 'checkpoint_previous_project', 'This checkpoint belongs to the previous project and cannot be restored here.')
     if (this.isBusy(conversationId)) {
       throw new HttpError(
@@ -1539,16 +1548,50 @@ export class SessionManager {
       )
     }
     const cwd = this.workingDirectory(conversationId)
-    const result = await serialized(cwd, () =>
-      restoreSnapshot(cwd, checkpointRef(conversationId, key, 'before')),
+    // Sessions sharing the directory (the project root, typically) would have their files
+    // rewritten in the middle of a turn without knowing it.
+    const sharing = [...new Set([...this.runners.keys(), ...this.pendingDeliveries])].find((id) =>
+      id !== conversationId && this.isBusy(id) && this.workingDirectoryOrNull(id) === cwd,
     )
+    if (sharing) {
+      throw new HttpError(409, 'checkpoint_workspace_busy', 'Another session is working in this directory: wait for its turn to finish before restoring.')
+    }
+
+    const undoRef = checkpointRef(conversationId, key, 'undo')
+    const result = await serialized(cwd, async () => {
+      if (!options.undo) {
+        await captureSnapshot(cwd, undoRef)
+        return restoreSnapshot(cwd, checkpointRef(conversationId, key, 'before'))
+      }
+      if (!(await readSnapshot(cwd, undoRef))) {
+        throw new CheckpointError('checkpoint_missing', 'There is no restoration of this turn to undo.')
+      }
+      // Undoing is a restoration too: keep what it replaces, then make that the next undo point.
+      const swap = `${undoRef}-next`
+      await captureSnapshot(cwd, swap)
+      const restored = await restoreSnapshot(cwd, undoRef)
+      await moveSnapshot(cwd, swap, undoRef)
+      return restored
+    })
     this.log.append(conversationId, {
       type: 'checkpoint.restored',
       key,
       written: result.written,
       deleted: result.deleted,
+      skipped: result.skipped,
+      undoable: !options.undo,
+      undone: options.undo === true,
     })
     return result
+  }
+
+  /** `workingDirectory` for a conversation that may have been deleted meanwhile. */
+  private workingDirectoryOrNull(conversationId: string): string | null {
+    try {
+      return this.workingDirectory(conversationId)
+    } catch {
+      return null
+    }
   }
 
   /** Gives forks source snapshots so copied journal markers resolve. */

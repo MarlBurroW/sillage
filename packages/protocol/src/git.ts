@@ -250,4 +250,9 @@ export interface CheckpointRestoreDto {
   deleted: number
   /** False when the index could not be captured due to conflicts during the turn. */
   indexRestored: boolean
+  /** Paths that could not be removed (permissions, a directory in the way). */
+  skipped: number
 }
+
+/** `undo` puts the workspace back as it was just before the turn's last restoration. */
+export const checkpointRestoreBodySchema = z.object({ undo: z.boolean().default(false) })

@@ -135,6 +135,18 @@ try {
   assert.equal(existsSync(join(turn.cwd, 'src/lib/forecast.ts')), true, 'Le fichier supprimé par le tour est revenu')
   assert.doesNotMatch(await readFile(join(turn.cwd, 'README.md'), 'utf8'), /offline cache/, 'Le fichier modifié est revenu')
   console.log('OK : workspace ramené à l’état d’avant le tour.')
+
+  // The revert kept what it replaced: undoing it brings the turn's files back.
+  await strip.getByRole('button', { name: 'Annuler le retour', exact: true }).click()
+  await dialog.getByText('Annuler le retour en arrière ?', { exact: true }).waitFor()
+  await dialog.getByRole('button', { name: 'Annuler le retour', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await page.getByText(/Retour en arrière annulé : \d+ fichiers réécrits, \d+ supprimés/).waitFor()
+  await strip.getByRole('button', { name: 'Annuler le retour', exact: true }).waitFor({ state: 'hidden' })
+  assert.equal(existsSync(join(turn.cwd, 'CHANGELOG.md')), true, 'Le fichier créé par le tour est revenu')
+  assert.equal(existsSync(join(turn.cwd, 'src/lib/forecast.ts')), false, 'Le fichier supprimé par le tour est reparti')
+  assert.match(await readFile(join(turn.cwd, 'README.md'), 'utf8'), /offline cache/, 'La modification du tour est revenue')
+  console.log('OK : le retour en arrière s’annule depuis le fil.')
   assert.deepEqual(errors, [])
 
   // Phone: marker and filtered panel fit 390 px.

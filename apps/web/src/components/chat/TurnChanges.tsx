@@ -1,4 +1,4 @@
-import { GitCompare, Undo2 } from 'lucide-react'
+import { GitCompare, Redo2, Undo2 } from 'lucide-react'
 import type { TurnCheckpoint } from '../../lib/chat-fold'
 import { hasChanges, sumLines } from '../../lib/checkpoints'
 import { useTranslate } from '../../lib/i18n'
@@ -16,8 +16,8 @@ export function TurnChanges({
 }: {
   checkpoint: TurnCheckpoint
   onShow: (checkpoint: TurnCheckpoint) => void
-  /** Absent for readers unable to modify repositories, such as shared conversations. */
-  onRestore?: (checkpoint: TurnCheckpoint) => void
+  /** Absent for readers unable to modify repositories, such as shared conversations. `undo` asks to cancel the last restoration. */
+  onRestore?: (checkpoint: TurnCheckpoint, undo: boolean) => void
 }) {
   const t = useTranslate()
   if (!hasChanges(checkpoint)) return null
@@ -52,10 +52,21 @@ export function TurnChanges({
       {checkpoint.restored ? (
         <span className="italic">{t('checkpoint.restored.badge')}</span>
       ) : null}
+      {onRestore && checkpoint.restored && checkpoint.undoable ? (
+        <button
+          type="button"
+          onClick={() => onRestore(checkpoint, true)}
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-surface-high hover:text-ink"
+          title={t('checkpoint.undo.title')}
+        >
+          <Redo2 size={12} />
+          {t('checkpoint.undo.action')}
+        </button>
+      ) : null}
       {onRestore ? (
         <button
           type="button"
-          onClick={() => onRestore(checkpoint)}
+          onClick={() => onRestore(checkpoint, false)}
           className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-surface-high hover:text-ink"
           title={t('checkpoint.restore.title')}
         >

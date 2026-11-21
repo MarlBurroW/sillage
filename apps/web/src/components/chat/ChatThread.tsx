@@ -69,7 +69,7 @@ export function ChatThread({
   /** Turn checkpoints absent on subagent threads. */
   checkpoints?: TurnCheckpoint[]
   onShowChanges?: (checkpoint: TurnCheckpoint) => void
-  onRestoreCheckpoint?: (checkpoint: TurnCheckpoint) => void
+  onRestoreCheckpoint?: (checkpoint: TurnCheckpoint, undo: boolean) => void
 }) {
   const concentration = useConcentration()
 

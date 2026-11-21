@@ -144,6 +144,8 @@ export interface NoticeItem {
   translation?:
     | { key: 'activity.modelChanged'; model: string }
     | { key: 'checkpoint.restored.notice'; written: number; deleted: number }
+    | { key: 'checkpoint.restored.partial'; written: number; deleted: number; skipped: number }
+    | { key: 'checkpoint.undone.notice'; written: number; deleted: number }
     | { key: 'activity.configRestartDeferred' }
     | { key: 'compaction'; pre: number | null; post: number | null }
   level?: 'info' | 'warning'
@@ -273,6 +275,8 @@ export interface TurnCheckpoint {
   reason: string | null
   /** True once the workspace has been restored to its state before this turn. */
   restored: boolean
+  /** The last restoration captured the workspace first and can be undone. Absent in states folded before undo existed. */
+  undoable?: boolean
 }
 
 /** Latest known quota state reported by the CLI. */
@@ -988,13 +992,20 @@ export function applyEvent(
 
     case 'checkpoint.restored': {
       state.checkpoints = state.checkpoints.map((checkpoint) =>
-        checkpoint.key === event.key ? { ...checkpoint, restored: true } : checkpoint,
+        checkpoint.key === event.key
+          ? { ...checkpoint, restored: !event.undone, undoable: !event.undone && event.undoable }
+          : checkpoint,
       )
       // Thread marker: the agent does not know its files have been restored.
       appendItem(state, {
         kind: 'notice',
         id: `restore-${seq}`,
-        text: '', translation: { key: 'checkpoint.restored.notice', written: event.written, deleted: event.deleted },
+        text: '',
+        translation: event.undone
+          ? { key: 'checkpoint.undone.notice', written: event.written, deleted: event.deleted }
+          : event.skipped > 0
+            ? { key: 'checkpoint.restored.partial', written: event.written, deleted: event.deleted, skipped: event.skipped }
+            : { key: 'checkpoint.restored.notice', written: event.written, deleted: event.deleted },
       })
       break
     }

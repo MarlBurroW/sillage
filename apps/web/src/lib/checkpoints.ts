@@ -30,8 +30,9 @@ export function useCheckpointFileDiff(
   })
 }
 
-export function restoreCheckpoint(conversationId: string, key: string): Promise<CheckpointRestoreDto> {
-  return api.post<CheckpointRestoreDto>(`/api/conversations/${conversationId}/checkpoints/${key}/restore`)
+/** With `undo`, puts the workspace back as it was just before the turn's last restoration. */
+export function restoreCheckpoint(conversationId: string, key: string, undo = false): Promise<CheckpointRestoreDto> {
+  return api.post<CheckpointRestoreDto>(`/api/conversations/${conversationId}/checkpoints/${key}/restore`, { undo })
 }
 
 /** Show checkpoints only when they have something to display. */

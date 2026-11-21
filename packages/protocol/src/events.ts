@@ -807,12 +807,18 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     /** Excluded files introduced by a pull, merge or rebase during the turn. */
     excluded: z.number().default(0),
   }),
-  /** Workspace restored to its state before this turn at the user's request. */
+  /** Workspace restored to its state before this turn at the user's request, or, with `undone`, put back as it was just before that restoration. */
   z.object({
     type: z.literal('checkpoint.restored'),
     key: z.string(),
     written: z.number(),
     deleted: z.number(),
+    /** Paths that could not be removed: the restoration went on without them. */
+    skipped: z.number().default(0),
+    /** The workspace was captured first, so this restoration can be undone. */
+    undoable: z.boolean().default(false),
+    /** This entry undoes the previous restoration of the turn. */
+    undone: z.boolean().default(false),
   }),
   z.object({
     type: z.literal('diff.updated'),
