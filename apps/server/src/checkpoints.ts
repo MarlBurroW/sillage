@@ -3,6 +3,7 @@ import { cp, lstat, mkdtemp, rm, rmdir, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { CheckpointFile } from '@sillage/protocol'
+import { toSlashPath } from './agents/paths.js'
 
 /** Turn checkpoints capture workspace state before and after execution. Each snapshot is a git tree under `refs/sillage/checkpoints/`, never a commit: the user's branch, index and HEAD stay unchanged; `git log --all` sees nothing because tree refs have no history. Objects live in the repository, allowing git to diff snapshots and `checkout-index` to restore files. Capture uses a temporary index (`GIT_INDEX_FILE`) copied from the real one to reuse its stat cache: on large repositories `git add -u` hashes only changed files. Ignored files and untracked files above `MAX_UNTRACKED_BYTES` are excluded so uploaded archives do not enter the object store each turn. Refs are shared across repository worktrees but named by conversation and turn, preventing collisions. */
 
@@ -274,7 +275,8 @@ export interface CheckpointDiff {
 function toRepoPath(repo: Repo, cwd: string, path: string): string | null {
   const rel = isAbsolute(path) ? relative(repo.top, path) : relative(repo.top, resolve(cwd, path))
   if (rel.startsWith('..') || isAbsolute(rel)) return null
-  return rel
+  // Compared with git's names, which always use `/`.
+  return toSlashPath(rel)
 }
 
 /** Changes between the turn's snapshots. When HEAD moved, exclude files changed between those HEADs unless the agent edited them: pull and merge bring files unrelated to the turn's work. Agent-edited files remain even if committed afterward. Known limitation: files modified through shell commands outside editing tools and then committed are also excluded. */

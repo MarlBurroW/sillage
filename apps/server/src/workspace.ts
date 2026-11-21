@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm'
 import { projects, worktrees, type ConversationRow, type Db } from '@sillage/db'
 import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@sillage/protocol'
 import { HttpError, notFound } from './http/errors.js'
+import { isUnder, samePath } from './agents/paths.js'
 
 /**
  * Conversation working directory and boundaries for paths inside it.
@@ -247,7 +248,8 @@ export async function moveEntry(root: string, from: string, to: string): Promise
 
   // Moving a directory into itself would destroy its contents: `rename` rejects
   // it on some systems and accepts it on others, so enforce the rule here.
-  if (destination.startsWith(`${source}/`)) {
+  // A case-only rename on macOS or Windows is the same entry, not a move into itself.
+  if (!samePath(source, destination) && isUnder(source, destination)) {
     throw new HttpError(400, 'move_into_self', 'A folder cannot be moved into itself.')
   }
   if (await exists(destination)) {
@@ -353,7 +355,7 @@ export async function copyEntry(root: string, from: string, toParent: string): P
     }
     throw err
   })
-  if (parent === source || parent.startsWith(`${source}/`)) {
+  if (isUnder(source, parent)) {
     throw new HttpError(400, 'copy_into_self', 'A folder cannot be copied into itself.')
   }
   if (!(await stat(parent).catch(() => null))?.isDirectory()) {

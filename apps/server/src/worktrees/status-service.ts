@@ -6,6 +6,7 @@ import type { EventLog } from '../events/event-log.js'
 import { assessWorktree, defaultBase, listWorktrees, remoteBase, type WorktreeAssessment } from './assess.js'
 import { hasOwnWork } from './own-work.js'
 import type { WorktreeRemoteStatus } from './remote-status.js'
+import { isUnder } from '../agents/paths.js'
 
 /** Recalculate lists older than this limit and reuse fresher ones. Keep short because sessions modify trees, but sidebar reads on every turn end would otherwise launch dozens of git processes. */
 const TTL_MS = 30_000
@@ -315,21 +316,26 @@ export class WorktreeStatusService {
       for (const row of direct) linked.set(row.id, { link: 'worktree', lastActiveAt: row.updatedAt })
     }
 
-    // Use substr rather than LIKE because directory names often contain underscore wildcards.
-    const prefix = `${path}/`
-    const edited = this.db
-      .select({ id: conversationPaths.conversationId, lastTs: sql<number>`max(${conversationPaths.lastTs})` })
+    // SQL narrows to paths starting with the tree's, ignoring case and separators (substr rather
+    // than LIKE: directory names often contain underscore wildcards); `isUnder` then decides,
+    // with the platform's own rules. A byte comparison never matched Windows paths.
+    const rows = this.db
+      .select({ id: conversationPaths.conversationId, path: conversationPaths.path, lastTs: conversationPaths.lastTs })
       .from(conversationPaths)
       .innerJoin(conversations, eq(conversations.id, conversationPaths.conversationId))
       .where(
         and(
           eq(conversations.projectId, projectId),
-          sql`(${conversationPaths.path} = ${path} OR substr(${conversationPaths.path}, 1, ${prefix.length}) = ${prefix})`,
+          sql`lower(replace(substr(${conversationPaths.path}, 1, ${path.length}), '\\', '/')) = lower(replace(${path}, '\\', '/'))`,
         ),
       )
-      .groupBy(conversationPaths.conversationId)
       .all()
-    for (const row of edited) if (!linked.has(row.id)) linked.set(row.id, { link: 'edited', lastActiveAt: row.lastTs })
+    const edited = new Map<string, number>()
+    for (const row of rows) {
+      if (!isUnder(path, row.path)) continue
+      edited.set(row.id, Math.max(edited.get(row.id) ?? 0, row.lastTs))
+    }
+    for (const [id, lastTs] of edited) if (!linked.has(id)) linked.set(id, { link: 'edited', lastActiveAt: lastTs })
 
     return [...linked].map(([id, entry]) => ({ id, ...entry }))
   }

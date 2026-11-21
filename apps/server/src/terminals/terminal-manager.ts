@@ -8,6 +8,7 @@ import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
 import type { Config } from '../config.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
+import { isUnder, samePath } from '../agents/paths.js'
 
 /** Project-attached terminals. A pty lives in a directory rather than a conversation; conversation indexing hid servers launched from archived sessions. Sessions only supply default directories (worktrees) at opening. Deliberately outside journals: shell output is large, not conversation content, and database persistence would add unused weight. Retain just enough buffer to restore screens on return. Processes intentionally do not survive daemon restarts, which would require external hosts such as tmux. Persist metadata and final screens so entries return as interrupted, readable and restartable. */
 
@@ -311,15 +312,14 @@ export class TerminalManager {
   /** Worktree deletion: shells in vanished directories have no purpose. */
   closeForCwd(cwd: string): void {
     for (const managed of [...this.terminals.values()]) {
-      if (managed.cwd === cwd) this.close(managed.id)
+      if (samePath(managed.cwd, cwd)) this.close(managed.id)
     }
   }
 
   /** Shells in or below a directory, to close before removing it. */
   underCwd(cwd: string): string[] {
-    const prefix = cwd.endsWith('/') ? cwd : `${cwd}/`
     return [...this.terminals.values()]
-      .filter((managed) => managed.cwd === cwd || managed.cwd.startsWith(prefix))
+      .filter((managed) => isUnder(cwd, managed.cwd))
       .map((managed) => managed.id)
   }
 

@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, worktrees, type Db } from '@sillage/db'
+import { isUnder } from '../agents/paths.js'
 
 /** Sillage worktrees a session uses outside its cwd, either created through `create_worktree` or written into. Add them to CLI writable directories so restricted sessions (Codex `workspace-write`, Claude without permission bypass) can edit newly created trees. Reread each call so worktrees created mid-session apply to Codex's next turn. */
 export function linkedWorktreePaths(db: Db, conversationId: string, projectId: string): string[] {
@@ -18,5 +19,5 @@ export function linkedWorktreePaths(db: Db, conversationId: string, projectId: s
     .map((row) => row.path)
   return trees
     .map((tree) => tree.path)
-    .filter((path) => touched.some((entry) => entry === path || entry.startsWith(`${path}/`)))
+    .filter((path) => touched.some((entry) => isUnder(path, entry)))
 }
