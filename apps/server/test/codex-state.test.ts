@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { openDatabase } from '@sillage/db'
+import { LIFECYCLE_EVENT_TYPES, openDatabase } from '@sillage/db'
 import type { ThreadItem, ThreadTokenUsageUpdatedNotification } from '@sillage/codex-bindings/v2'
 import { CodexAsyncQuestions } from '../src/agents/codex/async-questions.js'
 import { CodexTurnUsage } from '../src/agents/codex/turn-usage.js'
@@ -124,6 +124,8 @@ test('retrouver les questions asynchrones ouvertes, y compris sur les conversati
   const { db, sqlite } = openDatabase(':memory:')
   try {
     sqlite.exec('CREATE TABLE events (conversation_id TEXT, seq INTEGER, type TEXT, payload TEXT)')
+    // As migration 0073 creates it: the lookup names this index.
+    sqlite.exec(`CREATE INDEX idx_events_lifecycle ON events (conversation_id, type, seq) WHERE type IN (${LIFECYCLE_EVENT_TYPES.map((type) => `'${type}'`).join(', ')})`)
     const insert = sqlite.prepare('INSERT INTO events VALUES (?, ?, ?, ?)')
     for (const id of ['open', 'resolved', 'blocking']) {
       insert.run(id, 1, 'question.requested', JSON.stringify({ requestId: 'same-id', blocking: id === 'blocking' }))

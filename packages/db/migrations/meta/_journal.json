@@ -512,6 +512,13 @@
       "when": 1795268801646,
       "tag": "0072_neat_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1795273285339,
+      "tag": "0073_public_rockslide",
+      "breakpoints": true
     }
   ]
 }

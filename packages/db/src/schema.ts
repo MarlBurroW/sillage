@@ -13,7 +13,7 @@ import type {
   UsageLimitResumeReason,
   UsageLimitResumeStatus,
 } from '@sillage/protocol'
-import { sql } from 'drizzle-orm'
+import { sql, type AnyColumn, type SQL } from 'drizzle-orm'
 import {
   blob,
   index,
@@ -1341,6 +1341,30 @@ export const projectActions = sqliteTable(
 )
 
 /**
+ * Rare event types that restart recovery, shutdown and turn counts look up by type. Without an
+ * index, each lookup walked a whole conversation's journal, and the boot-time one the entire
+ * table. Kept narrow so the index stays small next to the journal.
+ */
+export const LIFECYCLE_EVENT_TYPES = [
+  'permission.requested', 'permission.resolved',
+  'question.requested', 'question.resolved',
+  'plan.review_requested', 'plan.review_resolved',
+  'elicitation.requested', 'elicitation.resolved',
+  'message.queued', 'message.dequeued',
+  'background.updated', 'task.completed',
+  'session.ended', 'turn.completed',
+] as const
+
+/**
+ * The partial index's condition, as SQL literals. SQLite uses a partial index only when the query
+ * carries the same term, written identically: queries add `lifecycleEvents()` beside their own
+ * type filter. Bound parameters would not match.
+ */
+export function lifecycleEvents(column: SQL | AnyColumn) {
+  return sql`${column} in (${sql.raw(LIFECYCLE_EVENT_TYPES.map((type) => `'${type}'`).join(', '))})`
+}
+
+/**
  * The journal (invariant I2). `seq` is strictly increasing and gapless per conversation.
  * WITHOUT ROWID because the composite primary key already gives the natural read order.
  */
@@ -1372,6 +1396,9 @@ export const events = sqliteTable(
     // Diff lookups must not parse unrelated, potentially huge tool outputs.
     index('idx_events_native_tool').on(t.conversationId, t.type, sql`(${t.payload} ->> '$.toolCallId')`, t.seq)
       .where(sql`${t.type} = 'tool.started' or ${t.type} = 'tool.completed'`),
+    // Conversation first, so per-conversation lookups get two equalities and win over the primary
+    // key. The boot-time lookup across conversations scans this index, which holds only rare rows.
+    index('idx_events_lifecycle').on(t.conversationId, t.type, t.seq).where(lifecycleEvents(t.type)),
   ],
 )
 

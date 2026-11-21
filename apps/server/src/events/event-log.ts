@@ -1,7 +1,7 @@
 import { ThreadProjection } from './thread-projection.js'
 import { EventEmitter } from 'node:events'
 import { and, asc, desc, eq, gt, inArray, lte, notInArray, sql } from 'drizzle-orm'
-import { conversationPaths, conversations, events, writeTransaction, type Db, type Tx } from '@sillage/db'
+import { LIFECYCLE_EVENT_TYPES, conversationPaths, conversations, events, lifecycleEvents, writeTransaction, type Db, type Tx } from '@sillage/db'
 import {
   sillageEventSchema,
   type BackgroundTask,
@@ -21,6 +21,23 @@ import { replayPayload, replayWeight } from './tool-output.js'
 import { touchedPaths } from './touched-paths.js'
 
 /** Journal (spec invariant I2). Persist all agent output before broadcasting so clients never receive unpersisted events; reconnect replay from cursors prevents network loss. `seq` strictly increases per conversation but may have gaps after delta compaction: always read `seq > cursor`, never assume increments. */
+function isLifecycle(type: string): boolean {
+  return (LIFECYCLE_EVENT_TYPES as readonly string[]).includes(type)
+}
+
+/**
+ * Events of the given lifecycle types in one conversation, through `idx_events_lifecycle`. Named
+ * explicitly: without statistics SQLite prefers the primary key, which here contains every
+ * column, and walks the whole journal of the conversation. The condition repeats the index's own,
+ * or SQLite would refuse to use a partial index.
+ */
+function lifecycleRows(conversationId: string, types: string[]) {
+  return sql`SELECT seq, type, payload FROM events INDEXED BY idx_events_lifecycle
+    WHERE conversation_id = ${conversationId} AND type IN (${sql.join(types.map((type) => sql`${type}`), sql`, `)})
+      AND ${lifecycleEvents(sql`type`)}
+    ORDER BY seq`
+}
+
 /** Three blocking interaction types indexed by their opening events. */
 const PROMPT_KINDS: Record<string, PromptKind | undefined> = {
   'permission.requested': 'permission',
@@ -481,6 +498,7 @@ export class EventLog {
 
   /** Counts events by type without loading them. */
   count(conversationId: string, type: string): number {
+    if (isLifecycle(type)) return this.db.all(lifecycleRows(conversationId, [type])).length
     const row = this.db
       .select({ n: sql<number>`count(*)` })
       .from(events)
@@ -492,17 +510,9 @@ export class EventLog {
 
   /** Unresolved interaction requests lacking journaled resolutions. Abruptly killed daemons skip runner cleanup, leaving pending requests open. This inventory prevents replay from displaying permanent questions and stuck waiting conversations. */
   openPrompts(conversationId: string): { kind: PromptKind; requestId: string }[] {
-    const rows = this.db
-      .select({ type: events.type, payload: events.payload })
-      .from(events)
-      .where(
-        and(
-          eq(events.conversationId, conversationId),
-          inArray(events.type, [...Object.keys(PROMPT_KINDS), ...Object.values(RESOLUTIONS)]),
-        ),
-      )
-      .orderBy(asc(events.seq))
-      .all()
+    const rows = this.db.all<{ type: string; payload: string }>(
+      lifecycleRows(conversationId, [...Object.keys(PROMPT_KINDS), ...Object.values(RESOLUTIONS)]),
+    )
 
     const open = new Map<string, PromptKind>()
     for (const row of rows) {
@@ -519,31 +529,26 @@ export class EventLog {
 
   /** Asynchronous questions may remain open while conversations are idle. */
   openAsyncQuestionConversationIds(): string[] {
-    return this.db.selectDistinct({ id: events.conversationId }).from(events).where(sql`
-      ${events.type} = 'question.requested' AND ${events.payload} ->> '$.blocking' = 0
-      AND NOT EXISTS (
-        SELECT 1 FROM events AS resolved
-        WHERE resolved.conversation_id = ${events.conversationId}
-          AND resolved.type = 'question.resolved'
-          AND resolved.seq > ${events.seq}
-          AND resolved.payload ->> '$.requestId' = ${events.payload} ->> '$.requestId'
-      )
-    `).all().map((row) => row.id)
+    // Runs at every boot over every conversation: the partial index holds only rare rows, where
+    // a plain scan read the whole journal table.
+    return this.db.all<{ id: string }>(sql`
+      SELECT DISTINCT asked.conversation_id AS id FROM events AS asked INDEXED BY idx_events_lifecycle
+      WHERE asked.type = 'question.requested' AND ${lifecycleEvents(sql`asked.type`)} AND asked.payload ->> '$.blocking' = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM events AS resolved INDEXED BY idx_events_lifecycle
+          WHERE resolved.conversation_id = asked.conversation_id
+            AND resolved.type = 'question.resolved' AND ${lifecycleEvents(sql`resolved.type`)}
+            AND resolved.seq > asked.seq
+            AND resolved.payload ->> '$.requestId' = asked.payload ->> '$.requestId'
+        )
+    `).map((row) => row.id)
   }
 
   /** Background work journals still report alive. Like `openPrompts` for top-level lists: CLIs publish complete lists on change but nothing when dying, so the last list remains authoritative for display and identifies work needing closure. Replay using web fold semantics: lists replace, task endings remove, session endings clear everything. */
   openBackgroundTasks(conversationId: string): BackgroundTask[] {
-    const rows = this.db
-      .select({ type: events.type, payload: events.payload })
-      .from(events)
-      .where(
-        and(
-          eq(events.conversationId, conversationId),
-          inArray(events.type, ['background.updated', 'task.completed', 'session.ended']),
-        ),
-      )
-      .orderBy(asc(events.seq))
-      .all()
+    const rows = this.db.all<{ type: string; payload: string }>(
+      lifecycleRows(conversationId, ['background.updated', 'task.completed', 'session.ended']),
+    )
 
     let live = new Map<string, BackgroundTask>()
     for (const row of rows) {
@@ -689,11 +694,9 @@ export class EventLog {
 
   /** Counts events of a type before and after cut points. */
   countByType(conversationId: string, type: string, throughSeq: number): { kept: number; total: number } {
-    const rows = this.db
-      .select({ seq: events.seq })
-      .from(events)
-      .where(and(eq(events.conversationId, conversationId), eq(events.type, type)))
-      .all()
+    const rows = isLifecycle(type)
+      ? this.db.all<{ seq: number }>(lifecycleRows(conversationId, [type]))
+      : this.db.select({ seq: events.seq }).from(events).where(and(eq(events.conversationId, conversationId), eq(events.type, type))).all()
 
     return {
       kept: rows.filter((row) => row.seq <= throughSeq).length,
@@ -703,17 +706,7 @@ export class EventLog {
 
   /** Queued messages whose departure was never journaled. Distinct from `openPrompts`: keys are `queueId`, resolutions contain departure reasons rather than decisions. */
   openQueuedMessages(conversationId: string): string[] {
-    const rows = this.db
-      .select({ type: events.type, payload: events.payload })
-      .from(events)
-      .where(
-        and(
-          eq(events.conversationId, conversationId),
-          inArray(events.type, ['message.queued', 'message.dequeued']),
-        ),
-      )
-      .orderBy(asc(events.seq))
-      .all()
+    const rows = this.db.all<{ type: string; payload: string }>(lifecycleRows(conversationId, ['message.queued', 'message.dequeued']))
 
     const open = new Set<string>()
     for (const row of rows) {
