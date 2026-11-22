@@ -12,6 +12,7 @@ import {
   useInstructionsModeChoice,
 } from './instructions/Instructions'
 import { useUserSettings } from '../lib/user-settings'
+import { NewProjectFolders } from './ProjectFolders'
 import { PathField } from './PathField'
 import { useCapability } from '../lib/instance'
 import { RepoCombobox } from './RepoCombobox'
@@ -37,6 +38,7 @@ export function CloneForm() {
   const [name, setName] = useState('')
   const [parentDir, setParentDir] = useState('')
   const [directory, setDirectory] = useState('')
+  const [folderPaths, setFolderPaths] = useState<string[]>([])
   const [visibility, setVisibility] = useState<'private' | 'shared'>('private')
   const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
   const [jobId, setJobId] = useState<string | null>(null)
@@ -87,6 +89,7 @@ export function CloneForm() {
         name: name.trim(),
         parentDir,
         directory: directory.trim(),
+        folderPaths,
         visibility,
         ...instructionsModeField(instructionsMode),
       },
@@ -182,6 +185,7 @@ export function CloneForm() {
         autoCorrect="off"
         required
       />
+      <NewProjectFolders paths={folderPaths} onChange={setFolderPaths} initialPath={parentDir} />
       {sharedProjects ? (
         <Select
           label={t('project.settings.visibility')}

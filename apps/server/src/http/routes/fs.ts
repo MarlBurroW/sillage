@@ -1,21 +1,19 @@
+import { randomUUID } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
 import { access, mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { browseQuerySchema, mkdirBodySchema, type FsEntryDto, type FsListingDto } from '@sillage/protocol'
+import { browseQuerySchema, mkdirBodySchema, openExplorerFolderBodySchema, type ExplorerFolderDto, type FsEntryDto, type FsListingDto } from '@sillage/protocol'
+import { and, eq } from 'drizzle-orm'
+import { explorerFolders } from '@sillage/db'
+import { canonicalExplorerFolder, isDeniedFolder } from '../../projects/folder-path.js'
+import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /** Large directories must not produce multi-megabyte responses or block the event loop with stat() calls. */
 const MAX_ENTRIES = 500
-
-/** System directories unsuitable as workspaces and slow or dangerous to traverse (/proc has a directory per process, /sys has thousands of entries). */
-const DENIED_PREFIXES = ['/proc', '/sys', '/dev', '/run']
-
-function isDenied(path: string): boolean {
-  return DENIED_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
-}
 
 async function describeEntry(parentPath: string, name: string): Promise<FsEntryDto | null> {
   const path = join(parentPath, name)
@@ -49,8 +47,20 @@ function systemRoots(): { label: string; path: string }[] {
     .filter((root) => existsSync(root.path))
 }
 
-export function registerFsRoutes(app: FastifyInstance): void {
+export function registerFsRoutes(app: FastifyInstance, ctx: AppContext): void {
   const home = homedir()
+
+  app.post('/api/explorer-folders', async (request): Promise<ExplorerFolderDto> => {
+    const user = requireUser(request)
+    const body = openExplorerFolderBodySchema.parse(request.body)
+    const path = await canonicalExplorerFolder(body.path)
+
+    // Opening the same folder in another panel must restore the same editor documents.
+    ctx.db.insert(explorerFolders).values({ id: randomUUID(), userId: user.id, path })
+      .onConflictDoNothing().run()
+    return ctx.db.select({ id: explorerFolders.id, path: explorerFolders.path }).from(explorerFolders)
+      .where(and(eq(explorerFolders.userId, user.id), eq(explorerFolders.path, path))).get()!
+  })
 
   app.get('/api/fs/browse', async (request): Promise<FsListingDto> => {
     requireUser(request)
@@ -60,7 +70,7 @@ export function registerFsRoutes(app: FastifyInstance): void {
     // preventing paths such as /home/x/../../etc from appearing misleadingly different.
     const path = resolve(query.path ?? home)
 
-    if (isDenied(path)) {
+    if (isDeniedFolder(path)) {
       throw forbidden('system_directory_denied', 'This system directory cannot be browsed.')
     }
 
@@ -82,7 +92,7 @@ export function registerFsRoutes(app: FastifyInstance): void {
 
     const visible = names
       .filter((name) => query.showHidden || !name.startsWith('.'))
-      .filter((name) => !isDenied(join(path, name)))
+      .filter((name) => !isDeniedFolder(join(path, name)))
       .sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
 
     const truncated = visible.length > MAX_ENTRIES
@@ -114,7 +124,7 @@ export function registerFsRoutes(app: FastifyInstance): void {
     }
 
     const parent = resolve(body.path)
-    if (isDenied(parent)) {
+    if (isDeniedFolder(parent)) {
       throw forbidden('system_directory_denied', 'This system directory cannot be browsed.')
     }
 

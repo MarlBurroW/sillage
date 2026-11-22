@@ -2,32 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { max } from 'drizzle-orm'
-import { projects } from '@sillage/db'
+import { projectFolders, projects, writeTransaction } from '@sillage/db'
 import { createProjectBodySchema, type InstructionsMode, type MemoryMode } from '@sillage/protocol'
 import { readUserSettings } from '../settings/user-settings.js'
 import { repoInstructionFiles } from '../instructions/store.js'
 import type { AppContext } from '../http/context.js'
+import { assertUsableWorkspace, resolveProjectFolderPaths } from './folder-path.js'
 import { badRequest, conflict } from '../http/errors.js'
-
-export async function assertUsableWorkspace(path: string): Promise<string> {
-  if (!isAbsolute(path)) {
-    throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
-  }
-
-  const resolved = resolve(path)
-  let info
-  try {
-    info = await stat(resolved)
-  } catch {
-    throw badRequest('workspace_missing', 'Directory {path} does not exist.', { path: resolved })
-  }
-
-  if (!info.isDirectory()) {
-    throw badRequest('workspace_not_a_directory', '{path} is not a directory.', { path: resolved })
-  }
-
-  return resolved
-}
 
 /** Clone destination directory. Counterpart to `assertUsableWorkspace`: ordinary projects require existing directories, while clones need free destinations. Existing empty directories are allowed because users may have run `mkdir` beforehand. */
 export async function assertFreeDestination(parentDir: string, directory: string): Promise<string> {
@@ -74,6 +55,7 @@ export const insertProject = async (
     instructionsMode: InstructionsMode | undefined
     memoryMode?: MemoryMode
   },
+  folderPaths: string[] = [],
 ) => {
   const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
   // Account defaults for future projects when creation supplies none.
@@ -101,20 +83,23 @@ export const insertProject = async (
     archivedAt: null,
     createdAt: Date.now(),
   }
-  await ctx.db.insert(projects).values(row)
+  writeTransaction(ctx.db, tx => {
+    tx.insert(projects).values(row).run()
+    if (folderPaths.length) {
+      tx.insert(projectFolders).values(folderPaths.map(path => ({ id: randomUUID(), projectId: row.id, path }))).run()
+    }
+  })
   return row
 }
 
 /** Shared with the interface to keep validation and initial values consistent. */
 export async function createProject(ctx: AppContext, ownerId: string, input: unknown) {
   const body = createProjectBodySchema.parse(input)
-  let workspacePath: string
-  if ('workspacePath' in body) {
-    workspacePath = await assertUsableWorkspace(body.workspacePath)
-  } else {
-    workspacePath = await assertFreeDestination(body.parentDir, body.directory)
-    await mkdir(workspacePath, { recursive: true })
-  }
+  const workspacePath = 'workspacePath' in body
+    ? await assertUsableWorkspace(body.workspacePath)
+    : await assertFreeDestination(body.parentDir, body.directory)
+  const folderPaths = await resolveProjectFolderPaths(workspacePath, body.folderPaths)
+  if ('parentDir' in body) await mkdir(workspacePath, { recursive: true })
   return insertProject(ctx, ownerId, {
     name: body.name,
     workspacePath,
@@ -122,5 +107,5 @@ export async function createProject(ctx: AppContext, ownerId: string, input: unk
     color: body.color,
     instructionsMode: body.instructionsMode,
     memoryMode: body.memoryMode,
-  })
+  }, folderPaths)
 }

@@ -231,7 +231,7 @@ export async function buildApp(
   registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerAntigravitySessionRoutes(app, ctx, sessions, registry)
-  registerFsRoutes(app)
+  registerFsRoutes(app, ctx)
   const cliInstaller = new CliInstaller(ctx.config.paths.agents, {
     acquire: async (kind) => {
       const release = await sessions.prepareCliUpdate(kind)

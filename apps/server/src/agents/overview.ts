@@ -174,7 +174,10 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
   const crossReminder = input.sillageMcp && input.projectId && crossProjectsEnabled(db, input.projectId)
     ? "This project lets its sessions act on the account's other projects. The `sillage` tools that accept `project` (history, sessions, cards, worktrees, actions, schedules, memory, instructions) work there by name or ID from list_projects, and `work_log` reports time spent per day and project. When the user asks about another project, work on it from here with `project` rather than moving this session. What you start or send there carries this project's name."
     : null
-  const briefing = [referenceReminder, projectReminder, crossReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
+  const folderReminder = input.sillageMcp && input.projectId
+    ? "When your work creates a related experiment outside the project's main folder or regularly uses a related folder elsewhere, use attach_project_folder from a project owner's session so people can find it in Files. Attach the experiment's own directory. Use list_project_folders to see existing attachments."
+    : null
+  const briefing = [referenceReminder, projectReminder, crossReminder, folderReminder, sessionTitleReminder(db, input), cardBriefing(db, input), forgeMarkerReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
 

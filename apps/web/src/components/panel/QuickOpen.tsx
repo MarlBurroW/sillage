@@ -69,7 +69,7 @@ export function QuickOpen({ scope, workspaceLabel, open, onOpenChange, onSelect 
           const path = selected.current
           if (!path) return
           event.preventDefault()
-          focusEditorFile(path)
+          focusEditorFile(scope, path)
         }}>
         <Dialog.Title className="px-4 pt-3 text-sm font-semibold text-ink">{t('editor.quickOpen.title')}</Dialog.Title>
         <Dialog.Description className="px-4 pt-1 text-xs text-ink-faint"><span className="block truncate font-medium" title={workspaceLabel}>{workspaceLabel}</span>{t('editor.quickOpen.hint')}</Dialog.Description>

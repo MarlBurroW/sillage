@@ -438,7 +438,7 @@ export function FileTree({
           return
         }
         // Entries dropped outside rows move to root, like a desktop.
-        const dragged = readDragged(event)
+        const dragged = readDragged(event, scope)
         if (!dragged) return
         event.preventDefault()
         actions.onTransfer(dragged, '', copyModifier(event) ? 'copy' : 'move')
@@ -858,11 +858,13 @@ function openMenuAt(button: HTMLElement): void {
 }
 
 /** Entries dragged from the tree, or null for other drag kinds. */
-function readDragged(event: DragEvent): Picked[] | null {
+function readDragged(event: DragEvent, scope: string): Picked[] | null {
   const raw = event.dataTransfer.getData(DRAG_TYPE)
   if (!raw) return null
   try {
-    return JSON.parse(raw) as Picked[]
+    // A drag from another window may carry the same relative paths in a different folder.
+    const payload = JSON.parse(raw) as { scope: string; entries: Picked[] }
+    return payload.scope === scope && Array.isArray(payload.entries) ? payload.entries : null
   } catch {
     return null
   }
@@ -1739,7 +1741,7 @@ const Entry = memo(function Entry({
 
     // Dropping directories into themselves or descendants is invalid: avoid sending requests the
     // server will reject.
-    const dragged = readDragged(event)?.filter(([from]) => !isWithin(dropTarget, from))
+    const dragged = readDragged(event, scope)?.filter(([from]) => !isWithin(dropTarget, from))
     if (dragged?.length) actions.onTransfer(dragged, dropTarget, copyModifier(event) ? 'copy' : 'move')
   }
 
@@ -1756,7 +1758,7 @@ const Entry = memo(function Entry({
         onDragStart={(event) => {
           // Drag the entire selection when the grabbed row belongs to it.
           const dragged = targetsOf(getTreeView(scope), entry.path, entry.isDirectory)
-          event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(dragged))
+          event.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ scope, entries: dragged }))
           event.dataTransfer.effectAllowed = 'copyMove'
           if (dragged.length > 1) {
             setDragBadge(event, translate('filetree.drag.count', { count: dragged.length }))

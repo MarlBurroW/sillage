@@ -2,6 +2,7 @@ import { continueInProject } from '../conversations/continue-in-project.js'
 import { resolveAgentTags, setCardTags, TagRefusal, type TagAuthor } from '../board/card-tags.js'
 import { personalMemoryDir, writePersonalMemory } from '../memory/personal.js'
 import { createProject } from '../projects/create.js'
+import { attachProjectFolder } from '../projects/folders.js'
 import { deleteProject } from '../projects/delete.js'
 import { CROSS_PROJECTS_OFF, crossProjectsEnabled } from '../projects/cross-projects.js'
 import { searchTree } from '../search/search-files.js'
@@ -46,6 +47,7 @@ import {
   automationConditionsSchema,
   taskReplyBodySchema,
   renameSessionBodySchema,
+  openExplorerFolderBodySchema,
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
   updateCardBodySchema,
@@ -297,7 +299,8 @@ export class AgentRequests {
       }
       if (conversation && request.userId && request.userId !== conversation.userId) throw new Refusal('The request account does not match its session.')
       const userId = conversation?.userId ?? request.userId
-      if (!userId || !this.ctx.db.select().from(users).where(eq(users.id, userId)).get()) throw new Refusal('The requesting account no longer exists.')
+      const user = userId ? this.ctx.db.select().from(users).where(eq(users.id, userId)).get() : undefined
+      if (!userId || !user) throw new Refusal('The requesting account no longer exists.')
 
       if (request.kind === 'rename_session') {
         if (!conversation) throw new Refusal('This tool only renames your own session.')
@@ -376,6 +379,14 @@ export class AgentRequests {
         return
       }
 
+      if (request.kind === 'attach_project_folder') {
+        if (conversation?.projectId !== project.id) throw new Refusal('A project session can attach folders to its own project.')
+        const { path } = openExplorerFolderBodySchema.parse(payload)
+        const folder = await attachProjectFolder(this.ctx, user, project.id, path)
+        this.sessions.statusBus.emit('lists')
+        this.settle(request.id, `Available in the Files menu for all members of “${project.name}”: ${folder.path}`, false)
+        return
+      }
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request.id, text, false, launchedId)

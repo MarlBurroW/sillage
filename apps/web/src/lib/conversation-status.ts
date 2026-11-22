@@ -220,6 +220,7 @@ export function useStatusFeed(): void {
         seqs.clear()
         metrics.clear()
         emit()
+        void queryClient.invalidateQueries({ queryKey: ['project-folders'] })
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       },
       onListsChanged: () => {
@@ -231,6 +232,7 @@ export function useStatusFeed(): void {
           void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           void queryClient.invalidateQueries({ queryKey: ['actions'] })
           void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+          void queryClient.invalidateQueries({ queryKey: ['project-folders'] })
           // Agents attach their sessions to cards and grow the tag catalog outside any route.
           void queryClient.invalidateQueries({ queryKey: ['cards'] })
           void queryClient.invalidateQueries({ queryKey: ['card-tags'] })

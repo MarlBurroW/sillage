@@ -31,7 +31,7 @@ import { attachmentHeader } from '../attachment-header.js'
 import type { AppContext } from '../context.js'
 import { badRequest } from '../errors.js'
 import { requireUser } from '../require-user.js'
-import { workspaceScopes } from './workspace-scopes.js'
+import { fileWorkspaceScopes } from './workspace-scopes.js'
 
 /**
  * Folder aggregation priority: its most significant child change sets its color.
@@ -56,7 +56,7 @@ const SEVERITY: Record<Exclude<FileState, 'ignored'>, number> = {
  */
 export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Conversation and project scopes: see `workspace-scopes.ts`.
-  for (const { base, cwdOf } of workspaceScopes) {
+  for (const { base, cwdOf } of fileWorkspaceScopes) {
     app.get(`${base}/tree`, async (request): Promise<TreeListingDto> => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }

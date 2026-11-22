@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
-import { openDatabase, projects, runMigrations, users } from '@sillage/db'
+import { openDatabase, projectFolders, projects, runMigrations, users } from '@sillage/db'
 import type { ApiScope } from '@sillage/protocol'
 import { createApiToken, resolveApiToken, bearerSecret } from '../src/auth/api-tokens.js'
 import type { Config } from '../src/config.js'
@@ -99,4 +99,24 @@ test('API : authentification et chemins invalides', async (t) => {
   await writeFile(join(h.dir, 'occupied', 'file'), 'contenu')
   assert.equal((await h.create({ name: 'Test', parentDir: h.dir, directory: 'occupied' })).statusCode, 409)
   assert.equal(h.db.select().from(projects).all().length, 1)
+})
+
+test('creation validates and persists distinct folders together with the project', async t => {
+  const h = await harness(t)
+  const path = join(h.dir, 'experiment')
+  await mkdir(path)
+  const args = { name: 'Sandbox', parentDir: h.dir, directory: 'sandbox' }
+  const invalid = await h.create({ ...args, folderPaths: [path, join(h.dir, 'missing')] })
+  assert.equal(invalid.statusCode, 400)
+  assert.deepEqual(h.db.select().from(projects).all(), [])
+  await assert.rejects(stat(join(h.dir, 'sandbox')), { code: 'ENOENT' })
+  const created = await h.create({ ...args, folderPaths: [path, path] })
+  assert.equal(created.statusCode, 201, created.body)
+  const folders = h.db.select().from(projectFolders).all()
+  assert.equal(folders.length, 1)
+  assert.equal(folders[0]?.projectId, created.json().id)
+  assert.equal(folders[0]?.path, path)
+  h.db.delete(projects).run()
+  assert.deepEqual(h.db.select().from(projectFolders).all(), [])
+  assert.ok((await stat(path)).isDirectory())
 })

@@ -100,7 +100,15 @@ export interface UserDto {
 
 // Projects
 
+export const projectFolderPathsSchema = z.array(z.string().min(1)).optional()
+export interface ProjectFolderDto {
+  id: string
+  projectId: string
+  path: string
+}
+
 const projectCreationFields = {
+  folderPaths: projectFolderPathsSchema,
   name: z.string().min(1).max(120),
   visibility: projectVisibilitySchema.default('private'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
@@ -131,6 +139,7 @@ export const createProjectBodySchema = z.union([
  * project for it. Its distinctive directory name makes it easy to recognize and remove.
  */
 export const createSampleProjectBodySchema = z.object({
+  folderPaths: projectFolderPathsSchema,
   parentDir: z.string().min(1),
   visibility: projectVisibilitySchema.default('private'),
 })
@@ -963,6 +972,13 @@ export const browseQuerySchema = z.object({
   path: z.string().optional(),
   showHidden: z.coerce.boolean().default(false),
 })
+
+export const openExplorerFolderBodySchema = z.object({ path: z.string().min(1) })
+
+export interface ExplorerFolderDto {
+  id: string
+  path: string
+}
 
 export const mkdirBodySchema = z.object({
   path: z.string(),

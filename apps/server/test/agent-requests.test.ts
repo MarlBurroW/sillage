@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -139,6 +139,32 @@ async function harness(t: TestContext) {
 
   return { db, dir, requests, conversation, mcp, sent, gestures, log, statusBus, titleEvents, setSteer: (value: boolean) => { steerWorks = value }, setCatalogDelay: (agent: string, ms: number) => { catalogDelay[agent] = ms } }
 }
+
+test('an owner session attaches a disk folder for every project member', async (t) => {
+  const { db, dir, conversation, mcp, statusBus } = await harness(t)
+  conversation('owner-session')
+  conversation('member-session')
+  db.insert(users).values({ id: 'other', username: 'other', displayName: 'Other', isAdmin: true, passwordHash: '', createdAt: 1 }).run()
+  db.update(conversations).set({ userId: 'other' }).where(eq(conversations.id, 'member-session')).run()
+  db.update(projects).set({ visibility: 'shared' }).where(eq(projects.id, 'project')).run()
+
+  const folder = join(dir, 'experiment')
+  await mkdir(folder)
+  let refreshes = 0
+  statusBus.on('lists', () => { refreshes++ })
+  assert.equal((await mcp('member-session', 'attach_project_folder', { path: folder })).isError, true)
+  assert.equal((await mcp('', 'attach_project_folder', { project: 'project', path: folder })).isError, true)
+  assert.equal((await mcp('owner-session', 'attach_project_folder', { path: join(dir, 'missing') })).isError, true)
+  for (const path of [folder, folder + '/.']) {
+    const attached = await mcp('owner-session', 'attach_project_folder', { path })
+    assert.ok(!attached.isError, attached.content[0]?.text)
+  }
+  assert.ok(refreshes > 0)
+  const listed = await mcp('member-session', 'list_project_folders', {})
+  assert.equal(listed.content[0]?.text, await realpath(folder))
+  db.update(projects).set({ visibility: 'private' }).where(eq(projects.id, 'project')).run()
+  assert.equal((await mcp('member-session', 'list_project_folders', {})).isError, true)
+})
 
 test('a request a previous daemon claimed is closed as interrupted, never run again', async (t) => {
   const { db, requests, conversation } = await harness(t)

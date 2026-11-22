@@ -7,6 +7,7 @@ import { ApiRequestError, api } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import { useCapability, useInstance } from '../lib/instance'
 import { useUserSettings } from '../lib/user-settings'
+import { NewProjectFolders } from './ProjectFolders'
 import { PathField } from './PathField'
 import { Banner, Button, Select, type SelectOption } from './ui'
 
@@ -23,6 +24,7 @@ export function SampleProjectForm() {
   const { data: settings } = useUserSettings()
   const { data: instance } = useInstance()
   const [parentDir, setParentDir] = useState('')
+  const [folderPaths, setFolderPaths] = useState<string[]>([])
   const [visibility, setVisibility] = useState<'private' | 'shared'>('private')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,7 +44,7 @@ export function SampleProjectForm() {
     setPending(true)
     setError(null)
     try {
-      const project = await api.post<ProjectDto>('/api/projects/sample', { parentDir, visibility })
+      const project = await api.post<ProjectDto>('/api/projects/sample', { parentDir, folderPaths, visibility })
       await queryClient.invalidateQueries({ queryKey: ['projects'] })
       navigate(`/p/${project.id}/c/new`)
     } catch (err) {
@@ -63,6 +65,7 @@ export function SampleProjectForm() {
         hint={t('projects.create.sample.parentDir.hint')}
         required
       />
+      <NewProjectFolders paths={folderPaths} onChange={setFolderPaths} initialPath={parentDir} />
       {sharedProjects ? (
         <Select label={t('project.settings.visibility')} value={visibility} onChange={setVisibility} options={visibilityOptions} />
       ) : null}

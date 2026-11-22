@@ -1,9 +1,8 @@
 import { useContext, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useCardRefs } from '../../lib/card-refs'
-import { openTab } from '../../lib/editor-tabs'
+import { useOpenPanelFile } from '../../lib/editor-focus'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
 import { parseMarkdown } from '../../lib/markdown'
-import { setPanelOpen, setPanelTab } from '../../lib/panel'
 import { useCardRefPreview } from '../board/CardRefPreview'
 import { CodeBlock } from './CodeBlock'
 import { ImageViewer, type ViewerImage } from './ImageViewer'
@@ -22,6 +21,7 @@ import { MarkdownTable } from './MarkdownTable'
 export function Markdown({ text, base }: { text: string; base?: string }) {
   const [viewer, setViewer] = useState<{ images: ViewerImage[]; index: number } | null>(null)
   const conversationId = useContext(FileLinkContext)
+  const openPanelFile = useOpenPanelFile()
   // Project cards, when the screen has context: turn their #12 references into links.
   const { projectId, cards: cardsByNumber } = useCardRefs()
   const cards = useMemo(() => (cardsByNumber.size > 0 ? new Set(cardsByNumber.keys()) : undefined), [cardsByNumber])
@@ -72,9 +72,7 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
     if (!path || !conversationId) return
 
     event.preventDefault()
-    openTab(conversationId, path)
-    setPanelTab('files')
-    setPanelOpen(true)
+    openPanelFile(conversationId, path)
   }
 
   return (

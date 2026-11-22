@@ -20,7 +20,9 @@ import type { AgentKind, McpServerStatus } from '@sillage/protocol'
 import { useActions } from '../../lib/actions'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn, TurnCheckpoint } from '../../lib/chat-fold'
-import { openTab } from '../../lib/editor-tabs'
+import { useOpenPanelFile } from '../../lib/editor-focus'
+import { useProjectFolders } from '../../lib/project-folders'
+import { folderScope, useExplorerFolder } from '../../lib/explorer-folders'
 import { useTranslate } from '../../lib/i18n'
 import {
   restorePanelWidth,
@@ -46,6 +48,7 @@ import { useProjects } from '../../lib/projects'
 import { IconButton, cx } from '../ui'
 import { ActionsPane } from './ActionsPane'
 import { AgentsPane } from './AgentsPane'
+import { FolderSwitcher } from './FolderSwitcher'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
 import { HistoryPane } from './HistoryPane'
@@ -77,6 +80,7 @@ export function SidePanel({
   docked = false,
   canDock = false,
   workspaceName,
+  worktreePath,
   cardId = null,
   cardActions,
 }: {
@@ -100,6 +104,7 @@ export function SidePanel({
   docked?: boolean
   canDock?: boolean
   workspaceName?: string
+  worktreePath?: string
   /** Card the conversation handles, shown in its own tab. */
   cardId?: string | null
   /** Owner actions on the conversation's card link. */
@@ -114,8 +119,12 @@ export function SidePanel({
   ).length
   const scope = conversationId ?? projectScope(projectId ?? '')
   const { data: projects } = useProjects()
-  const projectName = projects?.find((project) => project.id === projectId)?.name
-  const workspaceLabel = [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
+  const project = projects?.find((entry) => entry.id === projectId)
+  const projectFolders = useProjectFolders(projectId)
+  const folder = useExplorerFolder(scope, projectFolders.data)
+  const filesScope = folder ? folderScope(folder) : scope
+  const openPanelFile = useOpenPanelFile()
+  const workspaceLabel = [project?.name, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
   const chosenTab = usePanelTab()
   // Tab selection survives view changes; project views fall back from session-only tabs to Files
   // rather than displaying nothing.
@@ -133,18 +142,13 @@ export function SidePanel({
   const [fullscreen, setFullscreen] = useState(false)
   const [quickOpen, setQuickOpen] = useState(false)
   const aside = useRef<HTMLElement>(null)
-  const refresh = useRefreshTree(scope)
+  const refresh = useRefreshTree(filesScope)
   const wasRunning = useRef(turnRunning)
   const wide = useMediaQuery('(min-width: 48rem)')
   const modal = !wide || fullscreen
 
-  /** Opening a diff file creates its tab in view of the requester. */
-  const openInFiles = (path: string) => {
-    openTab(scope, path)
-    setPanelTab('files')
-    // Opening from palettes or diffs must reveal the file on phones.
-    if ((aside.current?.clientWidth ?? 0) < 560) setPanelTree(false, false)
-  }
+  // History and Git resolve paths in the session even when Files displays another folder.
+  const openInFiles = (path: string) => openPanelFile(scope, path)
 
   useEffect(restorePanelWidth, [])
 
@@ -183,6 +187,7 @@ export function SidePanel({
       aria-modal={modal && open ? true : undefined}
       // Stable marker for thread-search shortcuts to detect origins here: aria-label changes with language.
       data-panel="workspace"
+      data-files-scope={filesScope}
       data-fullscreen={fullscreen || undefined}
       onKeyDownCapture={(event) => {
         if (!open || quickOpen || tab !== 'files' || event.defaultPrevented || event.altKey || event.shiftKey) return
@@ -287,7 +292,8 @@ export function SidePanel({
       <header className="flex min-h-[var(--header-height)] shrink-0 flex-wrap items-center gap-y-1 border-b border-line py-1 pr-1 pl-1.5">
         <div className="min-w-0 flex-1 pl-2">
           <h2 className="truncate text-sm font-medium text-ink">{t(`panel.tab.${tab}`)}</h2>
-          {fullscreen ? <p title={workspaceLabel} className="hidden truncate text-xs text-ink-faint md:block">{workspaceLabel}</p> : null}
+          {tab === 'files' ? <FolderSwitcher key={scope} scope={scope} projectId={projectId} selected={folder} rootPath={worktreePath ?? project?.workspacePath ?? ''} />
+            : fullscreen ? <p title={workspaceLabel} className="hidden truncate text-xs text-ink-faint md:block">{workspaceLabel}</p> : null}
         </div>
 
         {/* The tab's own actions first, then how the panel sits in the window, then the way out. */}
@@ -344,7 +350,7 @@ export function SidePanel({
           tab === 'files' ? 'flex' : 'hidden',
         )}
       >
-        <FilesPane scope={scope} />
+        <FilesPane key={filesScope} scope={filesScope} />
       </div>
 
       {history?.hasMore && ['history', 'agents', 'git'].includes(tab) ? (
@@ -433,7 +439,7 @@ export function SidePanel({
           'outline-none',
         )}
       />
-      <QuickOpen scope={scope} workspaceLabel={workspaceLabel} open={open && quickOpen} onOpenChange={setQuickOpen} onSelect={openInFiles} />
+      <QuickOpen key={filesScope} scope={filesScope} workspaceLabel={folder?.path ?? workspaceLabel} open={open && quickOpen} onOpenChange={setQuickOpen} onSelect={(path) => openPanelFile(filesScope, path)} />
     </aside>
     </PanelFocus>
   )

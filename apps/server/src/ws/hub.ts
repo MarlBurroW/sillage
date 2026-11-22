@@ -1,4 +1,3 @@
-import { personalWorkspace } from '../conversations/personal-workspaces.js'
 import type { Socket } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
@@ -7,6 +6,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
   clientMessageSchema,
   type ServerMessage,
+  type TreeScope,
 } from '@sillage/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { Notifications } from '../notifications/dispatcher.js'
@@ -14,7 +14,9 @@ import type { SessionManager, StatusBroadcast } from '../sessions/session-manage
 import type { AppContext } from '../http/context.js'
 import { canReadConversation, readConversationState } from '../http/routes/conversations.js'
 import { watchDirectory } from '../tree-watch.js'
-import { conversationWorkspace, projectWorkspace, resolveInside } from '../workspace.js'
+import { workspaceScope } from '../http/routes/workspace-scopes.js'
+import { HttpError } from '../http/errors.js'
+import { resolveInside } from '../workspace.js'
 
 /** Routes whose success changes other tabs' sidebar contents. Sockets previously pushed only statuses, leaving deleted, renamed or archived sessions stale elsewhere until reload; new sessions appeared only because initial statuses exposed unknown IDs. `personal` notifies only the caller's tabs: bookmarks concern nobody else. Exclude read cursors, which advance every two seconds during turns and would trigger constant list reloads. Scheduler and webhook creations bypass routes; their first status reveals them. */
 export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
@@ -33,6 +35,8 @@ export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
   'POST /api/projects': 'shared',
   'POST /api/projects/order': 'shared',
   'PATCH /api/projects/:id': 'shared',
+  'POST /api/projects/:id/folders': 'shared',
+  'DELETE /api/projects/:id/folders/:folderId': 'shared',
   'DELETE /api/projects/:id': 'shared',
   'PUT /api/projects/:id/pin': 'personal',
   'DELETE /api/projects/:id/pin': 'personal',
@@ -172,24 +176,19 @@ class Connection {
   }
 
   /** Aligns conversation disk watches with declared directories. Independent of journal subscriptions: side panels browse conversations without running sessions. Recheck read access on every declaration like statuses rather than retain initial permissions. */
-  watchTree(scope: 'conversation' | 'project' | 'personal', id: string, paths: string[]): void {
-    // Both scopes share one map: conversation and project IDs cannot collide,
-    // but keys still make the scope explicit.
+  watchTree(scope: TreeScope, id: string, paths: string[]): void {
     const key = `${scope}:${id}`
     const current = this.treeWatches.get(key) ?? new Map<string, () => void>()
 
     let cwd: string | null = null
     if (paths.length > 0) {
       try {
-        cwd =
-          scope === 'conversation'
-            ? conversationWorkspace(this.ctx.db, id, this.userId)
-            : scope === 'personal' ? personalWorkspace(this.ctx.db, id, this.userId).path : projectWorkspace(this.ctx.db, id, this.userId)
-      } catch {
+        cwd = workspaceScope[scope].cwdOf(this.ctx.db, id, this.userId)
+      } catch (err) {
         this.send({
           t: 'error',
-          code: scope === 'conversation' ? 'conversation_not_found' : 'project_not_found',
-          message: scope === 'conversation' ? 'Conversation not found.' : 'Project not found.',
+          code: err instanceof HttpError ? err.code : 'workspace_not_found',
+          message: err instanceof HttpError ? err.message : 'Directory not found.',
         })
       }
     }
@@ -250,6 +249,16 @@ class Connection {
   notifyListsChanged(): void {
     for (const id of this.subscriptions.keys()) {
       if (!canReadConversation(this.ctx, id, this.userId)) this.unsubscribe(id)
+    }
+    // Detaching a folder or making its project private also revokes active directory watches.
+    for (const [key, watches] of this.treeWatches) {
+      if (!key.startsWith('project-folder:')) continue
+      try {
+        workspaceScope['project-folder'].cwdOf(this.ctx.db, key.slice('project-folder:'.length), this.userId)
+      } catch {
+        for (const stop of watches.values()) stop()
+        this.treeWatches.delete(key)
+      }
     }
     this.send({ t: 'lists-changed' })
   }

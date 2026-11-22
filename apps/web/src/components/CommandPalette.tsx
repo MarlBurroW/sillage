@@ -8,8 +8,7 @@ import type { ProjectActionDto } from '@sillage/protocol'
 import { actionView, useActions, useRunAction } from '../lib/actions'
 import { useAllConversations } from '../lib/conversations'
 import { relativeDate } from '../lib/dates'
-import { openTab } from '../lib/editor-tabs'
-import { focusEditorFile } from '../lib/editor-focus'
+import { focusEditorFile, useOpenPanelFile } from '../lib/editor-focus'
 import { useTranslate } from '../lib/i18n'
 import { useMcpServers } from '../lib/mcp'
 import {
@@ -24,7 +23,7 @@ import {
   type PaletteHit,
   type PaletteItem,
 } from '../lib/palette'
-import { setPanelOpen, setPanelTab, setPanelTree, showTerminal } from '../lib/panel'
+import { setPanelOpen, setPanelTab, showTerminal } from '../lib/panel'
 import { projectViewOf, projectViewPath } from '../lib/project-view'
 import { useProjects } from '../lib/projects'
 import { useSchedules } from '../lib/schedules'
@@ -33,7 +32,6 @@ import { splitExcerpt, useMessageSearch } from '../lib/search'
 import { useInstance } from '../lib/instance'
 import { useCurrentUser } from '../lib/session'
 import { useTheme } from '../lib/theme'
-import { useMediaQuery } from '../lib/viewport'
 import { projectScope } from '../lib/workspace-scope'
 import { visibleSections } from '../routes/SettingsPage'
 import { Logo } from './Logo'
@@ -91,11 +89,11 @@ export function CommandPalette({
   const listId = useId()
   const list = useRef<HTMLDivElement>(null)
   /** Selected file to focus on close instead of the trigger. */
-  const chosenFile = useRef<string | null>(null)
+  const chosenFile = useRef<{ scope: string; path: string } | null>(null)
   const [query, setQuery] = useState('')
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
-  const wide = useMediaQuery('(min-width: 48rem)')
+  const openPanelFile = useOpenPanelFile()
 
   const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
   const discussionRoute = useMatch('/discussions/:conversationId')
@@ -265,12 +263,8 @@ export function CommandPalette({
       const hasPanel = projectId === currentProjectId && (draft || boardRoute !== null)
       if (!hasPanel) navigate(projectViewPath(projectId, projectViewOf(projectId)))
     }
-    openTab(scope, path)
-    setPanelTab('files')
-    setPanelOpen(true)
-    chosenFile.current = path
-    // Touch panels fill the screen: show the requested file rather than a tree obscuring it.
-    if (!wide) setPanelTree(false, false)
+    openPanelFile(scope, path)
+    chosenFile.current = { scope, path }
   }
 
   const run = (item: PaletteItem) => {
@@ -331,11 +325,11 @@ export function CommandPalette({
         <Dialog.Content
           aria-describedby={undefined}
           onCloseAutoFocus={(event) => {
-            const path = chosenFile.current
-            if (!path) return
+            const file = chosenFile.current
+            if (!file) return
             chosenFile.current = null
             event.preventDefault()
-            focusEditorFile(path)
+            focusEditorFile(file.scope, file.path)
           }}
           className={cx(
             'surface fixed z-50 flex flex-col overflow-hidden border-line shadow-pop',

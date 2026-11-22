@@ -3,9 +3,10 @@ import type { SessionManager } from '../../sessions/session-manager.js'
 import { resolve } from 'node:path'
 import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { cards, conversations, projectImages, projectPins, projects, users, writeTransaction } from '@sillage/db'
+import { cards, conversations, projectFolders, projectImages, projectPins, projects, users, writeTransaction } from '@sillage/db'
 import {
   createProjectBodySchema,
+  openExplorerFolderBodySchema,
   createSampleProjectBodySchema,
   MAX_PROJECT_IMAGE_BYTES,
   NO_PROJECT_DEFAULTS,
@@ -26,7 +27,7 @@ import { searchWorkspaceFiles } from '../../search/search-files.js'
 import { credentialEnv, credentialHelperCommand } from '../../git-credential/helper.js'
 import { listBranches, readGitStatus } from '../../git.js'
 import type { AppContext } from '../context.js'
-import { badRequest, forbidden, notFound } from '../errors.js'
+import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
 import { writeProjectsDir } from '../../settings/user-settings.js'
@@ -37,7 +38,11 @@ import {
   sniffProjectImage,
   writeProjectImage,
 } from '../../projects/image.js'
-import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
+import { assertUsableWorkspace, canonicalMainFolder, resolveProjectFolderPaths } from '../../projects/folder-path.js'
+import { attachProjectFolder, listProjectFolders } from '../../projects/folders.js'
+import { samePath } from '../../agents/paths.js'
+import { assertScopeWriter } from '../scope-access.js'
+import { assertFreeDestination, createProject, insertProject } from '../../projects/create.js'
 
 /** Mention completion results: beyond this, lists no longer fit the composer's popover. */
 const MENTION_RESULTS = 30
@@ -160,6 +165,29 @@ export function registerProjectRoutes(
     )
   })
 
+  app.get('/api/projects/:id/folders', async request => {
+    const { id } = request.params as { id: string }
+    const user = requireUser(request)
+    await loadVisibleProject(id, user.id)
+    return listProjectFolders(ctx.db, id)
+  })
+
+  app.post('/api/projects/:id/folders', async request => {
+    const { id } = request.params as { id: string }
+    const user = requireUser(request)
+    const { path } = openExplorerFolderBodySchema.parse(request.body)
+    return attachProjectFolder(ctx, user, id, path)
+  })
+
+  app.delete('/api/projects/:id/folders/:folderId', async (request, reply) => {
+    const { id, folderId } = request.params as { id: string; folderId: string }
+    assertScopeWriter(ctx, requireUser(request), id)
+    const removed = ctx.db.delete(projectFolders)
+      .where(and(eq(projectFolders.projectId, id), eq(projectFolders.id, folderId))).run()
+    if (!removed.changes) throw notFound('workspace_not_found', 'Directory not found.')
+    return reply.status(204).send()
+  })
+
   app.post('/api/projects', async (request, reply) => {
     const user = requireUser(request)
     const body = createProjectBodySchema.parse(request.body)
@@ -221,6 +249,7 @@ export function registerProjectRoutes(
       )
     }
     const destination = await assertFreeDestination(body.parentDir, body.directory)
+    const folderPaths = await resolveProjectFolderPaths(destination, body.folderPaths)
     // Remember the parent directory just as for projects created from scratch.
     writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
 
@@ -239,7 +268,7 @@ export function registerProjectRoutes(
           visibility: body.visibility,
           color: body.color,
           instructionsMode: body.instructionsMode,
-        })
+        }, folderPaths)
         return row.id
       },
     })
@@ -319,7 +348,14 @@ export function registerProjectRoutes(
     if (body.memoryMode !== undefined) patch.memoryMode = body.memoryMode
 
     if (Object.keys(patch).length > 0) {
-      await ctx.db.update(projects).set(patch).where(eq(projects.id, id))
+      const main = patch.workspacePath && canonicalMainFolder(patch.workspacePath)
+      writeTransaction(ctx.db, tx => {
+        if (main && tx.select({ path: projectFolders.path }).from(projectFolders)
+          .where(eq(projectFolders.projectId, id)).all().some(folder => samePath(folder.path, main))) {
+          throw conflict('project_folder_attached', 'This folder is attached to the project. Detach it before choosing it as the main folder.')
+        }
+        tx.update(projects).set(patch).where(eq(projects.id, id)).run()
+      })
     }
     return { ok: true }
   })

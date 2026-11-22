@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { AppContext } from '../http/context.js'
 import { badRequest } from '../http/errors.js'
+import { resolveProjectFolderPaths } from './folder-path.js'
 import { insertProject } from './create.js'
 
 const run = promisify(execFile)
@@ -126,7 +127,7 @@ async function initRepository(path: string): Promise<void> {
 export async function createSampleProject(
   ctx: AppContext,
   ownerId: string,
-  input: { parentDir: string; visibility: 'private' | 'shared' },
+  input: { parentDir: string; visibility: 'private' | 'shared'; folderPaths?: string[] | undefined },
 ) {
   if (!isAbsolute(input.parentDir)) {
     throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
@@ -139,6 +140,7 @@ export async function createSampleProject(
   }
 
   const workspacePath = await freeDirectory(parent)
+  const folderPaths = await resolveProjectFolderPaths(workspacePath, input.folderPaths)
   for (const [name, content] of Object.entries(FILES)) {
     const target = join(workspacePath, name)
     await mkdir(join(target, '..'), { recursive: true })
@@ -153,5 +155,5 @@ export async function createSampleProject(
     color: null,
     // No repository instructions: use Sillage instructions edited through the page.
     instructionsMode: 'sillage',
-  })
+  }, folderPaths)
 }

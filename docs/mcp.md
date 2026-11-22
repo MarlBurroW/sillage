@@ -183,6 +183,17 @@ Code: `apps/server/src/agents/mcp-install.ts`, the answer route in `http/routes/
 the form in `apps/web/src/components/chat/McpInstallPrompt.tsx`, the project page section
 in `components/mcp/ProjectMcpServers.tsx`.
 
+## Additional project folders
+
+From a project session, `list_project_folders` lists the extra disk directories
+available in Files. A session of the project owner can use
+`attach_project_folder` with an existing absolute path when a related experiment
+or recurring work takes place outside the main workspace. Every member can then
+browse and edit the directory in Files across project sessions. Attaching a folder
+keeps the agent's working directory and its CLI permissions intact. Attaching
+the same folder again reuses the existing entry. The owner can remove the entry
+from the project page, and the files stay on disk.
+
 ## Referencing sessions
 
 Use `session:<conversation UUID>` to cite a Sillage conversation. `list_sessions`,

@@ -13,11 +13,11 @@ import { registerErrorHandler } from '../src/http/errors.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
 import { registerUserSettingsRoutes } from '../src/http/routes/user-settings.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
-import type { CloneJobs } from '../src/clone-jobs.js'
+import type { CloneJobs, StartCloneParams } from '../src/clone-jobs.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { readUserSettings } from '../src/settings/user-settings.js'
 
-async function harness(t: TestContext) {
+async function harness(t: TestContext, cloneJobs = {} as CloneJobs) {
   const dir = await mkdtemp(join(tmpdir(), 'sillage-projects-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
@@ -30,9 +30,9 @@ async function harness(t: TestContext) {
     request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
   })
   registerErrorHandler(app)
-  const ctx = { db, config: { paths: { data: dir } } as Config }
+  const ctx = { db, config: { paths: { data: dir, database: join(dir, 'test.sqlite') } } as Config }
   // Exercise project creation only; other collaborators are never invoked.
-  registerProjectRoutes(app, ctx, {} as AttachmentStore, {} as CloneJobs, { aliveCount: () => 0 } as unknown as TerminalManager)
+  registerProjectRoutes(app, ctx, {} as AttachmentStore, cloneJobs, { aliveCount: () => 0 } as unknown as TerminalManager)
   registerUserSettingsRoutes(app, ctx)
   t.after(() => app.close())
 
@@ -134,4 +134,33 @@ test('épingle : personnelle, idempotente, et reflétée dans la liste', async (
 
   const missing = await app.inject({ method: 'PUT', url: '/api/projects/nope/pin' })
   assert.equal(missing.statusCode, 404)
+})
+
+test('sample and clone creation keep the selected folders independent of their new repository', async (t) => {
+  let pendingClone: StartCloneParams | undefined
+  const cloneJobs = {
+    start(params: StartCloneParams) {
+      pendingClone = params
+      return { id: 'job', status: 'running' }
+    },
+  } as unknown as CloneJobs
+  const { app, dir } = await harness(t, cloneJobs)
+  const path = join(dir, 'experiment')
+  await mkdir(path)
+  const folders = async (id: string) => (await app.inject(`/api/projects/${id}/folders`)).json()
+  const sample = await app.inject({
+    method: 'POST', url: '/api/projects/sample', payload: { parentDir: dir, folderPaths: [path] },
+  })
+  assert.equal(sample.statusCode, 201, sample.body)
+  assert.equal((await folders(sample.json().id))[0]?.path, path)
+
+  const clone = await app.inject({
+    method: 'POST', url: '/api/projects/clone',
+    payload: { url: 'https://github.com/example/repo.git', name: 'Clone', parentDir: dir, directory: 'repo', folderPaths: [path] },
+  })
+  assert.equal(clone.statusCode, 202, clone.body)
+  assert.ok(pendingClone)
+  await mkdir(pendingClone.destination)
+  const created = await pendingClone.createProject()
+  assert.equal((await folders(created))[0]?.path, path)
 })

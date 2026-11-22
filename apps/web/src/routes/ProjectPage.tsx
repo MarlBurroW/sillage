@@ -35,6 +35,7 @@ import { ProjectMemory } from '../components/instructions/ProjectMemory'
 import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
+import { ProjectFolderSettings } from '../components/ProjectFolders'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { WorktreeBoard } from '../components/WorktreeBoard'
 import { ProjectMcpServers } from '../components/mcp/ProjectMcpServers'
@@ -177,6 +178,7 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
             </> : <Card><CardBody className="flex flex-col gap-3 text-sm text-ink-faint">
               <p>{t('project.shared.readonly', { name: project.ownerName })}</p>
               <p className="break-all font-mono">{project.workspacePath}</p>
+              <ProjectFolderSettings projectId={project.id} workspacePath={project.workspacePath} isOwner={false} />
             </CardBody></Card> : null}
             {key === 'agents' ? <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} /> : null}
             {key === 'instructions' ? <Card>
@@ -464,6 +466,8 @@ function ProjectSettings({
           onChange={setWorkspacePath}
           hint={t('project.settings.workspacePath.hint')}
         />
+
+        <ProjectFolderSettings projectId={projectId} workspacePath={initialPath} isOwner />
 
         {pathChanged && hasConversations ? (
           <Banner tone="caution">{t('project.settings.pathChanged.warning')}</Banner>

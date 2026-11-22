@@ -32,7 +32,7 @@ async function keepCreatedInRail(queryClient: QueryClient, id: string): Promise<
 export type CreateProjectInput = (
   | { name: string; workspacePath: string; visibility: 'private' | 'shared' }
   | { name: string; parentDir: string; directory: string; visibility: 'private' | 'shared' }
-) & { instructionsMode?: InstructionsMode }
+) & { instructionsMode?: InstructionsMode; folderPaths?: string[] }
 
 export function useCreateProject() {
   const queryClient = useQueryClient()
@@ -58,6 +58,7 @@ export interface StartCloneInput {
   directory: string
   visibility: 'private' | 'shared'
   instructionsMode?: InstructionsMode
+  folderPaths?: string[]
 }
 
 export function useStartClone() {

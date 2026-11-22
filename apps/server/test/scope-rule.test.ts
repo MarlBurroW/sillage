@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -20,6 +20,7 @@ import { registerErrorHandler } from '../src/http/errors.js'
 import { registerInstructionRoutes } from '../src/http/routes/instructions.js'
 import { registerMcpRoutes } from '../src/http/routes/mcp.js'
 import { registerMemoryRoutes } from '../src/http/routes/memory.js'
+import { registerFileRoutes } from '../src/http/routes/files.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
@@ -75,6 +76,7 @@ async function harness(t: TestContext) {
   registerMcpRoutes(app, ctx, () => {}, { log, secrets, sessions })
   registerInstructionRoutes(app, ctx)
   registerMemoryRoutes(app, ctx)
+  registerFileRoutes(app, ctx)
   registerProjectRoutes(app, ctx, {} as AttachmentStore, {} as CloneJobs, { aliveCount: () => 0 } as unknown as TerminalManager)
   registerSecretRoutes(app, ctx, secrets)
   registerClaudeAccountRoutes(app, {} as ClaudeAccountStore, {} as ClaudeLoginService, {
@@ -263,4 +265,37 @@ test('acting on other projects is project configuration, and reaches only what t
   const member = tool('c-member', 'list_sessions', { project: 'private' })
   assert.equal(member.isError, true)
   assert.match(member.content[0]!.text, /No project “private” accessible/)
+})
+
+test('only project owners manage attached folders, and every viewer may edit their files', async t => {
+  const { dir, call, db } = await harness(t)
+  const path = join(dir, 'experiment')
+  await mkdir(path)
+  await writeFile(join(path, 'notes.md'), 'First')
+  const endpoint = '/api/projects/shared/folders'
+  const add = (user: string, root = path) => call(user, 'POST', endpoint, { path: root })
+  assert.equal((await add('owner', dir)).code, 'project_folder_primary')
+  for (const user of ['admin', 'member']) {
+    assert.equal((await add(user)).code, 'project_edit_forbidden')
+    assert.equal((await call(user, 'GET', '/api/projects/private/folders')).status, 404)
+  }
+  const attached = await add('owner')
+  assert.equal(attached.status, 200)
+  const folder = attached.body as { id: string; path: string }
+  assert.deepEqual((await add('owner')).body, folder)
+  assert.equal((await call('owner', 'PATCH', '/api/projects/shared', { workspacePath: path })).code, 'project_folder_attached')
+  assert.equal(db.select().from(projects).where(eq(projects.id, 'shared')).get()?.workspacePath, dir)
+  const file = `/api/project-folders/${folder.id}/file`
+  for (const user of ['owner', 'admin', 'member']) {
+    assert.deepEqual((await call(user, 'GET', endpoint)).body, [folder])
+    assert.equal((await call(user, 'GET', file + '?path=notes.md')).status, 200)
+    assert.equal((await call(user, 'PUT', file, { path: 'notes.md', content: user, fingerprint: null })).status, 200)
+    if (user !== 'owner') assert.equal((await call(user, 'DELETE', endpoint + '/' + folder.id)).status, 403)
+  }
+  db.update(projects).set({ visibility: 'private' }).where(eq(projects.id, 'shared')).run()
+  assert.equal((await call('member', 'GET', file + '?path=notes.md')).status, 404)
+  assert.equal((await call('owner', 'DELETE', endpoint + '/' + folder.id)).status, 204)
+  assert.equal((await call('owner', 'GET', file + '?path=notes.md')).status, 404)
+  assert.equal(await readFile(join(path, 'notes.md'), 'utf8'), 'member')
+  assert.equal((await call('owner', 'PATCH', '/api/projects/shared', { workspacePath: path })).status, 200)
 })

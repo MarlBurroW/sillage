@@ -15,6 +15,7 @@ import { useCapability } from '../lib/instance'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
 import { SampleProjectForm } from '../components/SampleProjectForm'
+import { NewProjectFolders } from '../components/ProjectFolders'
 import { PathField } from '../components/PathField'
 import {
   InstructionsModeSelect,
@@ -140,6 +141,7 @@ export function NewFolderForm({ initialName = '', onCreate, children, pending = 
   const [name, setName] = useState(initialName)
   const [directory, setDirectory] = useState(slugifyProjectName(initialName))
   const [parentDir, setParentDir] = useState('')
+  const [folderPaths, setFolderPaths] = useState<string[]>([])
   const [visibility, setVisibility] = useState<Visibility>('private')
   const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
 
@@ -160,6 +162,7 @@ export function NewFolderForm({ initialName = '', onCreate, children, pending = 
         name: name.trim(),
         parentDir,
         directory: directory.trim(),
+        folderPaths,
         visibility,
         ...instructionsModeField(instructionsMode),
       }
@@ -201,6 +204,7 @@ export function NewFolderForm({ initialName = '', onCreate, children, pending = 
         autoCorrect="off"
         required
       />
+      <NewProjectFolders paths={folderPaths} onChange={setFolderPaths} initialPath={parentDir} />
       {sharedProjects ? (
         <Select
           label={t('project.settings.visibility')}
@@ -229,13 +233,14 @@ function ExistingFolderForm() {
 
   const [name, setName] = useState('')
   const [workspacePath, setWorkspacePath] = useState('')
+  const [folderPaths, setFolderPaths] = useState<string[]>([])
   const [visibility, setVisibility] = useState<Visibility>('private')
   const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     createProject.mutate(
-      { name: name.trim(), workspacePath, visibility, ...instructionsModeField(instructionsMode) },
+      { name: name.trim(), workspacePath, folderPaths, visibility, ...instructionsModeField(instructionsMode) },
       {
         onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
       },
@@ -262,6 +267,7 @@ function ExistingFolderForm() {
         hint={t('projects.create.workspacePath.hint')}
         required
       />
+      <NewProjectFolders paths={folderPaths} onChange={setFolderPaths} initialPath={workspacePath} />
       {sharedProjects ? (
         <Select
           label={t('project.settings.visibility')}

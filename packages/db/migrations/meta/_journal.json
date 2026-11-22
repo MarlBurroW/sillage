@@ -519,6 +519,20 @@
       "when": 1795273285339,
       "tag": "0073_public_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1795364687712,
+      "tag": "0074_fantastic_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1795369881798,
+      "tag": "0075_graceful_catseye",
+      "breakpoints": true
     }
   ]
 }

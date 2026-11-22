@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { projectFolderPathsSchema } from './api.js'
 import { instructionsModeSchema } from './instructions.js'
 
 /**
@@ -64,6 +65,7 @@ export interface GitRepoListDto {
 }
 
 export const startCloneBodySchema = z.object({
+  folderPaths: projectFolderPathsSchema,
   url: z.string().min(1).max(2048),
   name: z.string().min(1).max(120),
   /** Clone destination directory; the repository creates its own subdirectory there. */

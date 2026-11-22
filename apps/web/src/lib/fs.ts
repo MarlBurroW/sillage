@@ -2,15 +2,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { FsEntryDto, FsListingDto } from '@sillage/protocol'
 import { api } from './api'
 
+export function readDirectory(path: string | null, showHidden: boolean) {
+  const params = new URLSearchParams()
+  if (path) params.set('path', path)
+  if (showHidden) params.set('showHidden', 'true')
+  return api.get<FsListingDto>(`/api/fs/browse?${params}`)
+}
+
 export function useDirectoryListing(path: string | null, showHidden: boolean) {
   return useQuery({
     queryKey: ['fs', path, showHidden],
-    queryFn: () => {
-      const params = new URLSearchParams()
-      if (path) params.set('path', path)
-      if (showHidden) params.set('showHidden', 'true')
-      return api.get<FsListingDto>(`/api/fs/browse?${params}`)
-    },
+    queryFn: () => readDirectory(path, showHidden),
     // Disk contents change independently: avoid long caching but retain the previous listing during
     // the next load to prevent flashing.
     staleTime: 5_000,

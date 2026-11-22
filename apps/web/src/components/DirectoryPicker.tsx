@@ -1,4 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
+import { useMutation } from '@tanstack/react-query'
 import {
   ChevronRight,
   CornerLeftUp,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { ApiRequestError } from '../lib/api'
-import { breadcrumbSegments, useCreateDirectory, useDirectoryListing } from '../lib/fs'
+import { breadcrumbSegments, readDirectory, useCreateDirectory, useDirectoryListing } from '../lib/fs'
 import { useTranslate } from '../lib/i18n'
 import { Badge, Banner, Button, IconButton, cx } from './ui'
 
@@ -38,11 +39,31 @@ export function DirectoryPicker({
   const [creating, setCreating] = useState(false)
   const listing = useDirectoryListing(open ? path : null, showHidden)
   const createDir = useCreateDirectory()
+  const [typedPath, setTypedPath] = useState<string | null>(null)
+  const checkPath = useMutation({
+    mutationFn: async (value: string) => {
+      const posix = value.startsWith('/')
+      const windows = /^(?:[A-Za-z]:[\\/]|[\\/]{2})/.test(value)
+      if (!posix && !windows) throw new Error(t('directoryPicker.path.absolute'))
+      const folder = await readDirectory(value, showHidden)
+      // The browser may be on a different OS. Only the server knows which paths are absolute.
+      if (!(folder.path.startsWith('/') ? posix : windows)) throw new Error(t('directoryPicker.path.absolute'))
+      return folder.path
+    },
+  })
+  const resetCheck = checkPath.reset
+  const navigate = (next: string | null) => {
+    resetCheck()
+    setTypedPath(null)
+    setPath(next)
+  }
 
   // Reopening starts at the form's current path rather than the last visited directory.
   useEffect(() => {
+    resetCheck()
+    setTypedPath(null)
     if (open) setPath(initialPath || null)
-  }, [open, initialPath])
+  }, [open, initialPath, resetCheck])
 
   // Directory navigation abandons ongoing creation because its parent changed.
   useEffect(() => {
@@ -61,12 +82,23 @@ export function DirectoryPicker({
             ? t('filetree.error.unreadable')
             : null
 
+  const canChoose = !checkPath.isPending && (typedPath !== null ? Boolean(typedPath) : Boolean(current && !listing.isPlaceholderData && !listing.isError))
+  const choose = () => {
+    if (!canChoose) return
+    const confirm = (directory: string) => {
+      onConfirm(directory)
+      onOpenChange(false)
+    }
+    if (typedPath !== null) checkPath.mutate(typedPath, { onSuccess: confirm })
+    else if (current) confirm(current.path)
+  }
+
   const handleCreateFolder = (name: string) => {
     if (!current) return
     setCreating(false)
     createDir.mutate(
       { path: current.path, name },
-      { onSuccess: (entry) => setPath(entry.path) },
+      { onSuccess: (entry) => navigate(entry.path) },
     )
   }
 
@@ -112,7 +144,7 @@ export function DirectoryPicker({
               <button
                 key={root.path}
                 type="button"
-                onClick={() => setPath(root.path)}
+                onClick={() => navigate(root.path)}
                 className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft hover:bg-surface-high hover:text-ink"
               >
                 {root.label === 'Accueil' ? <Home size={12} /> : null}
@@ -125,7 +157,7 @@ export function DirectoryPicker({
                   <button
                     key={segment.path}
                     type="button"
-                    onClick={() => setPath(segment.path)}
+                    onClick={() => navigate(segment.path)}
                     className="shrink-0 rounded-md px-1.5 py-1 font-mono text-xs text-ink-soft hover:bg-surface-high hover:text-ink"
                   >
                     {segment.label}
@@ -149,7 +181,7 @@ export function DirectoryPicker({
               <Row
                 icon={<CornerLeftUp size={16} />}
                 label=".."
-                onClick={() => setPath(current.parent)}
+                onClick={() => navigate(current.parent)}
               />
             ) : null}
 
@@ -172,7 +204,7 @@ export function DirectoryPicker({
                     <Lock size={13} className="text-ink-faint" />
                   )
                 }
-                onClick={() => setPath(entry.path)}
+                onClick={() => navigate(entry.path)}
               />
             ))}
 
@@ -191,24 +223,28 @@ export function DirectoryPicker({
 
           <footer className="flex shrink-0 flex-col gap-2 border-t border-line px-3 py-3 pb-safe">
             <div className="flex items-center gap-2">
-              <p className="min-w-0 flex-1 truncate font-mono text-xs text-ink-soft">
-                {current?.path ?? '...'}
-              </p>
-              {current?.isGitRepo ? (
+              <input
+                aria-label={t('directoryPicker.path')}
+                placeholder={t('directoryPicker.path')}
+                value={typedPath ?? (listing.isPlaceholderData ? path : current?.path ?? path) ?? ''}
+                onChange={event => { resetCheck(); setTypedPath(event.target.value) }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                    event.preventDefault()
+                    choose()
+                  }
+                }}
+                autoCapitalize="none" autoComplete="off" spellCheck={false}
+                className="min-h-9 min-w-0 flex-1 rounded-md border border-line bg-sunken px-2 font-mono text-sm text-ink focus:border-accent focus:outline-none"
+              />
+              {current?.isGitRepo && typedPath === null ? (
                 <Badge tone="accent" icon={<FolderGit2 size={11} />}>
                   {t('directoryPicker.gitRepo')}
                 </Badge>
               ) : null}
             </div>
-            <Button
-              disabled={!current}
-              onClick={() => {
-                if (current) {
-                  onConfirm(current.path)
-                  onOpenChange(false)
-                }
-              }}
-            >
+            {checkPath.error ? <p role="alert" className="text-xs text-critical">{checkPath.error.message}</p> : null}
+            <Button disabled={!canChoose} onClick={choose}>
               {t('directoryPicker.confirm')}
             </Button>
           </footer>

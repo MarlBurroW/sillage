@@ -609,6 +609,7 @@ export const agentRequests = sqliteTable(
     kind: text('kind', {
       enum: [
         'create_project',
+        'attach_project_folder',
         'delete_project',
         'continue_in_project',
         'move_session',
@@ -672,6 +673,19 @@ export const agentRequests = sqliteTable(
     index('idx_agent_requests_launched').on(t.launchedConversationId),
   ],
 )
+
+export const projectFolders = sqliteTable('project_folders', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+}, (t) => [uniqueIndex('idx_project_folders_project_path').on(t.projectId, t.path)])
+
+/** References to existing folders. Removing a reference or its account never removes files. */
+export const explorerFolders = sqliteTable('explorer_folders', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+}, (t) => [uniqueIndex('idx_explorer_folders_user_path').on(t.userId, t.path)])
 
 /** Managed personal directories outlive their conversations. A CLI continuation can reuse its source directory. */
 export const personalWorkspaces = sqliteTable('personal_workspaces', {

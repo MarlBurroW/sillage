@@ -107,6 +107,7 @@ const REQUEST_WAIT_MS = {
   reply_session: 20000,
   // `git worktree add` checks out the whole tree, taking seconds for large repositories.
   create_worktree: 60000,
+  attach_project_folder: 15000,
   // The first progress assessment launches several Git commands per tree.
   list_worktrees: 30000,
   // Stops services in the tree, then `git worktree remove` deletes it file by file.
@@ -794,6 +795,21 @@ const TOOLS = [
     },
   },
   {
+    name: 'list_project_folders',
+    description: 'List the additional disk folders attached to this project. Project members can browse and edit them from Files in every project session.',
+    annotations: { readOnlyHint: true },
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'attach_project_folder',
+    description: 'Make an existing directory available in the project’s Files menu. Use this when project work lives outside its main folder and people need to inspect the results or return to that directory. All project members can browse and edit its contents. Available to sessions of the project owner. Reopening the same directory reuses its attachment.',
+    inputSchema: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'Absolute path to the existing project-related directory on this machine.' } },
+      required: ['path'],
+    },
+  },
+  {
     name: 'set_project_image',
     description:
       "Set or replace the project image used for recognition in Sillage navigation. It appears in a small square: prefer a text-free icon or logo to a banner. First use an existing repository logo or icon; otherwise draw a simple SVG or generate an image with an available tool, setting `provisional: true` in either case. Also call when the project gains or changes its real logo.",
@@ -1101,6 +1117,7 @@ const PROJECT_CREATE_PROPERTIES = {
   parentDir: { type: 'string', description: 'Existing absolute parent directory for a new folder.' },
   directory: { type: 'string', description: 'Name of the new folder inside parentDir.' },
   workspacePath: { type: 'string', description: 'Alternatively, register this existing absolute directory.' },
+  folderPaths: { type: 'array', items: { type: 'string' }, description: 'Additional existing absolute directories to make available in this project’s Files menu.' },
   visibility: { type: 'string', enum: ['private', 'shared'], default: 'private' },
 }
 const PERSONAL_TOOLS = [
@@ -1129,6 +1146,8 @@ function personalTools() {
 }
 
 const SESSION_ONLY_TOOLS = new Set([
+  'attach_project_folder',
+  'list_project_folders',
   'move_session',
   'rename_session',
   'attach_card',
@@ -2953,6 +2972,17 @@ async function callTool(name, args) {
     return text(renderFileEdits(rows, { path, withinMinutes, older }))
   }
 
+  if (name === 'list_project_folders') {
+    // A running MCP process can outlive a session move or a change in project visibility.
+    const project = db.prepare(
+      `SELECT p.id FROM projects p JOIN conversations c ON c.project_id = p.id
+       WHERE c.id = ? AND p.id = ? AND (p.owner_id = c.user_id OR p.visibility = 'shared')`,
+    ).get(CURRENT_CONVERSATION, callScope().projectId)
+    if (!project) return { ...text('The project is unavailable to this session.'), isError: true }
+    const rows = db.prepare('SELECT path FROM project_folders WHERE project_id = ? ORDER BY path').all(project.id)
+    return text(rows.length ? rows.map(row => row.path).join('\n') : 'No additional folders attached to this project.')
+  }
+
   if (name === 'list_actions') {
     return text(renderActions(listActions()))
   }
@@ -3233,6 +3263,7 @@ async function callTool(name, args) {
 
   if (
     name === 'rename_session' ||
+    name === 'attach_project_folder' ||
     name === 'link_cards' ||
     name === 'unlink_cards' ||
     name === 'attach_card' ||
@@ -3265,6 +3296,9 @@ async function callTool(name, args) {
       if (!title || title.length > MAX_SESSION_TITLE_CHARS) {
         return { ...text(`The \`title\` parameter must contain 1 to ${MAX_SESSION_TITLE_CHARS} characters.`), isError: true }
       }
+    }
+    if (name === 'attach_project_folder' && !actingAccountOwnsProject()) {
+      return { ...text('Only sessions of the project owner can attach folders.'), isError: true }
     }
     if (name === 'request_decision' && !(typeof args?.question === 'string' && args.question.trim())) {
       return { ...text('The `question` parameter is required.'), isError: true }

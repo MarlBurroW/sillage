@@ -12,6 +12,9 @@ import type { InAppNotification } from './notifications.js'
 /** Beyond this, the expanded explorer consumes more watchers than the machine allows. */
 export const MAX_WATCHED_PATHS = 200
 
+const treeScopeSchema = z.enum(['conversation', 'project', 'personal', 'folder', 'project-folder'])
+export type TreeScope = z.infer<typeof treeScopeSchema>
+
 export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('subscribe'),
@@ -31,7 +34,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
      * The explorer also works in project view without a conversation: watch the project
      * workspace rather than a thread's directory.
      */
-    scope: z.enum(['conversation', 'project', 'personal']),
+    scope: treeScopeSchema,
     id: z.string(),
     // Bounded because each directory consumes an inotify watcher, a resource counted
     // per user on the host machine.
@@ -138,7 +141,7 @@ export type ServerMessage =
    * Catches changes missed by end-of-turn refresh: panel terminals, external editors, or
    * another conversation using the same worktree.
    */
-  | { t: 'tree-changed'; scope: 'conversation' | 'project' | 'personal'; id: string; path: string }
+  | { t: 'tree-changed'; scope: TreeScope; id: string; path: string }
   /**
    * Lag exceeds CATCHUP_THRESHOLD: the client must reload through paginated REST instead of
    * receiving socket deltas.

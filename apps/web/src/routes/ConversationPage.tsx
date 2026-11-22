@@ -1511,6 +1511,7 @@ export function ConversationPage() {
           <SidePanel
             projectId={conversation.projectId}
             conversationId={conversationId}
+            worktreePath={worktree?.path}
             workspaceName={conversation.worktreeId ? (worktree?.name ?? '…') : undefined}
             agent={conversation.agent}
             editTurns={stream.state.editTurns}

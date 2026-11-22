@@ -22,7 +22,7 @@ import { parseRange } from '../range.js'
 import type { AppContext } from '../context.js'
 import { HttpError, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
-import { workspaceScopes } from './workspace-scopes.js'
+import { fileWorkspaceScopes } from './workspace-scopes.js'
 
 /** Bytes inspected to detect binary files. Headers suffice: binary formats nearly always contain null bytes near the start, and reading entire files would incur the very cost this avoids. */
 const SNIFF_BYTES = 8192
@@ -47,7 +47,7 @@ function fingerprint(size: number, mtimeMs: number, absolute: string): string {
 /** Workspace file reads and writes for the panel editor. Invariant I2 does not apply: files are live disk state rather than events. Nothing here is journaled. */
 export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Conversation and project scopes: see `workspace-scopes.ts`.
-  for (const { base, cwdOf } of workspaceScopes) {
+  for (const { base, cwdOf } of fileWorkspaceScopes) {
     /** Any project viewer can read and write, including shared projects. */
     const workspaceOf = (id: string, userId: string): string => cwdOf(ctx.db, id, userId)
 

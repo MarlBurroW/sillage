@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm'
 import { unzipSync } from 'fflate'
 import { openDatabase, projects, runMigrations, users } from '@sillage/db'
 import { registerErrorHandler } from '../src/http/errors.js'
+import { registerFsRoutes } from '../src/http/routes/fs.js'
 import { registerFileRoutes } from '../src/http/routes/files.js'
 import { registerTreeRoutes } from '../src/http/routes/tree.js'
 import type { AppContext } from '../src/http/context.js'
@@ -28,14 +29,17 @@ async function harness(t: TestContext) {
   const { db, sqlite } = openDatabase(join(data, 'test.sqlite'))
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
   t.after(() => sqlite.close())
-  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  for (const id of ['owner', 'other']) {
+    db.insert(users).values({ id, username: id, displayName: id, passwordHash: '', createdAt: 1 }).run()
+  }
   db.insert(projects).values({ id: 'p', name: 'p', workspacePath: root, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
 
   const app = Fastify()
   app.addHook('preHandler', async (request) => {
-    request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
+    request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-user'] ?? 'owner'))).get()
   })
   registerErrorHandler(app)
+  registerFsRoutes(app, { db } as AppContext)
   registerTreeRoutes(app, { db } as unknown as AppContext)
   registerFileRoutes(app, { db } as unknown as AppContext)
   t.after(() => app.close())
@@ -267,4 +271,36 @@ test('the fingerprint route follows writes without sending the content', async (
   assert.deepEqual(missing.json(), { fingerprint: null })
   const outside = await app.inject({ method: 'GET', url: '/api/projects/p/file/fingerprint?path=../x' })
   assert.equal(outside.statusCode, 400)
+})
+
+test('opening an external explorer folder is repeatable and scopes file access to its account', async (t) => {
+  const { app, root, data } = await harness(t)
+  const dir = join(data, 'experiment')
+  await mkdir(dir)
+  await writeFile(join(dir, 'notes.md'), 'External')
+  await writeFile(join(root, 'notes.md'), 'Project')
+  const open = (path: string, user = 'owner') => app.inject({
+    method: 'POST', url: '/api/explorer-folders', headers: { 'x-user': user }, payload: { path },
+  })
+  const [first, second] = await Promise.all([open(dir), open(dir)])
+  assert.equal(first.statusCode, 200, first.body)
+  assert.deepEqual(first.json(), second.json())
+  const { id } = first.json<{ id: string }>()
+  assert.ok(id)
+  const base = `/api/explorer-folders/${id}`
+  assert.equal((await app.inject(`${base}/tree`)).json().entries[0].name, 'notes.md')
+  const file = (await app.inject(`${base}/file?path=notes.md`)).json()
+  assert.equal(file.content, 'External')
+  const saved = await app.inject({
+    method: 'PUT', url: `${base}/file`,
+    payload: { path: 'notes.md', content: 'Edited', fingerprint: file.fingerprint },
+  })
+  assert.equal(saved.statusCode, 200, saved.body)
+  assert.equal(await readFile(join(dir, 'notes.md'), 'utf8'), 'Edited')
+  assert.equal(await readFile(join(root, 'notes.md'), 'utf8'), 'Project')
+  assert.equal((await app.inject({ url: `${base}/file?path=notes.md`, headers: { 'x-user': 'other' } })).statusCode, 404)
+  assert.notEqual((await open(dir, 'other')).json().id, id)
+  assert.equal((await open('relative')).statusCode, 400)
+  assert.equal((await open(join(dir, 'missing'))).statusCode, 400)
+  assert.equal((await open(join(dir, 'notes.md'))).statusCode, 400)
 })
