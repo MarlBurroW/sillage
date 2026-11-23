@@ -16,6 +16,7 @@ subscriptions or API credentials required by the agents you use.
 [![Latest release](https://img.shields.io/github/v/release/MarlBurroW/sillage)](https://github.com/MarlBurroW/sillage/releases/latest)
 [![CI](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml/badge.svg)](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Emerging in Awesome AI Agents](https://img.shields.io/badge/Emerging_in-Awesome_AI_Agents-0969da)](https://github.com/NipunaRanasinghe/awesome-ai-agents/blob/main/EMERGING.md)
 
 <picture>
   <source srcset="site/screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
