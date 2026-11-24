@@ -27,6 +27,7 @@ export function parseWorkflowProgress(raw: unknown): WorkflowProgress | null {
       agents.set(entry.index, {
         index: entry.index,
         label: entry.label,
+        agentId: str(entry.agentId),
         phaseIndex,
         state,
         model: str(entry.model),

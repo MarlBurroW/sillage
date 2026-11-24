@@ -1,6 +1,8 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext } from 'react'
 import type { WorkflowAgent, WorkflowProgress } from '@sillage/protocol'
-import type { TaskState } from './chat-fold'
+import { api } from './api'
+import type { TaskState, WorkflowAgentThreadPage } from './chat-fold'
 
 /**
  * Workflow tasks by spawning tool call, for the `Workflow` card in the thread. A context rather than
@@ -94,4 +96,48 @@ export function currentPhase(
     if (at === -1) at = 0
   }
   return { position: at + 1, total: groups.length, title: groups[at]?.phase.title ?? '' }
+}
+
+/** A workflow agent located in the workflows of the conversation, with the task that runs it. */
+export interface LocatedWorkflowAgent {
+  agent: WorkflowAgent
+  task: TaskState
+}
+
+/** Latest snapshot entry for a CLI agent id; an agent retried keeps its id across attempts. */
+export function findWorkflowAgent(workflows: Iterable<TaskState>, agentId: string): LocatedWorkflowAgent | null {
+  for (const task of workflows) {
+    const agent = task.workflow?.agents.find((candidate) => candidate.agentId === agentId)
+    if (agent) return { agent, task }
+  }
+  return null
+}
+
+/** Polling cadence while the agent runs: the CLI appends to its transcript every second or two. */
+const WORKFLOW_THREAD_POLL_MS = 2500
+
+type LoadedThread = Extract<WorkflowAgentThreadPage, { unchanged: false }>
+
+/**
+ * End of a workflow agent's thread, read from its transcript by the server. Polled while the agent
+ * runs; each request sends the version it holds, so a thread that has not moved costs a few bytes.
+ */
+export function useWorkflowAgentThread(conversationId: string, agentId: string, running: boolean, limit: number) {
+  const client = useQueryClient()
+  const key = ['workflow-agent-thread', conversationId, agentId, limit]
+  return useQuery({
+    queryKey: key,
+    queryFn: async ({ signal }): Promise<LoadedThread> => {
+      const held = client.getQueryData<LoadedThread>(key)
+      const query = new URLSearchParams({ limit: String(limit) })
+      if (held) query.set('version', String(held.version))
+      const page = await api.get<WorkflowAgentThreadPage>(
+        `/api/conversations/${conversationId}/workflow-agents/${encodeURIComponent(agentId)}/thread?${query}`,
+        signal,
+      )
+      return page.unchanged && held ? held : page.unchanged ? { unchanged: false, items: null, earlier: 0, version: page.version } : page
+    },
+    refetchInterval: running ? WORKFLOW_THREAD_POLL_MS : false,
+    placeholderData: (previous) => previous,
+  })
 }

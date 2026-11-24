@@ -46,6 +46,7 @@ async function mount(page) {
     const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
     const { buildRows } = await import('/src/lib/tool-rows.ts')
     const { WorkflowTasksContext } = await import('/src/lib/workflows.ts')
+    const { useSelectedSubAgent } = await import('/src/lib/panel.ts')
 
     const agent = (index, label, phaseIndex, state, extra = {}) => ({
       index, label, phaseIndex, state, model: 'claude-opus-5-5', lastTool: null, lastToolSummary: null,
@@ -55,7 +56,7 @@ async function mount(page) {
       phases: [{ index: 1, title: 'Fondations' }, { index: 2, title: 'Moteur' }, { index: 3, title: 'Intégration' }],
       agents: [
         agent(1, 'release', 1, 'done', { tokens: 210000, toolCalls: 60 }),
-        agent(2, 'serveur', 1, 'running', { lastTool: 'Edit', lastToolSummary: '/home/marlburrow/projects/appartement-3d/collab/server/api.mjs', tokens: 180101, toolCalls: 21 }),
+        agent(2, 'serveur', 1, 'running', { agentId: 'a55cd3290947fbf09', lastTool: 'Edit', lastToolSummary: '/home/marlburrow/projects/appartement-3d/collab/server/api.mjs', tokens: 180101, toolCalls: 21 }),
         agent(3, 'interface', 1, 'error', { error: 'blocked by safety classifier: writes outside its files', attempt: 2, tokens: 195920, toolCalls: 49 }),
         agent(4, 'moteur', 2, 'queued'),
       ],
@@ -72,6 +73,7 @@ async function mount(page) {
     }
     function Screen() {
       const [state, setState] = React.useState({ workflow: window.snapshot, done: false })
+      const selectedId = useSelectedSubAgent()
       window.setWorkflow = setState
       const current = task(state.workflow, state.done)
       const background = state.done ? [] : [{ ...current, kind: current.kind }]
@@ -81,7 +83,7 @@ async function mount(page) {
           React.createElement(WorkflowTasksContext.Provider, { value: new Map([['call-wf', current]]) },
             React.createElement(ChatThread, { rows: buildRows([item], null, false), conversationId: 'fixture', mayCollapseTools: false }))),
         React.createElement('aside', { id: 'pane', className: 'flex min-h-0 shrink-0 flex-col border border-line', style: { width: wide ? 380 : '100%' } },
-          React.createElement(AgentsPane, { conversationId: 'fixture', agent: 'claude', agents: [], background, selectedId: null })))
+          React.createElement(AgentsPane, { conversationId: 'fixture', agent: 'claude', agents: [], background, workflows: new Map([['call-wf', current]]), selectedId })))
     }
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client: new QueryClient() },
       React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, React.createElement(Screen)))))
@@ -94,7 +96,19 @@ async function context(width, height) {
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/__workflow_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html><meta name="viewport" content="width=device-width, initial-scale=1"><body><div id="check"></div></body></html>' }))
-  await page.route('**/api/**', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/**', (route) => {
+    // The serveur agent's thread, as the server folds it from the transcript.
+    if (route.request().url().includes('/workflow-agents/a55cd3290947fbf09/thread')) {
+      const thread = 'workflow-agent:a55cd3290947fbf09'
+      return route.fulfill({ json: { unchanged: false, earlier: 0, version: 3, items: [
+        { kind: 'message', id: 'u1', role: 'user', ts: 0, parentToolCallId: thread, blocks: [{ type: 'text', text: 'Écris l’API du serveur collaboratif.' }], streamingText: '', streamingThinking: '' },
+        { kind: 'tool', id: 'read-1', name: 'Read', ts: 1, status: 'done', durationMs: 12, parentToolCallId: thread, input: { file_path: '/home/marlburrow/projects/appartement-3d/collab/SPEC.md' }, output: 'spec', outputBytes: null },
+        { kind: 'message', id: 'm1', role: 'assistant', ts: 2, parentToolCallId: thread, blocks: [{ type: 'text', text: 'J’écris les routes de session.' }], streamingText: '', streamingThinking: '' },
+        { kind: 'tool', id: 'edit-1', name: 'Edit', ts: 3, status: 'running', durationMs: null, parentToolCallId: thread, input: { file_path: '/home/marlburrow/projects/appartement-3d/collab/server/api.mjs' }, output: null, outputBytes: null },
+      ] } })
+    }
+    return route.fulfill({ json: {} })
+  })
   return { context, page }
 }
 
@@ -123,12 +137,36 @@ try {
     assert.match(await pane.innerText(), /blocked by safety classifier/)
     await page.screenshot({ path: `${output}/${name}-expanded.png`, fullPage: true })
 
+    // An agent with a transcript opens its thread, read from the server.
+    await pane.locator('button[aria-label^="serveur"]').click()
+    await pane.getByText('J’écris les routes de session.').waitFor()
+    assert.match(await pane.innerText(), /Écris l’API du serveur collaboratif/)
+    assert.match(await pane.innerText(), /Edit en cours/)
+    await page.screenshot({ path: `${output}/${name}-agent-thread.png`, fullPage: true })
+    // Back to its workflow, which lists the agents again.
+    await pane.getByRole('button', { name: 'Revenir au workflow' }).click()
+    await pane.locator('button[aria-label^="release"]').waitFor()
+    await pane.getByRole('button', { name: 'Revenir à la liste des sous-agents' }).click()
+    await pane.locator('button[aria-label^="release"]').waitFor()
+
     await page.evaluate(() => window.setWorkflow({ workflow: window.snapshot, done: true }))
-    assert.match(await strip.innerText(), /Workflow terminé/)
-    assert.equal(await strip.getByText('Voir ses agents').count(), 0)
+    await strip.getByText('Workflow terminé').waitFor()
+    // A finished workflow leaves the background list but stays reachable from its card.
+    assert.equal(await strip.getByText('Voir ses agents').count(), 1)
+    // From the card, the finished workflow opens with its agents, threads still reachable.
+    await strip.getByText('Voir ses agents').click()
+    await pane.getByText('Workflow terminé').first().waitFor()
+    await pane.locator('button[aria-label^="serveur"]').click()
+    await pane.getByText('J’écris les routes de session.').waitFor()
+    assert.doesNotMatch(await pane.innerText(), /Edit en cours/)
+    // Its last snapshot still says running: the workflow ended, so it was stopped.
+    assert.match(await pane.innerText(), /Arrêté · claude-opus-5-5/)
+    await page.screenshot({ path: `${output}/${name}-finished-agent.png`, fullPage: true })
+    await pane.getByRole('button', { name: 'Revenir au workflow' }).click()
+    await pane.getByText('Workflow terminé').first().waitFor()
     await ctx.close()
   }
   assert.deepEqual(errors, [])
-  console.log(`OK: phases, agents, states, retry, card summary, tap details, wide screen and phone. Screenshots in ${output}`)
+  console.log(`OK: phases, agents, states, retry, card summary, tap details, agent threads live and finished, wide screen and phone. Screenshots in ${output}`)
 } catch (error) { console.error(diagnostics); throw error }
 finally { await browser?.close(); vite.kill('SIGTERM'); await once(vite, 'exit').catch(() => {}) }

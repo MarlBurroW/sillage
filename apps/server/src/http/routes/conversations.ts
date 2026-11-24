@@ -58,6 +58,8 @@ import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { advanceCardOnLaunch, assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
+import { readWorkflowAgentThread } from '../../agents/claude/workflow-threads.js'
+import { resolveConversationCwd } from '../../workspace.js'
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
@@ -902,6 +904,21 @@ export function registerConversationRoutes(
       )
     }
     return output
+  })
+
+  /**
+   * End of a workflow agent's thread, read from its transcript: the CLI streams none of it. Polled
+   * by the panel while the agent runs. Reading only: project members may follow it.
+   */
+  app.get('/api/conversations/:id/workflow-agents/:agentId/thread', async (request) => {
+    const user = requireUser(request)
+    const { id, agentId } = request.params as { id: string; agentId: string }
+    const { limit, version } = request.query as { limit?: string; version?: string }
+    const conversation = await loadReadable(id, user.id)
+    if (conversation.agent !== 'claude' || !conversation.agentSessionId) return { unchanged: false, items: null, earlier: 0, version: 0 }
+    const count = Math.min(Math.max(Number(limit) || 300, 1), 5000)
+    const known = version === undefined || version === '' ? null : Number(version)
+    return readWorkflowAgentThread(resolveConversationCwd(ctx.db, conversation), conversation.agentSessionId, agentId, count, Number.isFinite(known) ? known : null)
   })
 
   app.post('/api/conversations/:id/interrupt', async (request, reply) => {

@@ -1,6 +1,6 @@
 import { CornerDownRight } from 'lucide-react'
 import { useTranslate } from '../../lib/i18n'
-import { showAgentList } from '../../lib/panel'
+import { showAgentList, showWorkflow } from '../../lib/panel'
 import { currentPhase, useWorkflowTask, workflowCounts } from '../../lib/workflows'
 import { cx } from '../ui'
 
@@ -43,17 +43,18 @@ export function WorkflowStrip({ toolCallId }: { toolCallId: string }) {
       >
         {parts.join(' · ')}
       </span>
-      {/* Finished workflows leave the background list: the panel has nothing more to show. */}
-      {!task.done ? (
+      {/* A running workflow is in the background list, with its stop button; a finished one has left
+          it and opens on its own, where its agents' threads stay readable. */}
+      {task.done && !task.workflow ? null : (
         <button
           type="button"
-          onClick={showAgentList}
+          onClick={task.done ? () => showWorkflow(task.id) : showAgentList}
           className="flex shrink-0 items-center gap-1.5 text-ink-faint hover:text-accent"
         >
           <CornerDownRight size={11} className="shrink-0" />
           {t('toolcall.workflow.view')}
         </button>
-      ) : null}
+      )}
     </div>
   )
 }

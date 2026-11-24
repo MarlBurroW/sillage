@@ -161,6 +161,11 @@ export const workflowAgentSchema = z.object({
   /** Position in the script, stable across reports: the key the CLI merges updates on. */
   index: z.number(),
   label: z.string(),
+  /**
+   * The CLI's id for the agent, naming its transcript on disk (`agent-<agentId>.jsonl`), which is
+   * the only place its thread exists: the stream never carries it. Null in journals written before.
+   */
+  agentId: z.string().nullable().default(null),
   /** Null for agents launched outside any `phase()`. */
   phaseIndex: z.number().nullable().default(null),
   state: workflowAgentStateSchema,

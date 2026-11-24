@@ -1380,3 +1380,18 @@ export function deserializeChatState(state: SerializedChatState): ChatState {
 export type ThreadPage =
   | { building: true; cursor: number; target: number; unavailable?: boolean }
   | { building: false; state: SerializedChatState; cursor: number; before: number; hasMore: boolean; reset: boolean }
+
+/** Thread id under which a workflow agent's items are folded: `threadOf` and `buildRows` key on it. */
+export function workflowAgentThread(agentId: string): string {
+  return `workflow-agent:${agentId}`
+}
+
+/**
+ * The end of a workflow agent's thread, read back from its transcript on disk. `earlier` counts
+ * the items left out before `items`; null `items` means no transcript exists yet. `version` grows
+ * with each folded event: a reader that sends back the one it holds gets `unchanged` instead of the
+ * whole thread again.
+ */
+export type WorkflowAgentThreadPage =
+  | { unchanged: false; items: ChatItem[] | null; earlier: number; version: number }
+  | { unchanged: true; version: number }

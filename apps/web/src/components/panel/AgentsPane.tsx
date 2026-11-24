@@ -13,16 +13,17 @@ import {
   type BackgroundWork,
 } from '../../lib/background'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
-import { clearSubAgent, showSubAgent } from '../../lib/panel'
+import { clearSubAgent, parseAgentsSelection, showSubAgent, showWorkflow, showWorkflowAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
 import { formatTokens } from '../../lib/tokens'
-import { currentPhase } from '../../lib/workflows'
+import { currentPhase, findWorkflowAgent, useWorkflowAgentThread, type LocatedWorkflowAgent } from '../../lib/workflows'
+import { workflowAgentThread, type TaskState } from '../../lib/chat-fold'
 import { buildRows } from '../../lib/tool-rows'
 import { ChatThread } from '../chat/ChatThread'
 import { TurnActivity } from '../chat/TurnActivity'
 import { SubAgentRow } from '../chat/SubAgentRow'
 import { EmptyState, cx } from '../ui'
-import { WorkflowPhases } from './WorkflowPhases'
+import { WorkflowPhases, workflowAgentDetails } from './WorkflowPhases'
 
 /**
  * Conversation subagents: list and selected thread. Share rendering with the main thread: messages,
@@ -33,6 +34,7 @@ export function AgentsPane({
   agent,
   agents,
   background,
+  workflows,
   selectedId,
 }: {
   conversationId: string
@@ -41,10 +43,30 @@ export function AgentsPane({
   agents: SubAgent[]
   /** Work continuing outside turns without openable threads because the CLI supplies no content. */
   background: BackgroundWork[]
+  /** Workflow tasks of the conversation, finished ones included, by spawning call. */
+  workflows: ReadonlyMap<string, TaskState>
   selectedId: string | null
 }) {
   const t = useTranslate()
-  const selected = agents.find((agent) => agent.id === selectedId) ?? null
+  const selection = selectedId === null ? null : parseAgentsSelection(selectedId)
+  const selected = selection?.kind === 'subagent' ? agents.find((agent) => agent.id === selection.id) ?? null : null
+
+  if (selection?.kind === 'workflow') {
+    const task = [...workflows.values()].find((candidate) => candidate.id === selection.taskId) ?? null
+    return <WorkflowView task={task} onBack={clearSubAgent} />
+  }
+  if (selection?.kind === 'workflow-agent') {
+    const located = findWorkflowAgent(workflows.values(), selection.agentId)
+    return (
+      <WorkflowAgentThread
+        key={selection.agentId}
+        conversationId={conversationId}
+        agentId={selection.agentId}
+        located={located}
+        onBack={located ? () => showWorkflow(located.task.id) : clearSubAgent}
+      />
+    )
+  }
 
   if (selected) {
     return (
@@ -203,7 +225,7 @@ function BackgroundList({
             </div>
             {task.workflow ? (
               <div className="border-t border-line pt-1.5">
-                <WorkflowPhases progress={task.workflow} />
+                <WorkflowPhases progress={task.workflow} onOpenAgent={showWorkflowAgent} />
               </div>
             ) : null}
             {expanded ? <BackgroundOutput conversationId={conversationId} taskId={task.id} /> : null}
@@ -337,9 +359,110 @@ function SubAgentThread({
   )
 }
 
+/**
+ * One workflow, finished ones included: they leave the background list, and this is where their
+ * agents stay reachable.
+ */
+function WorkflowView({ task, onBack }: { task: TaskState | null; onBack: () => void }) {
+  const t = useTranslate()
+  if (!task?.workflow) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <PaneHeader onBack={onBack} icon={<Waves size={14} className="shrink-0 text-ink-faint" />} title={t('panel.workflow.gone')} subtitle="" />
+      </div>
+    )
+  }
+  const state = task.done ? t(`toolcall.workflow.ended.${task.outcome ?? 'completed'}`) : t('panel.workflow.agent.running')
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <PaneHeader
+        onBack={onBack}
+        icon={<Waves size={14} className={cx('shrink-0', task.done ? 'text-ink-faint' : 'text-accent')} />}
+        title={task.description}
+        subtitle={[task.workflowName, state].filter(Boolean).join(' · ')}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <WorkflowPhases progress={task.workflow} ended={task.done} onOpenAgent={showWorkflowAgent} />
+      </div>
+    </div>
+  )
+}
+
+/** How many items a workflow agent's thread loads at first, and adds per "earlier" click. */
+const WORKFLOW_THREAD_PAGE = 300
+
+/**
+ * A workflow agent's thread, read from the transcript the CLI writes for it: the stream carries
+ * none of it. Polled while the agent runs, so it trails the agent by a few seconds.
+ */
+function WorkflowAgentThread({
+  conversationId,
+  agentId,
+  located,
+  onBack,
+}: {
+  conversationId: string
+  agentId: string
+  located: LocatedWorkflowAgent | null
+  onBack: () => void
+}) {
+  const t = useTranslate()
+  // Back leads to the agent's workflow when it is known, to the list otherwise.
+  const backLabel = located ? t('panel.workflow.back') : undefined
+  const [limit, setLimit] = useState(WORKFLOW_THREAD_PAGE)
+  const agent = located?.agent ?? null
+  // A workflow whose process is gone keeps its last snapshot: only a live one is still writing.
+  const running = !!agent && (agent.state === 'running' || agent.state === 'queued') && !located?.task.done
+  const { data, isError, isPending } = useWorkflowAgentThread(conversationId, agentId, running, limit)
+  const thread = workflowAgentThread(agentId)
+  const items = data?.items ?? null
+  const rows = useMemo(() => {
+    if (!items) return []
+    // A call still open once the agent stopped will never return: say so, as the main thread does.
+    const settled = running ? items : items.map((item) => item.kind === 'tool' && item.status === 'running' ? { ...item, status: 'interrupted' as const } : item)
+    return buildRows(settled, thread, running)
+  }, [items, thread, running])
+  const details = agent ? workflowAgentDetails(agent, t, !!located?.task.done).details : ''
+
+  let body: ReactNode
+  if (isError) body = <p className="text-xs text-ink-faint">{t('panel.workflow.thread.unavailable')}</p>
+  else if (isPending) body = <p className="text-xs text-ink-faint">{t('panel.workflow.thread.loading')}</p>
+  else if (rows.length === 0) body = <p className="text-xs text-ink-faint">{t(running ? 'subagent.pane.starting' : 'panel.workflow.thread.empty')}</p>
+  else body = null
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <PaneHeader
+        onBack={onBack}
+        backLabel={backLabel}
+        icon={<Bot size={14} className={cx('shrink-0', running ? 'text-accent' : 'text-ink-faint')} />}
+        title={agent?.label ?? agentId}
+        subtitle={details}
+      />
+      <FollowedThread>
+        {(following) => (
+          <>
+            {data && data.earlier > 0 ? (
+              <button type="button" onClick={() => setLimit(limit + WORKFLOW_THREAD_PAGE)} className="self-center text-[0.6875rem] text-ink-faint hover:text-accent">
+                {t('panel.workflow.thread.earlier', { count: data.earlier })}
+              </button>
+            ) : null}
+            {body ?? <ChatThread rows={rows} conversationId={conversationId} mayCollapseTools={following} />}
+            {agent?.state === 'error' && agent.error ? <p className="text-xs text-critical">{agent.error}</p> : null}
+            {running && rows.length > 0 ? (
+              <TurnActivity label={agent?.lastTool ? t('activity.toolRunning', { name: agent.lastTool }) : t('message.thinking.label')} />
+            ) : null}
+          </>
+        )}
+      </FollowedThread>
+    </div>
+  )
+}
+
 /** Back button, icon and two lines: the head every thread of the pane shares. */
 function PaneHeader({
   onBack,
+  backLabel,
   icon,
   title,
   subtitle,
@@ -347,6 +470,8 @@ function PaneHeader({
   children,
 }: {
   onBack: () => void
+  /** Where going back leads, when not to the list. */
+  backLabel?: string
   icon: ReactNode
   title: string
   subtitle: string
@@ -360,7 +485,7 @@ function PaneHeader({
       <TooltipButton
         type="button"
         onClick={onBack}
-        aria-label={t('subagent.pane.back')}
+        aria-label={backLabel ?? t('subagent.pane.back')}
         className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
       >
         <ArrowLeft size={15} />

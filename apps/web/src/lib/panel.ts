@@ -230,6 +230,35 @@ export function showSubAgent(id: string): void {
   for (const listener of listeners) listener()
 }
 
+/**
+ * The Agents pane selection also opens workflows, which have no spawning call of their own to
+ * select: a prefixed id keeps a single selection, so going back and switching conversations reset
+ * them like a subagent.
+ */
+const WORKFLOW_PREFIX = 'workflow:'
+const WORKFLOW_AGENT_PREFIX = 'workflow-agent:'
+
+/** Open the panel on one workflow: its phases, and agents whose threads can be opened. */
+export function showWorkflow(taskId: string): void {
+  showSubAgent(WORKFLOW_PREFIX + taskId)
+}
+
+/** Open the panel on a workflow agent's thread. */
+export function showWorkflowAgent(agentId: string): void {
+  showSubAgent(WORKFLOW_AGENT_PREFIX + agentId)
+}
+
+export type AgentsSelection =
+  | { kind: 'subagent'; id: string }
+  | { kind: 'workflow'; taskId: string }
+  | { kind: 'workflow-agent'; agentId: string }
+
+export function parseAgentsSelection(id: string): AgentsSelection {
+  if (id.startsWith(WORKFLOW_AGENT_PREFIX)) return { kind: 'workflow-agent', agentId: id.slice(WORKFLOW_AGENT_PREFIX.length) }
+  if (id.startsWith(WORKFLOW_PREFIX)) return { kind: 'workflow', taskId: id.slice(WORKFLOW_PREFIX.length) }
+  return { kind: 'subagent', id }
+}
+
 /** Open the panel on the subagent and background work list, where workflows show their agents. */
 export function showAgentList(): void {
   subAgentId = null

@@ -1521,6 +1521,7 @@ export function ConversationPage() {
             turnRunning={stream.state.turnRunning}
             subAgents={subAgents}
             background={background}
+            workflows={workflowTasks}
             mcpServers={stream.state.mcp}
             cardId={conversation.card?.id ?? null}
             cardActions={isOwner ? {

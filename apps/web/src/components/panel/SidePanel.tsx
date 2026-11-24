@@ -19,7 +19,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind, McpServerStatus } from '@sillage/protocol'
 import { useActions } from '../../lib/actions'
 import type { BackgroundWork } from '../../lib/background'
-import type { EditTurn, TurnCheckpoint } from '../../lib/chat-fold'
+import type { EditTurn, TaskState, TurnCheckpoint } from '../../lib/chat-fold'
 import { useOpenPanelFile } from '../../lib/editor-focus'
 import { useProjectFolders } from '../../lib/project-folders'
 import { folderScope, useExplorerFolder } from '../../lib/explorer-folders'
@@ -57,6 +57,9 @@ import { McpPane } from './McpPane'
 import { TerminalsPane } from './TerminalsPane'
 import { QuickOpen } from './QuickOpen'
 
+/** Shared empty default: a fresh map per render would re-render the Agents tab for nothing. */
+const NO_WORKFLOWS: ReadonlyMap<string, TaskState> = new Map()
+
 /**
  * Right-side panel beside the thread when space permits, with expanded editor view. Overlay content
  * on phones and boards. No backdrop or outside-click closure: live terminals and ongoing editing
@@ -75,6 +78,7 @@ export function SidePanel({
   turnRunning = false,
   subAgents = [],
   background = [],
+  workflows = NO_WORKFLOWS,
   mcpServers = [],
   open,
   docked = false,
@@ -98,6 +102,8 @@ export function SidePanel({
   turnRunning?: boolean
   subAgents?: SubAgent[]
   background?: BackgroundWork[]
+  /** Workflow tasks by spawning call, finished ones included, whose agents the Agents tab opens. */
+  workflows?: ReadonlyMap<string, TaskState>
   mcpServers?: McpServerStatus[]
   /** False during exit: still mounted but leaving. */
   open: boolean
@@ -411,6 +417,7 @@ export function SidePanel({
           agent={agent}
           agents={subAgents}
           background={background}
+          workflows={workflows}
           selectedId={selectedSubAgent}
         />
       ) : null}
