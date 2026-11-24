@@ -8,7 +8,7 @@ import { relativeDate } from '../../lib/dates'
 import { openDecision } from '../../lib/decisions'
 import { useTranslate } from '../../lib/i18n'
 import { useTrackRead } from '../../lib/reads'
-import { buildRows } from '../../lib/tool-rows'
+import { buildRows, threadTail } from '../../lib/tool-rows'
 import { useChatStream } from '../../lib/use-chat-stream'
 import { AgentIcon, AGENT_LABELS } from '../AgentIcon'
 import { ChatThread } from '../chat/ChatThread'
@@ -17,7 +17,7 @@ import { cx, IconButton } from '../ui'
 import { Tooltip } from '../ui/Tooltip'
 import { WORKTREE_STATE_TEXT, WorktreeStateIcon } from '../WorktreeTag'
 
-/** Items kept from the end of the thread: enough to fill a tall tile, few enough to stay light. */
+/** Main-thread items kept from the end: enough to fill a tall tile, few enough to stay light. */
 const TAIL_ITEMS = 30
 /** Distance from the bottom under which the tile keeps following new content. */
 const STICK_PX = 48
@@ -50,7 +50,7 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
   const stream = useChatStream(conversation.id, conversation.status)
 
   const { items, turnRunning } = stream.state
-  const rows = useMemo(() => buildRows(items.slice(-TAIL_ITEMS), null, turnRunning), [items, turnRunning])
+  const rows = useMemo(() => buildRows(threadTail(items, TAIL_ITEMS), null, turnRunning), [items, turnRunning])
   const activity = facts.state === 'running' ? describeActivity(stream.state) ?? t('wall.tile.working') : null
 
   const scroller = useRef<HTMLDivElement>(null)

@@ -70,6 +70,21 @@ export function buildRows(items: ChatItem[], thread: string | null = null, turnR
   return rows
 }
 
+/**
+ * The last `count` items of one author's thread, for views that only show its end. Slicing the
+ * whole list first would let a busy subagent fill the window with items `buildRows` then drops,
+ * leaving the main thread nearly empty.
+ */
+export function threadTail(items: ChatItem[], count: number, thread: string | null = null): ChatItem[] {
+  const tail: ChatItem[] = []
+  for (let index = items.length - 1; index >= 0 && tail.length < count; index -= 1) {
+    const item = items[index]!
+    const ownThread = item.kind === 'tool' || item.kind === 'message' ? item.parentToolCallId === thread : thread === null
+    if (ownThread) tail.push(item)
+  }
+  return tail.reverse()
+}
+
 function proposesCheck(tool: ToolItem): boolean {
   if (!isSillageTool(tool.name, 'schedule_task')) return false
   const input = tool.input as { check_script?: unknown } | null
