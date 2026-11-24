@@ -1,13 +1,13 @@
 import type { AgentConfig, InstanceProfile, OnboardingAnswers } from '@sillage/protocol'
 
 /**
- * First-launch tour steps, in order. The list depends only on the edition: every account sees the
- * same steps, and a step adapts its content to the role (members have no global instructions to
+ * First-launch tour steps, in order. The list depends only on the edition and what it can do:
+ * every account sees the same steps, and a step adapts its content to the role (members have no global instructions to
  * write and read the instance address without editing it).
  */
-export type OnboardingStepId = 'account' | 'welcome' | 'appearance' | 'agents' | 'work' | 'rules' | 'address' | 'ready'
+export type OnboardingStepId = 'account' | 'welcome' | 'appearance' | 'agents' | 'work' | 'rules' | 'address' | 'remote' | 'ready'
 
-export function onboardingSteps(profile: InstanceProfile): OnboardingStepId[] {
+export function onboardingSteps(profile: InstanceProfile, remoteAccess: boolean): OnboardingStepId[] {
   const steps: OnboardingStepId[] = []
   // Server: account first, creating the first or using one opened by an administrator. Desktop
   // already has a session opened by the launcher.
@@ -16,6 +16,8 @@ export function onboardingSteps(profile: InstanceProfile): OnboardingStepId[] {
   // Following a turn from the phone is the point of a hosted instance; Desktop listens on this
   // computer only and has its own remote-access setting.
   if (profile === 'server') steps.push('address')
+  // Desktop reaches other devices through Tailscale Serve, off until asked for.
+  if (remoteAccess) steps.push('remote')
   steps.push('ready')
   return steps
 }

@@ -89,9 +89,9 @@ from the one Claude keeps when used alone.
   in your browser or served by another program, can use your session.
 - **A shorter first-run tour.** The first launch opens the same guided setup as the
   server edition, minus what has no meaning here: no account to create, no public
-  address, no phone step, no push notifications. It starts at Welcome and runs
-  through appearance, agents, permissions and instructions, then leads to your
-  first project.
+  address, no push notifications. It starts at Welcome and runs through appearance,
+  agents, permissions and instructions, offers [remote access](#remote-access) in
+  place of the server's address step, then leads to your first project.
   Replay it from Settings › About.
 - **Your data stays with the app**, in `~/Library/Application Support/Sillage` on
   macOS, `%LOCALAPPDATA%\Sillage` on Windows and `~/.config/Sillage` on Linux:

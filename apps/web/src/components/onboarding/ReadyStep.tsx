@@ -1,11 +1,12 @@
-import { Activity, Bot, Clock, Command, Eye, FileText, FlaskConical, Globe, Layers, MessageSquare, PanelRight, Pencil, ShieldCheck, Smartphone, UserRound } from 'lucide-react'
+import { Activity, Bot, Clock, Command, Eye, FileText, FlaskConical, Globe, Layers, MessageSquare, PanelRight, Pencil, Radio, ShieldCheck, Smartphone, UserRound } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useAgentAvailability } from '../../lib/agents'
 import { useAppSettings } from '../../lib/app-settings'
 import { useAppearance } from '../../lib/appearance'
 import { useTranslate } from '../../lib/i18n'
 import { useGlobalInstructions } from '../../lib/instructions'
-import { currentOrigin, describeOrigin, onboardingSteps, type OnboardingStepId } from '../../lib/onboarding'
+import { currentOrigin, describeOrigin, type OnboardingStepId } from '../../lib/onboarding'
+import { useRemoteAccess } from '../../lib/remote-access'
 import { THEME_LABELS, useTheme } from '../../lib/theme'
 import { useProjectDefaults } from '../../lib/user-settings'
 import { AGENT_LABELS } from '../AgentIcon'
@@ -26,9 +27,10 @@ interface RecapItem {
  * to any line; then what to do next. With no project yet, the next thing is a project, and the
  * sample one is offered here for whoever has no repository at hand.
  */
-export function ReadyStep({ nav, state, user, isAdmin, profile, goto, finish, noProject }: StepProps) {
+export function ReadyStep({ nav, state, user, isAdmin, steps, goto, finish, noProject }: StepProps) {
   const t = useTranslate()
-  const steps = onboardingSteps(profile)
+  // The route exists on Desktop only: ask where the step is offered.
+  const { data: remote } = useRemoteAccess(steps.includes('remote'))
   const { data: availability } = useAgentAvailability()
   const { data: appSettings } = useAppSettings()
   const { data: instructions } = useGlobalInstructions()
@@ -106,6 +108,17 @@ export function ReadyStep({ nav, state, user, isAdmin, profile, goto, finish, no
             done: !skipped('address'),
           },
     )
+  }
+
+  if (steps.includes('remote')) {
+    items.push({
+      id: 'remote',
+      icon: <Radio size={16} />,
+      title: t('onboarding.ready.remote'),
+      detail: remote?.enabled && remote.url ? remote.url : t('onboarding.ready.remote.off'),
+      // Staying on this computer alone is a fine answer: only putting the step off leaves it to do.
+      done: !skipped('remote'),
+    })
   }
 
   const next: { icon: ReactNode; text: string }[] = [

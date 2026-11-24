@@ -338,7 +338,7 @@ try {
   const setup = await desk.evaluate(() => fetch('/api/auth/setup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'x', displayName: 'X', password: 'correct horse battery' }) }).then((response) => response.status))
   assert.equal(setup, 404)
   const titles = await desk.locator('aside ol li').allTextContents()
-  assert.equal(titles.length, 6, `six étapes en bureau, pas ${titles.length}`)
+  assert.equal(titles.length, 7, `sept étapes en bureau, pas ${titles.length}`)
   assert.ok(!titles.some((title) => /Adresse|compte/.test(title)), titles.join(' | '))
   await desk.getByText('installés sur cet ordinateur').waitFor()
   await desk.getByText('Tout reste sur cet ordinateur').waitFor()
@@ -350,6 +350,17 @@ try {
     assert.equal(await desk.getByText(absent, { exact: true }).count(), 0, `${absent} n’a rien à faire en bureau`)
   }
   await desk.screenshot({ path: '/tmp/sillage-onboarding-desktop-ready.png' })
+  // Desktop's own step: the remote-access card of the settings, off until asked for. What
+  // Tailscale reports depends on the machine, so only the switch and its state are read.
+  await desk.getByText('Désactivé · cet ordinateur seulement').waitFor()
+  await desk.getByRole('button', { name: 'Modifier : Accès distant' }).click()
+  await desk.getByRole('heading', { level: 1 }).filter({ hasText: 'Depuis tes autres appareils' }).waitFor()
+  await desk.getByRole('switch', { name: 'Accès distant', checked: false }).waitFor()
+  // The step fades in: let it settle so the picture shows it.
+  await desk.locator('.sg-onboarding-step').evaluate((step) => Promise.all(step.getAnimations().map((animation) => animation.finished)))
+  await desk.screenshot({ path: '/tmp/sillage-onboarding-desktop-remote.png' })
+  await desk.getByRole('button', { name: 'Continuer' }).click()
+  await desk.getByRole('heading', { level: 1 }).filter({ hasText: 'C’est prêt.' }).waitFor()
   // New database, no project: tour ends at first-project creation.
   await desk.getByRole('button', { name: 'Créer mon premier projet' }).click()
   await desk.waitForURL(/\/projects\/new$/)

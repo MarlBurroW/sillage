@@ -5,6 +5,7 @@ import { AddressStep } from '../components/onboarding/AddressStep'
 import { AgentsStep } from '../components/onboarding/AgentsStep'
 import { AppearanceStep } from '../components/onboarding/AppearanceStep'
 import { ReadyStep } from '../components/onboarding/ReadyStep'
+import { RemoteStep } from '../components/onboarding/RemoteStep'
 import { RulesStep } from '../components/onboarding/RulesStep'
 import { WelcomeStep } from '../components/onboarding/WelcomeStep'
 import { WorkStep } from '../components/onboarding/WorkStep'
@@ -25,6 +26,7 @@ const STEPS: Record<OnboardingStepId, (props: StepProps) => React.ReactElement> 
   work: WorkStep,
   rules: RulesStep,
   address: AddressStep,
+  remote: RemoteStep,
   ready: ReadyStep,
 }
 
@@ -36,6 +38,7 @@ const SUBTITLES: Record<OnboardingStepId, MessageKey> = {
   work: 'onboarding.step.work.sub',
   rules: 'onboarding.step.rules.sub',
   address: 'onboarding.step.address.sub',
+  remote: 'onboarding.step.remote.sub',
   ready: 'onboarding.step.ready.sub',
 }
 
@@ -65,7 +68,7 @@ export function OnboardingPage() {
   const profile = instance?.profile ?? 'server'
   // With no account, this is the first: it will be an administrator.
   const isAdmin = user?.isAdmin ?? true
-  const steps = onboardingSteps(profile)
+  const steps = onboardingSteps(profile, instance?.capabilities.remoteAccess ?? false)
   const index = Math.min(state.step, steps.length - 1)
   const current = steps[index] ?? 'welcome'
   const last = index === steps.length - 1
@@ -197,6 +200,7 @@ export function OnboardingPage() {
           profile={profile}
           user={user ?? null}
           isAdmin={isAdmin}
+          steps={steps}
           hostname={instance?.hostname ?? ''}
           goto={(id) => goto(steps.indexOf(id))}
           finish={finish}

@@ -33,6 +33,8 @@ export interface StepProps {
   user: CurrentUser | null
   /** The first account of an empty database is an administrator before it exists. */
   isAdmin: boolean
+  /** The tour's steps on this instance, for the recap. */
+  steps: OnboardingStepId[]
   hostname: string
   /** Reopen a step from the recap. */
   goto: (id: OnboardingStepId) => void
