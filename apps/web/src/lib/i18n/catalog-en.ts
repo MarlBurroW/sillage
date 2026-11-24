@@ -3257,6 +3257,7 @@ export const en = {
   'subagent.pane.empty.description': 'Agents launched by the conversation will appear here, with their full thread.',
   'subagent.pane.back': 'Back to the sub-agent list',
   'subagent.pane.starting': 'The sub-agent is starting...',
+  'subagent.pane.stop': 'Stop this sub-agent',
   'subagent.pane.silent': "This sub-agent hasn't sent anything.",
   'subagent.row.toolCount.one': '{count} tool',
   'subagent.row.toolCount.other': '{count} tools',

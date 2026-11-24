@@ -3250,6 +3250,7 @@ export const fr: Catalog = {
     'Les agents lancés par la conversation apparaîtront ici, avec leur fil complet.',
   'subagent.pane.back': 'Revenir à la liste des sous-agents',
   'subagent.pane.starting': 'Le sous-agent démarre...',
+  'subagent.pane.stop': 'Arrêter ce sous-agent',
   'subagent.pane.silent': "Ce sous-agent n'a rien transmis.",
   'subagent.row.toolCount.one': '{count} outil',
   'subagent.row.toolCount.other': '{count} outils',

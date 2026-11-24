@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { isSpawnTool } from '@sillage/protocol'
 import type { BackgroundTaskOutput, WorkflowProgress } from '@sillage/protocol'
 import { api } from './api'
 import type { ChatState } from './chat-fold'
+import { stopBackgroundTask } from './conversations'
 
 /**
  * Work with no other screen representation, derived solely from the log (invariant I2). The CLI
@@ -18,6 +20,8 @@ export interface BackgroundWork {
   description: string
   /** Current activity, null until its first report. */
   activity: string | null
+  /** Status line the model wrote about it, when the CLI sends one. */
+  summary: string | null
   lastTool: string | null
   toolUses: number
   totalTokens: number
@@ -46,6 +50,7 @@ export function buildBackground(state: ChatState): BackgroundWork[] {
       kind: live.kind,
       description: task?.description || live.description,
       activity: task?.activity ?? null,
+      summary: task?.summary ?? null,
       lastTool: task?.lastTool ?? null,
       toolUses: task?.toolUses ?? 0,
       totalTokens: task?.totalTokens ?? 0,
@@ -99,4 +104,26 @@ export function plainTerminalText(raw: string): string {
       return trimmed.slice(trimmed.lastIndexOf('\r') + 1)
     })
     .join('\n')
+}
+
+/**
+ * Stops background work from any list that shows it. Stop replies do not confirm termination: the
+ * task leaves on the next `background.updated`, so the button stays pending meanwhile rather than
+ * inviting repeated requests. A rejection (session ended, task already closed) makes it usable again.
+ */
+export function useStopBackgroundTask(conversationId: string) {
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set())
+  const stop = async (taskId: string) => {
+    setStopping((prev) => new Set(prev).add(taskId))
+    try {
+      await stopBackgroundTask(conversationId, taskId)
+    } catch {
+      setStopping((prev) => {
+        const next = new Set(prev)
+        next.delete(taskId)
+        return next
+      })
+    }
+  }
+  return { stopping, stop }
 }

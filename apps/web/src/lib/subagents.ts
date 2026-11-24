@@ -20,6 +20,12 @@ export interface SubAgent {
   durationMs: number | null
   /** Current activity, or null when no longer running. */
   activity: string | null
+  /** Status line the model wrote about its work (Claude, about every 30 s), null otherwise. */
+  summary: string | null
+  /** The CLI's task behind the call, null until it announces one. */
+  taskId: string | null
+  /** Still working after its call returned: launched in the background, so it can be stopped alone. */
+  detached: boolean
   /** Subagent thread in log order. */
   items: ChatItem[]
   /** Its own tool calls. Nested subagent calls count toward that nested agent. */
@@ -76,6 +82,9 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
       // Call duration equals task duration only while the call is waiting for it.
       durationMs: task && task.durationMs > 0 ? task.durationMs : item.durationMs,
       activity: null,
+      summary: backgrounded || item.status === 'running' ? task?.summary ?? null : null,
+      taskId: task?.id ?? null,
+      detached: backgrounded,
       items: [],
       toolCount: 0,
       totalTokens: task?.totalTokens ?? 0,

@@ -9,9 +9,9 @@ import {
   hasReadableOutput,
   plainTerminalText,
   useBackgroundTaskOutput,
+  useStopBackgroundTask,
   type BackgroundWork,
 } from '../../lib/background'
-import { stopBackgroundTask } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
@@ -19,6 +19,7 @@ import { formatTokens } from '../../lib/tokens'
 import { currentPhase } from '../../lib/workflows'
 import { buildRows } from '../../lib/tool-rows'
 import { ChatThread } from '../chat/ChatThread'
+import { TurnActivity } from '../chat/TurnActivity'
 import { SubAgentRow } from '../chat/SubAgentRow'
 import { EmptyState, cx } from '../ui'
 import { WorkflowPhases } from './WorkflowPhases'
@@ -47,7 +48,7 @@ export function AgentsPane({
 
   if (selected) {
     return (
-      <SubAgentThread conversationId={conversationId} agent={selected} onBack={clearSubAgent} />
+      <SubAgentThread conversationId={conversationId} agent={selected} canStop={AGENT_CAPABILITIES[agent].stopBackgroundTask} onBack={clearSubAgent} />
     )
   }
 
@@ -121,33 +122,14 @@ function BackgroundList({
   const canStop = AGENT_CAPABILITIES[agent].stopBackgroundTask
   const canRead = AGENT_CAPABILITIES[agent].readBackgroundOutput
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
+  const { stopping, stop } = useStopBackgroundTask(conversationId)
   const toggle = (taskId: string) =>
     setOpen((prev) => {
       const next = new Set(prev)
       if (!next.delete(taskId)) next.add(taskId)
       return next
     })
-  /**
-   * Stop replies do not confirm termination: tasks disappear on the next background.updated. Keep
-   * the button pending meanwhile to avoid repeated stop requests.
-   */
-  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set())
   if (tasks.length === 0) return null
-
-  const stop = async (taskId: string) => {
-    setStopping((prev) => new Set(prev).add(taskId))
-    try {
-      await stopBackgroundTask(conversationId, taskId)
-    } catch {
-      // Server rejection (session ended or task already closed) restores interaction; the log keeps
-      // the list authoritative.
-      setStopping((prev) => {
-        const next = new Set(prev)
-        next.delete(taskId)
-        return next
-      })
-    }
-  }
 
   return (
     <section className="mb-1 flex flex-col gap-1">
@@ -164,7 +146,7 @@ function BackgroundList({
         // snapshot keep the activity line.
         const subtitle = task.workflow
           ? [kindLabel, task.workflowName, phase ? t('panel.workflow.phase', phase) : null].filter(Boolean).join(' · ')
-          : task.activity ? `${kindLabel} · ${task.activity}` : kindLabel
+          : task.summary ?? task.activity ? `${kindLabel} · ${task.summary ?? task.activity}` : kindLabel
         const readable = canRead && hasReadableOutput(task.kind)
         const expanded = readable && open.has(task.id)
         const heading = (
@@ -288,60 +270,124 @@ function BackgroundOutput({ conversationId, taskId }: { conversationId: string; 
 function SubAgentThread({
   conversationId,
   agent,
+  canStop,
   onBack,
 }: {
   conversationId: string
   agent: SubAgent
+  /** The conversation's CLI can stop one background task without ending the turn. */
+  canStop: boolean
   onBack: () => void
 }) {
   const t = useTranslate()
-  const scroller = useRef<HTMLDivElement>(null)
-  const [following, setFollowing] = useState(true)
-  useThreadLayout(scroller, following)
-  const rows = useMemo(() => buildRows(agent.items, agent.id, agent.status === 'running'), [agent.items, agent.id, agent.status])
+  const { stopping, stop } = useStopBackgroundTask(conversationId)
+  const running = agent.status === 'running'
+  // Only work detached from its call can be stopped alone: a subagent the turn is waiting on ends
+  // with the turn's own stop.
+  const stoppable = canStop && running && agent.detached && agent.taskId !== null
+  const rows = useMemo(() => buildRows(agent.items, agent.id, running), [agent.items, agent.id, running])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-1.5">
-        <TooltipButton
-          type="button"
-          onClick={onBack}
-          aria-label={t('subagent.pane.back')}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
-        >
-          <ArrowLeft size={15} />
-        </TooltipButton>
-        <Bot size={14} className={cx('shrink-0', agent.status === 'running' ? 'text-accent' : 'text-ink-faint')} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-ink">{subAgentLabel(agent)}</span>
-          <span className="block truncate text-[0.6875rem] text-ink-faint">
-            {agent.activity ? `${agent.type} · ${agent.activity}` : agent.type}
-          </span>
-        </span>
-
+      <PaneHeader
+        onBack={onBack}
+        icon={<Bot size={14} className={cx('shrink-0', running ? 'text-accent' : 'text-ink-faint')} />}
+        title={subAgentLabel(agent)}
+        // The model's own status says what it is after; the mechanical activity sits at the bottom of the thread.
+        subtitle={agent.summary ? `${agent.type} · ${agent.summary}` : agent.type}
+        subtitleTitle={agent.summary}
+      >
         {/* Subagent tokens appear nowhere else: turn usage includes only the main agent. */}
         {agent.totalTokens > 0 ? (
           <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
             {t('subagent.tokens', { count: formatTokens(agent.totalTokens) })}
           </span>
         ) : null}
-      </div>
 
-      <div ref={scroller} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3" onScroll={(event) => {
-        const node = event.currentTarget
-        setFollowing(node.scrollHeight - node.scrollTop - node.clientHeight < 48)
-      }}><div className="flex flex-col gap-3">
-        {rows.length === 0 ? (
-          <p className="text-xs text-ink-faint">
-            {/* CLI streams subagent work; there is nothing to show before its first output. */}
-            {agent.status === 'running'
-              ? t('subagent.pane.starting')
-              : t('subagent.pane.silent')}
-          </p>
-        ) : (
-          <ChatThread rows={rows} conversationId={conversationId} mayCollapseTools={following} />
+        {stoppable && agent.taskId ? (
+          <TooltipButton
+            type="button"
+            onClick={() => void stop(agent.taskId!)}
+            disabled={stopping.has(agent.taskId)}
+            title={t('subagent.pane.stop')}
+            aria-label={t('subagent.pane.stop')}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
+          >
+            <Square size={12} fill="currentColor" />
+          </TooltipButton>
+        ) : null}
+      </PaneHeader>
+
+      <FollowedThread>
+        {(following) => (
+          <>
+            {rows.length === 0 ? (
+              <p className="text-xs text-ink-faint">
+                {/* CLI streams subagent work; there is nothing to show before its first output. */}
+                {running ? t('subagent.pane.starting') : t('subagent.pane.silent')}
+              </p>
+            ) : (
+              <ChatThread rows={rows} conversationId={conversationId} mayCollapseTools={following} />
+            )}
+            {running && rows.length > 0 ? <TurnActivity label={agent.activity ?? t('message.thinking.label')} /> : null}
+          </>
         )}
-      </div></div>
+      </FollowedThread>
+    </div>
+  )
+}
+
+/** Back button, icon and two lines: the head every thread of the pane shares. */
+function PaneHeader({
+  onBack,
+  icon,
+  title,
+  subtitle,
+  subtitleTitle,
+  children,
+}: {
+  onBack: () => void
+  icon: ReactNode
+  title: string
+  subtitle: string
+  /** Full text on hover when the subtitle is cut. */
+  subtitleTitle?: string | null
+  children?: ReactNode
+}) {
+  const t = useTranslate()
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-1.5">
+      <TooltipButton
+        type="button"
+        onClick={onBack}
+        aria-label={t('subagent.pane.back')}
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
+      >
+        <ArrowLeft size={15} />
+      </TooltipButton>
+      {icon}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-medium text-ink">{title}</span>
+        {subtitle ? (
+          <span className="block truncate text-[0.6875rem] text-ink-faint" title={subtitleTitle ?? undefined}>{subtitle}</span>
+        ) : null}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+/** Scrolling thread that follows its end until the reader scrolls up, like the conversation. */
+function FollowedThread({ children }: { children: (following: boolean) => ReactNode }) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const [following, setFollowing] = useState(true)
+  useThreadLayout(scroller, following)
+  return (
+    <div ref={scroller} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3" onScroll={(event) => {
+      const node = event.currentTarget
+      setFollowing(node.scrollHeight - node.scrollTop - node.clientHeight < 48)
+    }}>
+      <div className="flex flex-col gap-3">{children(following)}</div>
     </div>
   )
 }

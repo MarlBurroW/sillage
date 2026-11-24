@@ -49,10 +49,10 @@ export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: ()
         <span className="truncate font-medium text-ink">{subAgentLabel(agent)}</span>
         <span className="truncate text-[0.6875rem] text-ink-faint">
           {/*
-           * Type identifies the working agent; activity says what it is doing now. Both fit and
-           * complement each other.
+           * Type identifies the working agent; the model's status, or else the activity, says what
+           * it is doing now. Both fit and complement each other.
            */}
-          {agent.activity ? `${agent.type} · ${agent.activity}` : agent.type}
+          {agent.summary ?? agent.activity ? `${agent.type} · ${agent.summary ?? agent.activity}` : agent.type}
         </span>
       </span>
 

@@ -56,8 +56,8 @@ test('the fold keeps the last workflow snapshot across reports that omit it', ()
   const workflow = parseWorkflowProgress(reported)
   const events: SillageEvent[] = [
     { type: 'task.started', taskId: 'w1', toolCallId: 'call-1', kind: 'local_workflow', description: 'Build', workflowName: 'build' },
-    { type: 'task.progress', taskId: 'w1', activity: 'Fondations: release', lastTool: 'release', toolUses: 3, totalTokens: 10, durationMs: 5, workflow },
-    { type: 'task.progress', taskId: 'w1', activity: 'Fondations: serveur', lastTool: 'serveur', toolUses: 4, totalTokens: 12, durationMs: 6, workflow: null },
+    { type: 'task.progress', taskId: 'w1', activity: 'Fondations: release', lastTool: 'release', toolUses: 3, totalTokens: 10, durationMs: 5, summary: null, workflow },
+    { type: 'task.progress', taskId: 'w1', activity: 'Fondations: serveur', lastTool: 'serveur', toolUses: 4, totalTokens: 12, durationMs: 6, summary: null, workflow: null },
   ]
   let state: ChatState = emptyChatState()
   events.forEach((event, index) => {

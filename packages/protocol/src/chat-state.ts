@@ -393,6 +393,8 @@ export interface TaskState {
   description: string
   /** Current activity, null until the first progress report. */
   activity: string | null
+  /** Latest status the model wrote about the job, null until one arrives and once it ends. */
+  summary?: string | null
   lastTool: string | null
   toolUses: number
   totalTokens: number
@@ -653,7 +655,7 @@ function closeRunningTools(state: ChatState, preserveBackground = false): void {
 function closePendingTasks(state: ChatState): void {
   const tasks = new Map(state.tasks)
   for (const [id, task] of tasks) {
-    if (!task.done) tasks.set(id, { ...task, activity: null, done: true, outcome: 'stopped' })
+    if (!task.done) tasks.set(id, { ...task, activity: null, summary: null, done: true, outcome: 'stopped' })
   }
   state.tasks = tasks
 }
@@ -1275,6 +1277,7 @@ export function applyEvent(
         workflowName: event.workflowName ?? null,
         workflow: null,
         activity: null,
+        summary: null,
         lastTool: null,
         toolUses: 0,
         totalTokens: 0,
@@ -1294,6 +1297,7 @@ export function applyEvent(
       putTask(state, {
         ...known,
         activity: event.activity,
+        summary: event.summary ?? known.summary ?? null,
         lastTool: event.lastTool,
         toolUses: event.toolUses,
         totalTokens: event.totalTokens,
@@ -1309,6 +1313,7 @@ export function applyEvent(
         putTask(state, {
           ...known,
           activity: null,
+          summary: null,
           durationMs: event.durationMs ?? known.durationMs,
           done: true,
           outcome: event.status,

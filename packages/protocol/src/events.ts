@@ -688,6 +688,11 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     totalTokens: z.number(),
     durationMs: z.number(),
     /**
+     * One-line status written by the model about the job, for a subagent every ~30 s (Claude
+     * `agentProgressSummaries`). Null on reports without one: the last summary stays current.
+     */
+    summary: z.string().nullable().default(null),
+    /**
      * Phases and agents of a workflow, null for other jobs and for reports that omit it. The CLI
      * sends a full snapshot, not a delta, but skips it on some reports: null keeps the last one.
      */

@@ -296,6 +296,10 @@ export class ClaudeRunner implements AgentRunner {
         // reasoning or intermediate messages. Sillage displays full conversations and needs
         // everything.
         forwardSubagentText: true,
+        // A model-written status line per running subagent, about every 30 s. The CLI forks the
+        // subagent on its own model and prompt cache, so each summary costs little; probed on
+        // 2.1.318, where it arrives as `task_progress.summary`.
+        agentProgressSummaries: true,
         abortController: this.abort,
         ...(this.ctx.resumeSessionId ? { resume: this.ctx.resumeSessionId } : {}),
         // Always supplied, never left to SDK. Internal resolution searches platform package
@@ -525,6 +529,7 @@ export class ClaudeRunner implements AgentRunner {
               toolUses: message.usage.tool_uses,
               totalTokens: message.usage.total_tokens,
               durationMs: message.usage.duration_ms,
+              summary: message.summary ?? null,
               // Undocumented in the SDK types: read through `unknown`, see parseWorkflowProgress.
               workflow: parseWorkflowProgress((message as { workflow_progress?: unknown }).workflow_progress),
             },
