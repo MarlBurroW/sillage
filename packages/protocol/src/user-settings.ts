@@ -141,22 +141,15 @@ export const projectDefaultsSchema = z.object({
 })
 
 /**
- * Initial onboarding answers determining subsequent steps.
+ * What the tour records for itself. Everything else it sets is written where it lives (agent
+ * defaults, appearance, project defaults, instructions) and read back from there for the recap.
  *
- * `agents` filters the agents step; `devices` adds the phone step; `team` adds project
- * visibility; `guidance` controls explanation detail. `permission` records the chosen default
- * approach for the recap.
+ * The first tour opened with a questionnaire (agents used, solo or team, devices, guidance level).
+ * Each answer could be read from the machine or asked where it mattered, so the tour no longer
+ * asks; stored answers from that version are dropped on parse.
  */
 export interface OnboardingAnswers {
-  agents: AgentKind[]
-  /**
-   * True once the user interacts with the agents question. Before then, an empty list means
-   * nothing, and the UI automatically selects CLIs found on the machine.
-   */
-  agentsChosen: boolean
-  team: 'solo' | 'team'
-  devices: 'computer' | 'phone'
-  guidance: 'guided' | 'direct'
+  /** The quick permission policy last picked, shown selected when the tour is replayed. */
   permission: 'manual' | 'auto' | 'acceptEdits' | 'bypass'
 }
 
@@ -166,7 +159,7 @@ export interface OnboardingState {
    * it on their next login; account creation and “Replay tour” in settings enable it.
    */
   pending: boolean
-  /** Current step index in the list the UI derives from answers. */
+  /** Current step index in the list the UI derives from the edition and the account's role. */
   step: number
   answers: OnboardingAnswers
   /** IDs of steps skipped with “Later”, for the recap. */
@@ -179,11 +172,6 @@ export interface OnboardingState {
 }
 
 export const DEFAULT_ONBOARDING_ANSWERS: OnboardingAnswers = {
-  agents: [],
-  agentsChosen: false,
-  team: 'solo',
-  devices: 'phone',
-  guidance: 'guided',
   permission: 'auto',
 }
 
@@ -196,11 +184,6 @@ export const DEFAULT_ONBOARDING: OnboardingState = {
 }
 
 export const onboardingAnswersSchema = z.object({
-  agents: z.array(agentKindSchema).max(agentKindSchema.options.length).default([]).catch([]),
-  agentsChosen: z.boolean().default(false).catch(false),
-  team: z.enum(['solo', 'team']).default('solo').catch('solo'),
-  devices: z.enum(['computer', 'phone']).default('phone').catch('phone'),
-  guidance: z.enum(['guided', 'direct']).default('guided').catch('guided'),
   permission: z.enum(['manual', 'auto', 'acceptEdits', 'bypass']).default('auto').catch('auto'),
 })
 

@@ -564,6 +564,25 @@
 }
 
 /*
+ * A tour step settles in instead of swapping: the frame around it stays still, so the eye needs a
+ * cue that the content changed. Nothing moves under reduced motion.
+ */
+.sg-onboarding-step {
+  animation: sg-onboarding-step 0.22s ease-out both;
+}
+@keyframes sg-onboarding-step {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sg-onboarding-step {
+    animation: none;
+  }
+}
+
+/*
  * CLI installation bar sweeps because npm provides no fraction. Stay still for reduced motion;
  * adjacent text suffices.
  */

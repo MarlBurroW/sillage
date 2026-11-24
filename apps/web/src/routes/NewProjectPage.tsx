@@ -7,7 +7,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { slugifyProjectName } from '@sillage/protocol'
 import { ApiRequestError } from '../lib/api'
 import { useCreateProject, type CreateProjectInput } from '../lib/projects'
@@ -36,7 +36,9 @@ import {
   type SelectOption,
 } from '../components/ui'
 
-type CreateMode = 'new' | 'existing' | 'clone' | 'sample'
+const CREATE_MODES = ['new', 'existing', 'clone', 'sample'] as const
+type CreateMode = (typeof CREATE_MODES)[number]
+const isCreateMode = (value: string | null): value is CreateMode => CREATE_MODES.includes(value as CreateMode)
 type Visibility = 'private' | 'shared'
 
 function useVisibilityOptions(): SelectOption<Visibility>[] {
@@ -59,8 +61,11 @@ function useVisibilityOptions(): SelectOption<Visibility>[] {
 
 export function NewProjectPage() {
   const t = useTranslate()
-  // Common case first: a new project needs only a name.
-  const [mode, setMode] = useState<CreateMode>('new')
+  // Common case first: a new project needs only a name. A link may open another source directly,
+  // as the first-run tour does for the sample project.
+  const [params] = useSearchParams()
+  const requested = params.get('mode')
+  const [mode, setMode] = useState<CreateMode>(isCreateMode(requested) ? requested : 'new')
 
   const MODE_OPTIONS: Choice<CreateMode>[] = [
     {

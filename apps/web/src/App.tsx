@@ -10,6 +10,7 @@ import { dismissBootMark } from './lib/boot-mark'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
 import { useUserSettings } from './lib/user-settings'
+import { ONBOARDING_EXIT_PARAM } from './lib/onboarding'
 import { useProjects } from './lib/projects'
 import { DesignPage } from './routes/DesignPage'
 import { ConversationPage } from './routes/ConversationPage'
@@ -58,11 +59,17 @@ import { UsageLimitsSettingsPage } from './routes/UsageLimitsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
 
-/** After onboarding: create the first project if none exists, otherwise show home. */
+/**
+ * After onboarding: create the first project if none exists, otherwise show home. The tour may
+ * name the sample project as its exit, which opens that form instead of the blank one.
+ */
 function OnboardingExit() {
   const { data: projects } = useProjects()
   if (!projects) return null
-  return <Navigate to={projects.length === 0 ? '/projects/new' : '/'} replace />
+  if (projects.length > 0) return <Navigate to="/" replace />
+  // Read from the address bar, where the tour wrote it (see `finish` in OnboardingPage).
+  const sample = new URLSearchParams(window.location.search).get(ONBOARDING_EXIT_PARAM) === 'sample'
+  return <Navigate to={sample ? '/projects/new?mode=sample' : '/projects/new'} replace />
 }
 
 /** Inside the boundary of a lazy first screen: takes the startup mark away once it is there. */

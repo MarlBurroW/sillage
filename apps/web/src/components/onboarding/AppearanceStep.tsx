@@ -55,16 +55,15 @@ export function AppearanceStep({ nav }: StepProps) {
       {theme === 'dark-contrast' ? null : (
         <>
           <AppearancePresets appearance={appearance} theme={theme} />
-          <Question label={t('onboarding.appearance.hue')} hint={t('onboarding.appearance.hue.hint')}>
-            <AppearanceControls appearance={appearance} keys={['hue']} swatches={false} />
-          </Question>
+          <AppearanceControls appearance={appearance} keys={['hue']} swatches={false} />
         </>
       )}
 
-      <Question label={t('onboarding.appearance.reading')} hint={t('onboarding.appearance.reading.hint')}>
+      {/* The sliders name themselves: a heading above each would say it twice. */}
+      <div className="flex flex-col gap-3">
         <AppearanceControls appearance={appearance} keys={['readingSize']} swatches={false} />
         <ReadingPreview />
-      </Question>
+      </div>
 
       <Tip>{t('onboarding.appearance.more')}</Tip>
     </>

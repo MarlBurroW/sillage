@@ -1,42 +1,28 @@
 import type { AgentConfig, InstanceProfile, OnboardingAnswers } from '@sillage/protocol'
 
 /**
- * First-launch tour steps and order based on instance type and user answers. Recompute each render:
- * Welcome answers change the list, so the stored account index applies only to the current list.
+ * First-launch tour steps, in order. The list depends only on the edition: every account sees the
+ * same steps, and a step adapts its content to the role (members have no global instructions to
+ * write and read the instance address without editing it).
  */
-export type OnboardingStepId =
-  | 'account'
-  | 'welcome'
-  | 'appearance'
-  | 'agents'
-  | 'work'
-  | 'memory'
-  | 'rules'
-  | 'address'
-  | 'ready'
+export type OnboardingStepId = 'account' | 'welcome' | 'appearance' | 'agents' | 'work' | 'rules' | 'address' | 'ready'
 
-export interface OnboardingShape {
-  profile: InstanceProfile
-  isAdmin: boolean
-  answers: OnboardingAnswers
-}
-
-export function onboardingSteps({ profile, isAdmin, answers }: OnboardingShape): OnboardingStepId[] {
+export function onboardingSteps(profile: InstanceProfile): OnboardingStepId[] {
   const steps: OnboardingStepId[] = []
   // Server: account first, creating the first or using one opened by an administrator. Desktop
   // already has a session opened by the launcher.
   if (profile === 'server') steps.push('account')
-  steps.push('welcome', 'appearance', 'agents', 'work')
-  // Storage for project instructions and memory: an account default for each.
-  steps.push('memory')
-  // Global instructions belong to administrators; project instructions are configured on the project page.
-  if (isAdmin) steps.push('rules')
-  // The public address serves more than phones (webhooks, API), so administrators always see it.
-  // Members see only the phone section if they plan to use it.
-  if (profile === 'server' && (isAdmin || answers.devices === 'phone')) steps.push('address')
+  steps.push('welcome', 'appearance', 'agents', 'work', 'rules')
+  // Following a turn from the phone is the point of a hosted instance; Desktop listens on this
+  // computer only and has its own remote-access setting.
+  if (profile === 'server') steps.push('address')
   steps.push('ready')
   return steps
 }
+
+/** Where the tour may land other than its default exit; `App` reads it from the address. */
+export type OnboardingExit = 'sample'
+export const ONBOARDING_EXIT_PARAM = 'next'
 
 export type PermissionChoice = OnboardingAnswers['permission']
 
