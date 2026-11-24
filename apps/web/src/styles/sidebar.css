@@ -39,6 +39,9 @@ img.nav-project-mark { background: none; }
 @media (min-width: 48rem) { .nav-column { flex: none; width: var(--sidebar-desktop-width); border-left: 0; } }
 .nav-column-head { display: flex; align-items: center; gap: 9px; flex-shrink: 0; min-height: 50px; padding: 0 6px 0 14px; }
 .nav-column-head h2 { flex: 1; min-width: 0; overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.nav-column-mark { display: flex; flex-shrink: 0; border-radius: 4px; }
+.nav-column-mark:hover { opacity: .8; }
+.nav-column-mark:focus-visible { outline: 2px solid var(--sg-accent); outline-offset: 2px; }
 .nav-column-actions { display: flex; align-items: center; flex-shrink: 0; }
 .nav-column > .sidebar-project-links { padding-inline: 12px; }
 .nav-column > .sidebar-sessions-heading, .nav-column > .sidebar-session-filter { margin-inline: 8px; }

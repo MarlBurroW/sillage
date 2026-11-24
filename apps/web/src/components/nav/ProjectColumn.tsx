@@ -4,7 +4,7 @@ import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-ki
 import type { ConversationDto, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
 import { Archive, CalendarClock, ChevronRight, FolderGit2, Minus, MoreHorizontal, Plus, RefreshCw, Search, SlidersHorizontal, SquareKanban, SquareTerminal, Users, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useReorderConversations } from '../../lib/conversations'
 import { useRefreshLists } from '../../lib/conversation-status'
 import { useTranslate } from '../../lib/i18n'
@@ -34,6 +34,7 @@ export function ProjectColumn({ project, rail, conversations, schedules, toggleF
 }) {
   const t = useTranslate()
   const navigate = useNavigate()
+  const { pathname, search, hash } = useLocation()
   const { onNavigate } = useNavChrome()
   const updateProject = useUpdateProject()
   const reorder = useReorderConversations(project.id)
@@ -66,11 +67,19 @@ export function ProjectColumn({ project, rail, conversations, schedules, toggleF
 
   const go = (path: string) => { navigate(path); onNavigate() }
   const link = ({ isActive }: { isActive: boolean }) => cx('sidebar-project-link', isActive && 'sidebar-current')
+  // The project page holds both lines' targets: its worktrees tab marks Worktrees, any other tab Settings.
+  const onProjectPage = pathname === `/p/${project.id}`
+  const onWorktrees = onProjectPage && (new URLSearchParams(search).get('section') === 'worktrees' || (!search.includes('section=') && hash === '#worktrees'))
 
   return (
     <>
       <ColumnHead
-        lead={<ProjectAvatar project={project} className="size-5" />}
+        // The mark opens the settings, the shortest way there; the name keeps double-click renaming.
+        lead={<Tooltip label={t('shell.project.settings')}>
+          <Link to={`/p/${project.id}`} onClick={onNavigate} aria-label={t('shell.project.settings')} className="nav-column-mark">
+            <ProjectAvatar project={project} className="size-5" />
+          </Link>
+        </Tooltip>}
         title={editing ? (
           <RenameInput value={project.name} onCancel={() => setEditing(false)} onCommit={(draft) => {
             setEditing(false)
@@ -99,8 +108,11 @@ export function ProjectColumn({ project, rail, conversations, schedules, toggleF
       />
       <ul className="sidebar-project-links">
         <li><NavLink to={`/p/${project.id}/board`} onClick={onNavigate} className={link}><SquareKanban size={14} /><span className="flex-1">{t('shell.project.board')}</span><BoardCounts counts={project.cardCounts} /></NavLink></li>
-        <WorktreesLine projectId={project.id} />
+        <WorktreesLine projectId={project.id} current={onWorktrees} />
         <li><NavLink to={`/p/${project.id}/schedules`} onClick={onNavigate} className={link}><CalendarClock size={14} /><span className="flex-1">{t('schedule.sidebar.heading')}</span><span className="text-[0.625rem] text-ink-faint">{schedules.length}</span></NavLink></li>
+        {/* Members open it too: the page shows them the configuration they work under, read-only. */}
+        {/* The empty span keeps the label from taking the summary style of a last child. */}
+        <li><Link to={`/p/${project.id}`} onClick={onNavigate} aria-current={onProjectPage && !onWorktrees ? 'page' : undefined} className={cx('sidebar-project-link', onProjectPage && !onWorktrees && 'sidebar-current')}><SlidersHorizontal size={14} /><span className="flex-1">{t('shell.project.settingsLine')}</span><span /></Link></li>
       </ul>
       <ColumnHeading label={t('shell.project.sessions')} count={active.length}>
         <IconButton label={t('shell.sessions.filter')} size="sm" aria-expanded={filterOpen} onClick={() => { setFilterOpen((value) => !value); setFilter(''); if (!filterOpen) requestAnimationFrame(() => filterInput.current?.focus()) }}><Search size={14} /></IconButton>
@@ -149,7 +161,7 @@ function BoardCounts({ counts }: { counts: ProjectDto['cardCounts'] }) {
  * trees with files to sort, and amber cleanup-only trees. Omitted when no extra trees exist because
  * the row matters only through its count.
  */
-function WorktreesLine({ projectId }: { projectId: string }) {
+function WorktreesLine({ projectId, current }: { projectId: string; current: boolean }) {
   const t = useTranslate()
   const { onNavigate } = useNavChrome()
   const { data } = useWorktreeStatuses(projectId)
@@ -157,7 +169,7 @@ function WorktreesLine({ projectId }: { projectId: string }) {
   const { pending, leftovers, cleanable } = worktreeCounts(data)
   return (
     <li>
-      <NavLink to={`/p/${projectId}#worktrees`} onClick={onNavigate} className="sidebar-project-link">
+      <Link to={`/p/${projectId}#worktrees`} onClick={onNavigate} aria-current={current ? 'page' : undefined} className={cx('sidebar-project-link', current && 'sidebar-current')}>
         <FolderGit2 size={14} className="shrink-0" />
         <span className="flex-1">{t('shell.project.worktrees')}</span>
         {/* Three counts outgrow the default width: wrap between them rather than overflow. */}
@@ -168,7 +180,7 @@ function WorktreesLine({ projectId }: { projectId: string }) {
           {(pending > 0 || leftovers > 0) && cleanable > 0 ? ' · ' : null}
           {cleanable > 0 ? <span className="whitespace-nowrap text-caution">{t('shell.project.worktreesCleanable', { count: String(cleanable) })}</span> : null}
         </span>
-      </NavLink>
+      </Link>
     </li>
   )
 }

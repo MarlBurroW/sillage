@@ -1175,6 +1175,7 @@ export const fr: Catalog = {
   'shell.project.boardReview': '{count} à relire',
   'shell.rename': 'Renommer',
   'shell.project.settings': 'Réglages du projet',
+  'shell.project.settingsLine': 'Réglages',
   'shell.color': 'Couleur',
   'shell.conversations.empty': 'Aucune conversation',
   'shell.conversations.archived': 'Archivées ({count})',

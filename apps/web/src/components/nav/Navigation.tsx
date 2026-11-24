@@ -175,6 +175,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
           updateNotice={appUpdateNotice || cliUpdateNotice ? t('about.badge.updateAvailable') : undefined}
           username={passwordAuth ? user?.username : undefined}
           onSpace={select}
+          onProjectSettings={(id) => { setNavColumnFolded(false); navigate(`/p/${id}`) }}
           onReorder={reorder}
           onSearch={onSearch}
           onLogout={() => logout.mutate()}

@@ -1185,6 +1185,7 @@ export const en = {
   'shell.project.boardReview': '{count} to review',
   'shell.rename': 'Rename',
   'shell.project.settings': 'Project settings',
+  'shell.project.settingsLine': 'Settings',
   'shell.color': 'Color',
   'shell.conversations.empty': 'No conversations',
   'shell.conversations.archived': 'Archived ({count})',

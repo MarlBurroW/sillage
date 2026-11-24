@@ -3,7 +3,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { ProjectDto } from '@sillage/protocol'
-import { Activity, ChartColumn, FlaskConical, LogOut, MessageSquare, Minus, Plus, Search, Server, Settings } from 'lucide-react'
+import { Activity, ChartColumn, FlaskConical, LogOut, MessageSquare, Minus, Plus, Search, Server, Settings, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useState, type ComponentPropsWithRef, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { activityTone, type ActivityCounts } from '../../lib/activity'
 import { useTranslate } from '../../lib/i18n'
@@ -13,7 +13,7 @@ import { Logo } from '../Logo'
 import { ProjectMark } from '../ProjectMark'
 import { Tooltip, TooltipProvider } from '../ui/Tooltip'
 import { UpdateDot } from '../UpdateDot'
-import { ContextMenu, ContextMenuItem, Menu, MenuItem, MenuLabel, cx } from '../ui'
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator, Menu, MenuItem, MenuLabel, cx } from '../ui'
 import { countsLabel, swallowNextClick, useContextMenuEnabled, useDragSensors } from './shared'
 
 /** Longest fade at an end of the scrolled projects, in pixels. */
@@ -26,7 +26,7 @@ const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
  * The rail: every entry does the same thing, it selects a space. Icons carry a name and their
  * state in a tooltip, and in their accessible name for keyboard and screen-reader users.
  */
-export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hidden, updateNotice, username, onSpace, onReorder, onSearch, onLogout, addProject }: {
+export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hidden, updateNotice, username, onSpace, onProjectSettings, onReorder, onSearch, onLogout, addProject }: {
   space: NavSpace | null
   /** Across every project and discussion; decisions count as awaiting. */
   total: ActivityCounts
@@ -43,6 +43,7 @@ export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hi
   /** Absent when the edition has no account to sign out of. */
   username: string | undefined
   onSpace: (space: NavSpace) => void
+  onProjectSettings: (projectId: string) => void
   onReorder: (draggedId: string, overId: string) => void
   onSearch: () => void
   onLogout: () => void
@@ -71,6 +72,7 @@ export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hi
     canRemove: rail.canRemove,
     onSelect: () => onSpace(`project:${project.id}`),
     onKeep: (kept: boolean) => rail.setKept(project, kept),
+    onSettings: () => onProjectSettings(project.id),
   })
 
   return (
@@ -190,10 +192,11 @@ type ProjectEntryProps = Omit<ComponentPropsWithRef<'button'>, 'onSelect'> & {
   canRemove: boolean
   onSelect: () => void
   onKeep: (kept: boolean) => void
+  onSettings: () => void
 }
 
 /** A project in the rail: its mark and one state, and by right click what keeps it there or not. */
-function ProjectEntry({ project, counts, current, visiting = false, canRemove, onSelect, onKeep, className, ...props }: ProjectEntryProps) {
+function ProjectEntry({ project, counts, current, visiting = false, canRemove, onSelect, onKeep, onSettings, className, ...props }: ProjectEntryProps) {
   const t = useTranslate()
   const contextMenu = useContextMenuEnabled()
   const tone = activityTone(counts)
@@ -214,6 +217,8 @@ function ProjectEntry({ project, counts, current, visiting = false, canRemove, o
         {tone ? <span className={cx('nav-rail-dot', `nav-tone-${tone}`)} /> : null}
       </RailEntry>
     }>
+      <ContextMenuItem icon={<SlidersHorizontal size={14} />} onSelect={onSettings}>{t('shell.project.settings')}</ContextMenuItem>
+      <ContextMenuSeparator />
       {visiting
         ? <ContextMenuItem icon={<Plus size={14} />} onSelect={() => onKeep(true)}>{t('shell.rail.add')}</ContextMenuItem>
         : <ContextMenuItem icon={<Minus size={14} />} disabled={!canRemove} onSelect={() => onKeep(false)}>{t('shell.rail.remove')}</ContextMenuItem>}
