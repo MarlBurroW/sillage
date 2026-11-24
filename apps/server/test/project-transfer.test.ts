@@ -239,3 +239,18 @@ test('a move also waits for questions, detached tasks and armed loops', async t 
   assert.equal(h.stops(), 1)
   assert.equal(h.row().projectId, 'target')
 })
+
+test('moving context reaches the first message of each launch, never the system prompt', async t => {
+  const h = await harness(t)
+  h.create('neighbor')
+  h.db.update(conversations).set({ updatedAt: Date.now() }).where(eq(conversations.id, 'neighbor')).run()
+  await h.sessions.sendMessage('session', 'first', 'Paint the office')
+  await until(() => h.sent.length === 1)
+  const context = h.contexts[0]!
+  // A rename or a neighbor's activity must not change the system prompt a resume sends.
+  assert.doesNotMatch(context.projectOverview(context.config) ?? '', /Other Sillage sessions|rename_session/)
+  const first = context.sessionReferenceContext!('Paint the office', context.config) ?? ''
+  assert.match(first, /Other Sillage sessions in this project/)
+  assert.match(first, /rename_session/)
+  assert.equal(context.sessionReferenceContext!('And the niche', context.config), null)
+})

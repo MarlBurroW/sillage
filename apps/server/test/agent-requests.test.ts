@@ -30,7 +30,7 @@ import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
 import { adoptSessionTitle } from '../src/conversations/title.js'
-import { projectOverview } from '../src/agents/overview.js'
+import { liveSessionContext, projectOverview } from '../src/agents/overview.js'
 
 const model = (value: string, displayName: string, efforts: string[], isDefault = false): AgentModelDto => ({
   value,
@@ -274,7 +274,7 @@ test('human titles win over both explicit agent titles and delayed native CLI su
 test('every CLI receives a naming instruction, respecting manual titles and disabled MCP', async (t) => {
   const { db, conversation, statusBus } = await harness(t)
   conversation('self')
-  const overview = (sillageMcp = true) => projectOverview(db, { projectId: 'project', conversationId: 'self', sillageMcp }) ?? ''
+  const overview = (sillageMcp = true) => liveSessionContext(db, { projectId: 'project', conversationId: 'self', sillageMcp, activity: sillageMcp }) ?? ''
   for (const agent of ['claude', 'codex', 'opencode', 'grok'] as const) {
     db.update(conversations).set({ agent }).run()
     assert.match(overview(), /call the `sillage` server's `rename_session`/)
@@ -284,6 +284,21 @@ test('every CLI receives a naming instruction, respecting manual titles and disa
   assert.match(overview(), /Keep it unless the main topic changes/)
   db.update(conversations).set({ titleSetByUser: true }).run()
   assert.doesNotMatch(overview(), /rename_session/)
+})
+
+test('the system-prompt overview stays identical while titles and neighbors change, so resumes hit the prompt cache', async (t) => {
+  const { db, conversation, statusBus } = await harness(t)
+  conversation('self')
+  const stable = () => projectOverview(db, { projectId: 'project', conversationId: 'self', sillageMcp: true })
+  const before = stable()
+  adoptSessionTitle(db, statusBus, 'self', 'Refonte de la sidebar', 'agent')
+  conversation('neighbor')
+  db.update(conversations).set({ status: 'running', updatedAt: Date.now() }).where(eq(conversations.id, 'neighbor')).run()
+  assert.equal(stable(), before)
+  // The moving part carries what changed instead.
+  const live = liveSessionContext(db, { projectId: 'project', conversationId: 'self', sillageMcp: true, activity: true }) ?? ''
+  assert.match(live, /1 currently working/)
+  assert.match(live, /Keep it unless the main topic changes/)
 })
 
 test('matchModel finds a model by the name the user says, and never guesses between two', () => {

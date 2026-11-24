@@ -33,7 +33,7 @@ import { describeOutgoingMessage } from '../agents/outgoing.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { publicUrlOf } from '../settings/app-settings.js'
-import { projectOverview, sessionTitleReminder } from '../agents/overview.js'
+import { liveSessionContext, projectOverview } from '../agents/overview.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { checkpointBeforeProjectMove, commitProjectMove, pendingProjectMove, prepareProjectMove, requestProjectMove } from '../conversations/project-transfer.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
@@ -972,6 +972,8 @@ export class SessionManager {
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
     const cwd = this.resolveCwd(conversation)
+    // One context per launch: the moving overview goes with its first message only.
+    let liveSent = false
     // History imports run without a lease: nothing to be superseded by.
     const superseded = () => {
       if (!lease) return false
@@ -1048,10 +1050,22 @@ export class SessionManager {
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
 
-      sessionReferenceContext: (text, current) => sessionReferenceContext(
-        this.db, conversation.projectId, text, publicUrlOf(this.db, this.config),
-        builtinMcpEnabled(this.config.mcp.sillageServer, current), conversation.userId,
-      ),
+      // The first message of each launch also carries the moving overview (`liveSessionContext`):
+      // a resumed Claude or Grok keeps its first system prompt, and opencode's cache needs a stable one.
+      sessionReferenceContext: (text, current) => {
+        const sillageMcp = builtinMcpEnabled(this.config.mcp.sillageServer, current)
+        const live = liveSent || conversation.benchmarkId ? null : liveSessionContext(this.db, {
+          projectId: conversation.projectId,
+          conversationId,
+          sillageMcp,
+          activity: this.config.mcp.sillageServer && current.sillageMcp,
+        })
+        liveSent = true
+        const references = sessionReferenceContext(
+          this.db, conversation.projectId, text, publicUrlOf(this.db, this.config), sillageMcp, conversation.userId,
+        )
+        return [live, references].filter((part) => part !== null).join('\n\n') || null
+      },
 
       // Follow MCP server switches except `strictMcp`, which excludes undeclared
       // servers and therefore concerns tools rather than
@@ -1076,7 +1090,6 @@ export class SessionManager {
         const parts = [
           handoff?.text ?? null,
           conversation.projectId === null ? `This is a personal Sillage discussion with its own persistent working directory. Keep new work and files here unless the user chooses another location. No project owns this discussion: never borrow Sandbox or another unrelated project just because a tool requires one. Model discovery with list_models needs no project. When an idea becomes a project or needs delegated project sessions, use continue_in_project to create a dedicated project with a self-contained brief (goal, decisions, relevant files, uncertainties and next steps) and explicitly selected files. If the user wants the work to continue now, supply prompt to start that linked session; otherwise its brief remains visible while it waits. Reuse the returned session with message_session rather than creating another continuation. The original files remain here, including large media. You may inspect, steer, interrupt and resume this account's project sessions using read_session, steer_session, interrupt_session and message_session. Use existing projects only when the user targets them. Use native file tools elsewhere only as requested and permitted by the CLI. Cite sessions as session:<id>.` : null,
-          conversation.projectId === null ? sessionTitleReminder(this.db, { projectId: null, conversationId, sillageMcp }) : null,
           instructionsAppendix(this.db, {
             projectId: conversation.projectId,
             mode: instructions()?.mode ?? 'repo',

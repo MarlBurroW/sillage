@@ -10,7 +10,7 @@ import multipart from '@fastify/multipart'
 import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
 import type { ProjectDto } from '@sillage/protocol'
-import { projectOverview } from '../src/agents/overview.js'
+import { liveSessionContext } from '../src/agents/overview.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
 import type { Config } from '../src/config.js'
@@ -69,7 +69,7 @@ async function harness(t: TestContext) {
     return JSON.parse(run.stdout).result as { content: { text: string }[]; isError?: boolean }
   }
   const overview = (sillageMcp = true) =>
-    projectOverview(db, { projectId: 'project', conversationId: 'c', sillageMcp })
+    liveSessionContext(db, { projectId: 'project', conversationId: 'c', sillageMcp, activity: sillageMcp })
 
   return { dir, app, upload, listed, mcp, overview }
 }

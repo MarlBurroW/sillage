@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm'
 import { conversations, mcpServers, openDatabase, projects, runMigrations, users } from '@sillage/db'
 import { DEFAULT_CLAUDE_CONFIG, type McpServer, type McpServerListDto } from '@sillage/protocol'
 import { proposeMcpInstall } from '../src/agents/mcp-install.js'
-import { projectOverview } from '../src/agents/overview.js'
+import { liveSessionContext } from '../src/agents/overview.js'
 import { transferTarget } from '../src/conversations/project-transfer.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
@@ -244,8 +244,8 @@ test('agent tools answer like the interface for the account their session runs f
   // Project image: same owner, and a member's session is not even asked to set one.
   const logo = join(dir, 'logo.svg')
   await writeFile(logo, '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8"/></svg>')
-  assert.match(projectOverview(db, { projectId: 'shared', conversationId: 'c-owner', sillageMcp: true }) ?? '', /set_project_image/)
-  assert.doesNotMatch(projectOverview(db, { projectId: 'shared', conversationId: 'c-member', sillageMcp: true }) ?? '', /set_project_image/)
+  assert.match(liveSessionContext(db, { projectId: 'shared', conversationId: 'c-owner', sillageMcp: true, activity: true }) ?? '', /set_project_image/)
+  assert.doesNotMatch(liveSessionContext(db, { projectId: 'shared', conversationId: 'c-member', sillageMcp: true, activity: true }) ?? '', /set_project_image/)
   const image = tool('c-member', 'set_project_image', { path: logo })
   assert.equal(image.isError, true)
   assert.match(out(image), /belongs to its owner/)
