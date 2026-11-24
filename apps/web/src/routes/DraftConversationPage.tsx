@@ -45,6 +45,7 @@ import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 import { PanelToggle } from '../components/panel/PanelToggle'
+import { tourAnchor } from '../components/tour/steps'
 
 const SidePanel = lazyWithReload(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
@@ -378,7 +379,7 @@ export function DraftConversationPage() {
           </div>
 
           {/* Native radio buttons: compact selection with arrow-key navigation. */}
-          <fieldset className="flex flex-col gap-1.5">
+          <fieldset className="flex flex-col gap-1.5" {...tourAnchor('agent')}>
             <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {AGENTS.filter((option) => !hiddenRows.some((entry) => entry.agent === option.value)).map((option) => {

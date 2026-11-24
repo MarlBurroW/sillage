@@ -169,6 +169,12 @@ export interface OnboardingState {
    * direction without repeating intermediate steps.
    */
   visited: string[]
+  /**
+   * The interface tour is due: the bubbles pointing at the rail, the composer and the panel on the
+   * first conversation. Armed when the first-run tour ends, cleared once seen or skipped. False by
+   * default, so accounts that predate it are not interrupted.
+   */
+  interfaceTourPending: boolean
 }
 
 export const DEFAULT_ONBOARDING_ANSWERS: OnboardingAnswers = {
@@ -181,6 +187,7 @@ export const DEFAULT_ONBOARDING: OnboardingState = {
   answers: DEFAULT_ONBOARDING_ANSWERS,
   skipped: [],
   visited: [],
+  interfaceTourPending: false,
 }
 
 export const onboardingAnswersSchema = z.object({
@@ -193,6 +200,7 @@ export const onboardingStateSchema = z.object({
   answers: onboardingAnswersSchema.default(DEFAULT_ONBOARDING_ANSWERS).catch(DEFAULT_ONBOARDING_ANSWERS),
   skipped: z.array(z.string().max(40)).max(32).default([]).catch([]),
   visited: z.array(z.string().max(40)).max(32).default([]).catch([]),
+  interfaceTourPending: z.boolean().default(false).catch(false),
 })
 
 /**

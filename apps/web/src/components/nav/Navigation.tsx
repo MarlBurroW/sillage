@@ -30,6 +30,7 @@ import { DiscussionsColumn } from './DiscussionsColumn'
 import { NavRail } from './NavRail'
 import { ProjectColumn } from './ProjectColumn'
 import { ProjectsDialog } from './ProjectsDialog'
+import { tourAnchor } from '../tour/steps'
 
 /**
  * Navigation in two levels. The rail selects a space; the column lists what that space holds and
@@ -187,7 +188,7 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
           onOpenProject={(chosen) => openProject(chosen.id)} onCreate={createProject}
           onSettings={(chosen) => { navigate(`/p/${chosen.id}`); onNavigate() }} />
         {listed ? (
-          <nav ref={column} className="nav-column" aria-label={t('shell.nav.label')} data-nav-column={listed}>
+          <nav ref={column} className="nav-column" aria-label={t('shell.nav.label')} data-nav-column={listed} {...tourAnchor('column')}>
             <PullToRefresh target={column} refreshing={refreshing} onRefresh={refresh} />
             {toggleFavorite.isError && <div className="shrink-0 px-2 pt-2"><Banner>
               <span className="block">{t('shell.favorites.error')}</span><span className="mt-1 block text-xs">{toggleFavorite.error.message}</span>

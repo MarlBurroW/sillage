@@ -211,7 +211,11 @@ try {
   await page.getByLabel('Dossier des projets').fill(join(data, 'projects'))
   await page.getByRole('button', { name: 'Créer le projet d’essai' }).click()
   await page.waitForURL(/\/p\/[^/]+\/c\/new$/)
+  // The interface tour takes over on this first conversation (walked by `pnpm test:tour-ui`).
+  await page.locator('[data-tour-step="rail"]').waitFor({ timeout: 30000 })
   await page.screenshot({ path: '/tmp/sillage-onboarding-project.png' })
+  await page.getByRole('button', { name: 'Passer le tour' }).click()
+  await page.locator('[data-interface-tour]').waitFor({ state: 'detached' })
 
   // Read what the tour left behind through the API.
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()

@@ -8,6 +8,7 @@ import { setNavColumnFolded, useNavColumnFolded } from '../lib/sidebar'
 import { useUpdateNotice } from '../lib/system'
 import { IconButton } from './ui'
 import { UpdateDot } from './UpdateDot'
+import { tourAnchor } from './tour/steps'
 
 export const MobileNavigationContext = createContext<() => void>(() => {})
 
@@ -44,6 +45,7 @@ export function MobileNavigationButton({ drawerOnly = false }: {
       label={updateNotice ? `${t('shell.nav.open')} · ${t('about.badge.updateAvailable')}` : t('shell.nav.open')}
       onClick={open}
       data-navigation-trigger
+      {...tourAnchor('menu')}
       aria-haspopup="dialog"
       className="md:hidden"
     >

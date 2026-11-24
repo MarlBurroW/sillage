@@ -108,7 +108,8 @@ export function OnboardingPage() {
     // history directly and read back the same way: the router applies its own location changes
     // in a transition, later than the settings update that closes the tour.
     if (exit) window.history.replaceState(null, '', `/bienvenue?${ONBOARDING_EXIT_PARAM}=${exit}`)
-    update.mutate({ ...state, pending: false, step: 0 })
+    // The interface tour takes over on the first conversation, where there is something to point at.
+    update.mutate({ ...state, pending: false, step: 0, interfaceTourPending: true })
   }
 
   const visited = (...ids: OnboardingStepId[]) => [...new Set([...state.visited, ...ids])]

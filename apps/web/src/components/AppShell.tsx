@@ -22,6 +22,7 @@ import { Navigation } from './nav/Navigation'
 import { Toaster } from './Toaster'
 import { UpdatePrompt } from './UpdatePrompt'
 import { cx } from './ui'
+import { InterfaceTour } from './tour/InterfaceTour'
 
 /**
  * Desktop keeps the navigation beside the page: a rail that is always there, and a column that
@@ -181,6 +182,7 @@ export function AppShell() {
       </div>
       {/* Outside the main column so decisions and toasts overlay every view including sidebar. */}
       <DecisionDialog />
+      <InterfaceTour />
       <Toaster />
     </div>
     </MobileNavigationContext.Provider>

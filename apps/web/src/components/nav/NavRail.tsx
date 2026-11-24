@@ -15,6 +15,7 @@ import { Tooltip, TooltipProvider } from '../ui/Tooltip'
 import { UpdateDot } from '../UpdateDot'
 import { ContextMenu, ContextMenuItem, Menu, MenuItem, MenuLabel, cx } from '../ui'
 import { countsLabel, swallowNextClick, useContextMenuEnabled, useDragSensors } from './shared'
+import { tourAnchor } from '../tour/steps'
 
 /** Longest fade at an end of the scrolled projects, in pixels. */
 const FADE = 22
@@ -75,9 +76,9 @@ export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hi
 
   return (
     <TooltipProvider delayDuration={120}>
-      <div className="nav-rail" data-nav-rail>
+      <div className="nav-rail" data-nav-rail {...tourAnchor('rail')}>
         <span className="nav-rail-brand"><Logo size={22} className="text-accent" /></span>
-        <RailEntry label={t('shell.search')} detail={SEARCH_HINT} onClick={onSearch}><Search size={18} /></RailEntry>
+        <RailEntry label={t('shell.search')} detail={SEARCH_HINT} onClick={onSearch} {...tourAnchor('palette')}><Search size={18} /></RailEntry>
         <RailEntry label={t('shell.overview.heading')} detail={totalLabel || t('shell.activity.quiet')} current={space === 'activity'} onClick={() => onSpace('activity')} data-nav-space="activity">
           <Activity size={18} />
           {total.awaiting > 0 ? <span className="nav-rail-badge">{total.awaiting}</span> : total.running > 0 ? <span className="nav-rail-dot nav-tone-running" /> : null}

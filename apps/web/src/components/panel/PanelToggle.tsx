@@ -3,6 +3,7 @@ import type { ButtonHTMLAttributes } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { setPanelOpen, usePanelOpen } from '../../lib/panel'
 import { IconButton, cx } from '../ui'
+import { tourAnchor } from '../tour/steps'
 
 /**
  * The one control that opens and closes the right panel, last in every header that carries it: the
@@ -29,6 +30,8 @@ export function PanelToggle({ page = false, replaced = false, className, ...prop
   return (
     <IconButton
       {...props}
+      // The page's copy only: the panel's own toggle appears once the panel is open.
+      {...(page ? tourAnchor('panel') : null)}
       label={t(open ? 'conversation.panel.close' : 'conversation.panel.open')}
       aria-hidden={covered || undefined}
       tabIndex={covered ? -1 : undefined}
