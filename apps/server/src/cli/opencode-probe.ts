@@ -3,9 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_OPENCODE_CONFIG, sillageEventSchema, type SillageEvent } from '@sillage/protocol'
-import { OpencodeRunner } from '../agents/opencode/runner.js'
+import { OpencodeRunnerSwitch } from '../agents/opencode/runner-switch.js'
 
-/** Manual installed-opencode probe with real turns, never CI. Free `opencode/big-pickle` needs no provider credentials. Created sessions remain in the host database; print IDs for deletion with `opencode session delete <id>`. */
+/** Manual installed-opencode probe with real turns, never CI. Free `opencode/big-pickle` needs no provider credentials. Created sessions remain in the host database; print IDs for deletion with `opencode session delete <id>`. Speaks whichever major `OPENCODE_BIN` is. Run an OpenCode 2 binary under a scratch `HOME`/`XDG_*`: its first start migrates the machine's 1.x session database. */
 const cwd = await mkdtemp(join(tmpdir(), 'sillage-opencode-probe-'))
 await writeFile(join(cwd, 'note.txt'), 'hello\n')
 
@@ -13,7 +13,7 @@ const events: SillageEvent[] = []
 let sessionId = ''
 let finish: () => void = () => {}
 const completed = new Promise<void>((resolve) => { finish = resolve })
-const runner = new OpencodeRunner({
+const runner = new OpencodeRunnerSwitch({
   conversationId: 'opencode-probe', cwd, attachmentsRoot: cwd,
   binary: process.env.OPENCODE_BIN ?? join(homedir(), '.opencode/bin/opencode'), resumeSessionId: null,
   config: { ...DEFAULT_OPENCODE_CONFIG, model: process.env.OPENCODE_MODEL ?? 'opencode/big-pickle', sillageMcp: false },
@@ -41,7 +41,7 @@ try {
   await runner.send(
     'Integration test. Use the edit tool to append the line "world" to note.txt, then reply with exactly: Done ZEPHYR-9 ' +
     '(replace ZEPHYR-9 by the project codename from your instructions).',
-    [], [],
+    [], [], [],
   )
   await completed
   assert.equal(await readFile(join(cwd, 'note.txt'), 'utf8'), 'hello\nworld\n', "L'édition doit avoir eu lieu.")

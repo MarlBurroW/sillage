@@ -1109,9 +1109,9 @@ export class SessionManager {
       workTrees: () => conversation.projectId ? linkedWorktreePaths(this.db, conversationId, conversation.projectId) : [],
       resumeSessionId: conversation.agentSessionId,
 
-      emit: (event: SillageEvent, raw?: unknown) => {
+      emit: (event: SillageEvent, raw?: unknown, rawFormat?: string) => {
         if (superseded()) return
-        const entry = this.log.append(conversationId, event, raw, adapter.rawFormat)
+        const entry = this.log.append(conversationId, event, raw, rawFormat ?? adapter.rawFormat)
         this.usage?.observe(conversationId, entry, raw)
         if (event.type === 'turn.completed' && conversation.projectId === null && !conversation.benchmarkId) {
           void readPersonalMemory(this.db, personalMemoryDir(this.config.paths.memory, conversation.userId), conversation.userId, conversationId).catch(err => console.warn('Personal memory refresh failed', err))

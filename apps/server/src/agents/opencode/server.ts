@@ -2,18 +2,20 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { launchOf } from '../launch.js'
 import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:net'
-import type { Config, Event } from '@sillage/opencode-bindings'
-import { assertSupportedOpencode } from './version-guard.js'
+import type { Event } from '@sillage/opencode-bindings'
+import { assertSupportedOpencode, type OpencodeGeneration } from './version-guard.js'
 import { detach } from '../../detach.js'
 
 /**
  * opencode serve and HTTP client.
  *
- * No stdio protocol like Codex: HTTP API, SSE GET /event. Module owns process/requests/stream
+ * No stdio protocol like Codex: HTTP API, SSE event stream. Module owns process/requests/stream
  * without business logic, like CodexAppServerClient.
  *
- * First API only (/session/..., GET /event), probed 1.18.25/1.19.0/1.19.3. Second
- * (/api/session/..., GET /api/event) ignores first sessions and lacks forks/MCP.
+ * Both server generations share this transport: same `serve` flags, announcement, Basic
+ * authentication and SSE framing. They differ in the stream path (1.x `GET /event`, probed
+ * 1.18.25/1.19.0/1.19.3; 2.x `GET /api/event`, probed 2.4.1) and in the password variable, which
+ * 2.x renamed. Routes are the runners' business.
  */
 
 const START_TIMEOUT_MS = 30_000
@@ -29,17 +31,20 @@ export class OpencodeHttpError extends Error {
   }
 }
 
-export interface OpencodeServerOptions {
+export interface OpencodeServerOptions<E = Event> {
   binary: string
+  /** Server API to speak; 1 when omitted. */
+  generation?: OpencodeGeneration
   cwd: string
   env?: NodeJS.ProcessEnv
   /**
-   * OPENCODE_CONFIG_CONTENT injected over machine config. Only per-conversation channel: POST /mcp
-   * etc affect whole instance; user files untouched.
+   * OPENCODE_CONFIG_CONTENT injected over machine config, in the spoken generation's document
+   * format (1.x `Config`, 2.x `Opencode2Config`). Only per-conversation channel: POST /mcp etc
+   * affect whole instance; user files untouched.
    */
-  config: Config
+  config: object
   /** Stream events. Without handler stream stays unopened: probes do not need it. */
-  onEvent?: (event: Event) => void
+  onEvent?: (event: E) => void
   /**
    * Reconnected stream after interruption. Events during gap lost; caller must reread tracked
    * state.
@@ -49,7 +54,7 @@ export interface OpencodeServerOptions {
   onExit?: (code: number | null) => void
 }
 
-export class OpencodeServer {
+export class OpencodeServer<E = Event> {
   private closed = false
   /** Close current stream connection, one per attachment. */
   private connection = new AbortController()
@@ -60,8 +65,13 @@ export class OpencodeServer {
     private readonly child: ChildProcessWithoutNullStreams,
     private readonly baseUrl: string,
     private readonly authorization: string,
-    private readonly options: OpencodeServerOptions,
+    private readonly options: OpencodeServerOptions<E>,
   ) {}
+
+  /** SSE path of the spoken generation. */
+  private get eventPath(): string {
+    return this.options.generation === 2 ? '/api/event' : '/event'
+  }
 
   /**
    * Start server, wait for listening with stream connected.
@@ -70,7 +80,7 @@ export class OpencodeServer {
    * server shuts down. Observed settings restart: new server announced 4096, first connection cut.
    * Per-process password prevents any local program driving session through port.
    */
-  static async start(options: OpencodeServerOptions): Promise<OpencodeServer> {
+  static async start<E = Event>(options: OpencodeServerOptions<E>): Promise<OpencodeServer<E>> {
     // Single launch point for sessions/catalog/commands/forks: reject opencode 2 everywhere rather
     // than run silently.
     await assertSupportedOpencode(options.binary)
@@ -83,7 +93,10 @@ export class OpencodeServer {
       env: {
         ...(options.env ?? process.env),
         OPENCODE_CONFIG_CONTENT: JSON.stringify(options.config),
+        // 1.x reads the first name, 2.x the second and ignores the first. Without its own password
+        // 2.x refuses every route, its OpenAPI document included (probed 2.4.1).
         OPENCODE_SERVER_PASSWORD: password,
+        OPENCODE_PASSWORD: password,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -102,7 +115,7 @@ export class OpencodeServer {
     child.stderr.on('data', relay)
 
     const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`
-    const server = new OpencodeServer(child, baseUrl, authorization, options)
+    const server = new OpencodeServer<E>(child, baseUrl, authorization, options)
     child.on('exit', (code) => server.fail(code))
     child.on('error', () => server.fail(null))
 
@@ -136,12 +149,12 @@ export class OpencodeServer {
 
   private async connectStream(): Promise<ReadableStream<Uint8Array>> {
     this.connection = new AbortController()
-    const response = await fetch(`${this.baseUrl}/event`, {
+    const response = await fetch(`${this.baseUrl}${this.eventPath}`, {
       headers: { accept: 'text/event-stream', authorization: this.authorization },
       signal: this.connection.signal,
     })
     if (!response.ok || !response.body) {
-      throw new OpencodeHttpError(`GET /event a répondu ${response.status}.`, response.status, null)
+      throw new OpencodeHttpError(`GET ${this.eventPath} a répondu ${response.status}.`, response.status, null)
     }
     return response.body
   }
@@ -184,7 +197,7 @@ export class OpencodeServer {
 
   /**
    * Reload config through POST /instance/dispose: skills/agents/commands. Database sessions
-   * unaffected.
+   * unaffected. 1.x only: 2.x reloads through `POST /api/location/reload` and keeps its stream.
    *
    * Probed: existing stream stays attached to disposed instance, silently open.
    * Disconnect/reconnect, wait first event like startup. Idle only: active turns die with instance.
@@ -215,9 +228,9 @@ export class OpencodeServer {
           .join('\n')
         if (!data) continue
 
-        let event: Event
+        let event: E
         try {
-          event = JSON.parse(data) as Event
+          event = JSON.parse(data) as E
         } catch {
           process.stderr.write(`[opencode] trame SSE illisible ignorée : ${data.slice(0, 200)}\n`)
           continue
@@ -233,7 +246,7 @@ export class OpencodeServer {
    * responses returned only at end.
    */
   async request<T>(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
     timeoutMs: number | null = REQUEST_TIMEOUT_MS,

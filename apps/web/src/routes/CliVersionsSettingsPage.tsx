@@ -1,5 +1,5 @@
 import { Download, RefreshCw } from 'lucide-react'
-import { compareCliVersions, type AgentAvailabilityDto } from '@sillage/protocol'
+import { compareCliVersions, type AgentAvailabilityDto, type AgentKind } from '@sillage/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { AgentInstallProgress } from '../components/AgentInstallProgress'
 import { Badge, Banner, Button } from '../components/ui'
@@ -36,6 +36,16 @@ export function CliVersionsSettingsPage() {
   )
 }
 
+/** What an update across major versions changes beyond the CLI itself, for CLIs where it matters. */
+const MAJOR_UPGRADE_NOTES: Partial<Record<AgentKind, 'cliUpdates.majorUpgrade.opencode'>> = {
+  opencode: 'cliUpdates.majorUpgrade.opencode',
+}
+
+function majorOf(version: string | null): number | null {
+  const major = version ? Number.parseInt(version, 10) : Number.NaN
+  return Number.isFinite(major) ? major : null
+}
+
 function CliRow({ entry, canManage }: { entry: AgentAvailabilityDto; canManage: boolean }) {
   const t = useTranslate()
   const label = AGENT_LABELS[entry.agent]
@@ -47,6 +57,8 @@ function CliRow({ entry, canManage }: { entry: AgentAvailabilityDto; canManage: 
   const status = !entry.enabled ? 'cliUpdates.disabled' : !entry.installed ? 'cliUpdates.missing'
     : current ? 'cliUpdates.current' : newer ? 'cliUpdates.newer' : outdated ? 'cliUpdates.available' : 'cliUpdates.unknown'
   const canInstall = canManage && entry.enabled && entry.installable !== false && !newer && (!current || install.failed)
+  const installedMajor = majorOf(entry.version)
+  const majorNote = outdated && installedMajor !== null && installedMajor < (majorOf(entry.preferredVersion) ?? 0) ? MAJOR_UPGRADE_NOTES[entry.agent] : undefined
 
   return (
     <li className="flex flex-col gap-3 py-5" aria-label={label}>
@@ -68,6 +80,7 @@ function CliRow({ entry, canManage }: { entry: AgentAvailabilityDto; canManage: 
           </Button>
         ) : null}
       </div>
+      {majorNote ? <p className="max-w-prose text-xs text-ink-soft sm:pl-9">{t(majorNote)}</p> : null}
       {install.progress ? <AgentInstallProgress label={label} version={entry.preferredVersion} progress={install.progress} className="sm:pl-9" /> : null}
       {install.queued ? <p role="status" className="text-sm text-ink-soft sm:pl-9">{install.status}</p> : null}
       {install.failed ? <Banner>{install.status}</Banner> : null}

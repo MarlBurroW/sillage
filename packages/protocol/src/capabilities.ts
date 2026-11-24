@@ -62,17 +62,19 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     readBackgroundOutput: false,
     draftCommands: false,
   },
-  // `steer` is true, probed on opencode 1.18.25: a `prompt_async` sent during a turn
-  // is consumed at the next step of that turn, without passing through `idle`. opencode's plan mode
-  // is a selectable agent; it submits nothing for approval.
+  // `steer` is true, probed on opencode 1.18.25 and 2.4.1: a prompt sent during a turn is consumed
+  // at the next step of that turn. opencode's plan mode is a selectable agent; it submits nothing
+  // for approval. Background tasks exist from 2.x (subagents, background shells), which can cancel
+  // them and page a shell's output; 1.x never reports any, so it never shows those controls.
+  // Native sessions are adoptable from 2.x, whose stored history the runner replays; 1.x lists none.
   opencode: {
     steer: true,
     compact: true,
     resyncSessions: false,
     planReview: false,
-    cliSessions: false,
-    stopBackgroundTask: false,
-    readBackgroundOutput: false,
+    cliSessions: true,
+    stopBackgroundTask: true,
+    readBackgroundOutput: true,
     draftCommands: true,
   },
   // Google ACP supports native import, but neither live steering nor manual compaction.

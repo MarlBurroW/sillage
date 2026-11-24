@@ -65,8 +65,11 @@ export interface RunnerContext {
   workTrees?(): string[]
   /** Native session ID to resume, null for new sessions. */
   resumeSessionId: string | null
-  /** Persists then broadcasts; `raw` retains native CLI messages. */
-  emit(event: SillageEvent, raw?: unknown): void
+  /**
+   * Persists then broadcasts; `raw` retains native CLI messages. `rawFormat` overrides the
+   * adapter's for runners whose native protocol depends on the installed CLI (OpenCode 1 and 2).
+   */
+  emit(event: SillageEvent, raw?: unknown, rawFormat?: string): void
   setStatus(status: ConversationStatus): void
   /** Stores native IDs immediately upon announcement for resume. */
   setAgentSessionId(sessionId: string): void

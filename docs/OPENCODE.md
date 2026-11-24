@@ -1,12 +1,40 @@
 # OpenCode integration
 
 Sillage starts one `opencode serve` per conversation and communicates over HTTP,
-with an SSE stream (`GET /event`). Bindings are generated from the OpenAPI the
-binary publishes at `GET /doc`, checked with **opencode 1.19.5**. The generated
-v1 bindings are unchanged from 1.19.3. The observations below originated on
-1.18.25 and were checked on 1.19.0/1.19.3; the latest checks are listed under
-Verification. Version 1.19.3 adds `reasoning_options` to `ProviderConfig` models,
-from which opencode derives variants the adapter already reads.
+with an SSE stream. It speaks both OpenCode majors, which ship different servers:
+
+| | OpenCode 1 | OpenCode 2 |
+|---|---|---|
+| Distribution | npm `opencode-ai` | npm `@opencode/cli` |
+| API | `/session/...`, stream `GET /event` | `/api/...`, stream `GET /api/event` |
+| Bindings | `@sillage/opencode-bindings` (`GET /doc`, **1.19.5**) | `@sillage/opencode-bindings/v2` (`GET /openapi.json`, **2.4.1**) |
+| Runner | `agents/opencode/runner.ts` | `agents/opencode/v2/runner.ts` |
+| Journal `rawFormat` | `opencode-server@v1` | `opencode-server@v2` |
+
+Both install to `~/.opencode/bin`, so a machine has one at a time. The runner
+reads `opencode --version` when a conversation starts
+(`version-guard.ts`, cached on the binary's size and mtime) and picks the
+matching runner (`runner-switch.ts`): upgrading in place switches the next
+session without restarting Sillage. Majors above 2 are rejected with
+`opencode_unsupported_version` rather than running a silent conversation.
+Catalog, command and fork probes follow the same detection.
+
+Sillage installs and recommends OpenCode 2 (`PREFERRED_CLI_RELEASES`:
+`@opencode/cli` 2.4.1). 1.x stays supported (`alsoSupported`: no version
+warning), and Settings › CLI versions offers the update, with a note on the
+history migration below. Both packages claim the `opencode` command, so npm
+refuses to install one over the other (EEXIST): the installer first removes the
+packages listed in `replaces` (`opencode-ai`) from Sillage's prefix. Removing an
+absent package succeeds. Both packages ship every platform build as optional
+dependencies, about 1 GB installed on Linux x64 either way.
+
+**Moving a machine to OpenCode 2** (`opencode upgrade --major`, or
+`curl -fsSL https://opencode.ai/v2/install | bash`) migrates its session
+database in place on the first 2.x start. Sessions keep their IDs and history,
+so Sillage conversations begun on 1.x resume on 2.x. The 1.x binary still opens
+the migrated database (probed on 1.19.3 after 2.4.1). A conversation crossing
+the upgrade journals both raw formats; readers (`describeEdit`, `forkCut`)
+accept either.
 
 Changes in the 1.x line that matter to Sillage:
 
@@ -17,51 +45,35 @@ Changes in the 1.x line that matter to Sillage:
   nor the installer). Moving to OpenCode 2 remains an explicit action: `/update`
   or `opencode upgrade --major`.
 
-**Do not run `opencode upgrade --major`** (or accept `/update`'s 2.0 offer) on a
-machine running Sillage while the adapter uses the v1 API: OpenCode 2
-(`@opencode/cli` 2.x) removed that API in favor of `/api/...`, and `--major`
-uninstalls 1.x. A guard (`apps/server/src/agents/opencode/version-guard.ts`)
-reads `opencode --version` before every `opencode serve` and rejects major
-versions ≥ 2 with `opencode_unsupported_version` rather than running a silent
-conversation. Checked on `@opencode/cli` 2.0.32, whose `--version` returns
-`opencode v2.0.32`: `serve` does announce `server listening on ...`, but
-`/session`, `/event`, and `/doc` return its web app's HTML page (200), and only
-`/api/...` is the API.
-
-## API generations
-
-Two generations coexist in the opencode server. The adapter uses only the first
-(`/session/...`, `GET /event` stream), pinned in `rawFormat` as `opencode-server@v1`:
-
-- the second (`/api/session/...`, `GET /api/event`, `session.next.*` events) has
-  neither forks nor MCP server management;
-- its stream says nothing about sessions created by the first: the two do not mix;
-- the first is what opencode's TUI and SDK use.
-
-## Launch settings and per-message settings
+## Launch settings and session settings
 
 opencode reads permissions, MCP servers, and skill directories from its
 configuration. Sillage injects them through `OPENCODE_CONFIG_CONTENT`, merged
-over the machine's `opencode.json` without writing to it. Changing them therefore
+over the machine's configuration without writing to it. Changing them therefore
 restarts the conversation's server, which resumes its session (stored in
-opencode's database).
+opencode's database). Each major gets its own document format; 2.x would also
+translate the 1.x document, but Sillage writes the native one (`v2/config.ts`).
 
-Model (`provider/model`), variant, and primary agent are sent with every message
-and can change without a restart.
+| Sillage setting | OpenCode 1 | OpenCode 2 |
+|---|---|---|
+| Edits, commands, web access | `permission.edit`, `.bash`, `.webfetch` | `permissions` rules `{action, resource: '*', effect}`, actions `edit`, `shell`, `webfetch` |
+| Additional directories, attachments, memory, skills | `permission.external_directory`, `directory/**` → `allow` | `external_directory` rules, `directory/**` → `allow` |
+| Registry MCP servers, Sillage server | `mcp.<name>`, `local` or `remote` | `mcp.servers.<name>`, with `codemode: false` |
+| Skill library | `skills.paths` | `skills` |
+| Self-update | `autoupdate: false` | `update: 'disable'` |
+| Instructions managed in SILLAGE.md | each message's `system` | instruction entry `sillage` of the session |
 
-| Sillage setting | In opencode |
-|---|---|
-| Edits, commands, web access | `permission.edit`, `.bash`, `.webfetch`: `ask`, `allow`, `deny`, or unset (the machine's rule) |
-| Additional directories, attachments, memory, skills | `permission.external_directory`, one `directory/**` pattern with `allow` for each |
-| Registry MCP servers, Sillage server | `mcp.<name>`, `local` or `remote` |
-| Skill library | `skills.paths`; they appear among slash commands |
-| Instructions managed in SILLAGE.md | Each message's `system`; `OPENCODE_DISABLE_PROJECT_CONFIG=1` hides the repository's `AGENTS.md` and `CLAUDE.md` |
+`OPENCODE_DISABLE_PROJECT_CONFIG=1` hides the repository's `AGENTS.md` and
+`CLAUDE.md` in both majors when SILLAGE.md carries the instructions. It also
+disables the project's opencode configuration: opencode has no finer switch.
 
-`OPENCODE_DISABLE_PROJECT_CONFIG` also disables the project's `opencode.json`
-and `.opencode/` directory: opencode has no finer switch. Projects keeping their
-instructions in their repository are unaffected.
+Model (`provider/model`), variant, and primary agent change without a restart. 1.x
+receives them with every message. 2.x keeps them as durable session state, set
+through `POST /api/session/{id}/model` and `/agent` before a message when they
+changed; Sillage's instructions likewise go through
+`PUT /api/experimental/session/{id}/instructions/entries/sillage`.
 
-## Observed behavior
+## Observed behavior, OpenCode 1
 
 - **Port**: chosen by Sillage. With `--port 0`, opencode reuses 4096 while the
   previous server is still shutting down, cutting off the new one's first connection.
@@ -83,21 +95,108 @@ instructions in their repository are unaffected.
 - **Command output**: accumulated in the active call's `metadata.output`.
 - **Images and mentioned files**: `file` parts with a `file://` URL, read by opencode itself.
 
-## Outside the first version's scope
+## Observed behavior, OpenCode 2
 
-Signing in to providers from the interface (use `opencode auth login`), cumulative
-cost, importing sessions started in opencode, MCP elicitations.
+Probed on 2.4.1, data directories isolated.
+
+- **Password**: `OPENCODE_PASSWORD` (the 1.x name is ignored). Without one, every
+  route answers 401, the OpenAPI document included. Sillage sets both names.
+- **Startup**: same announcement (`server listening on http://…`).
+- **Lazy lists**: the first request for a directory's commands, skills or agents
+  returns an empty list and starts loading it; later requests, seconds after,
+  are filled, and no stream event announces it. The model list behaves the same
+  for about a second on a first run. Each of these lists has built-in entries, so
+  Sillage reads until non-empty within a bound (`v2/catalog.ts`).
+- **`opencode run`** (not used by Sillage) records the session under `$PWD`, not
+  the process working directory; `serve` uses the real working directory.
+- **Sessions**: `POST /api/session {location: {directory}}`; one server can serve
+  several directories, Sillage still runs one per conversation.
+- **Stream**: flat typed events with a durable `seq` per session:
+  `session.execution.started|succeeded|failed|interrupted` bracket a turn,
+  `session.text.*` and `session.reasoning.*` stream blocks per assistant message
+  and ordinal, `session.tool.input.started → called → success|failed` follow a
+  call (results no longer repeat their input: Sillage journals the call with the
+  result), `session.step.ended` carries tokens and cost.
+- **Skills** are no longer slash commands: `GET /api/skill` lists them, and a
+  prompt attaches them by ID (`skills: [{id}]`). Sillage publishes them like
+  Codex's `$` skills (`skills.updated`); `/api/command` keeps only commands.
+- **Shell output**: a shell call names its shell in `session.tool.progress`
+  (`metadata.shellID`); the output pages by byte cursor
+  (`GET /api/shell/{id}/output?cursor=`). Sillage reads it every 400 ms while the
+  call runs (`tool.output_delta`).
+- **Background shells** (`shell` with `background: true`) are jobs too (job ID =
+  shell ID), reported to the parent's inbox as
+  `<background-result kind="shell" id="sh_…">`. The Agents pane can stop them
+  (`POST /api/experimental/job/{id}/cancel`) and read their last 8 KiB.
+- **Tools**: renamed: `shell` (was `bash`), `subagent` (was `task`), file tools take
+  `path`. Direct tools: `read`, `write`, `edit`, `glob`, `grep`, `webfetch`,
+  `websearch`, `skill`, `question`, `generate_image`, `generate_video`, plus
+  `execute` (Code Mode). No todo tool.
+- **Code Mode**: by default MCP tools are reachable only through `execute`, which runs
+  model-written JavaScript. Sillage sets `codemode: false` on its MCP servers so
+  their tools are called directly (`<server>_<tool>`).
+- **Permissions**: `permission.asked {action, resources, metadata}`, edits carrying
+  `metadata.files[]` with a unified patch; answered by
+  `POST /api/session/{id}/permission/{req}/reply {decision: once|always|reject}`.
+- **Forms** replace 1.x questions. The question tool opens a form with
+  `metadata.kind: "question"`: one field per question, a `string` with options for
+  a single choice, a `multiselect` for several, `custom` allowing free text.
+  Answer with `POST …/form/{id}/reply {answer}` (option values), dismiss with
+  `DELETE …/form/{id}`, which fails the tool and interrupts the turn. Other kinds
+  (`mcp-elicitation`, `auth-required`) carry typed fields and become Sillage
+  elicitations; a lone `external` field is a link to open.
+- **Subagents always run in the background**. The parent's turn ends right after
+  `subagent` returns "working in the background"; the child session (`parentID`)
+  streams on the same connection, `experimental.job.updated` tracks it, and its
+  report reaches the parent's inbox as a synthetic
+  `<background-result kind="subagent" sessionID="…">` item, which starts a new
+  parent execution without any message from Sillage. Sillage maps jobs to
+  `background.updated` / `task.*` (like Claude's background tasks), opens a turn on
+  that unprompted execution, counts a child's tokens in the next parent turn, and
+  keeps a child's pending permission open when a parent turn ends.
+- **Sessions begun outside Sillage**: `GET /api/session?directory=&parentID=null`
+  lists them (untitled until their first answer; Sillage names those by their
+  first prompt). `GET /api/session/{id}/message` keeps the history: the first
+  page takes `order=asc`, later ones only the `cursor` (2.x rejects both together).
+  The draft page offers them ("resume an OpenCode session"); importing replays
+  the history (`v2/history.ts`) without any model request, then the
+  conversation continues the same session.
+- **Fork**: `POST /api/session/{id}/fork {before}`, same exclusive cut as 1.x.
+  Message IDs sort chronologically and survive the 1.x migration.
+- **Steering**: a prompt sent during an execution steers it by default.
+- **Compaction**: `POST /api/session/{id}/compact` answers at once; the stream
+  reports `session.compaction.*`.
+- **Skills added during a session**: `POST /api/location/reload`. It cancels
+  pending permissions and forms, so Sillage waits for idle like on 1.x.
+- **Images and mentioned files**, directories included: `files: [{uri, name}]` with
+  `file://` URIs, read and inlined by opencode.
+
+## Outside the scope so far
+
+Signing in to providers from the interface (use `opencode auth login`) and
+cumulative cost, on both majors. On 1.x: MCP elicitations, background tasks and
+importing native sessions. On 2.x: tool titles (the stream carries none), the plan
+panel (2.x has no todo tool), and calls made inside Code Mode's `execute`, shown as
+one call.
 
 ## Verification
 
+On November 24, 2026, OpenCode **2.4.1** (Linux x64, data directories isolated)
+passed the manual probe below (Read, Edit, permission, injected instructions,
+token reporting), a runner probe of skills, live shell output, interruption,
+manual compaction and MCP reconnection, and two disposable end-to-end runs on a
+fresh Sillage server driven from the interface: a background subagent whose report
+woke the parent with an edit approved in the thread; and a managed 1.19.5 updated
+to 2.4.1 from Settings › CLI versions, then a session begun with `opencode run`
+adopted from the draft page and continued. The manual probe passed again on the
+installed 1.19.3. Server and Desktop share this adapter and the versions page
+(`pnpm test:cli-updates-ui` covers both profiles); Windows and macOS runtime were
+not tested in this pass.
+
 On November 14, 2026, the downloaded **1.19.5** Linux executable passed the
-OpenAPI comparison and a real `opencode/big-pickle` turn: Read, Edit, answering a
-permission request, injected instructions and token reporting. Its data, config
-and cache directories were isolated; the host executable was not updated.
-`/session`, `/config` and `/doc` returned 401 without authentication and JSON 200
-with the per-process password. Version 2 remains rejected by the tested version
-guard. Server and Desktop share this adapter; Windows and macOS runtime were not
-tested in this pass.
+OpenAPI comparison and a real `opencode/big-pickle` turn. `/session`, `/config`
+and `/doc` returned 401 without authentication and JSON 200 with the per-process
+password.
 
 ```sh
 pnpm typecheck
@@ -107,9 +206,12 @@ pnpm test:opencode-ui     # real components, mocked API, desktop and mobile
 ```
 
 The manual `pnpm --filter @sillage/server opencode:probe` probe runs a real turn
-on the installed opencode with the free `opencode/big-pickle` model. It leaves a
-session in opencode's database and prints its ID; delete it with
-`opencode session delete <id>`.
+on the installed opencode (or `OPENCODE_BIN`) with the free `opencode/big-pickle`
+model. It leaves a session in opencode's database and prints its ID; delete it
+with `opencode session delete <id>`. Run a 2.x binary under a scratch `HOME` and
+`XDG_*` directories unless the machine already moved to 2.x: its first start
+migrates the 1.x database.
 
-To update the API: run `pnpm opencode:types`, review the diff, adjust
-`packages/opencode-bindings/src/index.ts` if a schema changed, then rerun the probe.
+To update an API: point `OPENCODE_BIN` at a binary of that major, run
+`pnpm opencode:types`, review the diff, adjust the matching `index.ts` if a schema
+changed, then rerun the probe.

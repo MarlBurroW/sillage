@@ -115,8 +115,14 @@ export class CliInstaller {
 
   protected async install(kind: AgentKind, version: string): Promise<void> {
     await mkdir(this.prefix, { recursive: true })
-    if (kind === 'antigravity') await installAntigravity(this.prefix, version, (message) => this.progress(kind, message))
-    else await this.npm(kind, PREFERRED_CLI_RELEASES[kind].package, version)
+    if (kind === 'antigravity') {
+      await installAntigravity(this.prefix, version, (message) => this.progress(kind, message))
+      return
+    }
+    const release = PREFERRED_CLI_RELEASES[kind]
+    // Removing a package that is not there succeeds (npm 10), so this needs no prior check.
+    for (const previous of release.replaces ?? []) await this.npm(kind, ['uninstall', '-g', '--prefix', this.prefix, '--no-fund', '--no-audit', previous])
+    await this.npm(kind, ['install', '-g', '--prefix', this.prefix, '--no-fund', '--no-audit', '--no-progress', '--loglevel=http', `${release.package}@${version}`])
   }
 
   /** Record another registry request so interface shows progress. */
@@ -128,7 +134,7 @@ export class CliInstaller {
     this.states.set(kind, { ...state, fetched: state.fetched + 1, current })
   }
 
-  private npm(kind: AgentKind, pkg: string, version: string): Promise<void> {
+  private npm(kind: AgentKind, args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       // Use --prefix instead of user npm config: install in Sillage storage without moving system
       // packages. --no-fund/--no-audit suppress unread output. --loglevel=http reports downloads
@@ -142,18 +148,7 @@ export class CliInstaller {
       const launch = launchOf(npm)
       const child = spawn(
         launch.command,
-        [
-          ...launch.args,
-          'install',
-          '-g',
-          '--prefix',
-          this.prefix,
-          '--no-fund',
-          '--no-audit',
-          '--no-progress',
-          '--loglevel=http',
-          `${pkg}@${version}`,
-        ],
+        [...launch.args, ...args],
         { stdio: ['ignore', 'ignore', 'pipe'], timeout: INSTALL_TIMEOUT_MS, windowsHide: true },
       )
 

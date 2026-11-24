@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -8,15 +9,17 @@ import { fileURLToPath } from 'node:url'
 /**
  * Regenerate opencode API bindings from installed binary.
  *
- *   node scripts/opencode-types.mjs          writes packages/opencode-bindings/src/openapi.d.ts
+ *   node scripts/opencode-types.mjs          writes the bindings of the binary's major version
  *   node scripts/opencode-types.mjs --check  fails if committed content drifted
  *
- * opencode has no generation command: OpenAPI comes from `GET /doc` on
- * `opencode serve`. Start a disposable instance, read document, close it.
+ * OpenCode 1 writes packages/opencode-bindings/src/openapi.d.ts, OpenCode 2
+ * src/v2/openapi.d.ts: point OPENCODE_BIN at each binary in turn to refresh both.
+ *
+ * opencode has no generation command: OpenAPI comes from `opencode serve` (`GET /doc` on 1.x,
+ * `GET /openapi.json` on 2.x). Start a disposable instance, read document, close it.
  */
 
 const root = join(fileURLToPath(import.meta.url), '../..')
-const target = join(root, 'packages/opencode-bindings/src/openapi.d.ts')
 const readme = join(root, 'packages/opencode-bindings/README.md')
 const check = process.argv.includes('--check')
 
@@ -29,11 +32,26 @@ function resolveBinary() {
 
 const binary = resolveBinary()
 
+// 1.x prints "1.19.5", 2.x "opencode v2.4.1".
+const version = /\d+\.\d+\.\d+\S*/.exec(execFileSync(binary, ['--version'], { encoding: 'utf8' }))?.[0] ?? 'unknown'
+const major = Number(version.split('.')[0])
+const generation = major >= 2
+  ? { target: 'packages/opencode-bindings/src/v2/openapi.d.ts', doc: '/openapi.json', label: 'OpenCode 2' }
+  : { target: 'packages/opencode-bindings/src/openapi.d.ts', doc: '/doc', label: 'OpenCode 1' }
+const target = join(root, generation.target)
+const PASSWORD = randomBytes(16).toString('hex')
+
 async function fetchOpenApi(dir) {
+  // OpenCode 2 migrates the machine's session database on first start: keep it in the staging
+  // directory so generating types never touches the user's history.
+  const isolated = major >= 2
+    ? { HOME: dir, XDG_DATA_HOME: join(dir, 'data'), XDG_CONFIG_HOME: join(dir, 'config'), XDG_STATE_HOME: join(dir, 'state'), XDG_CACHE_HOME: join(dir, 'cache') }
+    : {}
   const child = spawn(binary, ['serve', '--port', '0', '--hostname', '127.0.0.1'], {
     cwd: dir,
     // No machine configuration should affect the document: it describes the API.
-    env: { ...process.env, OPENCODE_CONFIG_CONTENT: '{}' },
+    // OpenCode 2 guards every route, its document included, behind the server password.
+    env: { ...process.env, ...isolated, OPENCODE_CONFIG_CONTENT: '{}', OPENCODE_PASSWORD: PASSWORD },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   try {
@@ -52,8 +70,10 @@ async function fetchOpenApi(dir) {
       child.on('error', reject)
       child.on('exit', (code) => reject(new Error(`opencode serve arrêté (code ${code}) : ${output}`)))
     })
-    const response = await fetch(`${url}/doc`)
-    if (!response.ok) throw new Error(`GET /doc a répondu ${response.status}`)
+    const response = await fetch(`${url}${generation.doc}`, {
+      headers: { authorization: `Basic ${Buffer.from(`opencode:${PASSWORD}`).toString('base64')}` },
+    })
+    if (!response.ok) throw new Error(`GET ${generation.doc} a répondu ${response.status}`)
     return await response.text()
   } finally {
     child.kill()
@@ -74,7 +94,6 @@ function generate(openapi, dir) {
   return readFileSync(output, 'utf8')
 }
 
-const version = execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim()
 const staging = mkdtempSync(join(tmpdir(), 'sillage-opencode-'))
 try {
   const fresh = generate(await fetchOpenApi(staging), staging)
@@ -84,8 +103,8 @@ try {
     writeFileSync(
       readme,
       readFileSync(readme, 'utf8').replace(
-        /Generated with \*\*opencode [^*]+\*\*/,
-        `Generated with **opencode ${version}**`,
+        new RegExp(`${generation.label} bindings generated with \\*\\*opencode [^*]+\\*\\*`),
+        `${generation.label} bindings generated with **opencode ${version}**`,
       ),
     )
     console.log(`Bindings régénérés depuis opencode ${version} dans ${relative(root, target)}`)

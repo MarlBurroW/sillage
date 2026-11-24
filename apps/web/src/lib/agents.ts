@@ -3,7 +3,7 @@ import {
   PREFERRED_CLI_RELEASES,
   compareCliVersions,
   type CliInstallStateDto,
-  isCompatibleVersion,
+  isCompatibleCliVersion,
   type AgentAvailabilityDto,
   type AgentConfig,
   type AgentAvailabilityListDto,
@@ -180,9 +180,10 @@ export function unavailableReason(entry: AgentAvailabilityDto | undefined): stri
  */
 export function versionMismatch(entry: AgentAvailabilityDto | undefined): string | null {
   if (!entry?.installed || !entry.version) return null
-  const preferred = PREFERRED_CLI_RELEASES[entry.agent].version
+  const release = PREFERRED_CLI_RELEASES[entry.agent]
+  const preferred = release.version
   // `null` means unreadable, with nothing to report: only a confirmed false warrants a warning.
-  if (isCompatibleVersion(entry.version, preferred) !== false) return null
+  if (isCompatibleCliVersion(release, entry.version) !== false) return null
   return translate('agent.version.mismatch', { installed: entry.version, preferred })
 }
 

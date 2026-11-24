@@ -7,13 +7,16 @@ import { HttpError } from '../../http/errors.js'
 const run = promisify(execFile)
 
 /**
- * Last opencode major supported by adapter.
+ * Last opencode major Sillage speaks.
  *
- * Adapter uses first opencode serve API (/session/..., GET /event). OpenCode 2 removed it for
- * /api/...: 2.x starts but requests miss, leaving silent conversation. Reject before launch with
- * readable reason.
+ * Each major ships its own server: 1.x the first API (/session/..., GET /event), 2.x the second
+ * (/api/..., GET /api/event), which removed the first. A future major would start but miss every
+ * request, leaving a silent conversation: reject it before launch with a readable reason.
  */
-export const SUPPORTED_OPENCODE_MAJOR = 1
+export const SUPPORTED_OPENCODE_MAJOR = 2
+
+/** Server API generation, which follows the major version. */
+export type OpencodeGeneration = 1 | 2
 
 const VERSION_TIMEOUT_MS = 5_000
 
@@ -28,7 +31,7 @@ export class OpencodeUnsupportedVersionError extends HttpError {
     super(
       409,
       'opencode_unsupported_version',
-      `OpenCode ${version} is not supported: Sillage speaks the OpenCode 1.x server API, which OpenCode 2 removed. Install OpenCode 1.x (opencode-ai) and do not run \`opencode upgrade --major\`.`,
+      `OpenCode ${version} is not supported: Sillage speaks the OpenCode 1.x and 2.x server APIs. Install OpenCode 2.x or 1.x.`,
       { version },
     )
     this.name = 'OpencodeUnsupportedVersionError'
@@ -69,6 +72,16 @@ export function opencodeVersion(binary: string): Promise<string | null> {
   const version = readVersion(binary)
   versions.set(binary, { key, version })
   return version
+}
+
+/**
+ * API generation of a binary. Unreadable versions count as 1.x, the API spoken before 2.x existed:
+ * a malformed --version says nothing about the server, and guessing 2 would break working 1.x
+ * installs.
+ */
+export async function opencodeGeneration(binary: string): Promise<OpencodeGeneration> {
+  const version = await opencodeVersion(binary)
+  return version && Number(version.split('.')[0]) >= 2 ? 2 : 1
 }
 
 /**

@@ -52,8 +52,9 @@ async function settingsLink(page, label) {
   let link = page.getByRole('link', { name: label, exact: false })
   if (!await link.first().isVisible()) {
     await page.getByRole('link', { name: 'Réglages', exact: true }).click()
+    // The settings navigation is flat now; older layouts folded the section under a button.
     const agents = page.getByRole('button', { name: /^Agents/ })
-    if (await agents.getAttribute('aria-expanded') !== 'true') await agents.click()
+    if (await agents.count() && await agents.getAttribute('aria-expanded') !== 'true') await agents.click()
     link = page.getByRole('link', { name: label, exact: false })
   }
   await link.first().click()

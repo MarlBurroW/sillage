@@ -20,12 +20,24 @@ export interface PreferredCliRelease {
   /** npm package, or the official ACP registry ID for native Antigravity archives. */
   readonly package: string
   readonly version: string
+  /**
+   * Targets on other majors Sillage also speaks: recognized as compatible (no version warning),
+   * never installed by Sillage. Installing the preferred release is still offered as an update.
+   */
+  readonly alsoSupported?: readonly string[]
+  /**
+   * Earlier npm packages of the same CLI, removed from Sillage's prefix before installing: they
+   * claim the same command name, and npm refuses to overwrite another package's bin (EEXIST).
+   */
+  readonly replaces?: readonly string[]
 }
 
 export const PREFERRED_CLI_RELEASES: Record<AgentKind, PreferredCliRelease> = {
   claude: { package: '@anthropic-ai/claude-code', version: '2.1.325' },
   codex: { package: '@openai/codex', version: '0.169.0' },
-  opencode: { package: 'opencode-ai', version: '1.19.5' },
+  // OpenCode 2 moved to another package. Its first start migrates the machine's 1.x session
+  // database in place (sessions keep their IDs, 1.x still reads it), see docs/OPENCODE.md.
+  opencode: { package: '@opencode/cli', version: '2.4.1', alsoSupported: ['1.19.5'], replaces: ['opencode-ai'] },
   antigravity: { package: 'antigravity-acp', version: '1.4.3' },
   grok: { package: '@xai-official/grok', version: '1.0.62' },
 }
@@ -76,4 +88,14 @@ export function isCompatibleVersion(installed: string, preferred: string): boole
   // in both cases, otherwise 1.145 would appear compatible with
   // 0.145 solely because the minor matches.
   return a.major === b.major && (b.major > 0 || a.minor === b.minor)
+}
+
+/**
+ * Is the installed version compatible with any target of this CLI: its preferred release or one
+ * of the other majors Sillage also speaks? Null when nothing could be compared.
+ */
+export function isCompatibleCliVersion(release: PreferredCliRelease, installed: string): boolean | null {
+  const verdicts = [release.version, ...(release.alsoSupported ?? [])].map((target) => isCompatibleVersion(installed, target))
+  if (verdicts.includes(true)) return true
+  return verdicts.includes(false) ? false : null
 }

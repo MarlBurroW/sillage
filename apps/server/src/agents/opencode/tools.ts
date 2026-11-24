@@ -11,18 +11,18 @@ import { toWorkspacePath } from '../paths.js'
  * payload.
  */
 
-type Fields = Record<string, unknown>
+export type Fields = Record<string, unknown>
 
-function fields(value: unknown): Fields {
+export function fields(value: unknown): Fields {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Fields) : {}
 }
 
-function text(value: unknown): string | null {
+export function text(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
 /** Rename known keys, preserve unknown ones instead of losing them. */
-function rename(input: Fields, names: Record<string, string>): Fields {
+export function rename(input: Fields, names: Record<string, string>): Fields {
   return Object.fromEntries(Object.entries(input).map(([key, value]) => [names[key] ?? key, value]))
 }
 
@@ -59,13 +59,18 @@ export function describeTool(
 ): { name: string; input: unknown } {
   const builtin = BUILTIN[tool]
   if (builtin) return { name: builtin.name, input: builtin.input(fields(input)) }
+  return { name: mcpToolName(tool, mcpServers), input }
+}
 
+/**
+ * Journal name of a non-built-in tool: `server/tool` for MCP calls, the raw name otherwise.
+ * Both majors prefix MCP tools the same way.
+ */
+export function mcpToolName(tool: string, mcpServers: string[]): string {
   const server = mcpServers
     .filter((name) => tool.startsWith(`${name}_`))
     .sort((a, b) => b.length - a.length)[0]
-  if (server) return { name: `${server}/${tool.slice(server.length + 1)}`, input }
-
-  return { name: tool, input }
+  return server ? `${server}/${tool.slice(server.length + 1)}` : tool
 }
 
 /**
@@ -149,9 +154,9 @@ export function fileEdits(part: ToolPart, cwd: string): SillageEvent[] {
 
 /**
  * opencode diff starts Index: with absolute paths. Retain sections under display-expected git
- * header.
+ * header. Same format in both majors.
  */
-function toGitPatch(path: string, diff: string): string | null {
+export function toGitPatch(path: string, diff: string): string | null {
   const start = diff.indexOf('\n@@')
   if (start < 0) return diff.startsWith('@@') ? `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${diff}` : null
   return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}${diff.slice(start)}`
