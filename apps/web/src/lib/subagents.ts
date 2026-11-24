@@ -1,5 +1,5 @@
 import { isSpawnTool } from '@sillage/protocol'
-import { activityOf, type ChatItem, type ChatState, type TaskState, type ToolItem } from './chat-fold'
+import { activityOf, threadOf, type ChatItem, type ChatState, type TaskState, type ToolItem } from './chat-fold'
 
 /**
  * Conversation subagents derived solely from the log (invariant I2). A subagent has no independent
@@ -86,8 +86,8 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
   if (byId.size === 0) return []
 
   for (const item of items) {
-    if (item.kind !== 'message' && item.kind !== 'tool') continue
-    const parent = item.parentToolCallId ? byId.get(item.parentToolCallId) : undefined
+    const author = threadOf(item)
+    const parent = author ? byId.get(author) : undefined
     if (!parent) continue
 
     parent.items.push(item)

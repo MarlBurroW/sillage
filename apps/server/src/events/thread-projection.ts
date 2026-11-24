@@ -10,7 +10,7 @@ import { coalesceDeltas } from './coalesce.js'
 import { detach } from '../detach.js'
 
 /** Bump whenever fold semantics or the stored projection format change. */
-export const THREAD_PROJECTION_VERSION = 4
+export const THREAD_PROJECTION_VERSION = 5
 const PAGE_ITEMS = 200
 const PAGE_BYTES = 512 * 1024
 const BATCH_ROWS = 256

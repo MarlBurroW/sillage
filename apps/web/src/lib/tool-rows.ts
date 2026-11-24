@@ -1,5 +1,5 @@
 import { isSpawnTool } from '@sillage/protocol'
-import { hasVisibleContent, type ChatItem, type ToolItem } from './chat-fold'
+import { hasVisibleContent, threadOf, type ChatItem, type ToolItem } from './chat-fold'
 import { isSillageTool } from './sillage-tools'
 
 /** Les suites restent distinctes des autres événements ; leur repli relève de la lecture du fil. */
@@ -11,9 +11,7 @@ export type ChatRow =
 
 /**
  * Split a thread into displayable rows. `thread` identifies its author: `null` for the main agent,
- * spawning call ID for a subagent. Items other than messages and tool calls (permissions, plans,
- * questions, errors, notices) have no author and stay in the main thread: the only place to answer
- * prompts or make sense of session errors.
+ * spawning call ID for a subagent (see `threadOf`).
  */
 export function buildRows(items: ChatItem[], thread: string | null = null, turnRunning = false): ChatRow[] {
   const rows: ChatRow[] = []
@@ -45,11 +43,7 @@ export function buildRows(items: ChatItem[], thread: string | null = null, turnR
       continue
     }
 
-    if (item.kind === 'message') {
-      if (item.parentToolCallId !== thread) continue
-    } else if (thread !== null) {
-      continue
-    }
+    if (threadOf(item) !== thread) continue
 
     // An invisible item must not interrupt a tool sequence.
     if (!hasVisibleContent(item)) continue
@@ -79,8 +73,7 @@ export function threadTail(items: ChatItem[], count: number, thread: string | nu
   const tail: ChatItem[] = []
   for (let index = items.length - 1; index >= 0 && tail.length < count; index -= 1) {
     const item = items[index]!
-    const ownThread = item.kind === 'tool' || item.kind === 'message' ? item.parentToolCallId === thread : thread === null
-    if (ownThread) tail.push(item)
+    if (threadOf(item) === thread) tail.push(item)
   }
   return tail.reverse()
 }

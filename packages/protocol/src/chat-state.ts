@@ -178,6 +178,11 @@ export interface TaskItem {
   status: 'completed' | 'failed' | 'stopped'
   summary: string
   durationMs: number | null
+  /**
+   * Thread of the call that launched the work: a subagent's spawning call when the subagent
+   * started it, so its report lands in that subagent's thread rather than the main one.
+   */
+  parentToolCallId: string | null
 }
 
 export type ChatItem = (
@@ -513,6 +518,14 @@ export function renderableBlocks(blocks: ContentBlock[]): ContentBlock[] {
  * counting it as visible left an empty gutter row and split consecutive tools into two groups for
  * no apparent reason.
  */
+/**
+ * Author of an item: a subagent's spawning call, or null for the main thread. Items without an
+ * author (prompts, plans, errors, notices) belong to the main thread, the only place to answer them.
+ */
+export function threadOf(item: ChatItem): string | null {
+  return item.kind === 'tool' || item.kind === 'message' || item.kind === 'task' ? item.parentToolCallId : null
+}
+
 export function hasVisibleContent(item: ChatItem): boolean {
   if (item.kind !== 'message') return true
   if (item.streamingText.trim() || item.streamingThinking.trim()) return true
@@ -613,6 +626,13 @@ function toolStatus(state: ChatState, toolCallId: string): ToolItem['status'] | 
   const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === toolCallId)
   const item = index === -1 ? null : state.items[index]
   return item && item.kind === 'tool' ? item.status : null
+}
+
+/** Thread that issued a tool call: null for the main agent, or when the call is not on record. */
+function toolParent(state: ChatState, toolCallId: string): string | null {
+  const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === toolCallId)
+  const item = index === -1 ? null : state.items[index]
+  return item && item.kind === 'tool' ? item.parentToolCallId : null
 }
 
 function closeRunningTools(state: ChatState, preserveBackground = false): void {
@@ -1306,6 +1326,7 @@ export function applyEvent(
           status: event.status,
           summary: event.summary,
           durationMs: event.durationMs,
+          parentToolCallId: known.toolCallId ? toolParent(state, known.toolCallId) : null,
         })
       }
       break
