@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 72" width="340" height="72" role="img" aria-label="Sillage">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 72" width="280" height="72" role="img" aria-label="Sillage">
   <!--
-    En-tête du dépôt. Rendu par GitHub comme une image, donc sans accès aux jetons du
-    thème : les deux modes sont portés par une requête de préférence, que le navigateur
-    évalue même à l'intérieur d'un SVG chargé en `<img>`.
+    Repository header. GitHub renders it as an image, without access to theme tokens:
+    both modes come from a preference query, which the browser evaluates even inside
+    an SVG loaded through `<img>`.
 
-    Le texte reste du texte, pas des tracés : la pile de polices système suffit ici, et
-    vectoriser le mot le figerait sans rien apporter.
+    The text stays text instead of outlines: the system font stack is enough here, and
+    outlining the word would freeze it for no gain.
   -->
   <style>
     :root { --mark: #535cda; --word: #181d37; --sub: #797f99; }
@@ -33,5 +33,5 @@
   </g>
 
   <text class="word" x="60" y="34">Sillage</text>
-  <text class="sub" x="61" y="54">Plateforme de développement agentique</text>
+  <text class="sub" x="61" y="54">the wake a boat leaves on the water</text>
 </svg>

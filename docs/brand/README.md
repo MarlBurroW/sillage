@@ -9,7 +9,7 @@ proposals: it evokes the trace of work and continuity of exchanges.
 | --- | --- |
 | `docs/brand/symbol.svg` | Reference paths, no font, in `currentColor`. |
 | `docs/brand/logo-{noir,blanc,couleur}.svg` | Exportable lockups, outlined Lato Bold lettering (license included). |
-| `docs/brand/wordmark.svg` | README header with its description. |
+| `docs/brand/wordmark.svg` | README header with what the name means. |
 | `apps/web/src/components/Logo.tsx` | App brand, follows the theme color. |
 | `apps/web/public/favicon.svg` | Default app accent, dark variant. |
 | `site/favicon.svg`, `site/index.html` | Site brand, follows its palette. |
@@ -41,7 +41,7 @@ The script uses Playwright, already included in development dependencies.
 
 Product screenshots in `site/screenshots` are regenerated with
 `scripts/screenshots.mjs` on an isolated demo instance. Set `SILLAGE_SHOT_FORMAT=webp`
-for the website; PNG remains the default for existing README images. Each view
+for the website and the README; PNG remains the script's default. Each view
 is captured twice, at 1x and with `SILLAGE_SHOT_SCALE=2` (`<name>-2x-<theme>.webp`),
 and the pages offer both through `srcset`.
 
@@ -52,6 +52,13 @@ for links and for the wake.
 
 To regenerate only the site's social card, run `node scripts/site-social-image.mjs`.
 It uses the same font, logo and current product screenshot as the landing page.
+The same script renders the film stills (`site/film/poster-{light,dark}.jpg`) and
+`docs/images/film-poster.jpg`, the dark still with a play pill that the README links
+to the film on the site.
+
+The README reuses the site's 2x captures through `<picture>`. Keep a themed
+`<picture>` out of links there: GitHub wraps its image in a link of its own, which
+breaks both the theme switch and the outer link.
 
 The public site consists of four static pages: `index.html`, `features.html`,
 `agents.html` and `download.html`, with one stylesheet, `style.css`. The layout is

@@ -70,7 +70,8 @@ function posterWater(theme) {
 
 /**
  * Render the film's still for the home page, one per theme: the brand on its
- * water with the real desktop and phone captures the film is about.
+ * water with the real desktop and phone captures the film is about. A copy of the
+ * dark one with a play pill goes to `docs/images` for the README.
  */
 export async function renderFilmPosters(browser) {
   const [symbol, font] = await Promise.all([
@@ -103,6 +104,14 @@ export async function renderFilmPosters(browser) {
       await page.evaluate(() => document.fonts.ready)
       await page.evaluate(() => Promise.all([...document.images].map((image) => image.decode())))
       await page.screenshot({ path: fileURLToPath(new URL(`site/film/poster-${name}.jpg`, root)), type: 'jpeg', quality: 86 })
+      // GitHub cannot play a repository video inline: the README shows the same still
+      // with the play pill baked in, as a link to the film on the site. A themed
+      // <picture> cannot sit inside a link there, so only the dark still is rendered.
+      if (name === 'dark') {
+        await page.evaluate((pill) => document.body.insertAdjacentHTML('beforeend', pill), `<div style="position: absolute; left: 124px; top: 338px; display: flex; align-items: center; gap: 18px; padding: 18px 34px 18px 22px; border-radius: 99px; background: ${theme.ink}; color: ${theme.paper}; font-size: 40px; font-weight: 600;">
+          <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="m10 8.4 5.6 3.6-5.6 3.6z" fill="currentColor" stroke="none"/></svg>Watch the film · 54 s</div>`)
+        await page.screenshot({ path: fileURLToPath(new URL('docs/images/film-poster.jpg', root)), type: 'jpeg', quality: 86 })
+      }
     } finally {
       await page.close()
     }

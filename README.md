@@ -1,42 +1,169 @@
-<img src="docs/brand/wordmark.svg" alt="Sillage" width="340" height="72">
+<p align="center">
+  <a href="https://marlburrow.github.io/sillage/"><img src="docs/brand/wordmark.svg" alt="Sillage" width="280" height="72"></a>
+</p>
 
-**Work with your coding agents from your computer or phone.**
+<h1 align="center">Your coding agents, in one workspace.</h1>
 
-Sillage runs Claude Code, Codex, OpenCode, Grok Build and Google Antigravity in one workspace, using
-your existing agent accounts. You can review their changes beside the conversation.
+<p align="center">
+  Run Claude Code, Codex, OpenCode, Grok Build and Antigravity with your own accounts.<br>
+  Review their changes and pick up any session from your computer or your phone.
+</p>
 
-Use the desktop app on your own computer, or host Sillage Server to reach your
-agents from other devices. Sillage is free and open source. You'll need the accounts,
-subscriptions or API credentials required by the agents you use.
+<p align="center">
+  <a href="https://marlburrow.github.io/sillage/"><b>Website</b></a> ·
+  <a href="https://marlburrow.github.io/sillage/features.html">Features</a> ·
+  <a href="https://marlburrow.github.io/sillage/agents.html">Agents</a> ·
+  <a href="https://marlburrow.github.io/sillage/download.html">Download</a> ·
+  <a href="docs/features.md">Documentation</a>
+</p>
 
-[**Get the desktop app**](#install-the-desktop-app) ·
-[**Host your own server**](#install-the-server) ·
-[**Watch the 54-second demo**](https://marlburrow.github.io/sillage/#film)
-
-[![Latest release](https://img.shields.io/github/v/release/MarlBurroW/sillage)](https://github.com/MarlBurroW/sillage/releases/latest)
-[![CI](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml/badge.svg)](https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/MarlBurroW/sillage/releases/latest"><img src="https://img.shields.io/github/v/release/MarlBurroW/sillage" alt="Latest release"></a>
+  <a href="https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml"><img src="https://github.com/MarlBurroW/sillage/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
 <picture>
-  <source srcset="site/screenshots/hero-dark.png" media="(prefers-color-scheme: dark)">
-  <img src="site/screenshots/hero-light.png" alt="Sillage: a coding conversation with grouped tool calls and a reply in progress">
+  <source srcset="site/screenshots/hero-2x-dark.webp" media="(prefers-color-scheme: dark)">
+  <img src="site/screenshots/hero-2x-light.webp" alt="A Sillage conversation: Claude Code edits a project, runs its tests and reports what changed, with the project's sessions listed on the left">
 </picture>
 
-## Why I built Sillage
+Sillage is free and open source, as a desktop app or on a server you host. There is
+no Sillage subscription: you bring the accounts, subscriptions or API keys your
+agents need.
 
-I wanted one place, on a server I own, where I could pick up a project from my
-phone. I could keep working wherever I happened to be, without carrying a laptop
-or keeping track of a dozen terminals.
+<p align="center">
+  <a href="#install-the-desktop-app"><b>Get the desktop app</b></a> ·
+  <a href="#install-the-server"><b>Host your own server</b></a> ·
+  <a href="https://marlburrow.github.io/sillage/#film"><b>Watch the 54-second film</b></a>
+</p>
 
-I also wanted to keep the agents I already used. Sillage runs their native tools
-and permission flows, and gives them a shared workspace: projects, a board,
-instructions and memory. A session can look up an earlier decision and leave
-context for the next agent, even when I switch CLIs.
+## The agents stay themselves
 
-Claude Code and Codex wrote most of Sillage, much of it from inside Sillage itself,
-often from a phone. The tool and the way I work on it grew together.
+Sillage doesn't wrap a model behind its own agent. It drives each vendor's CLI, so
+plans, permissions, models and limits are the ones you know.
 
-[MarlBurroW](https://github.com/MarlBurroW), creator of Sillage
+| Agent | From | You sign in with |
+|---|---|---|
+| **Claude Code** | Anthropic | A Claude subscription or an API key |
+| **Codex** | OpenAI | Your ChatGPT account or an API key |
+| **OpenCode** | Open source | The providers you configured in OpenCode, local models included when the provider supports them |
+| **Grok Build** | xAI | A Grok subscription or an xAI API key |
+| **Antigravity** | Google | A Google account or a Gemini API key |
+
+Start a task with one agent and continue it with another. The next agent receives
+the conversation's context, and the project's instructions, memory and skills are
+there for all of them.
+
+[What each integration supports](https://marlburrow.github.io/sillage/agents.html) ·
+[Antigravity's native limitations](docs/antigravity-integration.md)
+
+## What you can do
+
+### Read the diff while the agent is still working
+
+The panel beside the conversation holds the files, the branches and the commit
+history. You see what a turn changed without switching to a terminal.
+
+<picture>
+  <source srcset="site/screenshots/panel-git-2x-dark.webp" media="(prefers-color-scheme: dark)">
+  <img src="site/screenshots/panel-git-2x-light.webp" alt="The Git panel docked beside a conversation: uncommitted changes, the diff of a file and the commit history">
+</picture>
+
+- Stage, commit and push from the same panel.
+- Turn on checkpoints to inspect or undo what a turn changed.
+- A file explorer, an editor and terminals sit next to the thread.
+
+### Run several tasks, each in its own worktree
+
+Start a session on a branch Sillage creates for it. Activity lines the sessions up
+side by side and brings forward the ones that are waiting for you.
+
+<picture>
+  <source srcset="site/screenshots/wall-2x-dark.webp" media="(prefers-color-scheme: dark)">
+  <img src="site/screenshots/wall-2x-light.webp" alt="Two sessions side by side in Activity: one waits for a permission, the other is writing its reply">
+</picture>
+
+- Sessions are grouped by state: needs input, running, unread.
+- Each worktree says whether its branch has been merged, and finished ones are
+  cleaned up in one confirmation.
+- Type `@@` in a message to point an agent at an earlier conversation.
+
+### Answer from your phone
+
+A permission request doesn't have to wait until you are back at your desk. Open the
+same conversation on a phone, read what the agent did, then allow, deny or reply.
+
+<p align="center">
+  <picture>
+    <source srcset="site/screenshots/hero-mobile-2x-dark.webp" media="(prefers-color-scheme: dark)">
+    <img src="site/screenshots/hero-mobile-2x-light.webp" width="280" alt="The same conversation opened on a phone, with the agent's reply and the message composer">
+  </picture>
+</p>
+
+- Server keeps sessions running after you close the browser.
+- Push notifications tell you when a session needs you, on Server over HTTPS.
+- Desktop can be reached privately through Tailscale while the app is open.
+- Queue your next request or steer the current turn from wherever you are.
+
+Claude Code and Codex wrote most of Sillage this way: from inside Sillage, often
+from a phone.
+
+### Plan on a board the agents can read
+
+Each project has a board. A card keeps the branch and the sessions that work on it,
+and agents can open cards, move them and leave notes as the work advances.
+
+<picture>
+  <source srcset="site/screenshots/board-2x-dark.webp" media="(prefers-color-scheme: dark)">
+  <img src="site/screenshots/board-2x-light.webp" alt="A project board with cards in To do, In progress, To review, Done and Abandoned">
+</picture>
+
+- Link the board to a GitHub repository to work from its issues.
+- Tag cards, link related ones, and attach a conversation to its card.
+
+### Leave the routine to a schedule
+
+Run a prompt at an interval, on a cron schedule, or when a webhook fires. A small
+check script can decide whether there is anything to do before an agent starts.
+
+- An unattended agent can leave you a question and pick up your answer.
+- Work resumes after a subscription limit resets.
+- Webhook triggers need Server and a reachable address.
+
+### Give every agent the same context
+
+Instructions hold your rules and preferences. Memory keeps project decisions,
+useful facts and pitfalls across conversations and worktrees, whichever agent wrote
+them. Skills and MCP servers are installed once and shared too.
+
+Manage them in Sillage, or keep project instructions in your existing `AGENTS.md`
+or `CLAUDE.md`. [How shared context works](docs/features.md#instructions-and-memory)
+
+### And the rest
+
+The website lists 56 features, each one written down, with what works in Desktop,
+in Server or in both.
+
+| Chapter | What it covers |
+|---|---|
+| [Conversations](https://marlburrow.github.io/sillage/features.html#conversations) | Queue and steer messages, search, references, dictation, tool display |
+| [Code and worktrees](https://marlburrow.github.io/sillage/features.html#code) | Explorer, editor, Git, checkpoints, terminals |
+| [Projects and planning](https://marlburrow.github.io/sillage/features.html#projects) | Boards, GitHub issues, linked cards and sessions |
+| [Context and tools](https://marlburrow.github.io/sillage/features.html#context) | Shared instructions, memory, skills, MCP servers |
+| [Automation](https://marlburrow.github.io/sillage/features.html#automation) | Schedules, webhooks, decisions, an API for tasks |
+| [Activity and insights](https://marlburrow.github.io/sillage/features.html#insights) | Activity wall, token consumption, model benchmarks |
+| [Export and sharing](https://marlburrow.github.io/sillage/features.html#sharing) | Offline exports, masked secrets, public links |
+| [Editions and access](https://marlburrow.github.io/sillage/features.html#editions) | Desktop, Server, remote access, notifications |
+
+The [feature reference](docs/features.md) in this repository has the details.
+
+## Sillage in 54 seconds
+
+From a conversation on a computer to a decision taken on a phone. The film plays on
+the website, with sound.
+
+<a href="https://marlburrow.github.io/sillage/#film"><img src="docs/images/film-poster.jpg" alt="Watch the Sillage film on the website"></a>
 
 ## Server or desktop
 
@@ -46,14 +173,12 @@ Both share the same interface and agent integrations.
 
 Each edition keeps its own data. Trying Desktop and later setting up Server means
 starting a separate workspace.
+[Compare the two](https://marlburrow.github.io/sillage/download.html#compare)
 
 ### Install the desktop app
 
 Download the app and follow the setup tour. It helps you choose your agents,
 permissions and first project.
-
-The window header follows your theme, with native window controls and a compact
-application menu on Windows and Linux. macOS keeps its traffic lights and system menu.
 
 | Your computer | Download |
 |---|---|
@@ -91,74 +216,7 @@ There are also guides for [Docker](docs/install.md#docker),
 The [server installation guide](docs/install.md) also covers prerequisites,
 updates, logs and running from source.
 
-## What you can do
-
-### Take your work with you
-
-Start a conversation at your desk, then follow it from your phone. With Sillage
-Server, closing the browser leaves the agent working while the host stays awake.
-Queue your next request, steer the current turn, or answer a permission request
-wherever you are.
-
-<p align="center">
-  <picture>
-    <source srcset="docs/images/conversation-mobile-dark.png" media="(prefers-color-scheme: dark)">
-    <img src="docs/images/conversation-mobile-light.png" width="300" alt="A Sillage conversation on a phone, with the agent’s changes and message composer">
-  </picture>
-  <br>
-  <em>A conversation in Sillage Server, opened on a phone.</em>
-</p>
-
-### Pick the agent for the next step
-
-Start with Claude Code, then continue with Codex, OpenCode, Grok Build or Google Antigravity. The next
-agent receives context from the conversation, and your project’s instructions,
-memory and skills stay available across sessions.
-
-Google Gemini uses Google's official Antigravity ACP distribution.
-[Supported features, accounts and native limitations](docs/antigravity-integration.md).
-
-### Keep parallel work organized
-
-Give each task its own conversation and Git worktree: a separate branch and
-working folder. Track it on the board, link a GitHub issue, review the diff, and
-see which branches are ready to merge. Enable checkpoints to inspect or undo the
-changes from a turn.
-
-Tag cards to sort the board, and attach a conversation to its card from the
-sidebar, the conversation header or an agent. A merged worktree that still holds
-stray files is shown apart from work in progress, with the files named, so you can
-keep them or clean up. Clean up every finished worktree in one confirmation, and let
-agents remove the trees they created once the work is merged.
-
-Link an earlier conversation by typing `@@` in your message, or copy its reference
-to share with another agent. References in replies open the original conversation.
-The **Insert** menu helps you find shortcuts for files, sessions, cards and skills.
-
-### Make conversations easier to follow
-
-Choose how tool calls appear: discreet lines, a timeline, groups by purpose,
-previews, a compact console or the classic view. Expand a tool to inspect its
-output and file changes. Adjust the reading width in Appearance settings.
-Long conversations load progressively, with tool details fetched when you open them.
-
-Share a session as a self-contained HTML page, with an editable title, introduction
-and pseudonym. Choose an excerpt, remove individual messages, control tool details
-and review automatic or manual redactions before downloading. Server instances with
-a configured public URL can also publish the same page as an expiring, revocable link.
-[Export and sharing](docs/features.md#exporting-and-sharing-conversations)
-
-Concentration mode hides the surrounding navigation while you read or write.
-Conversation actions stay directly accessible as icons, including on phones.
-Choose reasoning effort with a slider when the selected model supports it.
-Images saved in the conversation workspace or a linked worktree appear inline
-and open in the image viewer.
-
-Sillage also has scheduled tasks, webhook automations, voice dictation, full-text
-search, MCP connections and a task API.
-[Full feature guide](docs/features.md)
-
-## Your first project
+### Your first project
 
 1. Install the CLIs you want from Settings and sign in with your agent accounts.
    You can reuse existing sign-ins on the host.
@@ -169,25 +227,33 @@ search, MCP connections and a task API.
 
 [Account setup](docs/accounts.md) covers sign-in and additional accounts.
 
-## Instructions and memory
+## Why I built Sillage
 
-Instructions hold your rules and preferences. Memory keeps project
-decisions, useful facts and pitfalls across conversations and worktrees.
+> I wanted one place, on a server I own, where I could pick up a project from my
+> phone, without carrying a laptop or keeping track of a dozen terminals.
 
-Manage both in Sillage, or keep project instructions in your existing `AGENTS.md`
-or `CLAUDE.md`. [How shared context works](docs/features.md#instructions-and-memory)
+I also wanted to keep the agents I already used. Sillage runs their native tools
+and permission flows, and gives them a shared workspace: projects, a board,
+instructions and memory. A session can look up an earlier decision and leave
+context for the next agent, even when I switch CLIs.
+
+The tool and the way I work on it grew together. *Sillage* is French for the wake
+a boat leaves on the water.
+
+[MarlBurroW](https://github.com/MarlBurroW), creator of Sillage
 
 ## Go further
 
 | I want to… | Guide |
 |---|---|
-| Explore all the features | [Feature reference](docs/features.md) |
+| Explore all the features | [Feature catalog](https://marlburrow.github.io/sillage/features.html) · [Feature reference](docs/features.md) |
 | Use Sillage and agent preview links from my phone | [Remote access](docs/remote-access.md) |
 | Switch between agent accounts | [Accounts](docs/accounts.md) |
 | Continue a conversation with another agent | [CLI handoff](docs/cli-handoff.md) |
 | Share skills between agents | [Skill library](docs/skill-library.md) |
 | Connect my own tools | [MCP](docs/mcp.md) · [Task API](docs/api.md) |
 | See and stop processes started by agents on Linux | [Services](docs/services.md) |
+| Report a bug or ask for something | [Issues](https://github.com/MarlBurroW/sillage/issues) |
 
 ## Security model
 
@@ -233,8 +299,10 @@ install or update managed CLIs there; Sillage waits for active sessions before
 replacing a binary and refreshes the available models afterward.
 
 Sillage checks for updates in Settings. Installer-based Server setups can update
-from the interface; Docker users pull a newer image, and Desktop downloads updates in the background and lets you install them from About.
+from the interface; Docker users pull a newer image, and Desktop downloads updates
+in the background and lets you install them from About.
 
 ## License
 
-[MIT](LICENSE). Free to use, modify and self-host.
+[MIT](LICENSE). Free to use, modify and self-host. Sillage is independent and not
+affiliated with the agent providers.
