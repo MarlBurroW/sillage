@@ -62,7 +62,7 @@ try {
   delete env.NODE_ENV
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
-  const base = `http://127.0.0.1:${webPort}`
+  let base = `http://127.0.0.1:${webPort}`
   await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ready(base, vite)])
 
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
@@ -99,15 +99,12 @@ try {
   // Welcome: account created, session open, first name reused.
   await heading().filter({ hasText: 'Bienvenue dans Sillage, Nicolas Dupont.' }).waitFor()
   assert.equal(new URL(page.url()).pathname, '/bienvenue')
-  // Detected CLIs (Claude Code and Codex here) start selected; keep only Claude.
-  // Checked state follows the probe, then the account.
-  await page.getByRole('checkbox', { name: /Claude Code.*installé ici/, checked: true }).waitFor({ timeout: 30000 })
-  const codex = page.getByRole('checkbox', { name: /^Codex/ })
-  if ((await codex.getAttribute('aria-checked')) === 'true') await codex.click()
-  await page.getByRole('checkbox', { name: /^Codex/, checked: false }).waitFor()
-  await page.getByRole('checkbox', { name: /Claude Code/, checked: true }).waitFor()
-  await page.getByRole('radio', { name: /Aussi depuis le téléphone/ }).click()
-  await page.getByRole('radio', { name: /Aussi depuis le téléphone/, checked: true }).waitFor()
+  // Welcome asks nothing: it names the CLIs this instance offers (OpenCode and Grok are
+  // disabled in this configuration) and says what Sillage is.
+  await page.getByText('Tes CLI, tels quels').waitFor()
+  await page.getByText(/Claude Code, Codex et Google Antigravity/).waitFor({ timeout: 30000 })
+  await page.getByText('Suivi de partout').waitFor()
+  assert.equal(await page.getByRole('checkbox').count(), 0, 'plus de questionnaire à l’accueil')
   await page.screenshot({ path: '/tmp/sillage-onboarding-welcome.png' })
   await next('Commencer')
 
@@ -118,9 +115,14 @@ try {
   await page.getByRole('button', { name: 'Sombre', exact: true }).click()
   await next('Continuer')
 
-  // Agents: one row for Claude Code, probed on the machine.
+  // Agents: one row per offered CLI, probed on the machine. An installed row opens onto its
+  // sign-in details; a disabled CLI has no row.
   await heading().filter({ hasText: 'Tes agents' }).waitFor()
-  await page.getByText('Claude Code', { exact: true }).first().waitFor({ timeout: 30000 })
+  const claudeRow = page.getByRole('button', { name: /Claude Code/ })
+  await claudeRow.waitFor({ timeout: 30000 })
+  assert.equal(await page.getByText('OpenCode', { exact: true }).count(), 0, 'un CLI coupé n’a pas de ligne')
+  if ((await claudeRow.getAttribute('aria-expanded')) !== 'true') await claudeRow.click()
+  await page.getByText('Connexion du CLI').first().waitFor()
   await page.screenshot({ path: '/tmp/sillage-onboarding-agents.png' })
 
   // Reload resumes the same step: state belongs to the account.
@@ -147,56 +149,86 @@ try {
   await page.screenshot({ path: '/tmp/sillage-onboarding-work-detail.png', fullPage: true })
   await next('Continuer')
 
-  // Instructions and memory: two account defaults. Select native memory so the trial
-  // project below can inherit it.
+  // Instructions and memory, one step: a chip writes one line, saved on “Continue”; the
+  // storage defaults are saved on click. Select native memory so the trial project below
+  // can inherit it.
   await heading().filter({ hasText: 'Consignes et mémoire' }).waitFor()
-  await page.getByRole('radio', { name: /Celle de chaque CLI/ }).click()
-  await page.getByRole('radio', { name: /Celle de chaque CLI/, checked: true }).waitFor()
-  await page.screenshot({ path: '/tmp/sillage-onboarding-memory.png' })
-  await next('Continuer')
-
-  // Instructions: a chip writes one line, saved on “Continue”.
-  await heading().filter({ hasText: 'Tes consignes' }).waitFor()
+  // Three parts, one per thing an agent is given, each naming whose it is.
+  for (const part of ['Consignes générales', 'Consignes de projet', 'Mémoire de projet']) {
+    await page.getByRole('heading', { level: 2, name: part }).waitFor()
+  }
+  assert.equal(await page.getByText('propre à chaque projet').count(), 2)
   await page.getByRole('button', { name: 'Vérifie avant d’annoncer' }).click()
   await page.waitForFunction(() => document.querySelector('textarea')?.value.includes('Lance les tests et le typecheck'))
+  await page.getByRole('radio', { name: /Celle de chaque CLI/ }).click()
+  await page.getByRole('radio', { name: /Celle de chaque CLI/, checked: true }).waitFor()
+  await page.screenshot({ path: '/tmp/sillage-onboarding-rules.png', fullPage: true })
   await next('Continuer')
 
-  // Address: this browser's address is local; replace with an HTTPS address.
+  // Address: this browser's address is local. Once a public address is saved the server
+  // answers on that host only, so one that does not answer is refused and nothing is saved.
   await heading().filter({ hasText: 'Adresse et téléphone' }).waitFor()
   await page.getByText('Réseau local, sans HTTPS').waitFor()
   await page.getByText('Joignable seulement sur ton réseau.').waitFor()
-  await page.getByLabel('Adresse publique').fill('https://sillage.example.com/')
+  await page.getByLabel('Adresse publique').fill('https://sillage.invalid/')
   await page.getByText('HTTPS, joignable de partout').waitFor()
+  await page.getByText(/Tu es connecté par http:\/\/127\.0\.0\.1/).waitFor()
   await page.getByAltText('Code QR de l’adresse de l’instance').waitFor()
   await page.screenshot({ path: '/tmp/sillage-onboarding-address.png' })
   await page.getByLabel('Adresse publique').press('Enter')
+  await page.getByText(/Cette adresse ne répond pas d’ici/).waitFor()
+  assert.equal((await (await context.request.get(`${base}/api/settings`)).json()).publicUrl, '')
+  // The same instance under another name answers: it is saved, and the browser is taken
+  // there, where the session cookie of the first address does not follow.
+  const moved = `http://localhost:${webPort}`
+  await page.getByLabel('Adresse publique').fill(moved)
+  await page.getByLabel('Adresse publique').press('Enter')
+  await page.waitForURL(`${moved}/login`)
+  base = moved
+  const relogin = await context.request.post(`${base}/api/auth/login`, { data: { username: 'nicolas', password: 'correct horse battery' } })
+  assert.ok(relogin.ok(), await relogin.text())
+  await page.goto(`${base}/`)
+  // The tour resumes on the step it left, now on the saved address.
+  await heading().filter({ hasText: 'Adresse et téléphone' }).waitFor()
+  assert.equal(await page.getByText(/Tu es connecté par/).count(), 0)
+  await next('Continuer')
 
-  // Ready: summary, then the project-creation screen because no project exists yet.
+  // Ready: the recap leads back to any step, then the sample project is one click away
+  // because no project exists yet.
   await heading().filter({ hasText: 'C’est prêt.' }).waitFor()
   await page.getByText('Éditions acceptées').waitFor()
-  assert.equal(await page.getByText('Projet', { exact: true }).count(), 0, 'la visite ne parle plus de projet')
+  await page.getByRole('button', { name: 'Modifier : Permissions' }).click()
+  await heading().filter({ hasText: 'Comment l’agent travaille' }).waitFor()
+  await page.locator('aside ol li button', { hasText: 'C’est prêt' }).click()
+  await heading().filter({ hasText: 'C’est prêt.' }).waitFor()
   await page.screenshot({ path: '/tmp/sillage-onboarding-ready.png' })
-  await next('Créer mon premier projet')
-  await page.waitForURL(/\/projects\/new$/)
+  await page.getByRole('button', { name: 'Essayer avec le projet d’essai' }).click()
+  await page.waitForURL(/\/projects\/new\?mode=sample$/)
 
-  // The trial project is now the fourth New Project source: Sillage writes it into
-  // a nonexistent directory and opens its first conversation.
-  await page.getByRole('radio', { name: /Projet d’essai/ }).click()
+  // The trial project is the fourth New Project source, opened directly by that exit: Sillage
+  // writes it into a nonexistent directory and opens its first conversation.
+  await page.getByRole('radio', { name: /Projet d’essai/, checked: true }).waitFor()
   await page.getByLabel('Dossier des projets').fill(join(data, 'projects'))
   await page.getByRole('button', { name: 'Créer le projet d’essai' }).click()
   await page.waitForURL(/\/p\/[^/]+\/c\/new$/)
+  // The interface tour takes over on this first conversation (walked by `pnpm test:tour-ui`).
+  await page.locator('[data-tour-step="rail"]').waitFor({ timeout: 30000 })
   await page.screenshot({ path: '/tmp/sillage-onboarding-project.png' })
+  await page.getByRole('button', { name: 'Passer le tour' }).click()
+  await page.locator('[data-interface-tour]').waitFor({ state: 'detached' })
 
   // Read what the tour left behind through the API.
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.equal(settings.onboarding.pending, false)
   assert.equal(settings.agentDefaults.claude.permissionMode, 'acceptEdits')
   assert.equal(settings.agentDefaults.claude.maxBudgetUsd, null)
-  assert.deepEqual(settings.onboarding.answers.agents, ['claude'])
+  // The policy goes to every CLI's defaults, in its own vocabulary.
+  assert.equal(settings.agentDefaults.codex.askForApproval, 'never')
+  assert.deepEqual(settings.onboarding.answers, { permission: 'acceptEdits' })
   const instructions = await (await context.request.get(`${base}/api/instructions`)).json()
   assert.match(instructions.content, /Lance les tests et le typecheck/)
   const appSettings = await (await context.request.get(`${base}/api/settings`)).json()
-  assert.equal(appSettings.publicUrl, 'https://sillage.example.com')
+  assert.equal(appSettings.publicUrl, moved)
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
   assert.equal(projects.length, 1)
   assert.equal(projects[0].name, 'Sillage sample')
@@ -233,12 +265,22 @@ try {
   await phone.getByLabel('Nom affiché').fill('Bob Martin')
   await phone.getByRole('button', { name: 'Enregistrer' }).click()
   await phone.getByRole('heading', { level: 1 }).filter({ hasText: 'Bienvenue dans Sillage, Bob Martin.' }).waitFor()
-  // No team question for members, nor global instructions.
-  assert.equal(await phone.getByText('Sur cette instance').count(), 0)
   await phone.getByRole('button', { name: 'Passer' }).click()
   await phone.getByRole('heading', { level: 1 }).filter({ hasText: 'C’est prêt.' }).waitFor()
-  assert.equal(await phone.getByText('Consignes', { exact: true }).count(), 0)
   await phone.screenshot({ path: '/tmp/sillage-onboarding-member-ready.png', fullPage: true })
+  // Members set where their projects keep instructions and memory, not the global instructions;
+  // then the phone step, which every hosted account sees.
+  await phone.getByRole('button', { name: 'Modifier : Consignes et mémoire' }).click()
+  await phone.getByRole('heading', { level: 1 }).filter({ hasText: 'Consignes et mémoire' }).waitFor()
+  await phone.getByRole('radio', { name: /Celle de Sillage/, checked: true }).waitFor()
+  await phone.getByText(/Un administrateur le tient/).waitFor()
+  assert.equal(await phone.locator('textarea').count(), 0)
+  assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Pas de débordement au téléphone')
+  await phone.getByRole('button', { name: 'Continuer' }).click()
+  await phone.getByRole('heading', { level: 1 }).filter({ hasText: 'Depuis ton téléphone' }).waitFor()
+  await phone.getByAltText('Code QR de l’adresse de l’instance').waitFor()
+  await phone.getByRole('button', { name: 'Continuer' }).click()
+  await phone.getByRole('heading', { level: 1 }).filter({ hasText: 'C’est prêt.' }).waitFor()
   // The only project belongs to the administrator and is private: member sees none,
   // and their tour also ends at project creation.
   await phone.getByRole('button', { name: 'Créer mon premier projet' }).click()
@@ -257,7 +299,7 @@ try {
   await page.getByText('Compte prêt : Nicolas Dupont (nicolas), administrateur.').waitFor()
 
   // Sillage Desktop: launcher creates account and opens session; tour starts at
-  // Welcome without account, team, phone, or address questions. Simulate without
+  // Welcome without account or address steps. Simulate without
   // Electron: SILLAGE_PROFILE=desktop and handshake on descriptor 3, exactly as
   // apps/desktop/src/server.ts does. Web comes from a build: desktop serves its
   // interface through the server, not Vite.
@@ -303,8 +345,8 @@ try {
   assert.equal(titles.length, 7, `sept étapes en bureau, pas ${titles.length}`)
   assert.ok(!titles.some((title) => /Adresse|compte/.test(title)), titles.join(' | '))
   await desk.getByText('installés sur cet ordinateur').waitFor()
-  assert.equal(await desk.getByText('Sur cette instance').count(), 0, 'pas de question d’équipe en bureau')
-  assert.equal(await desk.getByText('Tu t’en serviras').count(), 0, 'pas de question de téléphone en bureau')
+  await desk.getByText('Tout reste sur cet ordinateur').waitFor()
+  assert.equal(await desk.getByText('Suivi de partout').count(), 0, 'pas de suivi au téléphone promis en bureau')
   await desk.screenshot({ path: '/tmp/sillage-onboarding-desktop-welcome.png' })
   await desk.getByRole('button', { name: 'Passer la visite' }).click()
   await desk.getByRole('heading', { level: 1 }).filter({ hasText: 'C’est prêt.' }).waitFor()
@@ -312,6 +354,17 @@ try {
     assert.equal(await desk.getByText(absent, { exact: true }).count(), 0, `${absent} n’a rien à faire en bureau`)
   }
   await desk.screenshot({ path: '/tmp/sillage-onboarding-desktop-ready.png' })
+  // Desktop's own step: the remote-access card of the settings, off until asked for. What
+  // Tailscale reports depends on the machine, so only the switch and its state are read.
+  await desk.getByText('Désactivé · cet ordinateur seulement').waitFor()
+  await desk.getByRole('button', { name: 'Modifier : Accès distant' }).click()
+  await desk.getByRole('heading', { level: 1 }).filter({ hasText: 'Depuis tes autres appareils' }).waitFor()
+  await desk.getByRole('switch', { name: 'Accès distant', checked: false }).waitFor()
+  // The step fades in: let it settle so the picture shows it.
+  await desk.locator('.sg-onboarding-step').evaluate((step) => Promise.all(step.getAnimations().map((animation) => animation.finished)))
+  await desk.screenshot({ path: '/tmp/sillage-onboarding-desktop-remote.png' })
+  await desk.getByRole('button', { name: 'Continuer' }).click()
+  await desk.getByRole('heading', { level: 1 }).filter({ hasText: 'C’est prêt.' }).waitFor()
   // New database, no project: tour ends at first-project creation.
   await desk.getByRole('button', { name: 'Créer mon premier projet' }).click()
   await desk.waitForURL(/\/projects\/new$/)

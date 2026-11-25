@@ -1,8 +1,8 @@
 import { ArrowLeft, ArrowRight, Check, Info, Languages, Lightbulb, Loader, X } from 'lucide-react'
-import { useEffect, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react'
+import { useEffect, useRef, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react'
 import type { CurrentUser, InstanceProfile, OnboardingAnswers, OnboardingState } from '@sillage/protocol'
 import { LOCALES, LOCALE_LABELS, setLocale, useLocale, usePendingLocale, useTranslate } from '../../lib/i18n'
-import type { OnboardingStepId } from '../../lib/onboarding'
+import type { OnboardingExit, OnboardingStepId } from '../../lib/onboarding'
 import { Logo } from '../Logo'
 import { Button, cx } from '../ui'
 
@@ -31,8 +31,17 @@ export interface StepProps {
   profile: InstanceProfile
   /** Null until the first account is created. */
   user: CurrentUser | null
+  /** The first account of an empty database is an administrator before it exists. */
+  isAdmin: boolean
+  /** The tour's steps on this instance, for the recap. */
+  steps: OnboardingStepId[]
   hostname: string
-  homeDir: string
+  /** Reopen a step from the recap. */
+  goto: (id: OnboardingStepId) => void
+  /** End the tour. `exit` names a landing place other than the default one. */
+  finish: (exit?: OnboardingExit) => void
+  /** This account sees no project yet: the tour ends on creating one. */
+  noProject: boolean
 }
 
 /** Action executed before Continue, refreshed each render to read current fields. */
@@ -103,6 +112,7 @@ export function ChoiceCard({
   icon,
   label,
   hint,
+  badge,
   multi = false,
   compact = false,
 }: {
@@ -111,6 +121,8 @@ export function ChoiceCard({
   icon?: ReactNode
   label: string
   hint?: string
+  /** A short mark beside the label, such as “recommended”. */
+  badge?: string
   multi?: boolean
   compact?: boolean
 }) {
@@ -132,7 +144,10 @@ export function ChoiceCard({
         </span>
       ) : null}
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-ink">{label}</span>
+        <span className="flex flex-wrap items-center gap-x-2 text-sm font-semibold text-ink">
+          {label}
+          {badge ? <span className="rounded-full bg-accent-wash px-1.5 py-px text-[0.6875rem] font-medium text-accent">{badge}</span> : null}
+        </span>
         {hint ? <span className="mt-0.5 block text-xs leading-snug text-ink-faint">{hint}</span> : null}
       </span>
       <Check size={16} className={cx('mt-0.5 shrink-0 text-accent', selected ? 'opacity-100' : 'opacity-0')} aria-hidden />
@@ -152,17 +167,19 @@ export function CardGrid({ columns = 2, children }: { columns?: 1 | 2 | 3; child
  * Language accessible from the first screen: users need it immediately when the interface speaks
  * another language, before Appearance settings are reachable. Same mechanism as settings.
  */
-function LanguageSwitch() {
+function LanguageSwitch({ compact = false }: { compact?: boolean }) {
   const active = useLocale()
   const pending = usePendingLocale()
   return (
     <div className="inline-flex items-center gap-1 rounded-md border border-line bg-surface p-0.5" role="group" aria-label="Language">
-      <Languages size={14} className="ml-1.5 text-ink-faint" aria-hidden />
+      {compact ? null : <Languages size={14} className="ml-1.5 text-ink-faint" aria-hidden />}
       {LOCALES.map((option) => (
         <button
           key={option}
           type="button"
           lang={option}
+          // The code alone on a phone, where the full names crowd out the step title.
+          aria-label={LOCALE_LABELS[option]}
           aria-pressed={active === option}
           aria-busy={pending === option}
           onClick={() => {
@@ -174,7 +191,7 @@ function LanguageSwitch() {
           )}
         >
           {pending === option ? <Loader size={12} className="animate-spin" aria-hidden /> : null}
-          {LOCALE_LABELS[option]}
+          {compact ? option.toUpperCase() : LOCALE_LABELS[option]}
         </button>
       ))}
     </div>
@@ -230,6 +247,13 @@ export function OnboardingShell({
   const first = index === 0
   const last = index === steps.length - 1
 
+  // A step opens at its top: the scroll position belongs to the step that was left.
+  const scroller = useRef<HTMLElement>(null)
+  const currentId = current?.id
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: 0 })
+  }, [currentId])
+
   /*
    * Enter in an input activates the step action like a form. Steps cannot be forms because embedded
    * project/account forms cannot nest. Inputs within embedded forms retain their own submit
@@ -249,7 +273,7 @@ export function OnboardingShell({
 
   return (
     <div className="flex h-dvh flex-col bg-canvas text-ink md:grid md:grid-cols-[18rem_minmax(0,1fr)]">
-      <aside className="hidden min-h-0 flex-col gap-5 overflow-y-auto border-r border-line bg-surface p-5 md:flex">
+      <aside className="hidden min-h-0 flex-col gap-6 overflow-y-auto border-r border-line bg-surface p-5 md:flex">
         <div className="flex items-center gap-3">
           <span className="gradient-accent shadow-float grid size-9 place-items-center rounded-xl">
             <Logo size={20} className="text-accent-ink" />
@@ -259,9 +283,19 @@ export function OnboardingShell({
             <span className="block text-xs text-ink-faint">{t('onboarding.shell.subtitle')}</span>
           </span>
         </div>
-        <ol className="flex flex-col gap-0.5">
+        {/* A path rather than a menu: the line between marks fills as steps are left behind. */}
+        <ol className="flex flex-col">
           {steps.map((step, i) => (
-            <li key={step.id}>
+            <li key={step.id} className="relative">
+              {i < steps.length - 1 ? (
+                <span
+                  aria-hidden
+                  className={cx(
+                    'pointer-events-none absolute -bottom-1.5 left-[1.3125rem] top-[2.125rem] z-10 w-px',
+                    i < index ? 'bg-positive/60' : 'bg-line-strong/60',
+                  )}
+                />
+              ) : null}
               <button
                 type="button"
                 // Do not jump into unknown steps that may depend on current answers.
@@ -269,8 +303,8 @@ export function OnboardingShell({
                 aria-current={step.status === 'current' ? 'step' : undefined}
                 onClick={() => onGoto(i)}
                 className={cx(
-                  'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors disabled:cursor-default',
-                  step.status === 'current' ? 'bg-accent-wash text-ink' : step.status === 'todo' ? 'text-ink-faint' : 'text-ink-soft hover:bg-surface-high',
+                  'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm transition-colors disabled:cursor-default',
+                  step.status === 'current' ? 'text-ink' : step.status === 'todo' ? 'text-ink-faint' : 'text-ink-soft enabled:hover:bg-surface-high',
                 )}
               >
                 <span
@@ -279,16 +313,16 @@ export function OnboardingShell({
                     step.status === 'done'
                       ? 'border-positive bg-positive text-accent-ink'
                       : step.status === 'current'
-                        ? 'border-accent text-accent'
+                        ? 'border-accent bg-accent text-accent-ink'
                         : step.status === 'skipped'
-                          ? 'border-dashed border-line-strong'
-                          : 'border-line-strong',
+                          ? 'border-dashed border-line-strong bg-surface'
+                          : 'border-line-strong bg-surface',
                   )}
                 >
                   {step.status === 'done' ? <Check size={13} /> : i + 1}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate">{step.title}</span>
+                  <span className={cx('block truncate', step.status === 'current' ? 'font-medium' : '')}>{step.title}</span>
                   <span className="block truncate text-xs text-ink-faint">{step.status === 'skipped' ? t('onboarding.shell.skipped') : step.sub}</span>
                 </span>
               </button>
@@ -299,31 +333,29 @@ export function OnboardingShell({
       </aside>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Phone layout: named step and progress at top. */}
+        {/* Phone layout: the step and its place in the tour on two short lines, then the bar. */}
         {/* Add safe-area padding to block spacing: pt-safe alone replaces it and is zero off phones. */}
-        <div className="flex shrink-0 flex-col gap-2 px-4 md:hidden" style={{ paddingTop: 'calc(0.75rem + var(--sg-safe-top))' }}>
-          <div className="flex items-center gap-2">
-            <span className="gradient-accent grid size-7 place-items-center rounded-lg">
-              <Logo size={15} className="text-accent-ink" />
+        <div className="flex shrink-0 flex-col gap-2.5 px-4 md:hidden" style={{ paddingTop: 'calc(0.75rem + var(--sg-safe-top))' }}>
+          <div className="flex items-center gap-2.5">
+            <span className="gradient-accent grid size-8 shrink-0 place-items-center rounded-lg">
+              <Logo size={16} className="text-accent-ink" />
             </span>
-            <span className="text-sm font-semibold">{t('onboarding.shell.subtitle')}</span>
-            <span className="ml-auto flex items-center gap-2">
-              <LanguageSwitch />
-              {skipAllowed ? (
-                <button type="button" onClick={onSkipAll} className="text-sm text-ink-faint">
-                  {t('onboarding.shell.skip.short')}
-                </button>
-              ) : null}
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs text-ink-faint">{t('onboarding.shell.progress', { step: index + 1, total: steps.length })}</span>
+              <span className="block truncate text-sm font-semibold">{current?.title ?? ''}</span>
             </span>
+            <LanguageSwitch compact />
+            {skipAllowed ? (
+              <button type="button" onClick={onSkipAll} className="min-h-9 px-1 text-sm text-ink-faint">
+                {t('onboarding.shell.skip.short')}
+              </button>
+            ) : null}
           </div>
           <div className="flex gap-1" aria-hidden>
             {steps.map((step, i) => (
-              <i key={step.id} className={cx('block h-0.5 flex-1 rounded-full', i <= index ? 'bg-accent' : 'bg-line')} />
+              <i key={step.id} className={cx('block h-1 flex-1 rounded-full', i < index ? 'bg-accent/50' : i === index ? 'bg-accent' : 'bg-line')} />
             ))}
           </div>
-          <p className="text-xs text-ink-faint">
-            {t('onboarding.shell.progress', { step: index + 1, total: steps.length, title: current?.title ?? '' })}
-          </p>
         </div>
 
         <div className="hidden shrink-0 px-6 pt-3 md:block">
@@ -337,8 +369,8 @@ export function OnboardingShell({
           </div>
         </div>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-14 md:py-2" onKeyDown={onKeyDown}>
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 pb-6">{children}</div>
+        <main ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-14 md:py-4" onKeyDown={onKeyDown}>
+          <div key={currentId} className="sg-onboarding-step mx-auto flex w-full max-w-2xl flex-col gap-5 pb-6">{children}</div>
         </main>
 
         <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 md:px-14" style={{ paddingBottom: 'calc(0.75rem + var(--sg-safe-bottom))' }}>

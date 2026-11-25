@@ -56,6 +56,7 @@ import { MentionPicker } from './MentionPicker'
 import { SessionPicker } from './SessionPicker'
 import { SessionReference } from './SessionReference'
 import { matchSessions, useSessionReferences } from '../../lib/session-references'
+import { tourAnchor } from '../tour/steps'
 
 /** The `@...` mention around the cursor. */
 /** Below this toolbar width, use the phone composer layout. */
@@ -779,6 +780,7 @@ export function Composer({
         // Container queries collapse settings according to composer width rather than window width,
         // which ignores the sidebar.
         className="@container mx-auto sg-conversation-width"
+        {...tourAnchor('composer')}
       >
         {error ? (
           <p role="alert" className="mb-1.5 px-1 text-xs text-critical">

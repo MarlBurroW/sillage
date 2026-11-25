@@ -114,6 +114,7 @@ test('la visite se mémorise au compte, et un membre créé par un administrateu
       onboarding: {
         pending: true,
         step: 3,
+        // A browser still on the first tour sends its questionnaire: those answers are dropped.
         answers: { agents: ['claude'], team: 'team', devices: 'phone', guidance: 'direct', permission: 'acceptEdits' },
         skipped: ['appearance'],
       },
@@ -123,8 +124,7 @@ test('la visite se mémorise au compte, et un membre créé par un administrateu
   const read = await app.inject({ url: '/api/me/settings', headers: { 'x-user': admin.id } })
   const onboarding = read.json<UserSettingsDto>().onboarding
   assert.equal(onboarding.step, 3)
-  assert.deepEqual(onboarding.answers.agents, ['claude'])
-  assert.equal(onboarding.answers.permission, 'acceptEdits')
+  assert.deepEqual(onboarding.answers, { permission: 'acceptEdits' })
   assert.deepEqual(onboarding.skipped, ['appearance'])
 
   // Completed: no longer due, with remaining state free to persist or not.

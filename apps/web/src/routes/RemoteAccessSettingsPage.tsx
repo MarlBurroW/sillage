@@ -18,46 +18,56 @@ import { useCurrentUser } from '../lib/session'
 export function RemoteAccessSettingsPage() {
   const t = useTranslate()
   const { data: me } = useCurrentUser()
-  const isAdmin = me?.isAdmin === true
-  const { data: state, error } = useRemoteAccess(isAdmin)
-  const toggle = useSetRemoteAccess()
 
-  if (!isAdmin) {
+  if (me?.isAdmin !== true) {
     return <EmptyState icon={<ShieldCheck size={22} />} title={t('remoteAccess.adminOnly.title')} description={t('remoteAccess.adminOnly.description')} />
   }
-
-  const tailscale = state?.tailscale
-  const ready = tailscale?.state === 'running' && tailscale.login !== null && tailscale.https
 
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title={t('remoteAccess.section.title')} description={t('remoteAccess.section.description')} />
-
-      <Card>
-        <CardHeader
-          title={t('remoteAccess.toggle.title')}
-          description={t('remoteAccess.toggle.description')}
-          icon={<Radio size={16} />}
-          actions={
-            <Switch
-              checked={state?.enabled === true}
-              // Turning off always works, even once Tailscale is gone: the acceptance must be revocable.
-              disabled={state === undefined || toggle.isPending || (!state.enabled && !ready)}
-              label={t('remoteAccess.toggle.label')}
-              onCheckedChange={(checked) => toggle.mutate(checked)}
-            />
-          }
-        />
-        <CardBody className="flex flex-col gap-3">
-          {error instanceof ApiRequestError ? <Banner tone="critical">{error.message}</Banner> : null}
-          {toggle.error instanceof ApiRequestError ? <Banner tone="critical">{toggle.error.message}</Banner> : null}
-          {state ? <TailscaleStatusLine state={state} /> : null}
-          {state?.enabled && state.url ? <Address state={state} /> : null}
-          {state?.enabled ? <ServeNotices state={state} /> : null}
-          {state?.enabled ? <p className="text-xs text-ink-faint">{t('remoteAccess.awake')}</p> : null}
-        </CardBody>
-      </Card>
+      <RemoteAccessCard />
     </div>
+  )
+}
+
+/**
+ * The switch with everything it depends on: Tailscale's state, the address once enabled, and what
+ * to run when Serve does not lead here. Shared with the first-run tour, which offers the same
+ * setting on its own step; administrators only, as the routes are.
+ */
+export function RemoteAccessCard() {
+  const t = useTranslate()
+  const { data: state, error } = useRemoteAccess()
+  const toggle = useSetRemoteAccess()
+  const tailscale = state?.tailscale
+  const ready = tailscale?.state === 'running' && tailscale.login !== null && tailscale.https
+
+  return (
+    <Card>
+      <CardHeader
+        title={t('remoteAccess.toggle.title')}
+        description={t('remoteAccess.toggle.description')}
+        icon={<Radio size={16} />}
+        actions={
+          <Switch
+            checked={state?.enabled === true}
+            // Turning off always works, even once Tailscale is gone: the acceptance must be revocable.
+            disabled={state === undefined || toggle.isPending || (!state.enabled && !ready)}
+            label={t('remoteAccess.toggle.label')}
+            onCheckedChange={(checked) => toggle.mutate(checked)}
+          />
+        }
+      />
+      <CardBody className="flex flex-col gap-3">
+        {error instanceof ApiRequestError ? <Banner tone="critical">{error.message}</Banner> : null}
+        {toggle.error instanceof ApiRequestError ? <Banner tone="critical">{toggle.error.message}</Banner> : null}
+        {state ? <TailscaleStatusLine state={state} /> : null}
+        {state?.enabled && state.url ? <Address state={state} /> : null}
+        {state?.enabled ? <ServeNotices state={state} /> : null}
+        {state?.enabled ? <p className="text-xs text-ink-faint">{t('remoteAccess.awake')}</p> : null}
+      </CardBody>
+    </Card>
   )
 }
 

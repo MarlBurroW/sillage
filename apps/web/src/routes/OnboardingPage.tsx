@@ -4,8 +4,8 @@ import { AccountStep } from '../components/onboarding/AccountStep'
 import { AddressStep } from '../components/onboarding/AddressStep'
 import { AgentsStep } from '../components/onboarding/AgentsStep'
 import { AppearanceStep } from '../components/onboarding/AppearanceStep'
-import { MemoryStep } from '../components/onboarding/MemoryStep'
 import { ReadyStep } from '../components/onboarding/ReadyStep'
+import { RemoteStep } from '../components/onboarding/RemoteStep'
 import { RulesStep } from '../components/onboarding/RulesStep'
 import { WelcomeStep } from '../components/onboarding/WelcomeStep'
 import { WorkStep } from '../components/onboarding/WorkStep'
@@ -13,7 +13,7 @@ import { OnboardingShell, type ShellStep, type StepGate, type StepProps } from '
 import { useAppearanceSync } from '../lib/appearance-sync'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useInstance } from '../lib/instance'
-import { onboardingSteps, type OnboardingStepId } from '../lib/onboarding'
+import { ONBOARDING_EXIT_PARAM, onboardingSteps, type OnboardingExit, type OnboardingStepId } from '../lib/onboarding'
 import { useProjects } from '../lib/projects'
 import { useCurrentUser } from '../lib/session'
 import { useUpdateOnboarding, useUserSettings } from '../lib/user-settings'
@@ -24,9 +24,9 @@ const STEPS: Record<OnboardingStepId, (props: StepProps) => React.ReactElement> 
   appearance: AppearanceStep,
   agents: AgentsStep,
   work: WorkStep,
-  memory: MemoryStep,
   rules: RulesStep,
   address: AddressStep,
+  remote: RemoteStep,
   ready: ReadyStep,
 }
 
@@ -36,9 +36,9 @@ const SUBTITLES: Record<OnboardingStepId, MessageKey> = {
   appearance: 'onboarding.step.appearance.sub',
   agents: 'onboarding.step.agents.sub',
   work: 'onboarding.step.work.sub',
-  memory: 'onboarding.step.memory.sub',
   rules: 'onboarding.step.rules.sub',
   address: 'onboarding.step.address.sub',
+  remote: 'onboarding.step.remote.sub',
   ready: 'onboarding.step.ready.sub',
 }
 
@@ -68,7 +68,7 @@ export function OnboardingPage() {
   const profile = instance?.profile ?? 'server'
   // With no account, this is the first: it will be an administrator.
   const isAdmin = user?.isAdmin ?? true
-  const steps = onboardingSteps({ profile, isAdmin, answers: state.answers })
+  const steps = onboardingSteps(profile, instance?.capabilities.remoteAccess ?? false)
   const index = Math.min(state.step, steps.length - 1)
   const current = steps[index] ?? 'welcome'
   const last = index === steps.length - 1
@@ -103,7 +103,14 @@ export function OnboardingPage() {
   // the destination (`/bienvenue` outside onboarding) once the tour is no longer due:
   // navigating here would occur after this page unmounts.
   const noProject = projects !== undefined && projects.length === 0
-  const finish = () => update.mutate({ ...state, pending: false, step: 0 })
+  const finish = (exit?: OnboardingExit) => {
+    // The exit travels in the address: it is all that survives this page. Written to the
+    // history directly and read back the same way: the router applies its own location changes
+    // in a transition, later than the settings update that closes the tour.
+    if (exit) window.history.replaceState(null, '', `/bienvenue?${ONBOARDING_EXIT_PARAM}=${exit}`)
+    // The interface tour takes over on the first conversation, where there is something to point at.
+    update.mutate({ ...state, pending: false, step: 0, interfaceTourPending: true })
+  }
 
   const visited = (...ids: OnboardingStepId[]) => [...new Set([...state.visited, ...ids])]
   const next = async () => {
@@ -128,7 +135,7 @@ export function OnboardingPage() {
     state.visited.includes(steps[target] ?? 'ready') ||
     (target > 0 && state.visited.includes(steps[target - 1] ?? 'ready'))
   const goto = (target: number) => {
-    if (reachable(target)) persist({ step: target })
+    if (target >= 0 && reachable(target)) persist({ step: target })
   }
   // Skipping everything leads to the recap; the account is already created.
   const skipAll = () => {
@@ -138,10 +145,7 @@ export function OnboardingPage() {
 
   const titleOf = (id: OnboardingStepId): string => {
     if (id === 'account') return t(user && !user.isAdmin ? 'onboarding.step.account.member' : 'onboarding.step.account.create')
-    if (id === 'address') {
-      if (!isAdmin) return t('onboarding.step.address.phone')
-      return t(state.answers.devices === 'phone' ? 'onboarding.step.address.both' : 'onboarding.step.address.address')
-    }
+    if (id === 'address') return t(isAdmin ? 'onboarding.step.address.both' : 'onboarding.step.address.phone')
     return t(`onboarding.step.${id}` as MessageKey)
   }
   const shellSteps: ShellStep[] = steps.map((id, i) => ({
@@ -196,8 +200,12 @@ export function OnboardingPage() {
           setAnswers={setAnswers}
           profile={profile}
           user={user ?? null}
+          isAdmin={isAdmin}
+          steps={steps}
           hostname={instance?.hostname ?? ''}
-          homeDir={instance?.homeDir ?? ''}
+          goto={(id) => goto(steps.indexOf(id))}
+          finish={finish}
+          noProject={noProject}
         />
       </OnboardingShell>
     </>

@@ -1,145 +1,72 @@
-import { GraduationCap, Monitor, Smartphone, Sparkles, UserRound, UsersRound, Zap } from 'lucide-react'
-import { useEffect } from 'react'
-import type { AgentKind } from '@sillage/protocol'
+import { FolderGit2, Laptop, Smartphone, TerminalSquare } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { agentKindSchema } from '@sillage/protocol'
 import { useAgentAvailability } from '../../lib/agents'
-import { useTranslate } from '../../lib/i18n'
+import { useLocale, useTranslate } from '../../lib/i18n'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
-import { CardGrid, ChoiceCard, Question, StepTitle, useCommit, useGate, type StepProps } from './shell'
-
-const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok', 'antigravity']
+import { StepTitle, Tip, useCommit, useGate, type StepProps } from './shell'
 
 /**
- * Welcome explains Sillage briefly then asks questions determining next steps. Save answers on
- * every click so the step list updates immediately.
+ * Welcome says what Sillage is before anything is asked. It used to open with a questionnaire;
+ * every answer was either readable from the machine or better asked on the step it shaped, so this
+ * screen now only sets the model: official CLIs, projects as folders, work followed from anywhere.
  */
-export function WelcomeStep({ nav, state, setAnswers, profile, user }: StepProps) {
+export function WelcomeStep({ nav, profile, user }: StepProps) {
   const t = useTranslate()
+  const locale = useLocale()
   const { data: availability } = useAgentAvailability()
-  // Exclude configuration-disabled CLIs from the question.
-  const offered = availability ? availability.agents.filter((entry) => entry.enabled).map((entry) => entry.agent) : ALL_AGENTS
-  const installed = availability ? availability.agents.filter((entry) => entry.enabled && entry.installed).map((entry) => entry.agent) : []
-  const answers = state.answers
+  // Named from what this instance offers, so the sentence never falls behind the list of CLIs.
+  const offered = availability ? availability.agents.filter((entry) => entry.enabled).map((entry) => entry.agent) : agentKindSchema.options
+  const names = new Intl.ListFormat(locale, { type: 'conjunction' }).format(offered.map((agent) => AGENT_LABELS[agent]))
+  const host = t(profile === 'desktop' ? 'onboarding.host.computer' : 'onboarding.host.server')
 
   useGate(nav, { canContinue: true, laterAllowed: false, skipAllowed: true })
   useCommit(nav, null)
-
-  // Until answered, infer usage from installed server CLIs.
-  const agentsEmpty = answers.agents.length === 0
-  const agentsChosen = answers.agentsChosen
-  const installedKey = installed.join(',')
-  useEffect(() => {
-    if (agentsChosen || !agentsEmpty || installedKey === '') return
-    setAnswers({ agents: installedKey.split(',') as AgentKind[] })
-    // setAnswers changes every render; installed CLI inventory suffices for this decision.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentsChosen, agentsEmpty, installedKey])
-
-  const toggleAgent = (agent: AgentKind) =>
-    setAnswers({
-      agentsChosen: true,
-      agents: answers.agents.includes(agent) ? answers.agents.filter((entry) => entry !== agent) : [...answers.agents, agent],
-    })
-
-  const host = t(profile === 'desktop' ? 'onboarding.host.computer' : 'onboarding.host.server')
 
   return (
     <>
       <StepTitle
         title={user ? t('onboarding.welcome.title', { name: user.displayName }) : t('onboarding.welcome.title.anonymous')}
-        lead={
-          <>
-            {t('onboarding.welcome.lead', { host })}
-            <br />
-            {t('onboarding.welcome.lead.more')}
-          </>
-        }
+        lead={t('onboarding.welcome.lead', { host })}
       />
 
-      <Question label={t('onboarding.welcome.agents')} hint={t('onboarding.welcome.agents.hint')}>
-        <div className="flex flex-wrap gap-2">
-          {offered.map((agent) => (
-            <ChoiceCard
-              key={agent}
-              multi
-              compact
-              selected={answers.agents.includes(agent)}
-              onClick={() => toggleAgent(agent)}
-              icon={<AgentIcon agent={agent} size={16} />}
-              label={AGENT_LABELS[agent]}
-              hint={installed.includes(agent) ? t('onboarding.welcome.agents.installed') : undefined}
-            />
-          ))}
-          <ChoiceCard
-            multi
-            compact
-            selected={answers.agents.length === 0}
-            onClick={() => setAnswers({ agents: [], agentsChosen: true })}
-            icon={<Sparkles size={15} />}
-            label={t('onboarding.welcome.agents.none')}
-          />
-        </div>
-      </Question>
+      <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+        <Pillar
+          icon={<TerminalSquare size={18} />}
+          title={t('onboarding.welcome.cli.title')}
+          body={t('onboarding.welcome.cli.body', { names })}
+          extra={
+            <span className="mt-2 flex flex-wrap gap-1.5" aria-hidden>
+              {offered.map((agent) => (
+                <span key={agent} className="grid size-7 place-items-center rounded-md bg-surface-high">
+                  <AgentIcon agent={agent} size={15} />
+                </span>
+              ))}
+            </span>
+          }
+        />
+        <Pillar icon={<FolderGit2 size={18} />} title={t('onboarding.welcome.project.title')} body={t('onboarding.welcome.project.body', { host })} />
+        {profile === 'desktop' ? (
+          <Pillar icon={<Laptop size={18} />} title={t('onboarding.welcome.local.title')} body={t('onboarding.welcome.local.body')} />
+        ) : (
+          <Pillar icon={<Smartphone size={18} />} title={t('onboarding.welcome.anywhere.title')} body={t('onboarding.welcome.anywhere.body')} />
+        )}
+      </ul>
 
-      {profile === 'server' && user?.isAdmin ? (
-        <Question label={t('onboarding.welcome.team')}>
-          <CardGrid>
-            <ChoiceCard
-              selected={answers.team === 'solo'}
-              onClick={() => setAnswers({ team: 'solo' })}
-              icon={<UserRound size={15} />}
-              label={t('onboarding.welcome.team.solo')}
-              hint={t('onboarding.welcome.team.solo.hint')}
-            />
-            <ChoiceCard
-              selected={answers.team === 'team'}
-              onClick={() => setAnswers({ team: 'team' })}
-              icon={<UsersRound size={15} />}
-              label={t('onboarding.welcome.team.team')}
-              hint={t('onboarding.welcome.team.team.hint')}
-            />
-          </CardGrid>
-        </Question>
-      ) : null}
-
-      {profile === 'server' ? (
-        <Question label={t('onboarding.welcome.devices')}>
-          <CardGrid>
-            <ChoiceCard
-              selected={answers.devices === 'computer'}
-              onClick={() => setAnswers({ devices: 'computer' })}
-              icon={<Monitor size={15} />}
-              label={t('onboarding.welcome.devices.computer')}
-              hint={t('onboarding.welcome.devices.computer.hint')}
-            />
-            <ChoiceCard
-              selected={answers.devices === 'phone'}
-              onClick={() => setAnswers({ devices: 'phone' })}
-              icon={<Smartphone size={15} />}
-              label={t('onboarding.welcome.devices.phone')}
-              hint={t('onboarding.welcome.devices.phone.hint')}
-            />
-          </CardGrid>
-        </Question>
-      ) : null}
-
-      <Question label={t('onboarding.welcome.guidance')}>
-        <CardGrid>
-          <ChoiceCard
-            selected={answers.guidance === 'guided'}
-            onClick={() => setAnswers({ guidance: 'guided' })}
-            icon={<GraduationCap size={15} />}
-            label={t('onboarding.welcome.guidance.guided')}
-            hint={t('onboarding.welcome.guidance.guided.hint')}
-          />
-          <ChoiceCard
-            selected={answers.guidance === 'direct'}
-            onClick={() => setAnswers({ guidance: 'direct' })}
-            icon={<Zap size={15} />}
-            label={t('onboarding.welcome.guidance.direct')}
-            hint={t('onboarding.welcome.guidance.direct.hint')}
-          />
-        </CardGrid>
-      </Question>
+      <Tip>{t('onboarding.welcome.tour')}</Tip>
     </>
+  )
+}
+
+function Pillar({ icon, title, body, extra }: { icon: ReactNode; title: string; body: string; extra?: ReactNode }) {
+  return (
+    <li className="flex gap-3.5 px-4 py-4">
+      <span className="gradient-accent grid size-9 shrink-0 place-items-center rounded-lg text-accent-ink">{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-ink">{title}</span>
+        <span className="mt-0.5 block text-sm leading-relaxed text-ink-soft">{body}</span>
+        {extra}
+      </span>
+    </li>
   )
 }

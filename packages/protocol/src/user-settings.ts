@@ -141,22 +141,15 @@ export const projectDefaultsSchema = z.object({
 })
 
 /**
- * Initial onboarding answers determining subsequent steps.
+ * What the tour records for itself. Everything else it sets is written where it lives (agent
+ * defaults, appearance, project defaults, instructions) and read back from there for the recap.
  *
- * `agents` filters the agents step; `devices` adds the phone step; `team` adds project
- * visibility; `guidance` controls explanation detail. `permission` records the chosen default
- * approach for the recap.
+ * The first tour opened with a questionnaire (agents used, solo or team, devices, guidance level).
+ * Each answer could be read from the machine or asked where it mattered, so the tour no longer
+ * asks; stored answers from that version are dropped on parse.
  */
 export interface OnboardingAnswers {
-  agents: AgentKind[]
-  /**
-   * True once the user interacts with the agents question. Before then, an empty list means
-   * nothing, and the UI automatically selects CLIs found on the machine.
-   */
-  agentsChosen: boolean
-  team: 'solo' | 'team'
-  devices: 'computer' | 'phone'
-  guidance: 'guided' | 'direct'
+  /** The quick permission policy last picked, shown selected when the tour is replayed. */
   permission: 'manual' | 'auto' | 'acceptEdits' | 'bypass'
 }
 
@@ -166,7 +159,7 @@ export interface OnboardingState {
    * it on their next login; account creation and “Replay tour” in settings enable it.
    */
   pending: boolean
-  /** Current step index in the list the UI derives from answers. */
+  /** Current step index in the list the UI derives from the edition and the account's role. */
   step: number
   answers: OnboardingAnswers
   /** IDs of steps skipped with “Later”, for the recap. */
@@ -176,14 +169,15 @@ export interface OnboardingState {
    * direction without repeating intermediate steps.
    */
   visited: string[]
+  /**
+   * The interface tour is due: the bubbles pointing at the rail, the composer and the panel on the
+   * first conversation. Armed when the first-run tour ends, cleared once seen or skipped. False by
+   * default, so accounts that predate it are not interrupted.
+   */
+  interfaceTourPending: boolean
 }
 
 export const DEFAULT_ONBOARDING_ANSWERS: OnboardingAnswers = {
-  agents: [],
-  agentsChosen: false,
-  team: 'solo',
-  devices: 'phone',
-  guidance: 'guided',
   permission: 'auto',
 }
 
@@ -193,14 +187,10 @@ export const DEFAULT_ONBOARDING: OnboardingState = {
   answers: DEFAULT_ONBOARDING_ANSWERS,
   skipped: [],
   visited: [],
+  interfaceTourPending: false,
 }
 
 export const onboardingAnswersSchema = z.object({
-  agents: z.array(agentKindSchema).max(agentKindSchema.options.length).default([]).catch([]),
-  agentsChosen: z.boolean().default(false).catch(false),
-  team: z.enum(['solo', 'team']).default('solo').catch('solo'),
-  devices: z.enum(['computer', 'phone']).default('phone').catch('phone'),
-  guidance: z.enum(['guided', 'direct']).default('guided').catch('guided'),
   permission: z.enum(['manual', 'auto', 'acceptEdits', 'bypass']).default('auto').catch('auto'),
 })
 
@@ -210,6 +200,7 @@ export const onboardingStateSchema = z.object({
   answers: onboardingAnswersSchema.default(DEFAULT_ONBOARDING_ANSWERS).catch(DEFAULT_ONBOARDING_ANSWERS),
   skipped: z.array(z.string().max(40)).max(32).default([]).catch([]),
   visited: z.array(z.string().max(40)).max(32).default([]).catch([]),
+  interfaceTourPending: z.boolean().default(false).catch(false),
 })
 
 /**

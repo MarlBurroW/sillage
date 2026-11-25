@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, FileText, History, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Zap } from 'lucide-react'
 import { useState } from 'react'
-import type { AgentConfig, AgentKind } from '@sillage/protocol'
+import { agentKindSchema, type AgentConfig } from '@sillage/protocol'
+import { useAgentAvailability } from '../../lib/agents'
 import { useTranslate } from '../../lib/i18n'
 import { withPermissionChoice, type PermissionChoice } from '../../lib/onboarding'
 import { useUpdateAgentDefault, useUserSettings } from '../../lib/user-settings'
@@ -10,15 +11,13 @@ import type { SettingGroup } from '../chat/ComposerSettings'
 import { Banner, Card, Select, cx } from '../ui'
 import { CardGrid, ChoiceCard, Question, StepTitle, Tip, useCommit, useGate, type StepProps } from './shell'
 
-const ALL_AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok', 'antigravity']
-
 /** Relevant categories: model, effort, safeguards, budget. */
 const DETAIL_KEYS = ['model', 'effort', 'approval', 'sandbox', 'budget']
 const isDetailGroup = (group: SettingGroup) => DETAIL_KEYS.includes(group.key) || group.key.startsWith('permission')
 
 /**
- * Agent working policy applied immediately to selected CLI defaults, with detailed per-CLI defaults
- * collapsed below. Checkpoints are configured per project and not created by onboarding; explain
+ * Agent working policy applied immediately to every CLI's defaults, so a CLI installed later starts
+ * from the same stance, with detailed defaults of the installed CLIs collapsed below. Checkpoints are configured per project and not created by onboarding; explain
  * their default availability only.
  */
 export function WorkStep({ nav, state, setAnswers }: StepProps) {
@@ -26,7 +25,9 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
   const { data: settings } = useUserSettings()
   const updateDefault = useUpdateAgentDefault()
   const [detailed, setDetailed] = useState(false)
-  const agents = state.answers.agents.length > 0 ? state.answers.agents : ALL_AGENTS
+  const { data: availability } = useAgentAvailability()
+  // Detail cards probe the CLI for its model catalog: only installed ones can answer.
+  const installed = agentKindSchema.options.filter((agent) => availability?.agents.some((entry) => entry.agent === agent && entry.installed))
   const choice = state.answers.permission
 
   useGate(nav, { canContinue: true, laterAllowed: true, skipAllowed: true })
@@ -36,7 +37,7 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
   const choose = (next: PermissionChoice) => {
     setAnswers({ permission: next })
     if (!settings) return
-    for (const agent of agents) updateDefault.mutate(withPermissionChoice(settings.agentDefaults[agent], next))
+    for (const agent of agentKindSchema.options) updateDefault.mutate(withPermissionChoice(settings.agentDefaults[agent], next))
   }
 
   const options: { value: PermissionChoice; icon: React.ReactNode; label: string; hint: string }[] = [
@@ -50,7 +51,7 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
     <>
       <StepTitle title={t('onboarding.work.title')} lead={t('onboarding.work.lead')} />
 
-      <Question label={t('onboarding.work.permission')} hint={t('onboarding.work.permission.hint')}>
+      <Question label={t('onboarding.work.permission')}>
         <CardGrid>
           {options.map((option) => (
             <ChoiceCard
@@ -60,6 +61,7 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
               icon={option.icon}
               label={option.label}
               hint={option.hint}
+              badge={option.value === 'auto' ? t('onboarding.recommended') : undefined}
             />
           ))}
         </CardGrid>
@@ -70,36 +72,38 @@ export function WorkStep({ nav, state, setAnswers }: StepProps) {
        * Collapsed but full-width: quick choices suffice for most, detailed cards probe CLIs, yet
        * the option remains discoverable.
        */}
-      <div className="flex flex-col gap-3">
-        <button
-          type="button"
-          aria-expanded={detailed}
-          onClick={() => setDetailed((open) => !open)}
-          className={cx(
-            'flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors',
-            detailed ? 'border-accent bg-accent-wash' : 'border-line bg-surface hover:border-line-strong',
-          )}
-        >
-          <span className={cx('grid size-8 shrink-0 place-items-center rounded-md bg-surface-high', detailed ? 'text-accent' : 'text-ink-soft')}>
-            <SlidersHorizontal size={16} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-ink">{t('onboarding.work.detail.toggle')}</span>
-            <span className="mt-0.5 block text-xs leading-snug text-ink-faint">{t('onboarding.work.detail.hint')}</span>
-          </span>
-          <span className="shrink-0 text-ink-faint">{detailed ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-        </button>
-        {detailed ? (
-          <>
-            <Tip>{t('onboarding.work.permission.scope')}</Tip>
-            {settings
-              ? agents.map((agent) => (
-                  <AgentDefaultsCard key={agent} config={settings.agentDefaults[agent]} onChange={(config) => updateDefault.mutate(config)} />
-                ))
-              : null}
-          </>
-        ) : null}
-      </div>
+      {installed.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            aria-expanded={detailed}
+            onClick={() => setDetailed((open) => !open)}
+            className={cx(
+              'flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors',
+              detailed ? 'border-accent bg-accent-wash' : 'border-line bg-surface hover:border-line-strong',
+            )}
+          >
+            <span className={cx('grid size-8 shrink-0 place-items-center rounded-md bg-surface-high', detailed ? 'text-accent' : 'text-ink-soft')}>
+              <SlidersHorizontal size={16} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-ink">{t('onboarding.work.detail.toggle')}</span>
+              <span className="mt-0.5 block text-xs leading-snug text-ink-faint">{t('onboarding.work.detail.hint')}</span>
+            </span>
+            <span className="shrink-0 text-ink-faint">{detailed ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
+          </button>
+          {detailed ? (
+            <>
+              <Tip>{t('onboarding.work.permission.scope')}</Tip>
+              {settings
+                ? installed.map((agent) => (
+                    <AgentDefaultsCard key={agent} config={settings.agentDefaults[agent]} onChange={(config) => updateDefault.mutate(config)} />
+                  ))
+                : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
 
       {/*
        * A row rather than a card: checkpoints are project settings; onboarding only explains their

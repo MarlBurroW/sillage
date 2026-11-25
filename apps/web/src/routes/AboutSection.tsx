@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Compass, ExternalLink, RefreshCw } from 'lucide-react'
+import { Compass, ExternalLink, MousePointerClick, RefreshCw } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { DEFAULT_ONBOARDING, type DesktopUpdateUnsupportedReason, type UpdatePhase } from '@sillage/protocol'
 import { Markdown } from '../components/chat/Markdown'
+import { TOUR_REPLAY_PATH } from '../components/tour/steps'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog } from '../components/ui'
 import { api } from '../lib/api'
 import { useDesktopUpdate, type DesktopUpdates } from '../lib/desktop-updates'
@@ -52,6 +54,7 @@ export function AboutSection() {
 
   const { data: settings } = useUserSettings()
   const replay = useUpdateOnboarding()
+  const navigate = useNavigate()
   const isAdmin = user?.isAdmin ?? false
   const updating = tracking && status !== undefined && status.phase !== 'failed'
   const desktop = useDesktopUpdate()
@@ -106,7 +109,7 @@ export function AboutSection() {
       {/* Replay onboarding here: reopen at the first step without undoing anything. */}
       <Card>
         <CardHeader title={t('about.tour.title')} description={t('about.tour.description')} />
-        <CardBody>
+        <CardBody className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
             icon={<Compass size={15} />}
@@ -114,6 +117,18 @@ export function AboutSection() {
             onClick={() => replay.mutate({ ...DEFAULT_ONBOARDING, pending: true, answers: settings?.onboarding.answers ?? DEFAULT_ONBOARDING.answers })}
           >
             {t('about.tour.replay')}
+          </Button>
+          {/* The bubbles need a conversation to point at: a personal one can always be started. */}
+          <Button
+            variant="secondary"
+            icon={<MousePointerClick size={15} />}
+            disabled={replay.isPending}
+            onClick={() => {
+              replay.mutate({ ...(settings?.onboarding ?? DEFAULT_ONBOARDING), interfaceTourPending: true })
+              navigate(TOUR_REPLAY_PATH)
+            }}
+          >
+            {t('about.tour.interface')}
           </Button>
         </CardBody>
       </Card>
