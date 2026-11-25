@@ -31,6 +31,7 @@ import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { useAgentSettings } from '../components/chat/agent-settings'
 import { ProjectSkills } from '../components/skills/ProjectSkills'
 import { ProjectInstructions } from '../components/instructions/Instructions'
+import { InstructionsSummary, ProjectInstructionsIcon } from '../components/instructions/InstructionsPlace'
 import { ProjectMemory } from '../components/instructions/ProjectMemory'
 import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { useUserSettings } from '../lib/user-settings'
@@ -159,7 +160,7 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
               aria-current={active === key ? 'page' : undefined}
               className={cx('flex min-h-11 min-w-0 items-center justify-center gap-1.5 border-b-2 px-2 py-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent md:flex-1 md:text-sm',
                 active === key ? 'border-accent text-accent' : 'border-transparent text-ink-faint hover:bg-sunken hover:text-ink')}>
-              <Icon size={15} className="shrink-0" /><span>{t(`project.section.${key}`)}</span>
+              {key === 'instructions' ? <ProjectInstructionsIcon projectId={project.id} size={15} className="shrink-0" /> : <Icon size={15} className="shrink-0" />}<span>{t(`project.section.${key}`)}</span>
             </Link>
           })}
         </nav>
@@ -182,8 +183,8 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
             </CardBody></Card> : null}
             {key === 'agents' ? <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} /> : null}
             {key === 'instructions' ? <Card>
-              <CardHeader title={t('instructions.project.title')} description={t('instructions.project.description')} icon={<FileText size={16} />} />
-              <CardBody><ProjectInstructions projectId={project.id} /></CardBody>
+              <CardHeader title={t('instructions.project.title')} description={t('instructions.project.description')} icon={<ProjectInstructionsIcon projectId={project.id} size={16} />} />
+              <CardBody className="flex flex-col gap-4"><InstructionsSummary projectId={project.id} selected="project" /><ProjectInstructions projectId={project.id} /></CardBody>
             </Card> : null}
             {key === 'memory' ? <ProjectMemory projectId={project.id} /> : null}
             {key === 'skills' ? <ProjectSkills projectId={project.id} isOwner={project.isOwner} /> : null}

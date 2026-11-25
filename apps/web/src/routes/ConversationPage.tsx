@@ -77,6 +77,7 @@ import { CardRefContext } from '../lib/card-refs'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
 import { InstructionsDialog } from '../components/instructions/Instructions'
+import { InstructionsButton } from '../components/instructions/InstructionsPlace'
 import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence, usePanelTab } from '../lib/panel'
 import { CardLinkDialog } from '../components/chat/CardLinkDialog'
 import { columnLabel } from '../components/board/columns'
@@ -1041,9 +1042,11 @@ export function ConversationPage() {
               <IconButton label={t('conversation.usage.title')} onClick={() => setUsageOpen(true)}>
                 <GaugeCircle size={18} />
               </IconButton>
-              <IconButton label={t(conversation.projectId ? 'conversation.instructions' : 'discussions.context')} onClick={() => setInstructionsOpen(true)}>
-                <FileText size={18} />
-              </IconButton>
+              {conversation.projectId ? <InstructionsButton projectId={conversation.projectId} onOpen={() => setInstructionsOpen(true)} /> : (
+                <IconButton label={t('discussions.context')} onClick={() => setInstructionsOpen(true)}>
+                  <FileText size={18} />
+                </IconButton>
+              )}
               <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
                 <Search size={18} />
               </IconButton>

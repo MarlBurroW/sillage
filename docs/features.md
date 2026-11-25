@@ -179,8 +179,9 @@ The periodic cleanup removes expired, revoked and orphaned files.
   **Settings › Usage limits** and the session gets a resume message after the
   reset, once per limit, unless someone wrote or interrupted it in between, or
   the limit lifts later than your threshold. Scheduled runs are only reported.
-- **Shared instructions and memory.** One `SILLAGE.md` and one project memory for
-  all five CLIs, editable from the interface, which agents can read and rewrite.
+- **Shared instructions and memory.** One set of instructions and one project
+  memory for all five CLIs, stored by Sillage rather than in your repository,
+  editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).
 - **Installable PWA with notifications.** In-app toasts for questions and decisions,
   push notifications on other devices, and silence while you already have the
@@ -291,7 +292,7 @@ Each CLI keeps its own context files: Claude Code reads `CLAUDE.md` and its auto
 memory under `~/.claude`, Codex reads `AGENTS.md`, OpenCode and Grok Build read
 `AGENTS.md` or `CLAUDE.md`. Sillage gives all four the same two things instead.
 
-|  | Instructions (`SILLAGE.md`) | Memory |
+|  | Instructions | Memory |
 | --- | --- | --- |
 | What it holds | Rules you set: conventions, preferences, things to avoid | What agents learned while working: decisions, pitfalls, facts |
 | Scope | One global part, one part per project | One per project, shared by all its worktrees |
@@ -306,8 +307,8 @@ memory under `~/.claude`, Codex reads `AGENTS.md`, OpenCode and Grok Build read
 **Where a project's instructions live** is chosen when the project is created, and
 can be changed later:
 
-- *In Sillage*: kept in Sillage and given to every CLI. The repository's `CLAUDE.md`
-  and `AGENTS.md` are hidden from agents (`claudeMdExcludes` for Claude Code,
+- *In Sillage*: kept in Sillage's database, with no file written anywhere, and
+  given to every CLI. The repository's `CLAUDE.md` and `AGENTS.md` are hidden from agents (`claudeMdExcludes` for Claude Code,
   `project_doc_max_bytes = 0` for Codex, `OPENCODE_DISABLE_PROJECT_CONFIG` for
   OpenCode, an agent profile without `agentsMd` for Grok Build) so nothing arrives twice. The files themselves are not touched.
   OpenCode has no finer switch: its project `opencode.json` and `.opencode/` folder
