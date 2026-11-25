@@ -370,7 +370,10 @@ export function useAgentSettings({
 
   const modelOptions = useMemo((): SettingChoice<string>[] => {
     const models = catalog?.models ?? []
-    const known = models.map((model) => {
+    // Catalogs mixing sources (opencode's providers) are filed by section: the description would
+    // only repeat the heading.
+    const grouped = models.some((model) => model.group)
+    const known: SettingChoice<string>[] = models.map((model) => {
       const named = model.isDefault ? defaultModelLabel(models, model, t) : null
       return {
         value: model.value,
@@ -378,14 +381,23 @@ export function useAgentSettings({
         // The hint identifies the actual version behind an alias; Opus alone does not say which
         // generation responds. Add a default reminder only if the label does not already convey it.
         hint: [
-          model.description,
+          grouped ? null : model.description,
           model.hint,
           !named && model.isDefault ? t('composer.model.default') : null,
         ]
           .filter(Boolean)
           .join(' · '),
+        group: model.group,
       }
     })
+    // Long sectioned catalogs open on the account's latest choices, repeated above their section.
+    if (grouped) {
+      const recent = (catalog?.recent ?? []).flatMap((value) => {
+        const option = known.find((entry) => entry.value === value)
+        return option ? [{ ...option, group: t('composer.model.recent'), shortcut: true }] : []
+      })
+      known.unshift(...recent)
+    }
 
     // Keep saved models readable and selectable when the catalog cannot load, or the empty select
     // would erase conversation settings. Only preserve actual values, not the sentinel. Old names

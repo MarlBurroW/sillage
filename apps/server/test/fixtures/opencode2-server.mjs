@@ -94,9 +94,14 @@ const server = createServer((request, response) => {
         { id: 'small', modelID: 'small', providerID: 'fixture', name: 'Small', enabled: true, status: 'active',
           variants: [{ id: 'default' }, { id: 'low' }, { id: 'high' }], limit: { context: 1000, output: 100 } },
         { id: 'old', modelID: 'old', providerID: 'fixture', name: 'Old', enabled: true, status: 'deprecated', variants: [], limit: { context: 10, output: 1 } },
+        { id: 'claude', modelID: 'claude', providerID: 'github-copilot', name: 'Claude', enabled: true, status: 'active', variants: [], limit: { context: 2000, output: 100 } },
+        { id: 'auto', modelID: 'auto', providerID: 'github-copilot', name: 'Auto', enabled: true, status: 'active', variants: [], limit: { context: 2000, output: 100 } },
       ]))
     }
     if (route === 'GET /api/model/default') return json(response, 200, located(null))
+    if (route === 'GET /api/provider') {
+      return json(response, 200, located([{ id: 'fixture', name: 'Fixture Cloud' }, { id: 'github-copilot', name: 'GitHub Copilot' }]))
+    }
     if (route === 'GET /api/session') {
       const query = new URL(request.url, 'http://fixture').searchParams
       const root = { ...session(NATIVE), title: 'Native work', time: { created: 1, updated: 17 } }

@@ -834,6 +834,7 @@ export const fr: Catalog = {
   'composer.sandbox.workspaceWrite.hint': 'Écriture limitée au projet',
   'composer.sandbox.fullAccess': 'Accès total',
   'composer.sandbox.fullAccess.hint': 'Aucun garde-fou, à réserver aux dossiers sans risque',
+  'composer.model.recent': 'Récents',
   'composer.model.default': 'par défaut',
   'composer.model.defaultNamed': 'Défaut : {model}',
   'composer.select.saved': 'Réglage enregistré',

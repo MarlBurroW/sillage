@@ -25,7 +25,7 @@ test('catalogue : modèles des fournisseurs connectés, variantes, agents primai
   const { adapter, cwd } = await adapterFixture(t)
   const listing = await adapter.models()
   assert.deepEqual(listing.models, [{
-    value: 'fixture/small', displayName: 'Small', description: 'Fixture', hint: 'fixture/small', isDefault: true,
+    value: 'fixture/small', displayName: 'Small', description: 'Fixture', hint: 'fixture/small', group: 'Fixture', isDefault: true,
     efforts: [{ value: 'low', label: 'low', hint: null }, { value: 'high', label: 'high', hint: null }],
     defaultEffort: null, supportsFastMode: false,
   }])

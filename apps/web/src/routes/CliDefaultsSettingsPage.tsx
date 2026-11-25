@@ -1,9 +1,10 @@
-import { ShieldAlert, SlidersHorizontal } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, ShieldAlert, SlidersHorizontal } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { agentKindSchema, defaultConfigFor, type AgentConfig, type AgentKind } from '@sillage/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { useAgentSettings } from '../components/chat/agent-settings'
-import type { SettingGroup } from '../components/chat/ComposerSettings'
+import { SettingsSurface, type SettingGroup } from '../components/chat/ComposerSettings'
+import { RefreshButton, SettingOptions, SettingsHeading } from '../components/chat/SettingsPanel'
 import { Banner, Card, CardBody, CardHeader, ChoiceList, Select } from '../components/ui'
 import { useTranslate } from '../lib/i18n'
 import { useUpdateAgentDefault, useUserSettings } from '../lib/user-settings'
@@ -112,6 +113,7 @@ export function CliDefaultsSettingsPage() {
  * the field: this is the only place safeguards are chosen without seeing the work they govern.
  */
 function GroupField({ group }: { group: SettingGroup }) {
+  if (group.key === 'model' && group.options.length > SEARCHABLE_MODELS) return <ModelField group={group} />
   const selected = group.options.find((option) => option.value === group.value)
 
   return (
@@ -131,3 +133,43 @@ function GroupField({ group }: { group: SettingGroup }) {
     </div>
   )
 }
+
+/** Beyond this many models a dropdown stops being usable: the composer's searchable list takes over. */
+const SEARCHABLE_MODELS = 8
+
+/**
+ * The model, chosen in the composer's own panel: search, provider sections and recent models.
+ * A plain dropdown cannot hold opencode's hundred models across providers.
+ */
+function ModelField({ group }: { group: SettingGroup }) {
+  // The panel returns focus to a composer when there is one; this page has none.
+  const noComposer = useRef<HTMLTextAreaElement>(null)
+  const selected = group.options.find((option) => option.value === group.value && !option.shortcut)
+  const trigger = (
+    <button type="button" aria-label={`${group.label} · ${selected?.label ?? group.value}`}
+      className="group tap-target flex w-full min-w-0 items-center gap-2 rounded-md border border-line bg-sunken px-3 text-left text-sm text-ink transition-colors hover:border-line-strong data-[state=open]:border-accent">
+      <span className="min-w-0 flex-1 truncate">
+        {selected?.label ?? group.value}
+        {selected?.group ? <span className="text-ink-faint"> · {selected.group}</span> : null}
+      </span>
+      <ChevronDown size={16} className="shrink-0 text-ink-faint transition-transform group-data-[state=open]:rotate-180" />
+    </button>
+  )
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-sm font-medium text-ink-soft">{group.label}</span>
+      <SettingsSurface label={group.label} trigger={trigger} inputRef={noComposer} disabled={false} quick side="bottom">
+        {(close) => (
+          <>
+            <SettingsHeading title={group.label} onClose={() => close()}
+              action={group.refresh ? <RefreshButton group={group} refresh={group.refresh} /> : null} />
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+              <SettingOptions group={group} dense onPick={(value) => { group.onChange(value); close() }} />
+            </div>
+          </>
+        )}
+      </SettingsSurface>
+    </div>
+  )
+}
+

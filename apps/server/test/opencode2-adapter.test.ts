@@ -24,11 +24,17 @@ test('OpenCode 2 : catalogue des modèles utilisables, variantes, agents par ide
   const { adapter, cwd } = await adapterFixture(t)
   const listing = await adapter.models()
   // Deprecated models are left out; `default` is the absence of a variant.
-  assert.deepEqual(listing.models, [{
-    value: 'fixture/small', displayName: 'Small', description: 'fixture', hint: 'fixture/small', isDefault: true,
+  assert.deepEqual(listing.models[0], {
+    value: 'fixture/small', displayName: 'Small', description: 'fixture', hint: 'fixture/small', group: 'Fixture Cloud', isDefault: true,
     efforts: [{ value: 'low', label: 'low', hint: null }, { value: 'high', label: 'high', hint: null }],
     defaultEffort: null, supportsFastMode: false,
-  }])
+  })
+  // Filed by provider name, and Copilot's Auto router leads its section.
+  assert.deepEqual(listing.models.map((model) => [model.group, model.value]), [
+    ['Fixture Cloud', 'fixture/small'],
+    ['GitHub Copilot', 'github-copilot/auto'],
+    ['GitHub Copilot', 'github-copilot/claude'],
+  ])
   // 2.x prompts name agents by ID, shown under their display name.
   assert.deepEqual(listing.modes, [{ mode: 'build', label: 'Build', hint: 'Default agent' }])
   assert.deepEqual(listing.agents, [{ name: 'general', description: 'General work' }])

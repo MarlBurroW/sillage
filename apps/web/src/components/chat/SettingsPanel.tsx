@@ -13,7 +13,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Check, ChevronLeft, ChevronRight, GripVertical, Pin, PinOff, Plug, RefreshCw, Search, X } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 import { MODEL_EFFORT_KEYS, pinnedExtras, type SettingGroup } from './ComposerSettings'
@@ -393,7 +393,7 @@ export function SettingOptions({ group, onPick, disabled = false, compact = fals
   const searchable = group.key === 'model' && group.options.length > 8
   const normalized = query.trim().toLocaleLowerCase()
   const options = searchable && normalized
-    ? group.options.filter((option) => `${option.label} ${option.hint ?? ''}`.toLocaleLowerCase().includes(normalized))
+    ? group.options.filter((option) => !option.shortcut && `${option.label} ${option.hint ?? ''} ${option.group ?? ''}`.toLocaleLowerCase().includes(normalized))
     : group.options
   const items = useRef<(HTMLButtonElement | null)[]>([])
   const selectable = options.flatMap((option, index) => option.disabled || disabled ? [] : [index])
@@ -426,8 +426,16 @@ export function SettingOptions({ group, onPick, disabled = false, compact = fals
       <div role="radiogroup" aria-label={group.label} className={cx(compact ? 'grid gap-1.5' : 'flex flex-col gap-1', compact && (options.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'))}>
         {options.map((option, index) => {
           const checked = option.value === group.value
+          // A heading wherever the section changes; long catalogs (opencode) mix providers.
+          const heading = !compact && option.group && option.group !== options[index - 1]?.group ? option.group : null
           return (
-            <button key={option.value} type="button" role="radio" aria-checked={checked}
+            <Fragment key={`${option.shortcut ? 'shortcut:' : ''}${option.value}`}>
+            {heading ? (
+              <div role="presentation" className="sticky top-0 z-10 -mx-1 bg-surface px-2 pb-1 pt-2 text-[0.6875rem] font-medium uppercase tracking-wide text-ink-faint first:pt-0">
+                {heading}
+              </div>
+            ) : null}
+            <button type="button" role="radio" aria-checked={checked}
               aria-describedby={compact && checked && option.hint ? `${id}-hint` : undefined}
               disabled={disabled || option.disabled}
               ref={(node) => { items.current[index] = node }}
@@ -451,6 +459,7 @@ export function SettingOptions({ group, onPick, disabled = false, compact = fals
               </span>
               {!compact ? <Check size={16} aria-hidden className={cx('shrink-0 text-accent', !checked && 'invisible')} /> : null}
             </button>
+            </Fragment>
           )
         })}
       </div>

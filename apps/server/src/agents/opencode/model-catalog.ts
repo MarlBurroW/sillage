@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import type { Agent, Command, Config, ResponseBody } from '@sillage/opencode-bindings'
-import type { ModelRef } from '@sillage/opencode-bindings/v2'
+import type { ModelRef, ProviderInfo } from '@sillage/opencode-bindings/v2'
 import type { SlashCommandDto } from '@sillage/protocol'
 import { usableSlashCommands } from '@sillage/protocol'
 import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
@@ -28,6 +28,8 @@ export interface CatalogModel {
   provider: string
   /** opencode effort variants. */
   variants: string[]
+  /** Provider display name, the picker's section. */
+  group: string
 }
 
 export interface CatalogAgent {
@@ -104,6 +106,7 @@ async function listing1(server: OpencodeServer): Promise<Listing> {
       name: model.name,
       provider: provider.name,
       variants: Object.keys(model.variants ?? {}),
+      group: provider.name,
     }))),
     defaultModel: config.model ?? (first && fallback ? `${first.id}/${fallback}` : null),
     agents: agents.map((agent) => ({
@@ -118,23 +121,46 @@ async function listing1(server: OpencodeServer): Promise<Listing> {
  * "no variant".
  */
 async function listing2(server: OpencodeServer): Promise<Listing> {
-  const [models, fallback, agents] = await Promise.all([
+  const [models, fallback, agents, providers] = await Promise.all([
     readModels2(server),
     server.get<{ data: ModelRef | null }>('/api/model/default'),
     readAgents2(server),
+    // Names only: a failure leaves provider IDs as section titles.
+    server.get<{ data?: ProviderInfo[] } | null>('/api/provider').then((response) => response?.data ?? [], () => []),
   ])
+  const names = new Map(providers.map((provider) => [provider.id as string, provider.name]))
   const usable = models.filter((model) => model.enabled && model.status !== 'deprecated')
   const first = usable[0]
   return {
-    models: usable.map((model) => ({
+    models: providerSections(usable.map((model) => ({
       value: `${model.providerID}/${model.id}`,
       name: model.name,
       provider: model.providerID,
       variants: model.variants.map((variant) => variant.id).filter((id) => id !== 'default'),
-    })),
+      group: names.get(model.providerID) || model.providerID,
+    }))),
     defaultModel: fallback.data ? `${fallback.data.providerID}/${fallback.data.id}` : first ? `${first.providerID}/${first.id}` : null,
     agents: agents.map((agent) => ({
       value: agent.id, label: agent.name, description: agent.description ?? null, mode: agent.mode, hidden: agent.hidden,
     })),
   }
 }
+
+/**
+ * Models filed by provider: sections by provider name, the catalog's order kept inside. A
+ * provider's Auto entry (GitHub Copilot's router, 2.2.7) leads its section: it is a choice of how
+ * to pick, not one model among the others.
+ */
+export function providerSections(models: CatalogModel[]): CatalogModel[] {
+  const sections = new Map<string, CatalogModel[]>()
+  for (const model of models) {
+    const section = sections.get(model.group) ?? []
+    section.push(model)
+    sections.set(model.group, section)
+  }
+  return [...sections.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([, section]) => [
+    ...section.filter((model) => model.value.endsWith('/auto')),
+    ...section.filter((model) => !model.value.endsWith('/auto')),
+  ])
+}
+

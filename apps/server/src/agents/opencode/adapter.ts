@@ -161,6 +161,7 @@ export class OpencodeAdapter implements AgentAdapter {
       displayName: model.name,
       description: model.provider,
       hint: model.value,
+      group: model.group,
       isDefault: model.value === listing.defaultModel,
       // Variants are opencode effort. None is default: no variant means model’s own settings.
       efforts: model.variants.map((variant) => ({ value: variant, label: variant, hint: null })),

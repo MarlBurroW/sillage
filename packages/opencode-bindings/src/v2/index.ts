@@ -42,6 +42,7 @@ export type ModelInfo = Schemas['Model.Info']
 export type AgentInfo = Schemas['Agent.Info']
 export type CommandInfo = Schemas['Command.Info']
 export type SkillInfo = Schemas['Skill.Info']
+export type ProviderInfo = Schemas['Provider.Info']
 export type McpServer = Schemas['Mcp.Server']
 export type FileAttachment = Schemas['PromptInput.FileAttachment']
 

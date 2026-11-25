@@ -23,6 +23,13 @@ export interface SettingOption {
   icon?: ReactNode
   disabled?: boolean
   tone?: SettingTone
+  /** Section heading the option sits under in long lists (a model's provider). */
+  group?: string
+  /**
+   * Repeats an option listed again in its own section (a recent model). Left out of search
+   * results, where the section copy is enough.
+   */
+  shortcut?: boolean
 }
 
 /** Option retaining its original value union before widening. */
@@ -300,7 +307,7 @@ function ToggleIcon({ group, disabled }: { group: SettingGroup; disabled: boolea
 }
 
 /** Same contents anchored on desktop or shown in a touch sheet. */
-export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false, onCloseAutoFocus: restoreFocus }: {
+export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false, side = 'top', onCloseAutoFocus: restoreFocus }: {
   label: string
   trigger: ReactNode
   children: (close: (resumeTyping?: boolean) => void) => ReactNode
@@ -308,6 +315,8 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
   disabled: boolean
   quick?: boolean
   spacious?: boolean
+  /** Desktop popover side: above the composer by default, below a field higher up a page. */
+  side?: 'top' | 'bottom'
   onCloseAutoFocus?: (event: Event) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -377,7 +386,7 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
     <Popover.Root open={open} onOpenChange={changeOpen}>
       <Popover.Trigger asChild {...triggerEvents}>{trigger}</Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content ref={content} side="top" align={quick ? 'start' : 'end'} sideOffset={8} collisionPadding={12}
+        <Popover.Content ref={content} side={side} align={quick ? 'start' : 'end'} sideOffset={8} collisionPadding={12}
           aria-label={label} onOpenAutoFocus={onOpenAutoFocus} onCloseAutoFocus={onCloseAutoFocus}
           className={cx('surface z-50 flex flex-col overflow-hidden rounded-xl border border-line shadow-pop outline-none', quick ? 'w-[min(23rem,var(--radix-popover-content-available-width))]' : 'w-[min(28rem,var(--radix-popover-content-available-width))]')}
           style={{ maxHeight: 'var(--radix-popover-content-available-height)' }}

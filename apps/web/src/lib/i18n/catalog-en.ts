@@ -844,6 +844,7 @@ export const en = {
   'composer.sandbox.workspaceWrite.hint': 'Writes limited to the project',
   'composer.sandbox.fullAccess': 'Full access',
   'composer.sandbox.fullAccess.hint': 'No safeguards, reserve for risk-free folders',
+  'composer.model.recent': 'Recent',
   'composer.model.default': 'default',
   'composer.model.defaultNamed': 'Default: {model}',
   'composer.select.saved': 'Saved setting',

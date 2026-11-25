@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentKindSchema, compareCliVersions, PREFERRED_CLI_RELEASES, type AgentModelsDto, type ProjectCommandsDto } from '@sillage/protocol'
+import { and, desc, eq, isNull } from 'drizzle-orm'
+import { conversations } from '@sillage/db'
+import { agentKindSchema, compareCliVersions, PREFERRED_CLI_RELEASES, type AgentKind, type AgentModelsDto, type ProjectCommandsDto } from '@sillage/protocol'
 import type { CliDescription } from '../../agents/cli-binary.js'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
@@ -182,6 +184,7 @@ export function registerAgentRoutes(
         err,
       )
     }
+    listing = { ...listing, recent: recentModels(ctx.db, user.id, adapter.kind) }
     if (!prices) return listing
     // An alias is priced and named as the model it resolves to (the hint): 'opus' itself is in no list.
     return {
@@ -216,3 +219,32 @@ export function registerAgentRoutes(
     }
   })
 }
+
+/** Recent models offered at the top of a picker: enough to find yesterday's choice, not a history. */
+const RECENT_MODELS = 5
+
+/**
+ * The account's latest models with one CLI, most recent first. The session's announced model
+ * comes first, the configured one when no session opened yet; benchmark runs are not choices the
+ * user made.
+ */
+export function recentModels(db: AppContext['db'], userId: string, agent: AgentKind): string[] {
+  const rows = db.select({ model: conversations.model, config: conversations.config })
+    .from(conversations)
+    .where(and(eq(conversations.userId, userId), eq(conversations.agent, agent), isNull(conversations.benchmarkId)))
+    .orderBy(desc(conversations.updatedAt))
+    .limit(100)
+    .all()
+  const recent: string[] = []
+  for (const row of rows) {
+    let model = row.model
+    if (!model) {
+      try { model = (JSON.parse(row.config) as { model?: unknown }).model as string | null } catch { model = null }
+    }
+    if (typeof model !== 'string' || !model || recent.includes(model)) continue
+    recent.push(model)
+    if (recent.length === RECENT_MODELS) break
+  }
+  return recent
+}
+

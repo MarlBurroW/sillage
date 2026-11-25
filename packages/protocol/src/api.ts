@@ -832,6 +832,11 @@ export interface AgentModelDto {
   listPrice?: ModelListPrice | null
   /** Name the public reference list gives this model ("GPT-6.2 Astra"); null when unlisted. */
   publicName?: string | null
+  /**
+   * Section the picker files this model under, for catalogs mixing sources: the provider name for
+   * opencode ("GitHub Copilot", "Anthropic"). Absent when the CLI lists one family.
+   */
+  group?: string
 }
 
 /**
@@ -904,6 +909,11 @@ export interface AgentModelsDto {
   fastMode: FastModeAvailabilityDto | null
   /** Named sub-agents the CLI can launch; empty if unreported. */
   agents: AgentInfoDto[]
+  /**
+   * The requesting account's latest models with this CLI, most recent first, from its own
+   * conversations. Per user, so added by the route rather than cached with the catalog.
+   */
+  recent?: string[]
   fetchedAt: number
 }
 
