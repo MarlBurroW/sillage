@@ -8,6 +8,7 @@ import { useEffect, useState, type ComponentPropsWithRef, type CSSProperties, ty
 import { activityTone, type ActivityCounts } from '../../lib/activity'
 import { useTranslate } from '../../lib/i18n'
 import type { NavSpace } from '../../lib/nav-space'
+import { PALETTE_SHORTCUT } from '../../lib/palette'
 import type { RailProjects } from '../../lib/rail-projects'
 import { Logo } from '../Logo'
 import { ProjectMark } from '../ProjectMark'
@@ -19,9 +20,6 @@ import { tourAnchor } from '../tour/steps'
 
 /** Longest fade at an end of the scrolled projects, in pixels. */
 const FADE = 22
-
-/** Display the modifier key actually used by the platform. */
-const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
 
 /**
  * The rail: every entry does the same thing, it selects a space. Icons carry a name and their
@@ -80,7 +78,7 @@ export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hi
     <TooltipProvider delayDuration={120}>
       <div className="nav-rail" data-nav-rail {...tourAnchor('rail')}>
         <span className="nav-rail-brand"><Logo size={22} className="text-accent" /></span>
-        <RailEntry label={t('shell.search')} detail={SEARCH_HINT} onClick={onSearch} {...tourAnchor('palette')}><Search size={18} /></RailEntry>
+        <RailEntry label={t('shell.search')} detail={PALETTE_SHORTCUT} onClick={onSearch} {...tourAnchor('palette')}><Search size={18} /></RailEntry>
         <RailEntry label={t('shell.overview.heading')} detail={totalLabel || t('shell.activity.quiet')} current={space === 'activity'} onClick={() => onSpace('activity')} data-nav-space="activity">
           <Activity size={18} />
           {total.awaiting > 0 ? <span className="nav-rail-badge">{total.awaiting}</span> : total.running > 0 ? <span className="nav-rail-dot nav-tone-running" /> : null}

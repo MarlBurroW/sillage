@@ -1473,12 +1473,59 @@ Palette (Cmd+K, Ctrl+K, sidebar entry for touch) reaches projects, conversations
 message excerpts, files, tickets, scheduled tasks, skills, MCP servers, settings,
 and commands (new conversation, board, theme).
 
-**No filters to configure.** One input, results grouped by project then “General”.
-Groups sort by best result, current project wins ties; named items precede files,
-files precede message excerpts because every repository has a matching file.
-Project names restrict (“nimbus cache”) or alone list conversations; types (“skill”,
-“ticket”, “mcp”) list that type. Groups show five rows and expand; Tab advances
-groups. Empty input is quick switcher: recent conversations, current project first.
+**One input, one optional token.** Opened under a project (`/p/:id/*`), the palette
+searches that project: a token before the input names it, and results form one flat
+list. The scope filters content, never navigation: other projects stay reachable by
+name (group “Other projects”), commands and settings by theirs. A last row counts
+what the scope hides and widens the search on Enter; when the project holds nothing,
+the other projects' results show instead of an empty list. Removing the token:
+Backspace at the start of the field (not a held key, which is still emptying the
+text), the shortcut pressed again, or the token's ×. The shortcut then switches
+project ↔ everywhere without touching the text, and the removed token leaves a
+dashed place to tap, since touch has no shortcut. Tab on a project row puts that
+project in the token and clears the text that named it; a project heading narrows
+to its project and keeps the text. A token rather than a typed `project:` filter:
+it survives select-all, needs no quoting for names with spaces, goes in one tap.
+
+**Without the token**, results are grouped by project then “General”. Groups sort
+by best result, current project wins ties; named items precede files, files precede
+message excerpts because every repository has a matching file. Project names
+restrict (“nimbus cache”) or alone list conversations; types (“skill”, “ticket”,
+“mcp”) list that type. Groups show five rows and expand; Tab advances groups.
+
+**Prefixes.** A leading `>` keeps commands, actions and settings, `#` tickets, `/`
+files; alone, a prefix lists that family (files need two characters). Type words
+keep working: the prefix is the short form that cannot collide with a title.
+
+**Empty input is a switcher.** What waits on the user comes first (pending
+decisions, sessions blocked on an answer, failures not yet read), then recent
+conversations, then the other recent projects. Session rows show their live state
+in words. In a conversation the concentration command stays the first row: shortcut
+then Enter toggles it.
+
+**The open session's commands** have their own group, ahead of the others. Those
+needing the conversation page (dialogs, thread search, compaction, interruption)
+are published by it through `lib/session-commands` under the toolbar's own
+conditions, so a command never appears where its button would not; rename,
+favorite, archive, reference, ticket and panel tabs are built from the conversation.
+
+**Steps.** A command may ask a second question in the palette: pick from a list
+(link a ticket) or type a value (rename, title proposed and selected). The step's
+name takes the token's place; Backspace or Escape goes back, Escape again closes.
+Actions with consequences to read (moving to a shared project, handing off with a
+model and a budget) open their existing dialog rather than a step.
+
+**Creating from the text.** From three characters, a last group offers a new
+session (the text prefills the project's draft) and a new ticket. Creating a ticket
+leaves the palette open and empty, the ticket offered as first row: several ideas
+are captured in a row.
+
+**Beside the current view.** The modifier with Enter or a click opens a result's
+address in a new tab, a new window in the desktop app.
+
+**Habits.** Picks are counted per browser (`sillage.palette.usage`, 200 entries,
+14-day half-life) and add at most 0.8 to a score, below the current-project bonus:
+habit settles close matches and never lifts a weak match over a clearly better one.
 
 **Same fuzzy matching on client/server** (`packages/protocol/src/fuzzy.ts`),
 otherwise server might discard files palette would rank first. Each query word
@@ -1493,7 +1540,10 @@ directories contiguous matching; slash separates like space (`web/pal`).
 **In-memory data responds immediately.** Projects, conversations, tasks, MCP servers
 come from navigation lists; all-project tickets/skills from lightweight catalog
 reread on open. Only files (2+ characters) and message content (3+) use server
-after input settles. Server caches directory file lists 15 seconds: typing causes
+after input settles. Both still search every project under a token, which is what
+lets the palette count and fall back on what the scope hides; the scoped project
+gets the larger share of files (40 against 12), and a second message query limited
+to it, because the global one spends its 20 results across all projects. Server caches directory file lists 15 seconds: typing causes
 several searches, and running `git ls-files` in every project per letter repeats
 work. Worktree conversation searches its project in that worktree where files open.
 

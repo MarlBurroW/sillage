@@ -42,7 +42,7 @@ export function registerPaletteRoutes(app: FastifyInstance, ctx: AppContext, lib
 
   app.get('/api/palette/files', async (request): Promise<PaletteFilesDto> => {
     const user = requireUser(request)
-    const { q, conversationId } = paletteFilesQuerySchema.parse(request.query)
+    const { q, conversationId, projectId } = paletteFilesQuerySchema.parse(request.query)
 
     const targets: FileSearchTarget[] = visibleProjects(user.id).map((project) => ({
       projectId: project.id,
@@ -63,6 +63,6 @@ export function registerPaletteRoutes(app: FastifyInstance, ctx: AppContext, lib
       if (target) target.cwd = conversationWorkspace(ctx.db, conversationId, user.id)
     }
 
-    return { projects: await searchProjectFiles(targets, q) }
+    return { projects: await searchProjectFiles(targets, q, projectId) }
   })
 }

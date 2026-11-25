@@ -130,6 +130,12 @@ The periodic cleanup removes expired, revoked and orphaned files.
   Appearance settings. Optionally add RSS or Atom feeds in News to read headlines
   while an agent works; the feed is off until you enable it.
 - **Full-text search** across every conversation in every project.
+- **Command palette** (Cmd/Ctrl+K). Inside a project it searches that project, named
+  by a token before the input; remove the token, or press the shortcut again, to
+  search everywhere. It lists what waits on you first, runs the open session's
+  actions (rename, archive, export, link a ticket), narrows with `>` for commands,
+  `#` for tickets and `/` for files, and starts a session or a ticket from the text
+  you typed.
 - **Processes launched by Sillage.** On Linux, see what each agent and terminal has
   started, each command with its process tree, ports and originating conversation,
   plus the permanent apps agents run as `sillage-app-*` systemd units; stop them from

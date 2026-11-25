@@ -1,16 +1,29 @@
 import { conversationPath } from '@sillage/protocol'
 import {
+  Archive,
+  ArchiveRestore,
   BookOpen,
+  Bot,
   CalendarClock,
+  CircleHelp,
   Contrast,
+  FolderGit2,
   FolderPlus,
+  FolderTree,
   LayoutGrid,
+  Link2,
   MessageSquare,
+  MessageSquarePlus,
   Moon,
+  Pencil,
   Plug,
   ExternalLink,
   Play,
   Plus,
+  Star,
+  StarOff,
+  TicketPlus,
+  Unlink,
   RotateCw,
   ShieldQuestion,
   Square,
@@ -26,6 +39,7 @@ import type { ReactNode } from 'react'
 import type {
   ConversationDto,
   McpServer,
+  DecisionDto,
   PaletteCatalogDto,
   PaletteFilesDto,
   ProjectActionDto,
@@ -37,18 +51,26 @@ import { actionView, describeActionState } from '../../lib/actions'
 import type { MessageKey, MessageParams } from '../../lib/i18n'
 import { describeTransport } from '../../lib/mcp'
 import {
+  ATTENTION_GROUP,
+  CREATE_GROUP,
+  SESSION_GROUP,
   WEIGHT,
   field,
   kindField,
   projectField,
   type PaletteItem,
+  type PaletteNotice,
 } from '../../lib/palette'
+import type { PanelTab } from '../../lib/panel'
+import type { SessionCommand } from '../../lib/session-commands'
 import { projectViewOf, projectViewPath } from '../../lib/project-view'
 import { THEMES, THEME_LABELS, type Theme } from '../../lib/theme'
 import { AgentIcon } from '../AgentIcon'
 import { ProjectAvatar } from '../ProjectAvatar'
 import { columnLabel } from '../board/columns'
+import { decisionQuestion } from '../decisions/decision-text'
 import { FileIcon } from './FileIcon'
+import { SessionState } from './SessionState'
 
 /**
  * Build palette results entity type by type. Each supplies searchable fields and destination; all
@@ -141,6 +163,8 @@ function conversationItem(t: Translate, conversation: ConversationDto, project?:
     detail: card,
     icon: <AgentIcon agent={conversation.agent} size={ICON} />,
     aside: conversation.archivedAt === null ? undefined : t('search.archived'),
+    // Working, waiting or failed: what tells two sessions with close titles apart.
+    badge: <SessionState conversation={conversation} />,
     at: conversation.updatedAt,
     fields: [
       sentence(conversation.title),
@@ -172,6 +196,7 @@ function cardItems(t: Translate, catalog: PaletteCatalogDto | undefined, names: 
       fields: [sentence(title), projectField(project), kindField(t('search.kind.card'))],
       target: { type: 'navigate', to: `/p/${card.projectId}/board?carte=${card.number}` },
       boost: closed ? -1.5 : 0,
+      rank: card.number,
     }]
   })
 }
@@ -432,4 +457,180 @@ export function buildMessageItems(
       fixedScore: MESSAGE_SCORE,
     }]
   })
+}
+
+/** What the open session's commands need from the shell: they act on it without leaving the palette's caller. */
+export interface SessionSources {
+  t: Translate
+  conversation: ConversationDto
+  /** Actions that need the conversation page, published by it. */
+  commands: readonly SessionCommand[]
+  cards: PaletteCatalogDto['cards']
+  rename: (title: string) => void
+  toggleFavorite: () => void
+  toggleArchived: () => void
+  setCard: (cardId: string | null) => void
+  copyReference: () => Promise<PaletteNotice>
+  openPanel: (tab: PanelTab) => void
+}
+
+const PANEL_TABS: { tab: PanelTab; label: MessageKey; icon: ReactNode }[] = [
+  { tab: 'files', label: 'panel.tab.files', icon: <FolderTree size={ICON} /> },
+  { tab: 'git', label: 'panel.tab.git', icon: <FolderGit2 size={ICON} /> },
+  { tab: 'terminals', label: 'panel.tab.terminals', icon: <SquareTerminal size={ICON} /> },
+  { tab: 'agents', label: 'panel.tab.agents', icon: <Bot size={ICON} /> },
+]
+
+/**
+ * Commands on the open session, under their own group. Keys do not carry the session: the habit
+ * ranking learns that this account archives or renames often, whichever session is open.
+ */
+export function buildSessionItems(sources: SessionSources): PaletteItem[] {
+  const { t, conversation } = sources
+  const command = (key: string, title: string, icon: ReactNode, target: PaletteItem['target']): PaletteItem => ({
+    key: `session:${key}`,
+    kind: 'command',
+    projectId: null,
+    group: SESSION_GROUP,
+    title,
+    icon,
+    fields: [sentence(title), kindField(t('search.kind.command'))],
+    target,
+  })
+  const run = (action: () => void): PaletteItem['target'] => ({ type: 'run', run: action })
+
+  const items: PaletteItem[] = []
+  if (conversation.isOwner) {
+    items.push(command('rename', t('search.session.rename'), <Pencil size={ICON} />, {
+      type: 'step',
+      step: {
+        type: 'input',
+        key: 'rename',
+        title: t('shell.rename'),
+        placeholder: t('search.session.rename.placeholder'),
+        initial: conversation.title,
+        action: (text) => t('search.session.rename.action', { title: text }),
+        submit: sources.rename,
+      },
+    }))
+  }
+  items.push(
+    command(
+      'favorite',
+      t(conversation.favorite ? 'shell.conversation.unfavorite' : 'shell.conversation.favorite'),
+      conversation.favorite ? <StarOff size={ICON} /> : <Star size={ICON} />,
+      run(sources.toggleFavorite),
+    ),
+    command('reference', t('sessionRef.copy'), <Link2 size={ICON} />, { type: 'stay', run: sources.copyReference }),
+  )
+  if (conversation.isOwner) {
+    const archived = conversation.archivedAt !== null
+    items.push(command(
+      'archive',
+      t(archived ? 'shell.conversation.unarchive' : 'shell.conversation.archive'),
+      archived ? <ArchiveRestore size={ICON} /> : <Archive size={ICON} />,
+      run(sources.toggleArchived),
+    ))
+  }
+  if (conversation.isOwner && conversation.projectId) {
+    const { projectId, card } = conversation
+    items.push(command('card', t(card ? 'search.session.card.change' : 'conversation.card.link'), <Ticket size={ICON} />, {
+      type: 'step',
+      step: {
+        type: 'pick',
+        key: 'card',
+        title: t('conversation.card.link'),
+        placeholder: t('conversation.card.link.search'),
+        items: () =>
+          sources.cards
+            .filter((entry) => entry.projectId === projectId && entry.id !== card?.id)
+            .map((entry): PaletteItem => {
+              const title = `#${entry.number} ${entry.title}`
+              return {
+                key: `link:${entry.id}`,
+                kind: 'card',
+                projectId: null,
+                title,
+                detail: columnLabel(entry.column),
+                icon: <Ticket size={ICON} />,
+                fields: [sentence(title)],
+                target: run(() => sources.setCard(entry.id)),
+                // Sessions attach to work in progress far more often than to closed tickets.
+                boost: entry.column === 'done' || entry.column === 'abandoned' ? -1.5 : 0,
+                rank: entry.number,
+                transient: true,
+              }
+            }),
+      },
+    }))
+    if (card) {
+      items.push(command('card-detach', t('search.session.card.detach', { number: card.number }), <Unlink size={ICON} />, run(() => sources.setCard(null))))
+    }
+  }
+  for (const entry of sources.commands) items.push(command(entry.key, entry.label, entry.icon, run(entry.run)))
+  for (const { tab, label, icon } of PANEL_TABS) {
+    items.push(command(`panel:${tab}`, t('search.session.panel', { tab: t(label) }), icon, run(() => sources.openPanel(tab))))
+  }
+  // Listed without a query, they keep this order rather than the alphabet's.
+  return items.map((item, index) => ({ ...item, rank: items.length - index }))
+}
+
+/**
+ * Rows made from the typed text, after the results: the query that found nothing is often the
+ * name of the thing to start. Their keys change with every letter, so habit ranking skips them.
+ */
+export function buildCreateItems(
+  t: Translate,
+  text: string,
+  project: ProjectDto,
+  create: { session: () => void; card: () => Promise<PaletteNotice> },
+): PaletteItem[] {
+  const item = (key: string, title: string, icon: ReactNode, target: PaletteItem['target']): PaletteItem => ({
+    key: `create:${key}`,
+    kind: 'command',
+    projectId: null,
+    group: CREATE_GROUP,
+    title,
+    detail: text,
+    icon,
+    aside: project.name,
+    fields: [],
+    target,
+    transient: true,
+  })
+  return [
+    item('session', t('search.create.session'), <MessageSquarePlus size={ICON} />, { type: 'run', run: create.session }),
+    item('card', t('search.create.card'), <TicketPlus size={ICON} />, { type: 'stay', run: create.card }),
+  ]
+}
+
+/**
+ * What waits on the user, for the palette's first rows: pending decisions, then sessions blocked on
+ * an answer or stopped on an error. The same conversation items as elsewhere, under their own group.
+ */
+export function buildAttentionItems(
+  t: Translate,
+  items: ReadonlyMap<string, PaletteItem>,
+  waiting: { decisions: readonly DecisionDto[]; sessions: readonly string[] },
+  openDecision: (id: string) => void,
+): PaletteItem[] {
+  const decisions = waiting.decisions.map((decision): PaletteItem => ({
+    key: `decision:${decision.id}`,
+    kind: 'command',
+    projectId: decision.projectId,
+    group: ATTENTION_GROUP,
+    title: decisionQuestion(decision, t),
+    detail: decision.conversationTitle ?? undefined,
+    icon: <CircleHelp size={ICON} />,
+    aside: t('search.attention.decision'),
+    fields: [],
+    target: { type: 'run', run: () => openDecision(decision.id) },
+    transient: true,
+  }))
+  // The row's live state already says why it is here.
+  const sessions = waiting.sessions.flatMap((id): PaletteItem[] => {
+    const item = items.get(`conversation:${id}`)
+    return item ? [{ ...item, group: ATTENTION_GROUP }] : []
+  })
+  return [...decisions, ...sessions]
 }

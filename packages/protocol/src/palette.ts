@@ -9,6 +9,12 @@ import type { CardColumn } from './cards.js'
 /** Files returned per project: enough to expand a group without fetching everything. */
 export const PALETTE_FILES_PER_PROJECT = 12
 
+/**
+ * Files returned for the project the palette is scoped to: its results are the whole list there,
+ * not one group among others.
+ */
+export const PALETTE_FILES_IN_SCOPE = 40
+
 export const paletteFilesQuerySchema = z.object({
   q: z.string().trim().min(1).max(200),
   /**
@@ -16,6 +22,11 @@ export const paletteFilesQuerySchema = z.object({
    * including its worktree, where the selected file will open.
    */
   conversationId: z.string().min(1).optional(),
+  /**
+   * Project the palette is scoped to. Other projects are still searched: the palette counts what
+   * the scope hides and falls back on it when the project holds nothing.
+   */
+  projectId: z.string().min(1).optional(),
 })
 
 export interface PaletteFileGroupDto {

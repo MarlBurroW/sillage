@@ -27,12 +27,17 @@ export function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
  * keystroke, flashing despite valid existing results. `settling` indicates the query has not yet
  * been sent so users know more results will arrive after debounce.
  */
-export function useMessageSearch(query: string) {
+export function useMessageSearch(query: string, projectId?: string | null) {
   const settled = useDebounced(query)
 
   const result = useQuery({
-    queryKey: ['search', settled],
-    queryFn: () => api.get<SearchMessageDto[]>(`/api/search?q=${encodeURIComponent(settled)}`),
+    queryKey: ['search', settled, projectId ?? null],
+    queryFn: () => {
+      const params = new URLSearchParams({ q: settled })
+      // The result limit then applies inside the project instead of being spent elsewhere.
+      if (projectId) params.set('projectId', projectId)
+      return api.get<SearchMessageDto[]>(`/api/search?${params}`)
+    },
     enabled: settled.trim().length >= SEARCH_MIN_QUERY,
     placeholderData: keepPreviousData,
     staleTime: 30_000,

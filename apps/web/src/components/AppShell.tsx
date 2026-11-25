@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, Suspense } from 'react'
 import { Outlet, useLocation, useMatch } from 'react-router-dom'
 import { ErrorBoundary, PageCrash } from './ErrorBoundary'
 import { useAppearanceSync } from '../lib/appearance-sync'
@@ -12,9 +12,9 @@ import { useRememberContext } from '../lib/last-context'
 import { setPanelConcentration } from '../lib/panel'
 import { restoreSidebarWidth } from '../lib/sidebar'
 import { useMediaQuery, useVisualViewport } from '../lib/viewport'
+import { lazyWithReload } from '../lib/lazy-reload'
 import '../styles/concentration.css'
 import '../styles/sidebar.css'
-import { CommandPalette } from './CommandPalette'
 import { DecisionDialog } from './decisions/DecisionDialog'
 import { Logo } from './Logo'
 import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigation'
@@ -23,6 +23,13 @@ import { Toaster } from './Toaster'
 import { UpdatePrompt } from './UpdatePrompt'
 import { cx } from './ui'
 import { InterfaceTour } from './tour/InterfaceTour'
+
+/**
+ * The palette reaches every kind of thing, so it imports from every corner of the app. Loaded apart,
+ * it keeps that weight out of the first bundle, which the offline cache caps.
+ */
+const loadPalette = () => import('./CommandPalette').then((module) => ({ default: module.CommandPalette }))
+const CommandPalette = lazyWithReload(loadPalette)
 
 /**
  * Desktop keeps the navigation beside the page: a rail that is always there, and a column that
@@ -35,6 +42,14 @@ export function AppShell() {
   useAppearanceSync()
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [paletteWanted, setPaletteWanted] = useState(false)
+  if (searchOpen && !paletteWanted) setPaletteWanted(true)
+  // Fetched once the shell is idle: the shortcut then opens the palette without waiting for it.
+  useEffect(() => {
+    // A failed fetch is retried by the first opening, which also knows how to recover.
+    const timer = setTimeout(() => void loadPalette().catch(() => {}), 1500)
+    return () => clearTimeout(timer)
+  }, [])
   const pwa = useCapability('pwa')
   const concentration = useConcentration()
   useLayoutEffect(() => {
@@ -151,7 +166,12 @@ export function AppShell() {
         />
       </aside>
 
-      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      {/* Mounted from its first opening on, so closing still returns focus and resets the search. */}
+      {paletteWanted ? (
+        <Suspense fallback={null}>
+          <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+        </Suspense>
+      ) : null}
       {/* Mounting the prompt registers the service worker: without PWA, mount neither. */}
       {pwa ? <UpdatePrompt /> : null}
 

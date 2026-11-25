@@ -120,7 +120,7 @@ try {
   })
   assert.ok(!registered.isError, registered.content[0].text)
   const listed = await mcp(env, conversation.id, project.id, 'list_actions', {})
-  assert.match(listed.content[0].text, /Serveur statique.*en attente de validation/)
+  assert.match(listed.content[0].text, /Serveur statique.*awaiting user approval/)
   const service = (await api('/api/actions')).find((action) => action.label === 'Serveur statique')
   assert.equal(service.status, 'proposed')
 

@@ -17,13 +17,14 @@ import { requireUser } from '../require-user.js'
 export function registerSearchRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/search', async (request): Promise<SearchMessageDto[]> => {
     const user = requireUser(request)
-    const { q } = request.query as { q?: string }
+    const { q, projectId } = request.query as { q?: string; projectId?: string }
 
     // Very short queries would return much of the journal in nearly random order.
     // Reject rather than serve them; the client applies the same threshold.
     const query = q?.trim() ?? ''
     if (query.length < SEARCH_MIN_QUERY) return []
 
-    return searchMessages(ctx.db, user.id, query, SEARCH_RESULT_LIMIT)
+    // Visibility stays enforced by the query: naming an invisible project returns nothing.
+    return searchMessages(ctx.db, user.id, query, SEARCH_RESULT_LIMIT, projectId || undefined)
   })
 }

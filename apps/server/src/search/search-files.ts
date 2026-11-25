@@ -1,4 +1,5 @@
 import {
+  PALETTE_FILES_IN_SCOPE,
   PALETTE_FILES_PER_PROJECT,
   containsInOrder,
   foldForMatch,
@@ -157,7 +158,7 @@ async function inBatches<T, R>(items: readonly T[], size: number, run: (item: T)
 }
 
 /** Every word must appear in the path or project name, with at least one in the path: 'nimbus forecast' searches `forecast` in Nimbus, while 'nimbus' alone does not return all its files. */
-async function searchOne(target: FileSearchTarget, tokens: string[]): Promise<PaletteFileGroupDto> {
+async function searchOne(target: FileSearchTarget, tokens: string[], limit: number): Promise<PaletteFileGroupDto> {
   const { paths, folded } = await listing(target.cwd, 'workspace', LISTING_TTL_MS)
   const project = foldForMatch(target.projectName)
   // Words absent from project names must all occur in paths,
@@ -176,15 +177,18 @@ async function searchOne(target: FileSearchTarget, tokens: string[]): Promise<Pa
   }
 
   scored.sort((a, b) => b.score - a.score || a.path.length - b.path.length)
-  return { projectId: target.projectId, paths: scored.slice(0, PALETTE_FILES_PER_PROJECT).map(({ path }) => path) }
+  return { projectId: target.projectId, paths: scored.slice(0, limit).map(({ path }) => path) }
 }
 
+/** `scopeId` names the project the palette is scoped to, which gets the larger share of results. */
 export async function searchProjectFiles(
   targets: readonly FileSearchTarget[],
   query: string,
+  scopeId?: string,
 ): Promise<PaletteFileGroupDto[]> {
   const tokens = fuzzyTokens(query)
   if (tokens.length === 0) return []
-  const groups = await inBatches(targets, CONCURRENCY, (target) => searchOne(target, tokens))
+  const groups = await inBatches(targets, CONCURRENCY, (target) =>
+    searchOne(target, tokens, target.projectId === scopeId ? PALETTE_FILES_IN_SCOPE : PALETTE_FILES_PER_PROJECT))
   return groups.filter((group) => group.paths.length > 0)
 }

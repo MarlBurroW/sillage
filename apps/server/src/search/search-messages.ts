@@ -31,12 +31,13 @@ interface Row {
   excerpt: string
 }
 
-/** Matching messages in conversations this account can view. Apply visibility within the query: private excerpts reaching HTTP would leak if downstream filtering were forgotten. Joining `conversations` also hides orphaned rows from FTS5's lack of cascades. Exclude archived conversations like navigation elsewhere in the interface. */
+/** Matching messages in conversations this account can view, of one project when `projectId` is given: the limit then applies inside it rather than being spent on other projects. Apply visibility within the query: private excerpts reaching HTTP would leak if downstream filtering were forgotten. Joining `conversations` also hides orphaned rows from FTS5's lack of cascades. Exclude archived conversations like navigation elsewhere in the interface. */
 export function searchMessages(
   db: Db,
   userId: string,
   query: string,
   limit: number,
+  projectId?: string,
 ): SearchMessageDto[] {
   const match = toMatchQuery(query)
   if (!match) return []
@@ -55,6 +56,7 @@ export function searchMessages(
     LEFT JOIN projects AS p ON p.id = c.project_id
     WHERE search_messages MATCH ${match}
       AND c.archived_at IS NULL
+      AND (${projectId ?? null} IS NULL OR c.project_id = ${projectId ?? null})
       AND ((c.project_id IS NULL AND c.user_id = ${userId}) OR p.owner_id = ${userId} OR p.visibility = 'shared')
     ORDER BY bm25(search_messages)
     LIMIT ${limit}

@@ -24,6 +24,7 @@ import {
   Search,
   Share2,
   Shrink,
+  Square,
   Terminal,
 } from 'lucide-react'
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -80,6 +81,7 @@ import { InstructionsDialog } from '../components/instructions/Instructions'
 import { InstructionsButton } from '../components/instructions/InstructionsPlace'
 import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence, usePanelTab } from '../lib/panel'
 import { CardLinkDialog } from '../components/chat/CardLinkDialog'
+import { usePublishSessionCommands, type SessionCommand } from '../lib/session-commands'
 import { columnLabel } from '../components/board/columns'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
@@ -122,6 +124,12 @@ const HEADER_SIGNALS = new Set<SignalKind>(['error', 'interrupted', 'offline'])
 
 /** Infrequent enough for minute-level age display, frequent enough to stay truthful. */
 const TICK_MS = 30_000
+
+/** A hook cannot follow the page's early return, so the published list is a rendered element. */
+function PublishSessionCommands({ commands }: { commands: SessionCommand[] }) {
+  usePublishSessionCommands(commands)
+  return null
+}
 
 function useTicker(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -873,6 +881,11 @@ export function ConversationPage() {
     ? allConversations?.find((entry) => entry.id === conversation.handoffFromId)
     : undefined
 
+  const canCompact = isOwner && AGENT_CAPABILITIES[conversation.agent].compact
+  const compactBusy = compacting || stream.state.compacting
+  const canMove = isOwner && Boolean(conversation.projectId) && !conversation.scheduleId && !conversation.benchmarkId
+  const turnOpen = stream.status === 'running' || stream.status === 'awaiting_input'
+
   const compact = async () => {
     setCompacting(true)
     setActionError(null)
@@ -958,6 +971,36 @@ export function ConversationPage() {
             {t('conversation.drop.attach')}
           </div>
         ) : null}
+
+        {/*
+         * The toolbar's actions, offered to the search palette under the same conditions. Listed
+         * here rather than derived from the buttons: several toggle or change label with state,
+         * while a palette row names one action.
+         */}
+        <PublishSessionCommands
+          commands={[
+            { key: 'find', label: t('conversation.search'), icon: <Search size={15} />, run: () => setFindOpen(true) },
+            ...(isOwner ? [{ key: 'export', label: t('export.title'), icon: <Share2 size={15} />, run: () => setExportOpen(true) }] : []),
+            // Summarizing during a turn would discard context still being changed.
+            ...(canCompact && !compactBusy && stream.status === 'idle'
+              ? [{ key: 'compact', label: t('conversation.compact.action'), icon: <Shrink size={15} />, run: () => void compact() }]
+              : []),
+            ...(isOwner && turnOpen
+              ? [{ key: 'interrupt', label: t('composer.interrupt'), icon: <Square size={13} />, run: () => void interruptConversation(conversationId) }]
+              : []),
+            { key: 'handoff', label: t('conversation.handoff.menu'), icon: <ArrowRightLeft size={15} />, run: () => setHandoffOpen(true) },
+            ...(canMove ? [{ key: 'move', label: t('conversation.move.title'), icon: <FolderInput size={15} />, run: () => setMoveProjectOpen(true) }] : []),
+            ...(!conversation.projectId
+              ? [{ key: 'create-project', label: t('discussions.project.create'), icon: <FolderPlus size={15} />, run: () => setCreateProjectOpen(true) }]
+              : []),
+            ...(conversation.card
+              ? [{ key: 'card-show', label: t('conversation.card.show', { number: conversation.card.number }), icon: <SquareKanban size={15} />, run: showCard }]
+              : []),
+            { key: 'details', label: t('conversation.meta.details'), icon: <Info size={15} />, run: () => setMetaOpen(true) },
+            { key: 'usage', label: t('conversation.usage.title'), icon: <GaugeCircle size={15} />, run: () => setUsageOpen(true) },
+            { key: 'instructions', label: t(conversation.projectId ? 'search.session.instructions' : 'discussions.context'), icon: <FileText size={15} />, run: () => setInstructionsOpen(true) },
+          ]}
+        />
 
         <header
           className={cx(
@@ -1053,13 +1096,13 @@ export function ConversationPage() {
               {isOwner && <IconButton label={t('export.title')} onClick={() => setExportOpen(true)}>
                 <Share2 size={18} />
               </IconButton>}
-              {isOwner && AGENT_CAPABILITIES[conversation.agent].compact ? (
+              {canCompact ? (
                 <IconButton
-                  label={compacting || stream.state.compacting
+                  label={compactBusy
                     ? t('conversation.compact.running')
                     : t('conversation.compact.action')}
                   // Summarizing during a turn would discard context still being changed.
-                  disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
+                  disabled={compactBusy || stream.status !== 'idle'}
                   onClick={() => void compact()}
                 >
                   <Shrink size={18} />
@@ -1076,7 +1119,7 @@ export function ConversationPage() {
               <IconButton label={t('conversation.handoff.menu')} onClick={() => setHandoffOpen(true)}>
                 <ArrowRightLeft size={18} />
               </IconButton>
-              {isOwner && conversation.projectId && !conversation.scheduleId && !conversation.benchmarkId ? (
+              {canMove ? (
                 <IconButton label={t('conversation.move.title')} onClick={() => setMoveProjectOpen(true)}>
                   <FolderInput size={18} />
                 </IconButton>

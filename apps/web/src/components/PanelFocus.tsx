@@ -23,6 +23,15 @@ function updateModalBackground() {
   }
 }
 
+/**
+ * A dialog opened over the page holds focus, such as the search palette. A panel appearing under it,
+ * as one does while the page loads, must not take the keystrokes being typed there.
+ */
+function heldByDialog(node: HTMLElement): boolean {
+  const dialog = document.activeElement?.closest('[role="dialog"], [role="alertdialog"]')
+  return Boolean(dialog) && !dialog?.contains(node) && !node.contains(dialog ?? null)
+}
+
 /** Shared free/fullscreen content without remounting editors on resize. */
 export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor = false, children }: {
   open: boolean
@@ -44,7 +53,7 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor 
     shown.current = true
     const previous = document.activeElement
     if (previous instanceof HTMLElement && previous !== document.body && !node.contains(previous)) returnTo.current = previous
-    if (!node.contains(document.activeElement)) {
+    if (!node.contains(document.activeElement) && !heldByDialog(node)) {
       node.querySelector<HTMLElement>('[data-panel-initial-focus]')?.focus({ preventScroll: true })
     }
     return () => {
@@ -65,7 +74,7 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor 
   useEffect(() => {
     const node = container.current
     if (!node || !open || !modal) return
-    if (!node.contains(document.activeElement)) {
+    if (!node.contains(document.activeElement) && !heldByDialog(node)) {
       node.querySelector<HTMLElement>('[data-panel-initial-focus]')?.focus({ preventScroll: true })
     }
     modals.push(node)

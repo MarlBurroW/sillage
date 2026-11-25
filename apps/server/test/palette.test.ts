@@ -9,6 +9,8 @@ import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
 import { cards, conversations, openDatabase, projects, runMigrations, users, worktrees } from '@sillage/db'
 import {
+  PALETTE_FILES_IN_SCOPE,
+  PALETTE_FILES_PER_PROJECT,
   fuzzyMatch,
   fuzzyTokens,
   matchFields,
@@ -16,8 +18,10 @@ import {
   type PaletteFilesDto,
 } from '@sillage/protocol'
 import type { Config } from '../src/config.js'
+import { EventLog } from '../src/events/event-log.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerPaletteRoutes } from '../src/http/routes/palette.js'
+import { searchMessages } from '../src/search/search-messages.js'
 import { SkillLibrary } from '../src/skill-library/store.js'
 
 /** Input word matched against text, positions rendered as letters for readability. */
@@ -135,7 +139,7 @@ function harness(t: TestContext) {
   registerErrorHandler(app)
   registerPaletteRoutes(app, { db, config: {} as Config }, library)
   t.after(() => app.close())
-  return { app }
+  return { app, db, dir, files }
 }
 
 test('catalogue : cartes et skills des projets visibles et non archivés', async (t) => {
@@ -174,4 +178,46 @@ test('fichiers : tous les projets visibles, nom flou, dossier d’un seul tenant
   // Worktree conversations search their project's files within that worktree.
   assert.deepEqual((await search('forecast', 'offline')).nimbus, ['src/lib/forecast.ts', 'src/lib/forecast-cache.ts'])
   assert.deepEqual((await search('forecast', 'main')).nimbus, ['src/lib/forecast.ts', 'src/components/ForecastCard.tsx'])
+})
+
+test('files: the scoped project gets the larger share, the others stay searched', async (t) => {
+  const { app, dir, files } = harness(t)
+  const widgets = Array.from({ length: PALETTE_FILES_IN_SCOPE + 5 }, (_, index) => `src/widgets/widget-${String(index).padStart(2, '0')}.ts`)
+  files(join(dir, 'nimbus'), widgets)
+  files(join(dir, 'atlas'), widgets)
+  const counts = async (projectId?: string) => {
+    const query = new URLSearchParams({ q: 'widget' })
+    if (projectId) query.set('projectId', projectId)
+    const response = await app.inject({ url: `/api/palette/files?${query}` })
+    assert.equal(response.statusCode, 200, response.body)
+    return Object.fromEntries(response.json<PaletteFilesDto>().projects.map((group) => [group.projectId, group.paths.length]))
+  }
+
+  assert.deepEqual(await counts(), { nimbus: PALETTE_FILES_PER_PROJECT, atlas: PALETTE_FILES_PER_PROJECT })
+  // The palette still counts and falls back on what the scope hides.
+  assert.deepEqual(await counts('atlas'), { nimbus: PALETTE_FILES_PER_PROJECT, atlas: PALETTE_FILES_IN_SCOPE })
+  // Naming a project this account cannot see changes nothing.
+  assert.deepEqual(await counts('secret'), { nimbus: PALETTE_FILES_PER_PROJECT, atlas: PALETTE_FILES_PER_PROJECT })
+})
+
+test('messages: a project filter keeps the result limit for that project', (t) => {
+  const { db } = harness(t)
+  db.insert(conversations).values(
+    { id: 'proxy', projectId: 'atlas', userId: 'owner', title: 'Proxy', agent: 'claude', config: '{}', status: 'idle', createdAt: 1, updatedAt: 1 },
+  ).run()
+  const log = new EventLog(db)
+  const say = (conversationId: string, messageId: string) =>
+    log.append(conversationId, { type: 'message.completed', messageId, role: 'user', parentToolCallId: null, blocks: [{ type: 'text', text: 'tide tables for the harbour' }] })
+  say('main', 'm1')
+  say('offline', 'm2')
+  say('proxy', 'm3')
+
+  const found = (limit: number, projectId?: string) =>
+    searchMessages(db, 'owner', 'harbour', limit, projectId).map((row) => row.conversationId).sort()
+  assert.deepEqual(found(10), ['main', 'offline', 'proxy'])
+  assert.deepEqual(found(10, 'nimbus'), ['main', 'offline'])
+  // The limit is spent inside the project: its one match is found however many others exist.
+  assert.deepEqual(found(1, 'atlas'), ['proxy'])
+  // A project of another account stays out of reach, filter or not.
+  assert.deepEqual(found(10, 'secret'), [])
 })
