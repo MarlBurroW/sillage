@@ -19,11 +19,14 @@ export function ChoiceList<T extends string>({
   value,
   options,
   onChange,
+  wrapHints = false,
 }: {
   label: string
   value: T
   options: Choice<T>[]
   onChange: (value: T) => void
+  /** Show hints whole where they carry the decision, such as in a narrow dialog. */
+  wrapHints?: boolean
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -55,7 +58,7 @@ export function ChoiceList<T extends string>({
                   {option.label}
                 </span>
                 {option.hint ? (
-                  <span className="block truncate text-xs text-ink-faint">{option.hint}</span>
+                  <span className={cx('block text-xs text-ink-faint', !wrapHints && 'truncate')}>{option.hint}</span>
                 ) : null}
               </span>
               {/* Always reserve checkmark space to prevent selection shifting labels. */}

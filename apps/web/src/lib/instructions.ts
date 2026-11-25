@@ -8,6 +8,17 @@ import type {
 } from '@sillage/protocol'
 import { api } from './api'
 
+/** Where a project's instructions are kept, and the repository file read when that is the place. */
+export interface InstructionsPlace {
+  mode: InstructionsMode
+  file: RepoInstructionFile
+}
+
+/** The first file present, else AGENTS.md, the one the editor creates. */
+export function placeOf(data: ProjectInstructionsDto): InstructionsPlace {
+  return { mode: data.mode, file: data.repoFiles[0]?.path ?? 'AGENTS.md' }
+}
+
 /**
  * SILLAGE.md global and project sections. Reread on every opening instead of long caching because
  * agents may have added instructions through MCP since the last visit.
@@ -36,6 +47,12 @@ export function useProjectInstructions(projectId: string | undefined) {
     queryFn: () => api.get<ProjectInstructionsDto>(`/api/projects/${projectId}/instructions`),
     enabled: Boolean(projectId),
   })
+}
+
+/** Undefined while loading. Shares the editor's query, so a mode change shows everywhere at once. */
+export function useInstructionsPlace(projectId: string | undefined): InstructionsPlace | undefined {
+  const { data } = useProjectInstructions(projectId)
+  return data ? placeOf(data) : undefined
 }
 
 export function useUpdateProjectInstructions(projectId: string) {

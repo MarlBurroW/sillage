@@ -5,6 +5,12 @@ regardless of its CLI: a **global** section (administrators) and a **project** s
 (owner). Editable from the project page, settings (`/settings/consignes`), and a
 conversation's header without using the file editor.
 
+There is no `SILLAGE.md` file, in the repository or anywhere else. The name is only
+what agents see: the text reaches them under a `# SILLAGE.md` heading, and the MCP
+tools describe it as a file, so they give it the authority of a `CLAUDE.md` or
+`AGENTS.md`. The interface never shows it: it says the instructions are kept in
+Sillage, or names the repository file in `repo` mode.
+
 ## Where project instructions live
 
 Each project has a mode chosen at creation (`instructionsMode`), which can change later:

@@ -17,6 +17,7 @@ import { useProjectDefaults } from '../../lib/user-settings'
 import { locale, useTranslate } from '../../lib/i18n'
 import {
   mergedForImport,
+  placeOf,
   useGlobalInstructions,
   useProjectInstructions,
   useSaveGlobalInstructions,
@@ -25,7 +26,8 @@ import {
 } from '../../lib/instructions'
 import { Markdown } from '../chat/Markdown'
 import { HowItWorks, INSTRUCTIONS_HELP } from './HowItWorks'
-import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, Select, cx, type Choice } from '../ui'
+import { InstructionsSummary } from './InstructionsPlace'
+import { Banner, Button, ConfirmDialog, IconButton, Select, cx } from '../ui'
 
 /**
  * Instructions editor with Markdown, preview, and Save. Drafts follow server versions until edited
@@ -179,7 +181,7 @@ export function GlobalInstructions() {
 }
 
 /**
- * Project section: storage location and corresponding content. Offer migration from existing
+ * Project section: content of the current place, chosen from the summary above it. Offer migration from existing
  * repository files only here, where users review instructions; working projects need no pressure to
  * migrate.
  */
@@ -190,23 +192,11 @@ export function ProjectInstructions({ projectId }: { projectId: string }) {
   const [migrating, setMigrating] = useState(false)
   if (!data) return null
 
-  const modes: Choice<InstructionsMode>[] = [
-    { value: 'sillage', label: t('instructions.mode.sillage'), hint: t('instructions.mode.sillage.hint') },
-    { value: 'repo', label: t('instructions.mode.repo'), hint: t('instructions.mode.repo.hint') },
-  ]
   const fileNames = data.repoFiles.map((file) => file.path).join(', ')
 
   return (
     <div className="flex flex-col gap-4">
       <HowItWorks items={INSTRUCTIONS_HELP} />
-      {data.canEdit ? (
-        <ChoiceList
-          label={t('instructions.mode')}
-          value={data.mode}
-          options={modes}
-          onChange={(mode) => update.mutate({ mode })}
-        />
-      ) : null}
 
       {data.mode === 'repo' && data.repoFiles.length > 0 && data.canEdit ? (
         <div className="flex flex-col gap-2 rounded-md border border-line bg-sunken px-3 py-2.5 text-sm">
@@ -262,7 +252,7 @@ function RepoFileEditor({ projectId, data }: { projectId: string; data: ProjectI
   const t = useTranslate()
   const write = useWriteRepoInstructions(projectId)
   const [selected, setSelected] = useState<RepoInstructionFile | null>(null)
-  const path = selected ?? data.repoFiles[0]?.path ?? 'AGENTS.md'
+  const path = selected ?? placeOf(data).file
   const file = data.repoFiles.find((candidate) => candidate.path === path)
 
   return (
@@ -306,8 +296,8 @@ function RepoFileEditor({ projectId, data }: { projectId: string; data: ProjectI
 }
 
 /**
- * Both SILLAGE.md sections without leaving a conversation. Project first because it is the context
- * users review while working.
+ * Both instruction layers without leaving a conversation. Project first because it is the context
+ * users review while working; the summary says where each layer lives and picks the one edited.
  */
 export function InstructionsDialog({
   open,
@@ -347,7 +337,7 @@ export function InstructionsDialog({
             </Dialog.Close>
           </div>
 
-          <div className="flex gap-1 self-start rounded-lg bg-sunken p-1">
+          {projectId ? <InstructionsSummary projectId={projectId} selected={tab} onSelect={setTab} /> : <div className="flex gap-1 self-start rounded-lg bg-sunken p-1">
             {(['project', 'global'] as const).map((value) => (
               <button
                 key={value}
@@ -359,10 +349,10 @@ export function InstructionsDialog({
                   tab === value ? 'surface text-ink shadow-sm' : 'text-ink-faint hover:text-ink',
                 )}
               >
-                {t(value === 'project' ? projectId ? 'instructions.tab.project' : 'discussions.memory' : 'instructions.tab.global')}
+                {t(value === 'project' ? 'discussions.memory' : 'instructions.tab.global')}
               </button>
             ))}
-          </div>
+          </div>}
 
           {tab === 'project' ? projectId ? <ProjectInstructions projectId={projectId} /> : <ProjectMemory projectId={null} /> : <GlobalInstructions />}
           <p className="text-xs text-ink-faint">{t('instructions.dialog.timing')}</p>
