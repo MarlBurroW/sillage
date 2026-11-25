@@ -11,12 +11,14 @@ import type { Config } from '../src/config.js'
 import { writeAppSettings } from '../src/settings/app-settings.js'
 
 test('a family follows the project, then the instance, then its default', () => {
-  assert.deepEqual(resolveAgentTools({}, null), { browser: false })
-  assert.deepEqual(resolveAgentTools({ browser: true }, null), { browser: true })
-  assert.deepEqual(resolveAgentTools({ browser: true }, {}), { browser: true })
+  assert.equal(resolveAgentTools({}, null).browser, false)
+  assert.equal(resolveAgentTools({}, null).board, true, 'built-in tools start on')
+  assert.equal(resolveAgentTools({ browser: true }, null).browser, true)
+  assert.equal(resolveAgentTools({ browser: true }, {}).browser, true)
   // The owner may turn off what the instance offers, and turn on what it leaves off.
-  assert.deepEqual(resolveAgentTools({ browser: true }, { browser: false }), { browser: false })
-  assert.deepEqual(resolveAgentTools({}, { browser: true }), { browser: true })
+  assert.equal(resolveAgentTools({ browser: true }, { browser: false }).browser, false)
+  assert.equal(resolveAgentTools({}, { browser: true }).browser, true)
+  assert.equal(resolveAgentTools({ board: false }, { board: true }).board, true)
 })
 
 test('project patches clear with null and keep what they omit', () => {

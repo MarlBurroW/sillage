@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { agentRequests, openDatabase, runMigrations } from '@sillage/db'
 import {
+  ALWAYS_ON_SILLAGE_TOOLS,
   CARD_RELATION_INVERSE,
+  SILLAGE_TOOL_FAMILIES,
   CARD_TAG_NAME_MAX,
   CARD_TAGS_PER_CARD_MAX,
   CHECK_SKIP_EXIT_CODE,
@@ -27,6 +29,7 @@ import {
 } from '@sillage/protocol'
 import { MAX_LAUNCH_PROMPT_CHARS, MIN_AGENT_SCHEDULE_MINUTES } from '../src/sessions/agent-requests.js'
 import { MAX_HOPS, WAKES_PER_HOUR } from '../src/sessions/session-relay.js'
+import { TOOL_FAMILY_OFF } from '../src/agents/agent-tools.js'
 
 /**
  * `sillage-mcp.mjs` runs as a standalone process, outside the module graph: it cannot import
@@ -240,4 +243,28 @@ test('every SQL statement of the MCP server prepares against the migrated schema
     })
   })
   assert.equal(fragments, 2)
+})
+
+test('every MCP tool belongs to exactly one tool family or stays always on', () => {
+  // Tool definitions are object literals with a `name: '…'` property directly under them.
+  const names = new Set<string>()
+  walk(source, (node) => {
+    if (!ts.isObjectLiteralExpression(node)) return
+    const name = node.properties.find((property) => ts.isPropertyAssignment(property) && property.name.getText() === 'name')
+    const description = node.properties.some((property) => ts.isPropertyAssignment(property) && property.name.getText() === 'description')
+    if (name && description && ts.isPropertyAssignment(name) && ts.isStringLiteral(name.initializer) && /^[a-z_]+$/.test(name.initializer.text)) {
+      const schema = node.properties.some((property) => ts.isPropertyAssignment(property) && property.name.getText() === 'inputSchema')
+      if (schema) names.add(name.initializer.text)
+    }
+  })
+  // The two relation tools share one definition built from their names.
+  assert.match(source.getText(), /\['link_cards', 'unlink_cards'\]\.map\(/)
+  names.add('link_cards')
+  names.add('unlink_cards')
+  assert.ok(names.size > 40, `found ${names.size} tools`)
+  const placed = [...Object.values(SILLAGE_TOOL_FAMILIES).flat(), ...ALWAYS_ON_SILLAGE_TOOLS]
+  assert.deepEqual(placed.filter((tool, index) => placed.indexOf(tool) !== index), [], 'a tool in two places')
+  assert.deepEqual([...names].filter((tool) => !placed.includes(tool)).sort(), [], 'tools without a family')
+  assert.deepEqual(placed.filter((tool) => !names.has(tool)).sort(), [], 'families naming unknown tools')
+  assert.equal(topLevel('TOOL_FAMILY_OFF'), TOOL_FAMILY_OFF)
 })

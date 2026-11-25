@@ -1,3 +1,5 @@
+import { AGENT_TOOL_DEFAULTS, type AgentToolFamily } from '@sillage/protocol'
+import { disabledFamiliesNotice, type Families } from './agent-tools.js'
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { crossProjectsEnabled } from '../projects/cross-projects.js'
 import { automationWebhooks, cards, conversations, projectImages, projects, scheduledTasks, worktrees, type Db } from '@sillage/db'
@@ -16,7 +18,11 @@ interface OverviewInput {
   conversationId: string
   /** Whether Sillage MCP tools are available to agents. */
   sillageMcp: boolean
+  /** Effective tool families: guidance never names a tool the session lacks. Null or absent: every built-in family (personal discussions, callers without switches). */
+  families?: Families | null
 }
+
+const on = (input: { families?: Families | null }, family: AgentToolFamily) => input.families?.[family] ?? AGENT_TOOL_DEFAULTS[family]
 
 interface Row {
   id: string
@@ -89,7 +95,8 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
     )
   }
 
-  if (input.sillageMcp) {
+  // The card's identity is context in itself; only the tool sentence needs the Board family.
+  if (input.sillageMcp && on(input, 'board')) {
     lines.push(
       `Call \`read_card\` with number ${card.number} for its full description, local attachment paths to inspect with your reading tools, notes from previous sessions, and cards referring to it. Before finishing, use \`add_card_note\` to leave the next session information it cannot rediscover itself. Use \`move_card\` to move it to review when your work is ready; done and abandoned are for the user unless they ask you to set them.`,
     )
@@ -160,8 +167,52 @@ export function sessionTitleReminder(db: Db, input: { projectId: string | null; 
   return `Once you understand the request, call the \`sillage\` server's \`rename_session\` tool to give this session a short, descriptive title: aim for 3 to 6 words, at most ${MAX_SESSION_TITLE_CHARS} characters, in the user's language. Name the concrete topic, for example “Sidebar redesign” or “Fix login”, rather than copying their sentence or announcing progress. The title helps the user find the conversation; set it without asking for confirmation or interrupting the requested work. Change it later only if the main topic changes.`
 }
 
-/** Shared tool guidance, part of the stable overview: it names tools, not state. */
-const TOOLS_GUIDANCE = 'The `sillage` server tools provide further context: `search_history` and `read_conversation` for earlier decisions, `list_sessions` and `find_file_edits` for current work by others, `work_log` for time spent per day, `send_session_message` to alert or ask another session when it cannot wait for the user, `notify_when_done` to resume when it finishes instead of polling, `broadcast_session_message` before an action affecting all working sessions, `list_cards` and `read_card` for planned project work, `attach_card` when you start on a card this session is not attached to, `create_card` to record work outside your scope, `start_session` to delegate work to a new session when the user asks, `list_worktrees`, `create_worktree` and `remove_worktree` to work separately from others and clean up after a merge instead of using `git worktree add` or `remove`, which Sillage would not track, `schedule_task` to schedule recurring or deferred work that survives this session, `create_automation` to start a session on webhook calls (a labeled issue or failed CI), `list_actions` and `register_action` for project buttons that launch a server, tests or a script, and `list_mcp_servers` and `install_mcp_server` to propose an MCP server the user confirms, typing any secret themselves.'
+/**
+ * Shared tool guidance, part of the stable overview: it names tools, not state. One clause per
+ * capability, tagged with its family, so a disabled family drops out of the sentence.
+ */
+const TOOL_CLAUSES: [AgentToolFamily, string][] = [
+  ['history', '`search_history` and `read_conversation` for earlier decisions'],
+  ['history', '`list_sessions` and `find_file_edits` for current work by others'],
+  ['history', '`work_log` for time spent per day'],
+  ['coordination', '`send_session_message` to alert or ask another session when it cannot wait for the user'],
+  ['coordination', '`notify_when_done` to resume when it finishes instead of polling'],
+  ['coordination', '`broadcast_session_message` before an action affecting all working sessions'],
+  ['board', '`list_cards` and `read_card` for planned project work'],
+  ['board', '`attach_card` when you start on a card this session is not attached to'],
+  ['board', '`create_card` to record work outside your scope'],
+  ['coordination', '`start_session` to delegate work to a new session when the user asks'],
+  ['worktrees', '`list_worktrees`, `create_worktree` and `remove_worktree` to work separately from others and clean up after a merge instead of using `git worktree add` or `remove`, which Sillage would not track'],
+  ['automations', '`schedule_task` to schedule recurring or deferred work that survives this session'],
+  ['automations', '`create_automation` to start a session on webhook calls (a labeled issue or failed CI)'],
+  ['actions', '`list_actions` and `register_action` for project buttons that launch a server, tests or a script'],
+  ['project', '`list_mcp_servers` and `install_mcp_server` to propose an MCP server the user confirms, typing any secret themselves'],
+]
+
+export function toolsGuidance(input: { families?: Families | null }): string | null {
+  const clauses = TOOL_CLAUSES.filter(([family]) => on(input, family)).map(([, clause]) => clause)
+  if (clauses.length === 0) return null
+  const list = clauses.length === 1 ? clauses[0] : `${clauses.slice(0, -1).join(', ')}, and ${clauses.at(-1)}`
+  return `The \`sillage\` server tools provide further context: ${list}.`
+}
+
+/** Kinds of work reachable in other projects, by family; memory always is. */
+const CROSS_KINDS: [AgentToolFamily, string][] = [
+  ['history', 'history'],
+  ['coordination', 'sessions'],
+  ['board', 'cards'],
+  ['worktrees', 'worktrees'],
+  ['actions', 'actions'],
+  ['automations', 'schedules'],
+  ['instructions', 'instructions'],
+]
+
+function crossProjectsReminder(input: OverviewInput): string {
+  const kinds = [...CROSS_KINDS.filter(([family]) => on(input, family)).map(([, kind]) => kind), 'memory']
+  const workLog = on(input, 'history') ? ', and `work_log` reports time spent per day and project' : ''
+  const startHere = on(input, 'coordination') ? ' What you start or send there carries this project\'s name.' : ''
+  return `This project lets its sessions act on the account's other projects. The \`sillage\` tools that accept \`project\` (${kinds.join(', ')}) work there by name or ID from list_projects${workLog}. Each project's own tool switches still apply there. When the user asks about another project, work on it from here with \`project\` rather than moving this session.${startHere}`
+}
 
 /**
  * Stable part of the startup context, sent as system prompt. State that moves (sessions, ages,
@@ -176,16 +227,18 @@ const TOOLS_GUIDANCE = 'The `sillage` server tools provide further context: `sea
  */
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   if (!input.sillageMcp) return forgeMarkerReminder(db, input)
-  const crossReminder = crossProjectsEnabled(db, input.projectId)
-    ? "This project lets its sessions act on the account's other projects. The `sillage` tools that accept `project` (history, sessions, cards, worktrees, actions, schedules, memory, instructions) work there by name or ID from list_projects, and `work_log` reports time spent per day and project. When the user asks about another project, work on it from here with `project` rather than moving this session. What you start or send there carries this project's name."
-    : null
+  const crossReminder = crossProjectsEnabled(db, input.projectId) ? crossProjectsReminder(input) : null
   return [
-    'To cite a session in your replies, write session:<id> using its exact Sillage identifier: the interface turns it into a link with its title and details. read_conversation accepts this identifier or reference to read the thread, including archives. A mention alone is not a request to message another agent.',
-    'If the task belongs to a different project, point out the mismatch. Once the user identifies the intended project, use list_projects and move_session to move this same session with its full history, then finish your turn so the move can take effect. The next turn uses the destination workspace and instructions; files and project memory stay in their original folders.',
+    `To cite a session in your replies, write session:<id> using its exact Sillage identifier: the interface turns it into a link with its title and details.${on(input, 'history') ? ' read_conversation accepts this identifier or reference to read the thread, including archives.' : ''} A mention alone is not a request to message another agent.`,
+    on(input, 'coordination')
+      ? 'If the task belongs to a different project, point out the mismatch. Once the user identifies the intended project, use list_projects and move_session to move this same session with its full history, then finish your turn so the move can take effect. The next turn uses the destination workspace and instructions; files and project memory stay in their original folders.'
+      : null,
     crossReminder,
-    "When your work creates a related experiment outside the project's main folder or regularly uses a related folder elsewhere, use attach_project_folder from a project owner's session so people can find it in Files. Attach the experiment's own directory. Use list_project_folders to see existing attachments.",
+    on(input, 'project')
+      ? "When your work creates a related experiment outside the project's main folder or regularly uses a related folder elsewhere, use attach_project_folder from a project owner's session so people can find it in Files. Attach the experiment's own directory. Use list_project_folders to see existing attachments."
+      : null,
     forgeMarkerReminder(db, input),
-    TOOLS_GUIDANCE,
+    toolsGuidance(input),
   ].filter((part) => part !== null).join('\n\n')
 }
 
@@ -197,14 +250,15 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
  */
 export function liveSessionContext(
   db: Db,
-  input: { projectId: string | null; conversationId: string; sillageMcp: boolean; activity: boolean },
+  input: { projectId: string | null; conversationId: string; sillageMcp: boolean; activity: boolean; families?: Families | null },
 ): string | null {
   const project = input.activity && input.projectId ? { ...input, projectId: input.projectId } : null
   // Cards before images: requested work precedes suggestions.
   const parts = [
     sessionTitleReminder(db, input),
+    input.sillageMcp ? disabledFamiliesNotice(input.families ?? null) : null,
     project ? cardBriefing(db, project) : null,
-    project ? imageReminder(db, project) : null,
+    project && on(input, 'project') ? imageReminder(db, project) : null,
     project ? sessionActivity(db, project) : null,
   ].filter((part) => part !== null)
   if (parts.length === 0) return null

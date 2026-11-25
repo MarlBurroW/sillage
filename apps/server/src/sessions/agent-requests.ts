@@ -737,7 +737,7 @@ export class AgentRequests {
       requester.id
         ? `Your working directory has not changed. Use absolute paths: edit files under ${row.path}, and run commands with \`cd ${row.path} && …\` or \`git -C ${row.path} …\`. Otherwise you would edit the original tree.`
         : null,
-      `To start another session directly in this tree, use start_session with \`worktree: "${branch}"\`.`,
+      `To start another session directly in this tree, start_session (when available) accepts \`worktree: "${branch}"\`.`,
     ]
       .filter((line) => line !== null)
       .join('\n')
@@ -1198,7 +1198,7 @@ export class AgentRequests {
       : link
         ? ', local (not published to GitHub)'
         : ''
-    return `Card #${card.number} “${card.title}” created in todo${where}.${tags ? describeTags(tags) : ''} To handle it immediately, use start_session with card=${card.number}.`
+    return `Card #${card.number} “${card.title}” created in todo${where}.${tags ? describeTags(tags) : ''} To handle it immediately in a new session, start_session (when available) accepts card=${card.number}.`
   }
 
   // --- actions -------------------------------------------------------------------

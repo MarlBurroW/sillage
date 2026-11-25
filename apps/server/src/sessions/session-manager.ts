@@ -1,5 +1,6 @@
 import type { BrowserManager } from '../browser/manager.js'
-import { agentToolsFor } from '../agents/agent-tools.js'
+import { agentToolsFor, familyTableForMcp, sessionFamilies } from '../agents/agent-tools.js'
+import { disabledSillageTools } from '@sillage/protocol'
 import { detach } from '../detach.js'
 import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
 import { conversationPath } from '@sillage/protocol'
@@ -1005,6 +1006,11 @@ export class SessionManager {
     // Create and initially import prior Claude workspace memory:
     // without import, moving directories would erase learning. Null in native
     // mode: each CLI retains its own memory and Sillage injects nothing.
+    // Tool families, read once per launch (switches apply at the next CLI start). `families` is
+    // null for a personal discussion, which keeps every built-in tool; `toolFamilies` also covers
+    // it for the browser, which follows the instance default there.
+    const toolFamilies = agentToolsFor(this.db, this.config, conversation.projectId)
+    const families = sessionFamilies(this.db, conversation, toolFamilies)
     const memoryDir = () => {
       // Benchmark runs share nothing: a variant that read what the previous one wrote would
       // not be measured on the same prompt.
@@ -1054,13 +1060,15 @@ export class SessionManager {
           conversationId,
           memoryDir: memoryDir(),
           memoryRoot: this.config.paths.memory,
+          disabledTools: families ? disabledSillageTools(families) : [],
+          familyTable: families ? familyTableForMcp() : undefined,
         })
         // Agent browser (tool family `browser`): only when the family is on for this project
         // and the tools are installed. Benchmarks get the same tools for every variant or none:
         // they follow the instance default like personal discussions.
         // `strictMcp` promises only declared servers, like the built-in one below.
         const strict = current.agent === 'claude' && current.strictMcp
-        const browser = this.browsers && !strict && agentToolsFor(this.db, this.config, conversation.projectId).browser
+        const browser = this.browsers && !strict && toolFamilies.browser
           ? this.browsers.mcpServerFor(conversationId)
           : null
         const servers = [...resolved.servers, ...(browser ? [browser] : []), ...(builtin ? [builtin] : [])]
@@ -1076,10 +1084,11 @@ export class SessionManager {
           conversationId,
           sillageMcp,
           activity: this.config.mcp.sillageServer && current.sillageMcp,
+          families,
         })
         liveSent = true
         const references = sessionReferenceContext(
-          this.db, conversation.projectId, text, publicUrlOf(this.db, this.config), sillageMcp, conversation.userId,
+          this.db, conversation.projectId, text, publicUrlOf(this.db, this.config), sillageMcp && (families?.history !== false), conversation.userId,
         )
         return [live, references].filter((part) => part !== null).join('\n\n') || null
       },
@@ -1111,6 +1120,7 @@ export class SessionManager {
             projectId: conversation.projectId,
             mode: instructions()?.mode ?? 'repo',
             sillageMcp,
+            instructionsTools: families?.instructions !== false,
           }),
           // Claude loads its memory index itself; Codex and opencode have only
           // the information supplied explicitly. Nothing in native mode.
@@ -1122,6 +1132,7 @@ export class SessionManager {
                 projectId: conversation.projectId,
                 conversationId,
                 sillageMcp,
+                families,
               })
             : null,
         ].filter((part) => part !== null)

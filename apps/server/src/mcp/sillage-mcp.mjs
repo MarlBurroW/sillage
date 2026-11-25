@@ -37,6 +37,46 @@ const MEMORY_ROOT = GLOBAL && DB_PATH ? (PERSONAL ? process.env.SILLAGE_MCP_MEMO
 /** Global write identity: configured username or the database's sole account. */
 const USER_NAME = process.env.SILLAGE_MCP_USER ?? ''
 const API_TOKEN_ID = process.env.SILLAGE_MCP_TOKEN_ID ?? ''
+/**
+ * Tools of the families switched off for this session's project (`AgentToolFamily` in
+ * `packages/protocol/src/agent-tools.ts`), computed by the daemon so this file needs no copy of the
+ * family table. Hidden from `tools/list` and refused if called anyway.
+ */
+const TOOLS_OFF = new Set((process.env.SILLAGE_MCP_TOOLS_OFF ?? '').split(',').filter(Boolean))
+/**
+ * Defaults and tool table of the families (`familyTableForMcp()` in `agents/agent-tools.ts`), so a
+ * cross-project call honours the target project's switches, not only this session's. Absent
+ * outside sessions: external clients are not agents of a project.
+ */
+const FAMILY_TABLE = (() => {
+  try {
+    return JSON.parse(process.env.SILLAGE_MCP_TOOL_FAMILIES ?? 'null')
+  } catch {
+    return null
+  }
+})()
+
+/** Whether `tool` belongs to a family the project (or, failing a choice, the instance) turned off. Same resolution as `resolveAgentTools`. */
+function familyOffIn(projectId, tool) {
+  if (!FAMILY_TABLE) return false
+  const family = Object.keys(FAMILY_TABLE.tools).find((key) => FAMILY_TABLE.tools[key].includes(tool))
+  if (!family) return false
+  const parse = (raw) => {
+    try {
+      const value = JSON.parse(raw ?? '{}')
+      return value && typeof value === 'object' ? value : {}
+    } catch {
+      return {}
+    }
+  }
+  const project = parse(db.prepare('SELECT agent_tools AS value FROM projects WHERE id = ?').get(projectId)?.value)
+  const instance = parse(db.prepare("SELECT value FROM app_settings WHERE key = 'agentTools'").get()?.value)
+  const choice = typeof project[family] === 'boolean' ? project[family] : typeof instance[family] === 'boolean' ? instance[family] : FAMILY_TABLE.defaults[family]
+  return choice === false
+}
+
+/** Must match `TOOL_FAMILY_OFF` in `apps/server/src/agents/agent-tools.ts`. */
+const TOOL_FAMILY_OFF = "This Sillage tool is turned off for this project. The project owner can turn its family back on from the project page, Agents tab, “Agent tools” (French interface: onglet « Agents », « Outils des agents »); an administrator sets the default under Settings › Agent tools. Tell the user about this setting instead of working around it."
 /** Global allowed project IDs, comma-separated; empty means everything visible to the account. API-token allowlist supplied by the HTTP bridge. */
 const ALLOWED_PROJECTS = (process.env.SILLAGE_MCP_PROJECTS ?? '').split(',').map((id) => id.trim()).filter(Boolean)
 
@@ -833,13 +873,13 @@ const TOOLS = [
   {
     name: 'send_session_message',
     description:
-      "Send a message to another project conversation using an `id` from list_sessions or find_file_edits. Sillage delivers it within seconds, during its turn if working or by resuming it otherwise. Any reply arrives the same way. Use when coordination cannot wait for the user: warn before editing shared files, request release of a tree or branch, announce a dependency is ready, or ask about a decision. Not for chat or reports: each message costs the recipient a turn. If you need a reply to continue, end your turn after sending; the reply resumes you. Do not poll.",
+      "Send a message to another project conversation using its `id`: from the session list in your startup context, a session:<id> reference, or list_sessions and find_file_edits when available. Sillage delivers it within seconds, during its turn if working or by resuming it otherwise. Any reply arrives the same way. Use when coordination cannot wait for the user: warn before editing shared files, request release of a tree or branch, announce a dependency is ready, or ask about a decision. Not for chat or reports: each message costs the recipient a turn. If you need a reply to continue, end your turn after sending; the reply resumes you. Do not poll.",
     inputSchema: {
       type: 'object',
       properties: {
         to: {
           type: 'string',
-          description: 'Recipient conversation ID from list_sessions.',
+          description: 'Recipient conversation ID: from the session list in your startup context, a session:<id> reference, or list_sessions when available.',
         },
         body: {
           type: 'string',
@@ -878,7 +918,7 @@ const TOOLS = [
       properties: {
         session: {
           type: 'string',
-          description: 'Conversation ID to watch, from list_sessions.',
+          description: 'Conversation ID to watch: from the session list in your startup context, a session:<id> reference, or list_sessions when available.',
         },
       },
       required: ['session'],
@@ -1258,7 +1298,7 @@ function visibleProjects() {
 
 /** Refusal for a call aimed at another project while the home project keeps its sessions inside it. Must match `CROSS_PROJECTS_OFF` in `apps/server/src/projects/cross-projects.ts`, which the daemon returns for the same case. */
 const CROSS_PROJECTS_OFF =
-  "This session can only act within its own project. To let this project's sessions read and act on the account's other projects, the project owner enables “Act on my other projects” on the project page, General tab (French interface: « Agir sur mes autres projets », tab « Général »). Tell the user about this setting instead of working around it."
+  "This session can only act within its own project. To let this project's sessions read and act on the account's other projects, the project owner enables “Act on my other projects” on the project page, Agents tab, under “Agent tools” (French interface: « Agir sur mes autres projets », onglet « Agents », « Outils des agents »). Tell the user about this setting instead of working around it."
 
 /** Conversation-mode tools that accept `project` to work in another of the account's projects. Work, not configuration: reading history and state, sessions, cards, worktrees, actions and schedules, plus read-only memory and instructions. Configuration edits and tools bound to this session (rename, move, own card attachment, decisions, MCP proposals) stay in the home project. */
 const CROSS_TOOLS = new Set([
@@ -1312,6 +1352,9 @@ function selectCrossProject(name, args) {
       ),
       isError: true,
     }
+  }
+  if (familyOffIn(found[0].id, name)) {
+    return { ...text(`${name} is turned off in project “${found[0].name}”: its owner chose not to give agents this tool family there. Tell the user instead of working around it.`), isError: true }
   }
   callScope().projectId = found[0].id
   const mode = db.prepare('SELECT memory_mode AS mode FROM projects WHERE id = ?').get(callScope().projectId)?.mode
@@ -3495,7 +3538,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       : GLOBAL
       ? globalTools()
       : [LIST_PROJECTS, ...projectTools(TOOLS.filter((tool) => (decisions || !DECISION_TOOLS.has(tool.name)) && (callScope().memoryDir || !MEMORY_TOOLS.has(tool.name))))]
-    send({ jsonrpc: '2.0', id: msg.id, result: { tools } })
+    send({ jsonrpc: '2.0', id: msg.id, result: { tools: tools.filter((tool) => !TOOLS_OFF.has(tool.name)) } })
     return
   }
 
@@ -3507,7 +3550,9 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       const args = msg.params?.arguments ?? {}
       let result
       try {
-        result = GLOBAL && SESSION_ONLY_TOOLS.has(name) && !(PERSONAL && name === 'rename_session')
+        result = TOOLS_OFF.has(name)
+          ? { ...text(TOOL_FAMILY_OFF), isError: true }
+          : GLOBAL && SESSION_ONLY_TOOLS.has(name) && !(PERSONAL && name === 'rename_session')
           ? { ...text(`Tool ${name} is unavailable outside a session: no session identity or turn to receive messages.`), isError: true }
           : (GLOBAL ? selectProject(name, args) : selectCrossProject(name, args)) || (await callTool(name, args))
       } catch (err) {

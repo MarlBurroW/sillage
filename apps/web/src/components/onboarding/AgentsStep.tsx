@@ -1,5 +1,5 @@
 import { LoginControls as AntigravityLoginControls } from '../../routes/AntigravityAccountsSettingsPage'
-import { Check, ChevronDown, Download, KeyRound, Loader, Plus, TerminalSquare } from 'lucide-react'
+import { Check, ChevronDown, Download, KeyRound, Loader, Plus, TerminalSquare, Wrench } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { AgentAvailabilityDto, AgentKind } from '@sillage/protocol'
 import { useAgentAvailability, useAgentInstall } from '../../lib/agents'
@@ -11,6 +11,7 @@ import { LoginControls as CodexLoginControls } from '../../routes/CodexAccountsS
 import { LoginControls as GrokLoginControls } from '../../routes/GrokAccountsSettingsPage'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { AgentInstallProgress } from '../AgentInstallProgress'
+import { InstanceAgentTools } from '../agent-tools/AgentTools'
 import { Badge, Banner, Button, Card, cx } from '../ui'
 import { StepTitle, Tip, Why, useCommit, useGate, type StepProps } from './shell'
 
@@ -67,8 +68,37 @@ export function AgentsStep({ nav, profile, isAdmin }: StepProps) {
         {availability && rows.length === 0 ? <p className="text-sm text-ink-faint">{t('onboarding.agents.none')}</p> : null}
       </div>
 
+      {/* Instance-wide, so only an administrator chooses; members inherit what was chosen. */}
+      {isAdmin ? <AgentToolsSection /> : null}
+
       <Tip>{t('onboarding.agents.more')}</Tip>
     </>
+  )
+}
+
+/** Folded by default: everything starts on, and most people need not open it. */
+function AgentToolsSection() {
+  const t = useTranslate()
+  const [open, setOpen] = useState(false)
+  return (
+    <Card className="flex flex-col">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex min-h-11 items-center gap-3 px-4 py-3 text-left"
+      >
+        <Wrench size={16} className="shrink-0 text-ink-faint" />
+        <span className="min-w-0 flex-1 text-sm font-semibold text-ink">{t('onboarding.agents.tools.title')}</span>
+        <ChevronDown size={16} className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-180')} />
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-4 border-t border-line px-4 py-4">
+          <p className="text-xs text-ink-faint">{t('onboarding.agents.tools.hint')}</p>
+          <InstanceAgentTools />
+        </div>
+      ) : null}
+    </Card>
   )
 }
 

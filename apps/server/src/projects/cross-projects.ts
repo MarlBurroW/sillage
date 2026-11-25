@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
  * `apps/server/src/mcp/sillage-mcp.mjs`.
  */
 export const CROSS_PROJECTS_SETTING =
-  "to let this project's sessions read and act on the account's other projects, the project owner enables “Act on my other projects” on the project page, General tab (French interface: « Agir sur mes autres projets », tab « Général »). Tell the user about this setting instead of working around it."
+  "to let this project's sessions read and act on the account's other projects, the project owner enables “Act on my other projects” on the project page, Agents tab, under “Agent tools” (French interface: « Agir sur mes autres projets », onglet « Agents », « Outils des agents »). Tell the user about this setting instead of working around it."
 
 export const CROSS_PROJECTS_OFF = `This session can only act within its own project. ${CROSS_PROJECTS_SETTING[0]!.toUpperCase()}${CROSS_PROJECTS_SETTING.slice(1)}`
 

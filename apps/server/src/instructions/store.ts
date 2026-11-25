@@ -114,6 +114,8 @@ interface AppendixInput {
   mode: InstructionsMode
   /** Whether agents have the MCP server's SILLAGE.md tools available. */
   sillageMcp: boolean
+  /** False when the project turned the Instructions tool family off: the tools are not named. */
+  instructionsTools?: boolean
 }
 
 /** User instructions and response-language guidance added to system prompts. Include tool reminders even when both instruction sections are empty: agents need to learn they can maintain instructions, and MCP tools may not load immediately. */
@@ -137,7 +139,10 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
     if (project) parts.push(`## For this project\n\n${project}`)
   }
 
-  if (input.sillageMcp) {
+  if (input.sillageMcp && input.instructionsTools === false && input.projectId !== null) {
+    // Without the SILLAGE.md tools, only repository instructions remain editable by the agent.
+    if (input.mode !== 'sillage') parts.push("This project's instructions live in its repository's `AGENTS.md` or `CLAUDE.md`: use your file tools to store project-specific instructions there.")
+  } else if (input.sillageMcp) {
     parts.push(
       input.projectId === null
         ? "Use personal memory for durable preferences, ideas and decisions across independent discussions. Global SILLAGE.md instructions apply instance-wide: edit them only for an explicit request about global rules, using scope global and the account's permissions."

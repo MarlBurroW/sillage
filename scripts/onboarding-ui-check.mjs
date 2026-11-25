@@ -124,6 +124,18 @@ try {
   if ((await claudeRow.getAttribute('aria-expanded')) !== 'true') await claudeRow.click()
   await page.getByText('Connexion du CLI').first().waitFor()
   await page.screenshot({ path: '/tmp/sillage-onboarding-agents.png' })
+  // The administrator chooses the instance's agent tools, folded under the CLI list.
+  const tools = page.getByRole('button', { name: 'Ce que Sillage donne à tes agents' })
+  assert.equal(await tools.getAttribute('aria-expanded'), 'false')
+  await tools.click()
+  const worktreesSwitch = page.getByRole('switch', { name: 'Worktrees' })
+  assert.equal(await worktreesSwitch.getAttribute('aria-checked'), 'true')
+  await worktreesSwitch.click()
+  await page.waitForFunction(() => document.querySelector('[role="switch"][aria-label="Worktrees"]')?.getAttribute('aria-checked') === 'false')
+  assert.equal((await (await page.request.get(`${base}/api/settings`)).json()).agentTools.worktrees, false)
+  await page.waitForTimeout(300)
+  await tools.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: '/tmp/sillage-onboarding-agent-tools.png', fullPage: true })
 
   // Reload resumes the same step: state belongs to the account.
   await page.reload()

@@ -68,8 +68,8 @@ expires.
 
 ## Projects that act on the others
 
-A project's owner can turn on **Act on my other projects** (General tab of the
-project page, `projects.cross_projects`). Its sessions stay in conversation mode,
+A project's owner can turn on **Act on my other projects** (Agents tab of the
+project page, under Agent tools, `projects.cross_projects`). Its sessions stay in conversation mode,
 with their own project, memory and instructions by default, but the work tools
 take an optional `project` naming another project the session's account can see
 (owned or shared): `search_history`, `read_conversation`, `list_sessions`,
@@ -79,7 +79,9 @@ take an optional `project` naming another project the session's account can see
 `read_memory`. Configuration edits and tools bound to the session itself
 (rename, move, its own card, decisions, MCP proposals) stay in the home project.
 The target project's usual rights apply: the setting widens where a session can
-go, not what its account may do there.
+go, not what its account may do there. So do its agent tool switches: a tool
+whose family the target project turned off is refused there, even if the home
+project keeps it on.
 
 The parameter is offered even when the setting is off, so a request about another
 project gets a refusal naming the setting rather than a silent limit; the daemon

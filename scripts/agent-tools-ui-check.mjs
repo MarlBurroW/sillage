@@ -97,6 +97,8 @@ try {
       }
       // Captured settled: a pending save dims the switch.
       await page.waitForFunction(() => !document.querySelector('[role="switch"][aria-label="Navigateur"]')?.matches(':disabled'))
+      // Switches fade between states over 150 ms once the settings arrive.
+      await page.waitForTimeout(300)
       await page.screenshot({ path: join(shots, `settings-${name}-${theme}.png`) })
 
       const list = await (await context.request.get(`${base}/api/projects`)).json()
@@ -111,8 +113,17 @@ try {
         await select.click()
         await page.getByRole('option', { name: 'Désactivé' }).click()
         await page.waitForFunction(() => /Désactivé/.test(document.querySelector('[role="combobox"][aria-label="Navigateur"]')?.textContent ?? ''))
-        const after = await (await context.request.get(`${base}/api/projects`)).json()
+        let after = await (await context.request.get(`${base}/api/projects`)).json()
         assert.deepEqual(after.find((entry) => entry.id === project.id).agentTools, { browser: false })
+        // A built-in family: on by default, turned off for this project only.
+        const board = page.getByRole('combobox', { name: 'Board' })
+        assert.match(await board.innerText(), /Par défaut \(activé\)/)
+        await board.click()
+        await page.getByRole('option', { name: 'Désactivé' }).click()
+        await page.waitForFunction(() => /Désactivé/.test(document.querySelector('[role="combobox"][aria-label="Board"]')?.textContent ?? ''))
+        after = await (await context.request.get(`${base}/api/projects`)).json()
+        assert.deepEqual(after.find((entry) => entry.id === project.id).agentTools, { browser: false, board: false })
+        await page.getByRole('switch', { name: 'Agir sur mes autres projets' }).waitFor()
         first = false
       }
       await select.scrollIntoViewIfNeeded()

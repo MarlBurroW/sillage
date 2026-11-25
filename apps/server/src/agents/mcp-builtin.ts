@@ -31,6 +31,10 @@ export interface BuiltinMcpParams {
   /** Null in native mode, omitting memory tools. */
   memoryRoot?: string
   memoryDir: string | null
+  /** Tools of the families switched off for this project (`disabledSillageTools`). */
+  disabledTools?: string[]
+  /** `familyTableForMcp()`: lets the server apply another project's switches to cross-project calls. */
+  familyTable?: string
 }
 
 /** Null when disabled according to the contract above. `strictMcp` overrides activation: promising only declared servers cannot retain platform exceptions. */
@@ -62,6 +66,8 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         ...(projectId ? { SILLAGE_MCP_PROJECT: projectId } : { SILLAGE_MCP_PERSONAL: '1', ...(params.memoryRoot ? { SILLAGE_MCP_MEMORY_ROOT: params.memoryRoot } : {}) }),
         SILLAGE_MCP_CONVERSATION: conversationId,
         ...(memoryDir ? { SILLAGE_MCP_MEMORY: memoryDir } : {}),
+        ...(params.disabledTools?.length ? { SILLAGE_MCP_TOOLS_OFF: params.disabledTools.join(',') } : {}),
+        ...(params.familyTable ? { SILLAGE_MCP_TOOL_FAMILIES: params.familyTable } : {}),
       },
     },
     createdAt: 0,

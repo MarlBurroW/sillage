@@ -212,6 +212,16 @@ The periodic cleanup removes expired, revoked and orphaned files.
   Sillage account, valid for an hour, a day, a week or 30 days, and revocable. It serves the app
   only while the dev server still listens for its owner (checked at least every 30 seconds), and
   tells search engines not to index it.
+- **Choose the tools agents get.** Sillage's own tools come in families (history,
+  board, coordination, schedules and automations, worktrees, project actions,
+  instructions, project setup) plus extra tools such as the browser. An administrator
+  sets the instance defaults under **Settings › Agent tools**, or during the first-run
+  agents step; a project owner overrides any family in the project's **Agents** tab,
+  next to "Act on my other projects". A family that is off leaves the session entirely:
+  its tools are not listed or callable, and the startup context no longer mentions
+  them. Codex, OpenCode, Grok and Antigravity load every MCP tool description into
+  context, so this shortens each of their sessions. Session title, project list and
+  memory tools always stay. Changes apply when a session next starts its CLI.
 - **A browser for agents, watched live.** Optional, under **Settings › Agent tools**
   (admin default, project owner override). Agents of every CLI get browser tools
   (Playwright MCP, installed on demand and pinned) driving a headless Chromium the

@@ -3,21 +3,73 @@ import { z } from 'zod'
 /**
  * Optional tool families Sillage hands to agents, on top of what each CLI ships.
  *
- * A family is a user-facing switch, not a tool list: “Browser” covers a whole MCP server and the
- * browsers the daemon runs for it. Disabled families are absent from the session entirely (no
- * server, no tool descriptions, nothing installed or launched), so they cost neither tokens nor
- * machine resources. More families (the built-in MCP server's groups) join this list later, see
- * card #114.
+ * A family is a user-facing switch, not a tool list. Disabled families are absent from the session
+ * entirely: their tools leave the `sillage` server's list, the guidance that names them leaves the
+ * startup context, and “Browser” adds no server and launches nothing. Codex, OpenCode, Grok and
+ * Antigravity load every MCP tool description into context (about 12k tokens for the whole
+ * `sillage` server, measured 25 Nov 2026), so trimming families shortens every one of their
+ * sessions; Claude Code loads MCP tools on demand.
  */
-export const AGENT_TOOL_FAMILIES = ['browser'] as const
+export const AGENT_TOOL_FAMILIES = [
+  'history',
+  'board',
+  'coordination',
+  'automations',
+  'worktrees',
+  'actions',
+  'instructions',
+  'project',
+  'browser',
+] as const
 export type AgentToolFamily = (typeof AGENT_TOOL_FAMILIES)[number]
 
 /**
- * Instance defaults when the administrator has not chosen. The browser starts off: it downloads a
- * browser engine and runs heavy processes, which an instance should opt into.
+ * Instance defaults when the administrator has not chosen. Built-in tools start on, as before
+ * families existed. The browser starts off: it downloads a browser engine and runs heavy
+ * processes, which an instance should opt into.
  */
 export const AGENT_TOOL_DEFAULTS: Record<AgentToolFamily, boolean> = {
+  history: true,
+  board: true,
+  coordination: true,
+  automations: true,
+  worktrees: true,
+  actions: true,
+  instructions: true,
+  project: true,
   browser: false,
+}
+
+/**
+ * `sillage` server tools of each family. Every tool of `apps/server/src/mcp/sillage-mcp.mjs` is in
+ * exactly one family or in `ALWAYS_ON_SILLAGE_TOOLS` (`test/mcp-parity.test.ts`). The daemon turns
+ * disabled families into a tool list for the server (`SILLAGE_MCP_TOOLS_OFF`), so the server, out
+ * of the module graph, needs no copy of this table.
+ */
+export const SILLAGE_TOOL_FAMILIES: Record<Exclude<AgentToolFamily, 'browser'>, readonly string[]> = {
+  history: ['search_history', 'read_conversation', 'list_sessions', 'work_log', 'find_file_edits'],
+  board: ['list_cards', 'read_card', 'add_card_note', 'move_card', 'update_card', 'create_card', 'link_cards', 'unlink_cards', 'attach_card', 'detach_card', 'update_issue'],
+  coordination: ['start_session', 'list_models', 'send_session_message', 'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'count_active_sessions', 'move_session',
+    'read_session', 'wait_for_session', 'message_session', 'steer_session', 'interrupt_session', 'reply_session'],
+  automations: ['schedule_task', 'create_automation'],
+  worktrees: ['create_worktree', 'list_worktrees', 'remove_worktree'],
+  actions: ['list_actions', 'register_action', 'remove_action', 'run_action'],
+  instructions: ['read_instructions', 'edit_instructions', 'write_instructions'],
+  project: ['set_project_image', 'attach_project_folder', 'list_project_folders', 'list_mcp_servers', 'install_mcp_server'],
+}
+
+/**
+ * Never switched off: the session title, project discovery, memory (how CLIs other than Claude
+ * write it), decisions (already opted into per automation), and personal discussions' own tools.
+ */
+export const ALWAYS_ON_SILLAGE_TOOLS: readonly string[] = [
+  'rename_session', 'list_projects', 'read_memory', 'write_memory', 'delete_memory', 'request_decision', 'withdraw_decision',
+  'create_project', 'continue_in_project', 'delete_project', 'find_files',
+]
+
+/** Tool names the `sillage` server must hide for these effective families. */
+export function disabledSillageTools(families: Record<AgentToolFamily, boolean>): string[] {
+  return Object.entries(SILLAGE_TOOL_FAMILIES).flatMap(([family, tools]) => (families[family as AgentToolFamily] ? [] : tools))
 }
 
 /** Explicit choices only: an absent family follows the level above. */

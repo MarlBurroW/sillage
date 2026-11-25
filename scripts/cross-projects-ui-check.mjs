@@ -99,7 +99,8 @@ try {
       const page = await context.newPage()
       page.on('pageerror', (error) => errors.push(`${name}/${theme}: ${error.message}`))
 
-      await page.goto(`${base}/p/${home.id}`)
+      // The setting lives with the agent tools it widens, in the project's Agents tab.
+      await page.goto(`${base}/p/${home.id}?section=agents`)
       const toggle = page.getByRole('switch', { name: 'Agir sur mes autres projets' })
       await toggle.waitFor()
       const before = await toggle.getAttribute('aria-checked')
