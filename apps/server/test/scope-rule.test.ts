@@ -260,6 +260,15 @@ test('acting on other projects is project configuration, and reaches only what t
   assert.equal((await call('owner', 'PATCH', '/api/projects/shared', { crossProjects: true })).status, 200)
   assert.equal(db.select().from(projects).where(eq(projects.id, 'shared')).get()?.crossProjects, true)
 
+  // Agent tool families: project configuration too, merged family by family.
+  for (const user of ['admin', 'member']) {
+    assert.equal((await call(user, 'PATCH', '/api/projects/shared', { agentTools: { browser: true } })).code, 'project_edit_forbidden', user)
+  }
+  assert.equal((await call('owner', 'PATCH', '/api/projects/shared', { agentTools: { browser: true } })).status, 200)
+  assert.equal(db.select().from(projects).where(eq(projects.id, 'shared')).get()?.agentTools, '{"browser":true}')
+  assert.equal((await call('owner', 'PATCH', '/api/projects/shared', { agentTools: { browser: null } })).status, 200)
+  assert.equal(db.select().from(projects).where(eq(projects.id, 'shared')).get()?.agentTools, '{}')
+
   // Same setting, different accounts: the owner's private project stays out of a member's reach.
   assert.equal(tool('c-owner', 'list_sessions', { project: 'private' }).isError, undefined)
   const member = tool('c-member', 'list_sessions', { project: 'private' })

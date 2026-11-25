@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { appSettings, type Db } from '@sillage/db'
-import { cronScheduleSchema, type AppSettingsDto } from '@sillage/protocol'
+import { cronScheduleSchema, sanitizeAgentToolSettings, type AppSettingsDto } from '@sillage/protocol'
 import type { Config } from '../config.js'
 
 export type AppSettings = AppSettingsDto
@@ -29,6 +29,7 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
         ? maxSessions
         : config.limits.maxConcurrentSessions,
     publicUrl: publicUrlOf(db, config),
+    agentTools: sanitizeAgentToolSettings(readValue(db, 'agentTools')),
   }
 }
 

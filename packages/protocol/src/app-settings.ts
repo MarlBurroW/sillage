@@ -1,5 +1,6 @@
 import { Cron } from 'croner'
 import { z } from 'zod'
+import { agentToolSettingsSchema, type AgentToolSettings } from './agent-tools.js'
 
 /**
  * Five-field cron expression, validated by the library that will execute it.
@@ -50,6 +51,11 @@ export interface AppSettingsDto {
    * tasks. Empty derives it from each request's `Host` header.
    */
   publicUrl: string
+  /**
+   * Instance defaults for the optional agent tool families (`agent-tools.ts`). Only explicit
+   * choices are stored; projects can override each family.
+   */
+  agentTools: AgentToolSettings
 }
 
 /** Result of a manually triggered archive pass. */
@@ -91,6 +97,8 @@ export const updateAppSettingsBodySchema = z.object({
    * GB.
    */
   maxConcurrentSessions: z.number().int().min(1).max(100).optional(),
+  /** Replaces the stored choices as a whole; omit a family to fall back to its default. */
+  agentTools: agentToolSettingsSchema.optional(),
 })
 
 /** Transcribed dictation result. */

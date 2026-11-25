@@ -111,6 +111,11 @@ export const projects = sqliteTable(
      * tool call, so toggling it applies to running sessions too.
      */
     crossProjects: integer('cross_projects', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * JSON of the owner's explicit agent tool family choices (`AgentToolSettings`); families
+     * absent here follow the instance default in `app_settings.agentTools`.
+     */
+    agentTools: text('agent_tools').notNull().default('{}'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },

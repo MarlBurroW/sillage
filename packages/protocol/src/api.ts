@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { agentToolOverridesSchema, type AgentToolSettings } from './agent-tools.js'
 import { agentConfigSchema, type CodexMode } from './agent-config.js'
 // Type-only imports in both directions: `cards.ts` needs conversation status,
 // and this file needs the card badge. Nothing survives at runtime,
@@ -181,6 +182,8 @@ export const updateProjectBodySchema = z
     turnCheckpoints: z.boolean(),
     crossProjects: z.boolean(),
     memoryMode: memoryModeSchema,
+    /** Per-family override; `null` returns a family to the instance default. */
+    agentTools: agentToolOverridesSchema,
   })
   .partial()
 
@@ -234,6 +237,8 @@ export interface ProjectDto {
   turnCheckpoints: boolean
   /** Sessions may reach the account's other projects (see `projects.crossProjects`). */
   crossProjects: boolean
+  /** The owner's explicit tool family choices; absent families follow the instance. */
+  agentTools: AgentToolSettings
   /** Where this project's agent memory lives (see `memory.ts`). */
   memoryMode: MemoryMode
   /** Live shells in the project, indicating a terminal is still running. */

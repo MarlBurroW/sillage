@@ -5,6 +5,7 @@ import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectFolders, projectImages, projectPins, projects, users, writeTransaction } from '@sillage/db'
 import {
+  applyAgentToolOverrides,
   createProjectBodySchema,
   openExplorerFolderBodySchema,
   createSampleProjectBodySchema,
@@ -43,6 +44,7 @@ import { attachProjectFolder, listProjectFolders } from '../../projects/folders.
 import { samePath } from '../../agents/paths.js'
 import { assertScopeWriter } from '../scope-access.js'
 import { assertFreeDestination, createProject, insertProject } from '../../projects/create.js'
+import { readProjectAgentTools } from '../../agents/agent-tools.js'
 
 /** Mention completion results: beyond this, lists no longer fit the composer's popover. */
 const MENTION_RESULTS = 30
@@ -155,6 +157,7 @@ export function registerProjectRoutes(
           instructionsMode: project.instructionsMode,
           turnCheckpoints: project.turnCheckpoints,
           crossProjects: project.crossProjects,
+          agentTools: readProjectAgentTools(project.agentTools),
           memoryMode: project.memoryMode,
           activeTerminals: terminals.aliveCount(project.id),
           cardCounts: cardCounts.get(project.id) ?? {},
@@ -205,6 +208,7 @@ export function registerProjectRoutes(
       isOwner: true,
       conversationCount: 0,
       defaultConfig: NO_PROJECT_DEFAULTS,
+      agentTools: {},
       activeTerminals: 0,
       cardCounts: {},
       pinned: false,
@@ -228,6 +232,7 @@ export function registerProjectRoutes(
       isOwner: true,
       conversationCount: 0,
       defaultConfig: NO_PROJECT_DEFAULTS,
+      agentTools: {},
       activeTerminals: 0,
       cardCounts: {},
       pinned: false,
@@ -344,6 +349,10 @@ export function registerProjectRoutes(
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
     if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
     if (body.crossProjects !== undefined) patch.crossProjects = body.crossProjects
+    // Merged into the stored choices so one family's switch never resets another's.
+    if (body.agentTools !== undefined) {
+      patch.agentTools = JSON.stringify(applyAgentToolOverrides(readProjectAgentTools(project.agentTools), body.agentTools))
+    }
     // Applied on the next runner launch; running sessions retain their memory.
     if (body.memoryMode !== undefined) patch.memoryMode = body.memoryMode
 

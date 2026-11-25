@@ -533,6 +533,13 @@
       "when": 1795369881798,
       "tag": "0075_graceful_catseye",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "6",
+      "when": 1795630014539,
+      "tag": "0076_cute_pretty_boy",
+      "breakpoints": true
     }
   ]
 }

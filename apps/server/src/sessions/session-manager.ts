@@ -1,3 +1,5 @@
+import type { BrowserManager } from '../browser/manager.js'
+import { agentToolsFor } from '../agents/agent-tools.js'
 import { detach } from '../detach.js'
 import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
 import { conversationPath } from '@sillage/protocol'
@@ -250,6 +252,12 @@ export class SessionManager {
     private readonly usage: TurnUsageRecorder | null = null,
   ) {
     this.statusBus.setMaxListeners(200)
+  }
+
+  /** Agent browsers, wired after construction like other optional services; absent in tests. */
+  private browsers: BrowserManager | null = null
+  setBrowsers(browsers: BrowserManager): void {
+    this.browsers = browsers
   }
 
   /** At startup no conversations can legitimately run: runners died with the previous process. Leaving `running` would misrepresent state and block messages. */
@@ -1047,7 +1055,16 @@ export class SessionManager {
           memoryDir: memoryDir(),
           memoryRoot: this.config.paths.memory,
         })
-        return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
+        // Agent browser (tool family `browser`): only when the family is on for this project
+        // and the tools are installed. Benchmarks get the same tools for every variant or none:
+        // they follow the instance default like personal discussions.
+        // `strictMcp` promises only declared servers, like the built-in one below.
+        const strict = current.agent === 'claude' && current.strictMcp
+        const browser = this.browsers && !strict && agentToolsFor(this.db, this.config, conversation.projectId).browser
+          ? this.browsers.mcpServerFor(conversationId)
+          : null
+        const servers = [...resolved.servers, ...(browser ? [browser] : []), ...(builtin ? [builtin] : [])]
+        return { ...resolved, servers }
       },
 
       // The first message of each launch also carries the moving overview (`liveSessionContext`):

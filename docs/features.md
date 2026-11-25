@@ -198,6 +198,16 @@ The periodic cleanup removes expired, revoked and orphaned files.
   Grok Build or Google Antigravity and back: the new agent receives a budgeted selection of the thread, full messages rather
   than a summary, with references it can read back through the Sillage MCP server.
   [How the handoff is built](cli-handoff.md).
+- **A browser for agents, watched live.** Optional, under **Settings › Agent tools**
+  (admin default, project owner override). Agents of every CLI get browser tools
+  (Playwright MCP, installed on demand and pinned) driving a headless Chromium the
+  daemon starts for their conversation: the machine's Chrome or Playwright cache is
+  reused, otherwise Sillage downloads one. Nothing ships in the releases. Watch the page
+  in the conversation's **Browser** panel tab, opened from any browser tool call in the
+  thread, and **take over** to sign in or pass a challenge, then hand back. **Services ›
+  Browsers** lists every open browser. A browser is one Chromium per conversation,
+  isolated from the others, closed after ten minutes with neither the agent nor anyone
+  watching; at most six run at once. On Linux it runs outside Sillage's service cgroup.
 - **MCP servers** declared once and handed to the agents that should get them.
   A server that was down when the session started can be reconnected from the MCP
   panel without restarting the session; Claude Code also retries failed servers at

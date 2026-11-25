@@ -79,6 +79,7 @@ export const insertProject = async (
     defaultConfig: null,
     turnCheckpoints: true,
     crossProjects: false,
+    agentTools: '{}',
     position: (highest?.max ?? 0) + 1,
     archivedAt: null,
     createdAt: Date.now(),

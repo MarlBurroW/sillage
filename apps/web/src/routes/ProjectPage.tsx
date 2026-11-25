@@ -40,6 +40,7 @@ import { ProjectFolderSettings } from '../components/ProjectFolders'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { WorktreeBoard } from '../components/WorktreeBoard'
 import { ProjectMcpServers } from '../components/mcp/ProjectMcpServers'
+import { ProjectAgentTools } from '../components/agent-tools/AgentTools'
 import {
   Badge,
   Banner,
@@ -181,7 +182,10 @@ function ProjectWorkspace({ project, hasConversations }: { project: ProjectDto; 
               <p className="break-all font-mono">{project.workspacePath}</p>
               <ProjectFolderSettings projectId={project.id} workspacePath={project.workspacePath} isOwner={false} />
             </CardBody></Card> : null}
-            {key === 'agents' ? <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} /> : null}
+            {key === 'agents' ? <>
+              <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} />
+              <ProjectAgentTools projectId={project.id} overrides={project.agentTools} isOwner={project.isOwner} />
+            </> : null}
             {key === 'instructions' ? <Card>
               <CardHeader title={t('instructions.project.title')} description={t('instructions.project.description')} icon={<ProjectInstructionsIcon projectId={project.id} size={16} />} />
               <CardBody className="flex flex-col gap-4"><InstructionsSummary projectId={project.id} selected="project" /><ProjectInstructions projectId={project.id} /></CardBody>

@@ -23,6 +23,7 @@ import {
   TimerReset,
   UserRound,
   Users,
+  Wrench,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
@@ -185,6 +186,14 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.antigravityAccounts',
     descriptionKey: 'settings.section.antigravityAccounts.description',
     icon: <AgentIcon agent="antigravity" size={16} />,
+  },
+  {
+    to: 'outils-agents',
+    group: 'agents',
+    labelKey: 'settings.section.agentTools',
+    descriptionKey: 'settings.section.agentTools.description',
+    icon: <Wrench size={16} />,
+    adminOnly: true,
   },
   {
     to: 'secrets',

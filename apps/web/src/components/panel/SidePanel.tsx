@@ -10,6 +10,7 @@ import {
   Search,
   Columns2,
   FolderTree,
+  Globe,
   PlugZap,
   SquareKanban,
   SquareTerminal,
@@ -54,6 +55,10 @@ import { GitPane } from './GitPane'
 import { HistoryPane } from './HistoryPane'
 import { CardPane } from './CardPane'
 import { McpPane } from './McpPane'
+import { BrowserPane } from '../browser/BrowserPane'
+import { useBrowsers } from '../../lib/browsers'
+import { useAppSettings } from '../../lib/app-settings'
+import { resolveAgentTools } from '@sillage/protocol'
 import { TerminalsPane } from './TerminalsPane'
 import { QuickOpen } from './QuickOpen'
 
@@ -137,9 +142,15 @@ export function SidePanel({
   const tab: PanelTab =
     (!projectId && ['actions', 'terminals'].includes(chosenTab)) || (chosenTab === 'card' && !(conversationId && cardId))
       ? 'files'
-      : conversationId || !['history', 'agents', 'mcp'].includes(chosenTab) ? chosenTab : 'files'
+      : conversationId || !['history', 'agents', 'mcp', 'browser'].includes(chosenTab) ? chosenTab : 'files'
   const treeOpen = usePanelTree()
   const selectedSubAgent = useSelectedSubAgent()
+  // The Browser tab exists where agents may open one (the family is on for this project) or where
+  // one is open anyway (turned off since, still running).
+  const { data: browsers } = useBrowsers()
+  const { data: appSettings } = useAppSettings()
+  const browserOpen = conversationId !== undefined && (browsers ?? []).some((entry) => entry.conversationId === conversationId)
+  const browserTab = conversationId !== undefined && (browserOpen || resolveAgentTools(appSettings?.agentTools ?? {}, project?.agentTools ?? null).browser)
   /**
    * First render deliberately starts offscreen, entering only next render: elements born in place
    * have no transition and would appear abruptly.
@@ -280,6 +291,15 @@ export function SidePanel({
                 active={tab === 'agents'}
                 onSelect={() => setPanelTab('agents')}
               />
+              {browserTab ? (
+                <Tab
+                  icon={<Globe size={20} />}
+                  label={t('panel.tab.browser')}
+                  badge={browserOpen ? 1 : 0}
+                  active={tab === 'browser'}
+                  onSelect={() => setPanelTab('browser')}
+                />
+              ) : null}
               <Tab
                 icon={<PlugZap size={20} />}
                 label={t('panel.tab.mcp')}
@@ -423,6 +443,8 @@ export function SidePanel({
       ) : null}
 
       {/* Like subagents, log-derived content loses nothing by mounting only when viewed. */}
+      {tab === 'browser' && conversationId ? <BrowserPane conversationId={conversationId} /> : null}
+
       {tab === 'mcp' ? <McpPane servers={mcpServers} conversationId={conversationId} agent={agent} /> : null}
 
       {tab === 'card' && projectId && cardId ? <CardPane projectId={projectId} cardId={cardId} onChange={cardActions?.change} onDetach={cardActions?.detach} detaching={cardActions?.detaching} /> : null}

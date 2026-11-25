@@ -23,11 +23,11 @@ import {
   Wrench,
 } from 'lucide-react'
 import { memo, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
-import { isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
+import { BROWSER_MCP_SERVER_NAME, isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
 import { useTranslate } from '../../lib/i18n'
-import { showSubAgent } from '../../lib/panel'
+import { showBrowser, showSubAgent } from '../../lib/panel'
 import { useEventBody, useToolOutput } from '../../lib/tool-output'
 import { readableView } from '../tools/registry'
 import { WorkflowStrip } from './WorkflowStrip'
@@ -237,6 +237,21 @@ export const ToolCall = memo(function ToolCall({
         >
           <CornerDownRight size={11} className="shrink-0" />
           {t('toolcall.subagent.view')}
+        </button>
+      ) : null}
+
+      {/* Browser tools act on a page only the live view shows: one click to watch it. */}
+      {origin.server === BROWSER_MCP_SERVER_NAME ? (
+        <button
+          type="button"
+          onClick={() => showBrowser()}
+          className={cx(
+            'flex w-full items-center gap-1.5 border-t border-line px-2.5 py-1.5',
+            'text-left text-[0.6875rem] text-ink-faint hover:text-accent',
+          )}
+        >
+          <Globe size={11} className="shrink-0" />
+          {t('toolcall.browser.view')}
         </button>
       ) : null}
 

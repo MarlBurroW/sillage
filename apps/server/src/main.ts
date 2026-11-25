@@ -1,3 +1,4 @@
+import { BrowserManager } from './browser/manager.js'
 import { mkdirSync, rmSync } from 'node:fs'
 import { openDatabase, projects } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
@@ -106,6 +107,9 @@ async function main(): Promise<void> {
   const turnUsage = new TurnUsageRecorder(db)
   const prices = new PriceCatalog(db)
   const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts, turnUsage)
+  // Agent browsers (tool family `browser`): launched on the agent's first use, closed when idle.
+  const browsers = new BrowserManager(db, config)
+  sessions.setBrowsers(browsers)
   const antigravityLogin = new AntigravityLoginService(antigravityAccounts.homes, antigravityAccounts.store, () => registry.adapter('antigravity').cli.executable(), (id) => sessions.stopAntigravityAccount(id))
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
@@ -180,6 +184,7 @@ async function main(): Promise<void> {
     benchmarkRunner,
     prices,
     turnUsage,
+    browsers,
   )
   push.setLogger(app.log)
   automations.setLogger(app.log)
@@ -273,6 +278,7 @@ async function main(): Promise<void> {
     await step('antigravityLogin', () => antigravityLogin.closeAll())
     await step('sessions', () => sessions.stopAll())
     await step('terminals', () => terminals.shutdown())
+    await step('browsers', () => browsers.shutdown())
     await step('http', () => app.close())
     await step('database', () => sqlite.close())
     lock.release()

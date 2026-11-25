@@ -55,6 +55,7 @@ import { AntigravityAccountsSettingsPage } from './routes/AntigravityAccountsSet
 import { DecisionsPage } from './routes/DecisionsPage'
 import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
 import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
+import { AgentToolsSettingsPage } from './components/agent-tools/AgentTools'
 import { UsageLimitsSettingsPage } from './routes/UsageLimitsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
 import { UsersSettingsPage } from './routes/UsersSettingsPage'
@@ -189,6 +190,7 @@ export function App() {
             <Route path="archivage" element={<ArchivingSettingsPage />} />
             <Route path="acces-distant" element={<RemoteAccessSettingsPage />} />
             <Route path="sessions" element={<SessionsSettingsPage />} />
+            <Route path="outils-agents" element={<AgentToolsSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />
           </Route>

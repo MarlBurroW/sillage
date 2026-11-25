@@ -6,7 +6,9 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { ServiceAppAction, ServiceAppDto, ServiceDto, ServicesDto } from '@sillage/protocol'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { Badge, Banner, Button, EmptyState, IconButton } from '../components/ui'
+import { Badge, Banner, Button, EmptyState, IconButton, Tabs } from '../components/ui'
+import { BrowsersList } from '../components/browser/BrowsersList'
+import { useBrowsers } from '../lib/browsers'
 import { api } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { formatBytes } from '../lib/attachments'
@@ -19,6 +21,8 @@ export function ServicesPage() {
   const client = useQueryClient()
   const { data: visibleProjects = [] } = useProjects()
   const [project, setProject] = useState('all')
+  const [view, setView] = useState<'processes' | 'browsers'>('processes')
+  const { data: browsers = [] } = useBrowsers()
   const query = useQuery({
     queryKey: ['services'],
     queryFn: () => api.get<ServicesDto>('/api/services'),
@@ -37,7 +41,7 @@ export function ServicesPage() {
   const services = query.data?.services ?? []
   const apps = query.data?.apps ?? []
   // Project filtering applies to every list, so build it from their union.
-  const owners = [...apps, ...services]
+  const owners: { projectId: string | null; projectName?: string | null }[] = [...apps, ...services, ...browsers.map((entry) => ({ projectId: entry.projectId, projectName: visibleProjects.find((p) => p.id === entry.projectId)?.name ?? null }))]
   const projects = [...new Map(owners.filter((entry) => entry.projectId)
     .map((entry) => [entry.projectId!, entry.projectName!])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1]))
@@ -91,45 +95,50 @@ export function ServicesPage() {
           {stop.isSuccess ? <Banner tone="info">{t('services.stopRequested')}</Banner> : null}
           {control.error ? <Banner>{control.error.message}</Banner> : null}
           {control.isSuccess ? <Banner tone="info">{t('services.app.actionRequested')}</Banner> : null}
-          {query.isPending ? <p role="status" className="text-sm text-ink-faint">{t('services.loading')}</p>
-            : query.data && !query.data.supported ? <EmptyState icon={<Server size={22} />} title={t('services.unsupported')} />
-              : query.data && nothing ? <EmptyState icon={<Server size={22} />} title={t('services.empty')} description={t('services.emptyHint')} />
-                : query.data ? (
-                  <>
-                    <Section id="services-apps" title={t('services.apps.title')} description={t('services.apps.description')}>
-                      {filteredApps.length ? (
-                        <ul className="flex flex-col gap-2">
-                          {filteredApps.map((app) => (
-                            <AppRow key={app.id} app={app} scannedAt={scannedAt} busy={busy}
-                              onAction={(action) => control.mutate({ id: app.id, action })} />
-                          ))}
-                        </ul>
-                      ) : <p className="text-sm text-ink-faint">{t('services.apps.empty')}</p>}
-                    </Section>
-                    <Section id="services-launchers" title={t('services.launchers.title')} description={t('services.launchers.description')}>
-                      {launchers.length || stray.length ? (
-                        <div className="flex flex-col gap-4">
-                          {launchers.map((launcher) => (
-                            <LauncherGroup key={launcher.id} launcher={launcher} entries={byLauncher.get(launcher.pid) ?? []}
-                              scannedAt={scannedAt} busy={busy} onStop={(id) => stop.mutate(id)} />
-                          ))}
-                          {stray.length ? (
-                            <ul className="flex flex-col gap-2">
-                              {stray.map((entry) => <ProcessRow key={entry.id} entry={entry} attributed scannedAt={scannedAt} busy={busy} onStop={(id) => stop.mutate(id)} />)}
-                            </ul>
-                          ) : null}
-                        </div>
-                      ) : <p className="text-sm text-ink-faint">{t('services.launchers.empty')}</p>}
-                    </Section>
-                    {detached.length ? (
-                      <Section id="services-detached" title={t('services.detached.title')} description={t('services.detached.description')}>
-                        <ul className="flex flex-col gap-2">
-                          {detached.map((entry) => <ProcessRow key={entry.id} entry={entry} attributed scannedAt={scannedAt} busy={busy} onStop={(id) => stop.mutate(id)} />)}
-                        </ul>
+          <Tabs label={t('services.tabs')} value={view} onChange={setView} pinned={false}
+            tabs={[{ value: 'processes', label: t('services.tab.processes') }, { value: 'browsers', label: browsers.length ? `${t('services.tab.browsers')} · ${browsers.length}` : t('services.tab.browsers') }]}>
+            {view === 'browsers' ? <BrowsersList browsers={browsers.filter(inProject)} /> : <div className="flex flex-col gap-6">
+            {query.isPending ? <p role="status" className="text-sm text-ink-faint">{t('services.loading')}</p>
+              : query.data && !query.data.supported ? <EmptyState icon={<Server size={22} />} title={t('services.unsupported')} />
+                : query.data && nothing ? <EmptyState icon={<Server size={22} />} title={t('services.empty')} description={t('services.emptyHint')} />
+                  : query.data ? (
+                    <>
+                      <Section id="services-apps" title={t('services.apps.title')} description={t('services.apps.description')}>
+                        {filteredApps.length ? (
+                          <ul className="flex flex-col gap-2">
+                            {filteredApps.map((app) => (
+                              <AppRow key={app.id} app={app} scannedAt={scannedAt} busy={busy}
+                                onAction={(action) => control.mutate({ id: app.id, action })} />
+                            ))}
+                          </ul>
+                        ) : <p className="text-sm text-ink-faint">{t('services.apps.empty')}</p>}
                       </Section>
-                    ) : null}
-                  </>
-                ) : null}
+                      <Section id="services-launchers" title={t('services.launchers.title')} description={t('services.launchers.description')}>
+                        {launchers.length || stray.length ? (
+                          <div className="flex flex-col gap-4">
+                            {launchers.map((launcher) => (
+                              <LauncherGroup key={launcher.id} launcher={launcher} entries={byLauncher.get(launcher.pid) ?? []}
+                                scannedAt={scannedAt} busy={busy} onStop={(id) => stop.mutate(id)} />
+                            ))}
+                            {stray.length ? (
+                              <ul className="flex flex-col gap-2">
+                                {stray.map((entry) => <ProcessRow key={entry.id} entry={entry} attributed scannedAt={scannedAt} busy={busy} onStop={(id) => stop.mutate(id)} />)}
+                              </ul>
+                            ) : null}
+                          </div>
+                        ) : <p className="text-sm text-ink-faint">{t('services.launchers.empty')}</p>}
+                      </Section>
+                      {detached.length ? (
+                        <Section id="services-detached" title={t('services.detached.title')} description={t('services.detached.description')}>
+                          <ul className="flex flex-col gap-2">
+                            {detached.map((entry) => <ProcessRow key={entry.id} entry={entry} attributed scannedAt={scannedAt} busy={busy} onStop={(id) => stop.mutate(id)} />)}
+                          </ul>
+                        </Section>
+                      ) : null}
+                    </>
+                  ) : null}
+            </div>}
+          </Tabs>
           <details className="text-xs leading-relaxed text-ink-faint">
             <summary className="w-fit cursor-pointer hover:text-ink">{t('services.scopeTitle')}</summary>
             <p className="mt-2 max-w-2xl">{t('services.scope')}</p>

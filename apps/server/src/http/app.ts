@@ -128,6 +128,8 @@ const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/auth/setup', '/api/healt
  */
 const API_V1_PREFIX = '/api/v1/'
 
+import { BROWSER_CDP_PREFIX, type BrowserManager } from '../browser/manager.js'
+import { registerBrowserRoutes } from '../browser/routes.js'
 export async function buildApp(
   ctx: AppContext,
   log: EventLog,
@@ -160,6 +162,8 @@ export async function buildApp(
   benchmarkRunner: BenchmarkRunner,
   prices: PriceCatalog,
   turnUsage: TurnUsageRecorder,
+  /** Absent in tests that do not exercise agent browsers. */
+  browsers: BrowserManager | null = null,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -205,6 +209,8 @@ export async function buildApp(
     if (path.startsWith(HOOKS_PREFIX)) return
     // Benchmark previews run in an opaque origin without cookies: the run's token authorizes them.
     if (path.startsWith(BENCHMARK_PREVIEW_PREFIX) && request.method === 'GET') return
+    // An agent's Playwright MCP has no session: the conversation's token in the URL authorizes it.
+    if (path.startsWith(BROWSER_CDP_PREFIX) && request.method === 'GET') return
 
     if (path.startsWith(API_V1_PREFIX)) {
       if (!request.apiToken) {
@@ -329,6 +335,7 @@ export async function buildApp(
   await registerWebSocketHub(app, ctx, log, sessions, notifications)
   // After the hub, which registers the websocket plugin required by terminals.
   registerTerminalHub(app, ctx, terminals)
+  if (browsers) registerBrowserRoutes(app, ctx, browsers)
 
   await registerWebClient(app, ctx)
 

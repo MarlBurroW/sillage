@@ -168,8 +168,10 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   // Navigation drawer finishes its transition after breakpoint change.
   await delay(350)
-  await page.locator('[data-navigation-trigger]').click()
-  await page.getByRole('link', { name: 'Services', exact: true }).click()
+  // Services is a rail entry since the rail navigation; reload the page at phone width instead.
+  await page.goto(`${base}/services`)
+  await page.getByRole('button', { name: 'Projets', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Projets', exact: true }).getByRole('radio', { name: 'Nimbus', exact: true }).click()
   await delay(350)
   await row.getByRole('button', { name: 'Arrêter', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)

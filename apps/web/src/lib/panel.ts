@@ -125,7 +125,7 @@ export function setPanelOpen(next: boolean): void {
   for (const listener of listeners) listener()
 }
 
-export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'actions' | 'agents' | 'mcp' | 'card'
+export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'actions' | 'agents' | 'mcp' | 'card' | 'browser'
 
 /**
  * Displayed tab and selected subagent. Stored here because the thread controls them: opening a diff
@@ -175,6 +175,15 @@ export function showCheckpoint(key: string): void {
   tab = 'git'
   subAgentId = null
   checkpointKey = key
+  for (const listener of listeners) listener()
+}
+
+/** Open the conversation's live browser, from a browser tool call in the thread. */
+export function showBrowser(): void {
+  setPanelOpen(true)
+  tab = 'browser'
+  subAgentId = null
+  checkpointKey = null
   for (const listener of listeners) listener()
 }
 
