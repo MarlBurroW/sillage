@@ -37,6 +37,11 @@ export interface InstanceCapabilities {
   /** Publishing reviewed conversation snapshots at the configured public URL. */
   publicConversationSharing: boolean
   /**
+   * Dev-server previews through a preview domain and listener. Desktop opens loopback ports
+   * directly and has nothing to configure.
+   */
+  previewProxy: boolean
+  /**
    * Opening the instance to the user's other devices through Tailscale Serve. Desktop only:
    * a server is already reached through its own address and reverse proxy.
    */

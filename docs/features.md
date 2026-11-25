@@ -198,6 +198,16 @@ The periodic cleanup removes expired, revoked and orphaned files.
   Grok Build or Google Antigravity and back: the new agent receives a budgeted selection of the thread, full messages rather
   than a summary, with references it can read back through the Sillage MCP server.
   [How the handoff is built](cli-handoff.md).
+- **Dev-server previews.** When an agent's dev server listens, the conversation panel's
+  **Preview** tab shows it, with the port to pick, reload, open in a tab and copy the address;
+  ports in **Services** open it too. On Server, each preview gets a host of its own,
+  `pv-<id>.<preview domain>`, never Sillage's address, so the app cannot act with your Sillage
+  session. An administrator sets the domain under **Settings › Previews** and routes its
+  `pv-*` hosts to the preview listener (loopback, main port + 1 by default, or
+  `SILLAGE_PREVIEW_PORT`); the page shows a Caddy example. Viewers sign in through a link valid
+  for a minute, and only reach ports they see in Services. The app receives requests for
+  `localhost:<port>`, so Vite, Next or Django need no host configuration, and hot reload goes
+  through. Desktop opens the loopback port directly; off Linux, name the port yourself.
 - **A browser for agents, watched live.** Optional, under **Settings › Agent tools**
   (admin default, project owner override). Agents of every CLI get browser tools
   (Playwright MCP, installed on demand and pinned) driving a headless Chromium the

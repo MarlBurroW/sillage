@@ -17,6 +17,7 @@
     "test:agent-tools-ui": "node scripts/agent-tools-ui-check.mjs",
     "test:agent-browser": "node scripts/agent-browser-check.mjs",
     "test:agent-browser-ui": "node scripts/agent-browser-ui-check.mjs",
+    "test:dev-previews": "node scripts/dev-previews-check.mjs",
     "test:mcp-auth-ui": "node scripts/mcp-auth-ui-check.mjs",
     "test:mcp-install-ui": "node scripts/mcp-install-ui-check.mjs",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",

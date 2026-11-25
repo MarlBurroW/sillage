@@ -15,6 +15,14 @@ const configSchema = z.object({
       publicUrl: z.string().default(''),
     })
     .default({}),
+  previews: z
+    .object({
+      /** Provisioning default for the preview domain; the settings screen overrides it. */
+      domain: z.string().default(''),
+      /** Loopback port of the preview listener. 0 picks the main port plus one. */
+      port: z.number().int().min(0).max(65535).default(0),
+    })
+    .default({}),
   limits: z
     .object({
       /** Claude sessions cost 400–500 MB: this is the meaningful concurrency limit. Provisioning default only; interface values stored in the database override it (see `readAppSettings`). */
@@ -191,6 +199,13 @@ export function loadConfig(): Config {
       throw new Error(`SILLAGE_PORT invalide: ${process.env.SILLAGE_PORT}`)
     }
     config.server.port = port
+  }
+  if (process.env.SILLAGE_PREVIEW_PORT) {
+    const port = Number(process.env.SILLAGE_PREVIEW_PORT)
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      throw new Error(`SILLAGE_PREVIEW_PORT invalide: ${process.env.SILLAGE_PREVIEW_PORT}`)
+    }
+    config.previews.port = port
   }
 
   return { ...config, paths: resolvePaths() }

@@ -11,6 +11,7 @@ import {
   Columns2,
   FolderTree,
   Globe,
+  MonitorPlay,
   PlugZap,
   SquareKanban,
   SquareTerminal,
@@ -56,6 +57,8 @@ import { HistoryPane } from './HistoryPane'
 import { CardPane } from './CardPane'
 import { McpPane } from './McpPane'
 import { BrowserPane } from '../browser/BrowserPane'
+import { PreviewPane, projectTargets } from '../preview/PreviewPane'
+import { usePreviews } from '../../lib/previews'
 import { useBrowsers } from '../../lib/browsers'
 import { useAppSettings } from '../../lib/app-settings'
 import { resolveAgentTools } from '@sillage/protocol'
@@ -140,7 +143,7 @@ export function SidePanel({
   // Tab selection survives view changes; project views fall back from session-only tabs to Files
   // rather than displaying nothing.
   const tab: PanelTab =
-    (!projectId && ['actions', 'terminals'].includes(chosenTab)) || (chosenTab === 'card' && !(conversationId && cardId))
+    (!projectId && ['actions', 'terminals', 'preview'].includes(chosenTab)) || (chosenTab === 'card' && !(conversationId && cardId))
       ? 'files'
       : conversationId || !['history', 'agents', 'mcp', 'browser'].includes(chosenTab) ? chosenTab : 'files'
   const treeOpen = usePanelTree()
@@ -149,6 +152,11 @@ export function SidePanel({
   // one is open anyway (turned off since, still running).
   const { data: browsers } = useBrowsers()
   const { data: appSettings } = useAppSettings()
+  // The Preview tab follows the project's dev servers: shown while one listens (always on Desktop,
+  // where ports can be named by hand), with their count.
+  const { data: previewList } = usePreviews()
+  const previewCount = projectId ? projectTargets(previewList?.targets ?? [], projectId, conversationId).length : 0
+  const previewTab = projectId !== undefined && (previewCount > 0 || previewList?.mode === 'direct' || chosenTab === 'preview')
   const browserOpen = conversationId !== undefined && (browsers ?? []).some((entry) => entry.conversationId === conversationId)
   const browserTab = conversationId !== undefined && (browserOpen || resolveAgentTools(appSettings?.agentTools ?? {}, project?.agentTools ?? null).browser)
   /**
@@ -271,6 +279,15 @@ export function SidePanel({
             active={tab === 'actions'}
             onSelect={() => setPanelTab('actions')}
           />
+          {previewTab ? (
+            <Tab
+              icon={<MonitorPlay size={20} />}
+              label={t('panel.tab.preview')}
+              badge={previewCount}
+              active={tab === 'preview'}
+              onSelect={() => setPanelTab('preview')}
+            />
+          ) : null}
           </> : null}
           {conversationId && cardId ? (
             <Tab
@@ -443,6 +460,8 @@ export function SidePanel({
       ) : null}
 
       {/* Like subagents, log-derived content loses nothing by mounting only when viewed. */}
+      {tab === 'preview' && projectId ? <PreviewPane key={projectId} projectId={projectId} conversationId={conversationId} /> : null}
+
       {tab === 'browser' && conversationId ? <BrowserPane conversationId={conversationId} /> : null}
 
       {tab === 'mcp' ? <McpPane servers={mcpServers} conversationId={conversationId} agent={agent} /> : null}

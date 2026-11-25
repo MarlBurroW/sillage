@@ -1,7 +1,7 @@
 import { ProjectSelector } from '../components/ProjectSelector'
 import { conversationPath } from '@sillage/protocol'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpRight, Bot, Play, RefreshCw, RotateCw, Server, Square, SquareTerminal, Unplug, X } from 'lucide-react'
+import { ArrowUpRight, Bot, MonitorPlay, Play, RefreshCw, RotateCw, Server, Square, SquareTerminal, Unplug, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { ServiceAppAction, ServiceAppDto, ServiceDto, ServicesDto } from '@sillage/protocol'
@@ -9,6 +9,7 @@ import { MobileNavigationButton } from '../components/MobileNavigation'
 import { Badge, Banner, Button, EmptyState, IconButton, Tabs } from '../components/ui'
 import { BrowsersList } from '../components/browser/BrowsersList'
 import { useBrowsers } from '../lib/browsers'
+import { useOpenPreview, usePreviews } from '../lib/previews'
 import { api } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { formatBytes } from '../lib/attachments'
@@ -149,6 +150,34 @@ export function ServicesPage() {
   )
 }
 
+/**
+ * A port, with a preview link when this account may preview it. The link signs in afresh at each
+ * click, so it is opened from the click rather than written in an href.
+ */
+function PortBadge({ port }: { port: number }) {
+  const t = useTranslate()
+  const { data } = usePreviews()
+  const open = useOpenPreview()
+  const previewable = data && data.mode !== 'unconfigured' && (data.mode === 'direct' || data.targets.some((target) => target.port === port))
+  if (!previewable) return <Badge tone="accent">:{port}</Badge>
+  return (
+    <button
+      type="button"
+      title={t('services.preview', { port })}
+      aria-label={t('services.preview', { port })}
+      disabled={open.isPending}
+      onClick={() => {
+        // Opened before the request resolves, or popup blockers would refuse it.
+        const tab = window.open('about:blank', '_blank')
+        open.mutate(port, { onSuccess: (result) => { if (tab) tab.location.href = result.url }, onError: () => tab?.close() })
+      }}
+      className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent hover:bg-accent/25"
+    >
+      :{port}<MonitorPlay size={11} />
+    </button>
+  )
+}
+
 function Section({ id, title, description, children }: { id: string; title: string; description: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className="flex flex-col gap-3">
@@ -259,7 +288,7 @@ function ProcessRow({ entry, attributed, scannedAt, busy, onStop }: {
         <code className="min-w-0 flex-1 basis-64 break-all font-mono text-sm text-ink" title={title}>{title}</code>
         {entry.ports.length ? (
           <span className="flex flex-wrap gap-1" aria-label={t('services.ports')}>
-            {entry.ports.map((port) => <Badge key={port} tone="accent">:{port}</Badge>)}
+            {entry.ports.map((port) => <PortBadge key={port} port={port} />)}
           </span>
         ) : null}
       </div>
@@ -312,7 +341,7 @@ function AppRow({ app, scannedAt, busy, onAction }: {
         {app.enabled ? <span title={t('services.app.enabledHint', { unit: app.unit })}><Badge tone="caution">{t('services.app.enabled')}</Badge></span> : null}
         {app.ports.length ? (
           <span className="ml-auto flex flex-wrap gap-1" aria-label={t('services.ports')}>
-            {app.ports.map((port) => <Badge key={port} tone="accent">:{port}</Badge>)}
+            {app.ports.map((port) => <PortBadge key={port} port={port} />)}
           </span>
         ) : null}
       </div>

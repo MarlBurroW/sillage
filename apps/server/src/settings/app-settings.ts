@@ -30,6 +30,7 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
         : config.limits.maxConcurrentSessions,
     publicUrl: publicUrlOf(db, config),
     agentTools: sanitizeAgentToolSettings(readValue(db, 'agentTools')),
+    previewDomain: previewDomainOf(db, config),
   }
 }
 
@@ -39,6 +40,13 @@ export function publicUrlOf(db: Db, config: Config): string {
   // Empty database strings deliberately restore inference, including when the
   // configuration file specifies an address.
   return typeof publicUrl === 'string' ? publicUrl : config.server.publicUrl
+}
+
+/** Read on each preview request: changing the domain applies without a restart. */
+export function previewDomainOf(db: Db, config: Config): string {
+  const value = readValue(db, 'previewDomain')
+  // Optional chaining: partial configurations (tests, older provisioning code) omit the section.
+  return typeof value === 'string' ? value : config.previews?.domain ?? ''
 }
 
 export function writeAppSettings(db: Db, patch: Partial<AppSettings>): void {

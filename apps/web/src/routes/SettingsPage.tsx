@@ -15,6 +15,7 @@ import {
   Bot,
   KeyRound,
   Mic,
+  MonitorPlay,
   Palette,
   Plug,
   Radio,
@@ -227,6 +228,15 @@ const SECTIONS: Section[] = [
     icon: <Radio size={16} />,
     adminOnly: true,
     requires: 'remoteAccess',
+  },
+  {
+    to: 'apercus',
+    group: 'administration',
+    labelKey: 'settings.section.previews',
+    descriptionKey: 'settings.section.previews.description',
+    icon: <MonitorPlay size={16} />,
+    adminOnly: true,
+    requires: 'previewProxy',
   },
   {
     to: 'sessions',

@@ -130,6 +130,8 @@ const API_V1_PREFIX = '/api/v1/'
 
 import { BROWSER_CDP_PREFIX, type BrowserManager } from '../browser/manager.js'
 import { registerBrowserRoutes } from '../browser/routes.js'
+import type { PreviewService } from '../previews/service.js'
+import { registerPreviewRoutes } from '../previews/routes.js'
 export async function buildApp(
   ctx: AppContext,
   log: EventLog,
@@ -164,6 +166,7 @@ export async function buildApp(
   turnUsage: TurnUsageRecorder,
   /** Absent in tests that do not exercise agent browsers. */
   browsers: BrowserManager | null = null,
+  previews: PreviewService | null = null,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -327,6 +330,7 @@ export async function buildApp(
   registerSystemRoutes(app, ctx)
   if (remoteAccess) registerRemoteAccessRoutes(app, remoteAccess)
   registerServiceRoutes(app, ctx)
+  registerPreviewRoutes(app, ctx, previews)
   registerTreeRoutes(app, ctx)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)

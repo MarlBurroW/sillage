@@ -1,3 +1,4 @@
+import { PreviewService } from './previews/service.js'
 import { BrowserManager } from './browser/manager.js'
 import { mkdirSync, rmSync } from 'node:fs'
 import { openDatabase, projects } from '@sillage/db'
@@ -110,6 +111,8 @@ async function main(): Promise<void> {
   // Agent browsers (tool family `browser`): launched on the agent's first use, closed when idle.
   const browsers = new BrowserManager(db, config)
   sessions.setBrowsers(browsers)
+  // Dev-server previews on their own loopback listener (Server only; Desktop opens ports directly).
+  const previews = INSTANCE_PROFILE === 'desktop' ? null : new PreviewService(db, config)
   const antigravityLogin = new AntigravityLoginService(antigravityAccounts.homes, antigravityAccounts.store, () => registry.adapter('antigravity').cli.executable(), (id) => sessions.stopAntigravityAccount(id))
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
@@ -185,6 +188,7 @@ async function main(): Promise<void> {
     prices,
     turnUsage,
     browsers,
+    previews,
   )
   push.setLogger(app.log)
   automations.setLogger(app.log)
@@ -213,6 +217,13 @@ async function main(): Promise<void> {
   prices.start()
 
   await app.listen({ host: config.server.host, port: config.server.port })
+  // A busy preview port must not keep Sillage down: previews answer nothing, and the log says why.
+  if (previews) {
+    await previews.listen().then(
+      () => app.log.info({ port: previews.listenerPort }, 'preview listener ready'),
+      (err: unknown) => app.log.warn({ err, port: previews.listenerPort }, 'preview listener unavailable'),
+    )
+  }
   // After listening: reading years of journals must not delay the first page.
   void turnUsage.importHistory().catch((err: unknown) => app.log.warn({ err }, 'Turn usage history import failed'))
 
@@ -279,6 +290,7 @@ async function main(): Promise<void> {
     await step('sessions', () => sessions.stopAll())
     await step('terminals', () => terminals.shutdown())
     await step('browsers', () => browsers.shutdown())
+    await step('previews', () => previews?.close())
     await step('http', () => app.close())
     await step('database', () => sqlite.close())
     lock.release()

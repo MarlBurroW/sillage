@@ -56,6 +56,11 @@ export interface AppSettingsDto {
    * choices are stored; projects can override each family.
    */
   agentTools: AgentToolSettings
+  /**
+   * Domain dev-server previews are served under, as `pv-<id>.<domain>`. Empty disables previews on
+   * Server; a wildcard DNS entry and reverse proxy must send those hosts to the preview listener.
+   */
+  previewDomain: string
 }
 
 /** Result of a manually triggered archive pass. */
@@ -99,6 +104,16 @@ export const updateAppSettingsBodySchema = z.object({
   maxConcurrentSessions: z.number().int().min(1).max(100).optional(),
   /** Replaces the stored choices as a whole; omit a family to fall back to its default. */
   agentTools: agentToolSettingsSchema.optional(),
+  /** Bare domain without scheme or wildcard; empty disables previews. */
+  previewDomain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(200)
+    .refine((value) => value === '' || /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/.test(value), {
+      message: 'Enter a domain such as example.com, without scheme or wildcard.',
+    })
+    .optional(),
 })
 
 /** Transcribed dictation result. */
