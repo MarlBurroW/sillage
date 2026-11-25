@@ -161,6 +161,36 @@ try {
   })
   assert.match(upgrade, /101/, 'hot reload WebSocket through the proxy')
 
+  // Public demo links: no sign-in, noindex, hot reload too; revoked and expired links are refused.
+  const share = (await call('POST', '/api/previews/shares', { port: vitePort, hours: 1 })).body
+  assert.match(share.url, /^http:\/\/pv-[0-9a-f]{16}\.preview\.test\/$/)
+  assert.equal(share.label, 'node')
+  const shareHost = new URL(share.url).host
+  const visitor = await raw('/', { host: shareHost })
+  assert.equal(visitor.status, 200, 'a visitor without Sillage gets the app')
+  assert.match(visitor.body, /Preview v1/)
+  assert.equal(visitor.headers['x-robots-tag'], 'noindex, nofollow')
+  const visitorSocket = await new Promise((resolve, reject) => {
+    const socket = connect(previewPort, '127.0.0.1', () => {
+      socket.write(`GET /?token=${wsToken} HTTP/1.1\r\nHost: ${shareHost}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: vite-hmr\r\n\r\n`)
+    })
+    socket.once('data', (chunk) => { resolve(chunk.toString().split('\r\n')[0]); socket.destroy() })
+    socket.on('error', reject)
+  })
+  assert.match(visitorSocket, /101/)
+  assert.equal((await call('POST', '/api/previews/shares', { port: apiPort, hours: 1 })).status, 404, 'Sillage itself cannot be shared')
+  assert.equal((await call('POST', '/api/previews/shares', { port: vitePort, hours: 2 })).status, 400, 'only offered lifetimes')
+  const listed = (await call('GET', '/api/previews/shares')).body.shares
+  assert.equal(listed.length, 1)
+  assert.equal((await fetch(`${api}/api/previews/shares/${share.id}`, { method: 'DELETE', headers: { cookie } })).status, 204)
+  assert.equal((await raw('/', { host: shareHost })).status, 410, 'revoked')
+  const expiring = (await call('POST', '/api/previews/shares', { port: vitePort, hours: 24 })).body
+  const writable = new Database(join(data, 'data', 'sillage.db'))
+  writable.prepare('UPDATE preview_shares SET expires_at = ? WHERE id = ?').run(Date.now() - 1000, expiring.id)
+  writable.close()
+  assert.equal((await raw('/', { host: new URL(expiring.url).host })).status, 410, 'expired')
+  const demo = (await call('POST', '/api/previews/shares', { port: vitePort, hours: 168 })).body
+
   // The interface, with the preview hosts resolved to the listener and the app on the same site.
   const { chromium } = await import('playwright')
   const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP app.preview.test 127.0.0.1:${webPort}, MAP *.preview.test 127.0.0.1:${previewPort}`] })
@@ -202,6 +232,16 @@ try {
         }
         await page.waitForTimeout(300)
         await page.screenshot({ path: join(shots, `panel-${name}-${theme}.png`) })
+        // The demo link window lists the active link and makes another.
+        await page.getByRole('button', { name: 'Lien de démo' }).click()
+        const dialog = page.locator('[data-preview-share-dialog]')
+        await dialog.getByText(demo.url).waitFor()
+        if (name === 'desktop' && theme === 'light') {
+          await dialog.getByRole('button', { name: 'Créer un lien' }).click()
+          await page.waitForFunction(() => document.querySelectorAll('[data-preview-share]').length >= 3)
+        }
+        await page.screenshot({ path: join(shots, `share-${name}-${theme}.png`) })
+        await page.keyboard.press('Escape')
 
         await page.goto(`${base}/services`)
         await page.getByRole('button', { name: `Aperçu du port ${vitePort}` }).first().waitFor()
@@ -217,6 +257,14 @@ try {
     await browser.close()
   }
   assert.deepEqual(errors, [])
+
+  // A link outlives its dev server only as a refusal: once the port is gone, nothing is served,
+  // even if something else takes the port later (checked again after at most 30 s).
+  await promisify(execFile)('systemctl', ['--user', 'stop', `${unit}.service`])
+  await delay(31_000)
+  const stopped = await raw('/', { host: new URL(demo.url).host })
+  assert.equal(stopped.status, 410)
+  assert.match(stopped.body, /not running/)
   console.log(`ok — captures in ${shots}`)
 } finally {
   for (const unit of units) await promisify(execFile)('systemctl', ['--user', 'stop', unit]).catch(() => {})

@@ -1,4 +1,6 @@
-import { Copy, ExternalLink, MonitorPlay, RotateCw } from 'lucide-react'
+import { Copy, ExternalLink, MonitorPlay, RotateCw, Share2 } from 'lucide-react'
+import { copyText } from '../../lib/clipboard'
+import { PreviewShareDialog } from './PreviewShareDialog'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { PreviewTargetDto } from '@sillage/protocol'
@@ -30,6 +32,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
   const [manual, setManual] = useState('')
   const [reloads, setReloads] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [sharing, setSharing] = useState(false)
 
   const chosen = port ?? targets[0]?.port ?? null
 
@@ -93,15 +96,20 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
             <ExternalLink size={15} />
           </IconButton>
           <IconButton label={copied ? t('preview.copied') : t('preview.copy')} size="sm" disabled={!frame}
-            onClick={() => { if (frame) void navigator.clipboard.writeText(frame.address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}>
+            onClick={() => { if (frame) void copyText(frame.address).then((ok) => { if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500) } }) }}>
             <Copy size={14} />
           </IconButton>
+          {/* Public demo links need the proxy: Desktop has no public address to hand out. */}
+          {data?.mode === 'proxy' ? (
+            <IconButton label={t('preview.share')} size="sm" onClick={() => setSharing(true)}><Share2 size={14} /></IconButton>
+          ) : null}
         </div>
         {frame ? <p className="truncate px-1 font-mono text-[11px] text-ink-faint" title={frame.address}>{frame.address}</p> : null}
       </div>
       {open.error ? (
         <div className="p-3"><Banner tone="critical">{open.error.message}</Banner><Button variant="ghost" onClick={reopen}>{t('preview.retry')}</Button></div>
       ) : null}
+      {sharing ? <PreviewShareDialog port={chosen} label={targets.find((target) => target.port === chosen)?.label ?? `:${chosen}`} onClose={() => setSharing(false)} /> : null}
       <div className="relative flex min-h-0 flex-1 bg-sunken">
         {frame ? (
           <iframe

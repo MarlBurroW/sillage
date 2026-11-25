@@ -1,38 +1,18 @@
 import type { FastifyInstance } from 'fastify'
-import { openPreviewBodySchema, type PreviewListDto, type PreviewOpenDto, type PreviewTargetDto } from '@sillage/protocol'
+import { createPreviewShareBodySchema, openPreviewBodySchema, type PreviewListDto, type PreviewOpenDto, type PreviewShareDto, type PreviewShareListDto } from '@sillage/protocol'
+import { previewShares } from '@sillage/db'
+import { desc, eq } from 'drizzle-orm'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { requireUser } from '../http/require-user.js'
 import { INSTANCE_PROFILE } from '../instance/profile.js'
-import { serviceView } from '../services/visible.js'
-import type { PreviewService } from './service.js'
+import { previewTargets } from './targets.js'
+import type { PreviewService, PreviewShareRow } from './service.js'
 
 export function registerPreviewRoutes(app: FastifyInstance, ctx: AppContext, previews: PreviewService | null): void {
-  const view = serviceView(ctx)
   const desktop = INSTANCE_PROFILE === 'desktop'
 
-  /**
-   * Ports the account may preview: those Services shows it, from commands and apps (not the CLIs
-   * themselves nor their tools), minus Sillage's own listeners.
-   */
-  const targets = async (userId: string, isAdmin: boolean): Promise<PreviewTargetDto[]> => {
-    if (process.platform !== 'linux') return []
-    const own = new Set([ctx.config.server.port, previews?.listenerPort])
-    const { services, apps } = await view.read(userId, isAdmin)
-    const found = new Map<number, PreviewTargetDto>()
-    for (const entry of apps) {
-      for (const port of entry.ports) {
-        if (!own.has(port)) found.set(port, { port, label: entry.description || entry.executable || entry.unit, command: entry.command, projectId: entry.projectId, conversationId: entry.conversationId, conversationTitle: entry.conversationTitle })
-      }
-    }
-    for (const entry of services) {
-      if (entry.kind !== 'command' && entry.kind !== 'detached') continue
-      for (const port of entry.ports) {
-        if (!own.has(port) && !found.has(port)) found.set(port, { port, label: entry.name, command: entry.command, projectId: entry.projectId, conversationId: entry.conversationId, conversationTitle: entry.conversationTitle })
-      }
-    }
-    return [...found.values()].sort((a, b) => a.port - b.port)
-  }
+  const targets = (userId: string, isAdmin: boolean) => previewTargets(ctx, [ctx.config.server.port, ...(previews ? [previews.listenerPort] : [])], userId, isAdmin)
 
   app.get('/api/previews', async (request): Promise<PreviewListDto> => {
     const user = requireUser(request)
@@ -61,5 +41,41 @@ export function registerPreviewRoutes(app: FastifyInstance, ctx: AppContext, pre
       throw new HttpError(404, 'preview_target_unknown', 'Nothing of yours listens on this port.')
     }
     return previews.open(user.id, port, request.protocol === 'https')
+  })
+
+  const shareDto = (row: PreviewShareRow, secure: boolean): PreviewShareDto => ({
+    id: row.id, url: previews!.shareUrl(row.id, secure), port: row.port, label: row.label, projectId: row.projectId,
+    createdAt: row.createdAt, expiresAt: row.expiresAt, revokedAt: row.revokedAt,
+  })
+
+  /** Public demo links are the account's own: each person lists and revokes theirs. */
+  app.get('/api/previews/shares', async (request): Promise<PreviewShareListDto> => {
+    const user = requireUser(request)
+    if (!previews) return { shares: [] }
+    // Expired and revoked links stay listed a week, so a link that stopped working is explained.
+    const since = Date.now() - 7 * 24 * 3_600_000
+    const rows = ctx.db.select().from(previewShares).where(eq(previewShares.userId, user.id)).orderBy(desc(previewShares.createdAt)).all()
+      .filter((row) => (row.revokedAt ?? row.expiresAt) > since)
+    return { shares: rows.map((row) => shareDto(row, request.protocol === 'https')) }
+  })
+
+  app.post('/api/previews/shares', async (request, reply): Promise<PreviewShareDto> => {
+    const user = requireUser(request)
+    const { port, hours } = createPreviewShareBodySchema.parse(request.body)
+    if (!previews) throw new HttpError(409, 'preview_shares_unavailable', 'Public demo links need Sillage Server.')
+    if (!previews.domain()) throw new HttpError(409, 'previews_unconfigured', 'An administrator must set a preview domain first.')
+    const target = (await targets(user.id, user.isAdmin)).find((entry) => entry.port === port)
+    if (!target) throw new HttpError(404, 'preview_target_unknown', 'Nothing of yours listens on this port.')
+    const row = previews.createShare({ userId: user.id, projectId: target.projectId, port, label: target.label, hours })
+    reply.status(201)
+    return shareDto(row, request.protocol === 'https')
+  })
+
+  app.delete<{ Params: { id: string } }>('/api/previews/shares/:id', async (request, reply) => {
+    const user = requireUser(request)
+    const row = ctx.db.select().from(previewShares).where(eq(previewShares.id, request.params.id)).get()
+    if (!row || row.userId !== user.id || !previews) throw new HttpError(404, 'preview_share_not_found', 'Demo link not found.')
+    previews.revokeShare(row.id)
+    return reply.status(204).send()
   })
 }

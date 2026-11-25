@@ -48,3 +48,27 @@ export interface PreviewOpenDto {
   /** Address without the token, stable while the preview lives (to show and copy). */
   address: string
 }
+
+/** Lifetimes offered for a public demo link, in hours: an hour, a day, a week, a month. */
+export const PREVIEW_SHARE_HOURS = [1, 24, 168, 720] as const
+
+export const createPreviewShareBodySchema = z.object({
+  port: z.number().int().min(1).max(65535),
+  hours: z.union(PREVIEW_SHARE_HOURS.map((hours) => z.literal(hours)) as [z.ZodLiteral<1>, z.ZodLiteral<24>, z.ZodLiteral<168>, z.ZodLiteral<720>]),
+})
+
+/** A public demo link: anyone with the address sees the app, without a Sillage account. */
+export interface PreviewShareDto {
+  id: string
+  url: string
+  port: number
+  label: string
+  projectId: string | null
+  createdAt: number
+  expiresAt: number
+  revokedAt: number | null
+}
+
+export interface PreviewShareListDto {
+  shares: PreviewShareDto[]
+}

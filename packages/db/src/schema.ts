@@ -2081,6 +2081,24 @@ export const benchmarkShares = sqliteTable('benchmark_shares', {
 
 export type AntigravityAccountRow = typeof antigravityAccounts.$inferSelect
 
+/**
+ * Public demo links to a dev server (card #113). The id is the preview host's label
+ * (`pv-<id>.<preview domain>`): whoever has the address sees the app until it expires or is
+ * revoked, and only while the owner's dev server still listens on the port.
+ */
+export const previewShares = sqliteTable('preview_shares', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** Removed with its project; null for a personal discussion's server. */
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  port: integer('port').notNull(),
+  /** What listened when the link was made, to recognize it in the list. */
+  label: text('label').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  revokedAt: timestamp('revoked_at'),
+}, (t) => [index('idx_preview_shares_user').on(t.userId)])
+
 /** Published artifacts contain only the reviewed HTML. The journal remains the private source. */
 export const conversationShares = sqliteTable('conversation_shares', {
   id: text('id').primaryKey(),

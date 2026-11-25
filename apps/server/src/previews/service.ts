@@ -4,7 +4,11 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { connect, type Socket } from 'node:net'
 import { dirname, join } from 'node:path'
 import { PREVIEW_HOST_PREFIX } from '@sillage/protocol'
-import type { Db } from '@sillage/db'
+import { previewShares, users, type Db } from '@sillage/db'
+import { eq } from 'drizzle-orm'
+import { previewTargets } from './targets.js'
+
+export type PreviewShareRow = typeof previewShares.$inferSelect
 import type { Config } from '../config.js'
 import { previewDomainOf } from '../settings/app-settings.js'
 
@@ -20,7 +24,12 @@ export interface PreviewTarget {
   port: number
   /** Who opened it: only they may sign in, the account's visibility being checked at that time. */
   userId: string
+  /** A demo link: anyone with the address gets in, without signing in. */
+  public?: boolean
 }
+
+/** Public links re-check that their port still belongs to their owner at most this often. */
+const SHARE_CHECK_MS = 30_000
 
 /**
  * Dev-server previews on Server: a loopback listener that a reverse proxy reaches for
@@ -29,6 +38,8 @@ export interface PreviewTarget {
  */
 export class PreviewService {
   private readonly targets = new Map<string, PreviewTarget>()
+  /** Last check that a shared port still serves its owner's dev server. */
+  private readonly shareChecks = new Map<string, { at: number; ok: boolean }>()
   private readonly key: Buffer
   private server: Server | null = null
 
@@ -82,12 +93,50 @@ export class PreviewService {
     return expected.length === given.length && timingSafeEqual(expected, given)
   }
 
-  /** Target for a request's Host, if it is one of this instance's preview hosts. */
-  private targetOf(req: IncomingMessage): PreviewTarget | null {
+  /** Creates a public demo link; the caller has checked the port belongs to the account. */
+  createShare(input: { userId: string; projectId: string | null; port: number; label: string; hours: number }): PreviewShareRow {
+    const now = Date.now()
+    const { hours, ...owner } = input
+    // Longer than private ids, so the two never collide and the address resists guessing.
+    const row: PreviewShareRow = { id: randomBytes(8).toString('hex'), ...owner, createdAt: now, expiresAt: now + hours * 3_600_000, revokedAt: null }
+    this.db.insert(previewShares).values(row).run()
+    return row
+  }
+
+  shareUrl(id: string, secure = true): string {
+    return `${secure ? 'https' : 'http'}://${PREVIEW_HOST_PREFIX}${id}.${this.domain()}/`
+  }
+
+  /** Revoking takes effect at once: the next request is refused, open sockets are not cut. */
+  revokeShare(id: string): void {
+    this.db.update(previewShares).set({ revokedAt: Date.now() }).where(eq(previewShares.id, id)).run()
+    this.shareChecks.delete(id)
+  }
+
+  /**
+   * Target for a request's Host: a preview opened from Sillage, a public link, or a reason to
+   * refuse. Public links stay valid only while the owner still sees the port in Services: a
+   * stopped dev server does not hand its port to whatever listens there next.
+   */
+  private async targetOf(req: IncomingMessage): Promise<PreviewTarget | { refused: string } | null> {
     const host = (req.headers.host ?? '').toLowerCase().replace(/:\d+$/, '')
     const suffix = `.${this.domain()}`
     if (!this.domain() || !host.startsWith(PREVIEW_HOST_PREFIX) || !host.endsWith(suffix)) return null
-    return this.targets.get(host.slice(PREVIEW_HOST_PREFIX.length, -suffix.length)) ?? null
+    const id = host.slice(PREVIEW_HOST_PREFIX.length, -suffix.length)
+    const opened = this.targets.get(id)
+    if (opened) return opened
+    const share = this.db.select().from(previewShares).where(eq(previewShares.id, id)).get()
+    if (!share) return null
+    if (share.revokedAt !== null || share.expiresAt < Date.now()) return { refused: 'This demo link has expired.' }
+    let check = this.shareChecks.get(id)
+    if (!check || Date.now() - check.at > SHARE_CHECK_MS) {
+      const owner = this.db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, share.userId)).get()
+      const ports = owner ? await previewTargets({ db: this.db, config: this.config }, [this.config.server.port, this.listenerPort], share.userId, owner.isAdmin) : []
+      check = { at: Date.now(), ok: ports.some((target) => target.port === share.port) }
+      this.shareChecks.set(id, check)
+    }
+    if (!check.ok) return { refused: 'This demo is not running right now.' }
+    return { id, port: share.port, userId: share.userId, public: true }
   }
 
   private signedIn(req: IncomingMessage, target: PreviewTarget): boolean {
@@ -97,9 +146,16 @@ export class PreviewService {
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
-    const target = this.targetOf(req)
+    this.targetOf(req).then((target) => this.serve(req, res, target), () => notice(res, 502, 'The preview is unavailable.'))
+  }
+
+  private serve(req: IncomingMessage, res: ServerResponse, target: PreviewTarget | { refused: string } | null): void {
     if (!target) {
       notice(res, 404, 'This preview is no longer open. Open it again from Sillage.')
+      return
+    }
+    if ('refused' in target) {
+      notice(res, 410, target.refused)
       return
     }
     const url = new URL(req.url ?? '/', 'http://preview')
@@ -120,7 +176,7 @@ export class PreviewService {
       res.end()
       return
     }
-    if (!this.signedIn(req, target)) {
+    if (!target.public && !this.signedIn(req, target)) {
       notice(res, 401, 'Open this preview from Sillage to sign in to it.')
       return
     }
@@ -132,6 +188,8 @@ export class PreviewService {
       headers: forwardHeaders(req, target),
     }, (reply) => {
       const headers = { ...reply.headers }
+      // Demo links are shared by hand, never meant for search engines.
+      if (target.public) headers['x-robots-tag'] = 'noindex, nofollow'
       // Absolute redirects to the loopback address the app believes it serves.
       if (typeof headers.location === 'string') headers.location = headers.location.replace(/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):\d+/i, '')
       res.writeHead(reply.statusCode ?? 502, headers)
@@ -146,8 +204,11 @@ export class PreviewService {
 
   /** WebSockets (hot reload) are piped as raw bytes once the upgrade request is rewritten. */
   private upgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
-    const target = this.targetOf(req)
-    if (!target || !this.signedIn(req, target)) {
+    this.targetOf(req).then((target) => this.pipeSocket(req, socket, head, target), () => socket.destroy())
+  }
+
+  private pipeSocket(req: IncomingMessage, socket: Socket, head: Buffer, target: PreviewTarget | { refused: string } | null): void {
+    if (!target || 'refused' in target || (!target.public && !this.signedIn(req, target))) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
       return
     }

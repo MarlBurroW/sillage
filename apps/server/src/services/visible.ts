@@ -24,7 +24,7 @@ const views = new Map<string, ServiceView>()
  * and dev previews, which may only proxy ports this view shows the account. One per data directory,
  * so both share the scan cache.
  */
-export function serviceView(ctx: AppContext): ServiceView {
+export function serviceView(ctx: Pick<AppContext, 'db' | 'config'>): ServiceView {
   const existing = views.get(ctx.config.paths.data)
   if (existing) return existing
   const origins = processOrigins(ctx.config.paths.data)

@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import type { PreviewListDto, PreviewOpenDto } from '@sillage/protocol'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { PREVIEW_SHARE_HOURS, PreviewListDto, PreviewOpenDto, PreviewShareDto, PreviewShareListDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
@@ -19,5 +19,33 @@ export function usePreviews() {
 export function useOpenPreview() {
   return useMutation({
     mutationFn: (port: number) => api.post<PreviewOpenDto>('/api/previews', { port }),
+  })
+}
+
+const SHARES_KEY = ['preview-shares']
+
+/** The account's public demo links, recent expired and revoked ones included. */
+export function usePreviewShares(enabled = true) {
+  return useQuery({
+    queryKey: SHARES_KEY,
+    queryFn: () => api.get<PreviewShareListDto>('/api/previews/shares'),
+    select: (data) => data.shares,
+    enabled,
+  })
+}
+
+export function useCreatePreviewShare() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { port: number; hours: (typeof PREVIEW_SHARE_HOURS)[number] }) => api.post<PreviewShareDto>('/api/previews/shares', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: SHARES_KEY }),
+  })
+}
+
+export function useRevokePreviewShare() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/api/previews/shares/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: SHARES_KEY }),
   })
 }
