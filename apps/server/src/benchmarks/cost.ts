@@ -1,7 +1,7 @@
-import { and, eq, lte, sql } from 'drizzle-orm'
-import { turnUsage, type Db } from '@sillage/db'
+import type { Db } from '@sillage/db'
 import type { BenchmarkRunMetrics } from '@sillage/protocol'
 import type { PriceCatalog } from '../pricing/catalog.js'
+import { conversationUsage } from '../pricing/conversation-usage.js'
 import { costOf } from '../pricing/prices.js'
 
 /**
@@ -15,30 +15,8 @@ import { costOf } from '../pricing/prices.js'
  * cost would rank a variant on what happens to be listed.
  */
 export function runCostUsd(db: Db, prices: PriceCatalog, run: { conversationId: string | null; finishedAt: number | null }, metrics: BenchmarkRunMetrics): number | null {
-  const turns = run.conversationId
-    ? db
-        .select({
-          model: turnUsage.model,
-          inputTokens: sql<number>`sum(${turnUsage.inputTokens})`,
-          outputTokens: sql<number>`sum(${turnUsage.outputTokens})`,
-          cacheReadTokens: sql<number>`sum(${turnUsage.cacheReadTokens})`,
-          cacheWriteTokens: sql<number>`sum(${turnUsage.cacheWriteTokens})`,
-          cacheWrite1hTokens: sql<number>`sum(${turnUsage.cacheWrite1hTokens})`,
-        })
-        .from(turnUsage)
-        .where(and(eq(turnUsage.conversationId, run.conversationId), run.finishedAt === null ? undefined : lte(turnUsage.ts, run.finishedAt)))
-        .groupBy(turnUsage.model)
-        .all()
-    : []
-  if (turns.length) {
-    let total = 0
-    for (const turn of turns) {
-      const price = prices.priceOf(turn.model)
-      if (!price) return null
-      total += costOf(price, turn)
-    }
-    return total
-  }
+  const recorded = run.conversationId ? conversationUsage(db, prices, run.conversationId, run.finishedAt) : null
+  if (recorded) return recorded.costUsd
   const price = metrics.model ? prices.priceOf(metrics.model) : null
   if (!price || metrics.inputTokens === null || metrics.outputTokens === null) return null
   const cacheReadTokens = metrics.cacheReadTokens ?? 0

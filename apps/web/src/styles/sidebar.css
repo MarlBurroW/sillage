@@ -105,21 +105,46 @@ img.nav-project-mark { background: none; }
 button.sidebar-session-link { text-align: left; }
 
 /* The same content serves hover/focus and the pinned, touch-accessible preview. */
-.session-preview-tooltip, .session-preview-popover { width: 340px; max-width: calc(100vw - 24px); padding: 16px; color: var(--sg-ink-soft); font-size: 12px; line-height: 1.5; background: var(--sg-surface); border: 1px solid var(--sg-line-strong); border-radius: 8px; }
+.session-preview-tooltip, .session-preview-popover { width: 360px; max-width: calc(100vw - 24px); padding: 16px; color: var(--sg-ink-faint); font-size: 12px; line-height: 1.5; background: var(--sg-surface); border: 1px solid var(--sg-line-strong); border-radius: 10px; box-shadow: var(--sg-shadow-lg); }
 .session-preview-tooltip { max-height: var(--radix-tooltip-content-available-height); overflow-y: auto; }
 .session-preview-popover { overflow-y: auto; }
-.session-preview-content { overflow-wrap: anywhere; }
-.session-preview-cli { display: flex; align-items: center; gap: 7px; color: var(--sg-ink-faint); font-size: 11px; }
+.session-preview-content { display: flex; flex-direction: column; gap: 14px; overflow-wrap: anywhere; }
+/* Identity first: which CLI, where, what, and whether it is moving right now. */
+.session-preview-cli { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; }
 .session-preview-cli > svg { flex-shrink: 0; }
-.session-preview-content h3 { margin: 10px 0 14px; font-size: 14px; font-weight: 550; line-height: 1.5; color: var(--sg-ink); }
-.session-preview-card { margin-bottom: 12px; color: var(--sg-ink-faint); }
-.session-preview-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.session-preview-facts > div { min-width: 0; }
-.session-preview-facts dt, .session-preview-worktree h4 { margin-bottom: 4px; color: var(--sg-ink-faint); font-size: 10px; font-weight: 500; }
-.session-preview-worktree { padding: 12px 0; margin: 14px 0; border-block: 1px solid var(--sg-line); }
-.session-preview-worktree p { margin-top: 5px; font-size: 11px; }
-.session-preview-worktree code { display: block; margin-top: 8px; font-size: 11px; }
-.session-preview-content > p:last-child { margin-top: 10px; }
+.session-preview-sep { width: 3px; height: 3px; flex-shrink: 0; border-radius: 50%; background: currentColor; opacity: .6; }
+.session-preview-content h3 { margin: 6px 0 8px; font-size: 15px; font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; color: var(--sg-ink); }
+.session-preview-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--sg-ink-soft); }
+.session-preview-status time { flex-shrink: 0; color: var(--sg-ink-faint); font-variant-numeric: tabular-nums; }
+.session-preview-card { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; font-size: 11.5px; background: var(--sg-sunken); border: 1px solid var(--sg-line); border-radius: 6px; transition: border-color .12s; }
+a.session-preview-card:hover { border-color: var(--sg-line-strong); }
+.session-preview-card-number { flex-shrink: 0; font-weight: 600; color: var(--sg-accent); font-variant-numeric: tabular-nums; }
+/* Figures as tiles: the eye compares magnitudes before reading labels. */
+.session-preview-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--sg-line); border-radius: 8px; overflow: hidden; }
+.session-preview-tiles > div { min-width: 0; padding: 9px 11px; }
+.session-preview-tiles > div + div { border-left: 1px solid var(--sg-line); }
+.session-preview-tiles dt, .session-preview-label, .session-preview-worktree h4 { color: var(--sg-ink-faint); font-size: 10px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+.session-preview-tiles dd { margin-top: 2px; color: var(--sg-ink); font-size: 16px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-preview-tiles dd.session-preview-tile-detail { margin-top: 0; font-size: 10.5px; font-weight: 500; }
+.session-preview-skeleton { display: inline-block; width: 3.5em; height: .8em; border-radius: 3px; background: var(--sg-line); vertical-align: middle; animation: session-preview-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes session-preview-pulse { from { opacity: .5 } to { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .session-preview-skeleton { animation: none; } }
+.session-preview-gauge { --tone: var(--sg-accent); }
+.session-preview-gauge[data-tone="caution"] { --tone: var(--sg-caution); }
+.session-preview-gauge[data-tone="critical"] { --tone: var(--sg-critical); }
+.session-preview-bar { height: 6px; margin-top: 6px; border-radius: 3px; background: var(--sg-line); overflow: hidden; }
+.session-preview-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--tone); }
+.session-preview-stack { display: flex; gap: 2px; height: 6px; margin-top: 6px; border-radius: 3px; overflow: hidden; }
+.session-preview-stack > span { min-width: 3px; background: var(--sg-accent); }
+.session-preview-stack > span.is-other, .session-preview-swatch.is-other { background: var(--sg-line-strong); }
+.session-preview-tools ul { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px; margin-top: 8px; font-size: 11px; color: var(--sg-ink-soft); }
+.session-preview-tools li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.session-preview-swatch { width: 7px; height: 7px; flex-shrink: 0; border-radius: 2px; background: var(--sg-accent); }
+.session-preview-worktree { padding-top: 12px; border-top: 1px solid var(--sg-line); }
+.session-preview-worktree h4 { margin-bottom: 6px; }
+.session-preview-worktree p { margin-top: 4px; font-size: 11px; }
+.session-preview-worktree code { min-width: 0; font-size: 11px; color: var(--sg-ink-soft); }
+.session-preview-foot { display: flex; flex-wrap: wrap; gap: 4px 12px; padding-top: 10px; font-size: 10.5px; border-top: 1px solid var(--sg-line); }
 .session-preview-close { display: flex; justify-content: flex-end; height: 0; position: sticky; top: 0; }
 .session-preview-close > button { position: relative; top: -8px; right: -8px; background: var(--sg-surface); }
 .session-preview-popover .session-preview-cli { padding-right: 36px; }

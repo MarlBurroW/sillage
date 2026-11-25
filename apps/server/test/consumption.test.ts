@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projects, runMigrations, turnUsage, users } from '@sillage/db'
-import type { ConsumptionReport, SillageEvent } from '@sillage/protocol'
+import type { ConsumptionReport, ConversationStatsDto, SillageEvent } from '@sillage/protocol'
 import { runCostUsd } from '../src/benchmarks/cost.js'
 import { computeRunMetrics } from '../src/benchmarks/metrics.js'
 import { TurnUsageRecorder } from '../src/consumption/recorder.js'
@@ -402,4 +402,44 @@ test('a benchmark run is priced like the dashboard: its recorded turns up to set
   assert.equal(runCostUsd(db, prices, { conversationId: 'never-recorded', finishedAt: 500 }, stored), fallback)
   assert.equal(runCostUsd(db, prices, { conversationId: null, finishedAt: 500 }, { ...stored, model: null }), null)
   assert.equal(runCostUsd(db, prices, { conversationId: null, finishedAt: 500 }, { ...stored, inputTokens: null }), null)
+})
+
+test('a conversation\'s details count distinct tool calls and price its turns, behind the read check', async (t) => {
+  const db = database(t)
+  const prices = catalog(db)
+  const opus = prices.priceOf('claude-opus-5-5')!
+  conversation(db, 'c', 'claude')
+  db.insert(projects).values({ id: 'secret', name: 'Secret', workspacePath: '/tmp', ownerId: 'admin', visibility: 'private', createdAt: 1 }).run()
+  conversation(db, 'hidden', 'claude', { projectId: 'secret', userId: 'admin' })
+  const log = new EventLog(db)
+  const started = (toolCallId: string, name: string, parentToolCallId: string | null = null): SillageEvent => ({ type: 'tool.started', toolCallId, name, input: {}, parentToolCallId })
+  const done = (toolCallId: string, isError: boolean): SillageEvent => ({ type: 'tool.completed', toolCallId, output: '', isError, durationMs: 1 })
+  for (const event of [
+    started('1', 'Bash'), started('2', 'Bash'), started('3', 'Read'), started('4', 'Bash', 'agent'),
+    // Resynchronization can journal a call twice: it is still one call.
+    started('1', 'Bash'), done('1', true), done('1', true), done('2', false),
+  ]) log.append('c', event)
+  db.insert(turnUsage).values({ conversationId: 'c', seq: 1, model: 'claude-opus-5-5', ts: 1, userId: 'alice', projectId: 'p', agent: 'claude', inputTokens: 1_000_000, cacheReadTokens: 10 }).run()
+
+  const app = Fastify()
+  registerErrorHandler(app)
+  app.addHook('preHandler', async (request) => {
+    const id = request.headers['x-user']
+    if (typeof id === 'string') request.user = db.select().from(users).where(eq(users.id, id)).get()
+  })
+  registerConsumptionRoutes(app, { db } as AppContext, prices, new TurnUsageRecorder(db))
+  t.after(() => app.close())
+
+  const response = await app.inject({ url: '/api/conversations/c/stats', headers: { 'x-user': 'alice' } })
+  assert.equal(response.statusCode, 200)
+  const stats = response.json() as ConversationStatsDto
+  assert.equal(stats.toolCalls, 4)
+  assert.equal(stats.toolErrors, 1)
+  assert.deepEqual(stats.tools, [{ name: 'Bash', count: 3 }, { name: 'Read', count: 1 }])
+  assert.equal(stats.costUsd, opus.input + 10 * opus.cacheRead! / 1e6)
+  assert.deepEqual(stats.tokens, { input: 1_000_000, output: 0, cacheRead: 10, cacheWrite: 0 })
+  assert.equal((await app.inject({ url: '/api/conversations/hidden/stats', headers: { 'x-user': 'alice' } })).statusCode, 404)
+  const empty = (await app.inject({ url: '/api/conversations/hidden/stats', headers: { 'x-user': 'admin' } })).json() as ConversationStatsDto
+  assert.equal(empty.costUsd, null)
+  assert.equal(empty.toolCalls, 0)
 })

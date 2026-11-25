@@ -466,6 +466,21 @@ export interface ConversationMetrics {
   model: string | null
 }
 
+/**
+ * What a conversation has cost and done, read on demand when its details open: tool counts and
+ * prices need a journal and price-list read that the session list must not pay on every refresh.
+ */
+export interface ConversationStatsDto {
+  /** API-equivalent cost at today's public prices, like the consumption dashboard; null when a model has no price or nothing was recorded. */
+  costUsd: number | null
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }
+  /** Distinct tool calls, sub-agents included, since their cost is counted too. */
+  toolCalls: number
+  toolErrors: number
+  /** Most used tools by raw CLI name, most used first; the rest is `toolCalls` minus their sum. */
+  tools: { name: string; count: number }[]
+}
+
 export interface ConversationDto {
   id: string
   projectId: string | null

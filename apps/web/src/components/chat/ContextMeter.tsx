@@ -2,8 +2,8 @@ import type { ContextState } from '../../lib/chat-fold'
 import { cx } from '../ui'
 
 /** Beyond this threshold compaction approaches and indicator tone changes. */
-const WARN_RATIO = 0.75
-const CRITICAL_RATIO = 0.9
+export const WARN_RATIO = 0.75
+export const CRITICAL_RATIO = 0.9
 
 const RADIUS = 7
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
