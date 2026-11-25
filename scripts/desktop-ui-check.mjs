@@ -136,7 +136,7 @@ try {
 
   const instance = await page.evaluate(() => fetch('/api/system/instance').then((response) => response.json()))
   assert.equal(instance.profile, 'desktop')
-  assert.deepEqual(instance.capabilities, { passwordAuth: false, webPush: false, pwa: false, sharedProjects: false, publicConversationSharing: false, remoteAccess: true })
+  assert.deepEqual(instance.capabilities, { passwordAuth: false, webPush: false, pwa: false, sharedProjects: false, publicConversationSharing: false, previewProxy: false, remoteAccess: true })
   const version = await page.evaluate(() => fetch('/api/system/version').then((response) => response.json()))
   assert.equal(version.channel, 'desktop')
 
