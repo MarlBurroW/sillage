@@ -57,6 +57,8 @@ import { SessionPicker } from './SessionPicker'
 import { SessionReference } from './SessionReference'
 import { matchSessions, useSessionReferences } from '../../lib/session-references'
 import { tourAnchor } from '../tour/steps'
+import { ComposerHighlights } from './ComposerHighlights'
+import { highlightRanges } from '../../lib/composer-highlights'
 
 /** The `@...` mention around the cursor. */
 /** Below this toolbar width, use the phone composer layout. */
@@ -130,6 +132,9 @@ function defaultPastedName(mimeType: string): string {
 
 /** Beyond this height scroll the field instead of consuming the conversation. */
 const MAX_TEXTAREA_PX = 200
+
+/** Font, padding and line height shared by the textarea and its highlight layer, which must wrap identically. */
+const TEXT_BOX = 'px-2 py-2 text-[0.9375rem] leading-relaxed'
 
 interface ComposerProps {
   config: AgentConfig
@@ -473,6 +478,11 @@ export function Composer({
 
   // Without onCommand native commands would reach the CLI as text, so omit them. Centralize this
   // rule here rather than requiring every future composer caller to copy it.
+  /** Resources that leave with the message, tinted in place (see ComposerHighlights). */
+  const highlights = useMemo(
+    () => highlightRanges(text, { mentions: mentioned, skills: invoked, commands: commands.map((command) => command.name) }),
+    [text, mentioned, invoked, commands],
+  )
   const offered = useMemo(
     () => (onCommand ? commands : commands.filter((c) => !NATIVE_SLASH_COMMANDS.has(c.name))),
     [commands, onCommand],
@@ -850,6 +860,8 @@ export function Composer({
           ) : null}
 
           {/* Hide rather than unmount during dictation to preserve cursor insertion position. */}
+          <div className={cx('relative', dictation.state === 'recording' && 'hidden')}>
+          <ComposerHighlights text={text} ranges={highlights} textarea={textarea} className={TEXT_BOX} />
           <textarea
             ref={textarea}
             value={text}
@@ -876,13 +888,14 @@ export function Composer({
             disabled={disabled}
             placeholder={disabled ? t('composer.placeholder.readonly') : t('composer.placeholder.write')}
             className={cx(
-              'max-h-[200px] w-full resize-none bg-transparent px-2 py-2',
-              'text-[0.9375rem] leading-relaxed text-ink outline-none',
+              'relative max-h-[200px] w-full resize-none bg-transparent',
+              TEXT_BOX,
+              'text-ink outline-none',
               'placeholder:text-ink-faint disabled:opacity-60',
               variant === 'draft' && 'min-h-28',
-              dictation.state === 'recording' && 'hidden',
             )}
           />
+          </div>
 
           <div ref={bar} className={cx('flex items-center gap-1', split && 'flex-wrap')}>
                         {/* Omit capture so iOS offers camera, library, and files instead of restricting selection. */}
