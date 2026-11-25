@@ -121,7 +121,7 @@ function buildUserInput(
   skills: Map<string, string>,
   referenceContext?: string | null,
 ): { blocks: ContentBlock[]; input: UserInput[] } {
-  const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext)
+  const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext, { mentions, skills: [...skills.keys()] })
   const input: UserInput[] = []
 
   // Place skills before text like the TUI: skills frame interpretation of the

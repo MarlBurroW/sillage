@@ -771,7 +771,7 @@ export class SessionManager {
 
     try {
       const prepared = this.prepareSend(conversationId, next.mentions)
-      this.announce(prepared.conversation, next.text, next.attachments)
+      this.announce(prepared.conversation, next.text, next.attachments, prepared.resolved, next.skills)
       await this.deliver(prepared.conversation, prepared.release, next.text, next.attachments, prepared.resolved, next.skills)
     } catch (err) {
       this.log.append(conversationId, {
@@ -1473,7 +1473,7 @@ export class SessionManager {
       this.releaseClientMessage(conversationId, clientMessageId)
       throw err
     }
-    this.announce(prepared.conversation, text, attachments)
+    this.announce(prepared.conversation, text, attachments, prepared.resolved, skills)
     // Detached: the reply is 'accepted' and the thread already shows the message. The CLI start
     // that follows is what took seconds on Windows.
     detach(this.deliver(prepared.conversation, prepared.release, text, attachments, prepared.resolved, skills).then((delivered) => {
@@ -1482,8 +1482,11 @@ export class SessionManager {
   }
 
   /** Journals the user's message and opens the turn before any CLI work. Starting a CLI takes seconds on Windows, MCP servers included, and users saw nothing until then: the thread shows the message and the activity indicator at Enter, for every CLI alike. Runners therefore no longer echo in `send`. `isBusy` holds until the hand-over so a second message queues instead of racing the start. */
-  private announce(conversation: ConversationRow, text: string, attachments: OutgoingAttachment[]): void {
-    const { blocks } = describeOutgoingMessage(text, attachments)
+  private announce(conversation: ConversationRow, text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[], skills: string[]): void {
+    // Commands the CLI last published for this conversation: a leading `/name` among them is one.
+    const published = this.log.latest(conversation.id, ['commands.updated'], 1)[0]?.event as { commands?: { name: string }[] } | undefined
+    const commands = published?.commands?.map((command) => command.name) ?? []
+    const { blocks } = describeOutgoingMessage(text, attachments, null, { mentions, skills, commands })
     this.log.append(conversation.id, { type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     this.log.append(conversation.id, { type: 'turn.started' })
     this.pendingDeliveries.set(conversation.id, { handing: false, cancel: null })

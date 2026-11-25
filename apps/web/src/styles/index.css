@@ -310,6 +310,15 @@
     text-decoration: underline dotted;
     text-underline-offset: 0.2em;
   }
+  /* Resources a user message carried (picked @files, $skills, a known /command), tinted like the composer showed them. */
+  .sg-reading mark.sg-resource {
+    color: inherit;
+    background: var(--sg-accent-wash);
+    border-radius: 0.2rem;
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--sg-accent) 30%, transparent);
+    box-decoration-break: clone;
+    padding: 0 0.1em;
+  }
   .sg-reading .sg-card-ref:hover,
   .sg-reading .sg-card-ref:focus-visible {
     text-decoration-style: solid;

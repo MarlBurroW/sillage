@@ -27,7 +27,19 @@ export const eventBodyRefSchema = z.object({
 export type EventBodyRef = z.infer<typeof eventBodyRefSchema>
 
 export const contentBlockSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({
+    type: z.literal('text'),
+    text: z.string(),
+    /**
+     * User text only: what left with it as more than text, so the thread can mark it like the
+     * composer did. Workspace paths sent as file mentions (written `@path`) and skills attached by
+     * name (written `$name`). Absent on messages from before, or when nothing was attached.
+     */
+    mentions: z.array(z.string()).optional(),
+    skills: z.array(z.string()).optional(),
+    /** Leading slash command the CLI had published when the message left (`review` for `/review`). */
+    command: z.string().optional(),
+  }),
   z.object({ type: z.literal('thinking'), text: z.string() }),
   z.object({ type: z.literal('image'), mimeType: z.string(), url: z.string(), width: z.number().positive().optional(), height: z.number().positive().optional() }),
   /**

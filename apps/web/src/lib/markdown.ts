@@ -2,6 +2,7 @@ import MarkdownIt from 'markdown-it'
 import { sessionReference, sessionReferenceRanges } from '@sillage/protocol'
 import type Token from 'markdown-it/lib/token.mjs'
 import { VIEWABLE_IMAGE_TYPES, cardReferenceRanges } from '@sillage/protocol'
+import { highlightRanges } from './composer-highlights'
 import { rawFileUrl } from './files-io'
 import type { WorkspaceScope } from './workspace-scope'
 
@@ -424,6 +425,58 @@ function markCardReferences(md: MarkdownIt): void {
 
 markCardReferences(md)
 
+/**
+ * Mark what left with a user message as more than text, as the composer did: files sent as
+ * mentions (`@path`), skills attached (`$name`), a leading command the CLI knew. The marked text
+ * stays a text token, so the file path rule that runs next can still make a known path clickable
+ * inside the mark. Only text outside links and code, like card references.
+ */
+function markResources(md: MarkdownIt): void {
+  md.core.ruler.before('sg_file_paths', 'sg_resources', (state) => {
+    const resources = (state.env as MarkdownEnv).resources
+    if (!resources || (!resources.mentions.length && !resources.skills.length && !resources.command)) return true
+
+    const piece = (type: string, content: string): Token => {
+      const token = new state.Token(type, '', 0)
+      token.content = content
+      return token
+    }
+    // A command only counts at the very start of the message.
+    let first = true
+    for (const token of state.tokens) {
+      if (token.type !== 'inline' || !token.children) continue
+      const children: Token[] = []
+      let inLink = 0
+      for (const child of token.children) {
+        if (child.type === 'link_open') inLink += 1
+        if (child.type === 'link_close') inLink -= 1
+        const commands = first && resources.command ? [resources.command] : []
+        first = false
+        const ranges = child.type === 'text' && inLink === 0
+          ? highlightRanges(child.content, { mentions: resources.mentions, skills: resources.skills, commands })
+          : []
+        if (ranges.length === 0) {
+          children.push(child)
+          continue
+        }
+        let at = 0
+        for (const range of ranges) {
+          if (range.start > at) children.push(piece('text', child.content.slice(at, range.start)))
+          children.push(piece('html_inline', `<mark class="sg-resource" data-kind="${range.kind}">`))
+          children.push(piece('text', child.content.slice(range.start, range.end)))
+          children.push(piece('html_inline', '</mark>'))
+          at = range.end
+        }
+        if (at < child.content.length) children.push(piece('text', child.content.slice(at)))
+      }
+      token.children = children
+    }
+    return true
+  })
+}
+
+markResources(md)
+
 /** Inputs and outputs of the rendering pass. */
 interface MarkdownEnv {
   sessionIds?: Pick<ReadonlySet<string>, 'has'>
@@ -444,6 +497,14 @@ interface MarkdownEnv {
   base?: string
   /** Card numbers from the board associated with the text. See `markCardReferences`. */
   cards?: Set<number>
+  /** What a user message carried beyond its text. See `markResources`. */
+  resources?: MessageResources
+}
+
+export interface MessageResources {
+  mentions: string[]
+  skills: string[]
+  command: string | null
 }
 
 /** Content segment to be rendered by the React component. */

@@ -2,7 +2,7 @@ import { useContext, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useCardRefs } from '../../lib/card-refs'
 import { useOpenPanelFile } from '../../lib/editor-focus'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
-import { parseMarkdown } from '../../lib/markdown'
+import { parseMarkdown, type MessageResources } from '../../lib/markdown'
 import { useCardRefPreview } from '../board/CardRefPreview'
 import { CodeBlock } from './CodeBlock'
 import { ImageViewer, type ViewerImage } from './ImageViewer'
@@ -18,7 +18,7 @@ import { MarkdownTable } from './MarkdownTable'
  * base is the rendered file's directory when available, resolving relative links there instead of
  * at workspace root.
  */
-export function Markdown({ text, base }: { text: string; base?: string }) {
+export function Markdown({ text, base, resources }: { text: string; base?: string; resources?: MessageResources }) {
   const [viewer, setViewer] = useState<{ images: ViewerImage[]; index: number } | null>(null)
   const conversationId = useContext(FileLinkContext)
   const openPanelFile = useOpenPanelFile()
@@ -32,8 +32,8 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
 
   // First pass collects cited paths without file links; its HTML displays while awaiting the server.
   const found = useMemo(
-    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, cards, sessionIds, projectId: projectId ?? null, anyProject, origin }),
-    [text, conversationId, base, cards, sessionIds, projectId, anyProject, origin],
+    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, cards, sessionIds, projectId: projectId ?? null, anyProject, origin, resources }),
+    [text, conversationId, base, cards, sessionIds, projectId, anyProject, origin, resources],
   )
   const known = useKnownFiles(found.candidates)
 
@@ -45,10 +45,10 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
   const segments = useMemo(
     () =>
       linkable
-        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined, base, cards, sessionIds, projectId: projectId ?? null, origin })
+        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined, base, cards, sessionIds, projectId: projectId ?? null, origin, resources })
             .segments
         : found.segments,
-    [linkable, text, known, conversationId, base, cards, found.segments, sessionIds, projectId, origin],
+    [linkable, text, known, conversationId, base, cards, found.segments, sessionIds, projectId, origin, resources],
   )
 
   const sessionRefs = useSessionReferencePortals({ root, segments, sessions, loading: loadingSessions })

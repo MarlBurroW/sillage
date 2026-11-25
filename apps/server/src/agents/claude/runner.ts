@@ -120,8 +120,9 @@ async function buildUserMessage(
   text: string,
   attachments: OutgoingAttachment[],
   referenceContext?: string | null,
+  resources: { mentions?: OutgoingMention[]; skills?: string[] } = {},
 ): Promise<{ blocks: ContentBlock[]; prompt: PromptBlock[] }> {
-  const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext)
+  const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext, resources)
   const prompt: PromptBlock[] = []
 
   if (promptText) {
@@ -1176,12 +1177,13 @@ export class ClaudeRunner implements AgentRunner {
   async steer(
     text: string,
     attachments: OutgoingAttachment[],
-    _mentions: OutgoingMention[],
-    _skills: string[],
+    mentions: OutgoingMention[],
+    skills: string[],
   ): Promise<boolean> {
     if (!this.session || !this.turnOpen) return false
 
-    const { blocks, prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
+    // Claude reads `@path` in the text itself; the mentions only mark the journaled message.
+    const { blocks, prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig), { mentions, skills })
 
     this.ctx.emit({
       type: 'message.completed',

@@ -1,11 +1,12 @@
 import { useConcentration } from '../../lib/concentration'
 import { TooltipButton } from '../ui/Tooltip'
 import { MoreHorizontal, Brain, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { isAudioType, isPlayableMediaType, parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@sillage/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
+import type { MessageResources } from '../../lib/markdown'
 import { locale, useTranslate } from '../../lib/i18n'
 import { sessionHref, useSessionReferences } from '../../lib/session-references'
 import { cx } from '../ui'
@@ -105,6 +106,8 @@ export const MessageBubble = memo(function MessageBubble({
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n\n')
+  // What left with a user message beyond its text, tinted like the composer showed it.
+  const resources = useMemo(() => messageResources(message.blocks), [message.blocks])
   const images = blocks.filter((block) => block.type === 'image')
   const files = blocks.filter((block) => block.type === 'file')
 
@@ -133,7 +136,7 @@ export const MessageBubble = memo(function MessageBubble({
     return (
       <div className="group flex flex-col items-end gap-0.5">
         <div className="sg-bubble sg-user-bubble flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-br-sm border px-3.5 py-2.5 shadow-card">
-          {shown ? <Markdown text={shown} /> : null}
+          {shown ? <Markdown text={shown} resources={resources} /> : null}
           <Attachments images={images} files={files} />
         </div>
         {shown ? (
@@ -308,3 +311,12 @@ function ThinkingBlock({ text }: { text: string }) {
     </div>
   )
 }
+
+function messageResources(blocks: MessageItem['blocks']): MessageResources | undefined {
+  const texts = blocks.flatMap((block) => block.type === 'text' ? [block] : [])
+  const mentions = texts.flatMap((block) => block.mentions ?? [])
+  const skills = texts.flatMap((block) => block.skills ?? [])
+  const command = texts[0]?.command ?? null
+  return mentions.length || skills.length || command ? { mentions, skills, command } : undefined
+}
+

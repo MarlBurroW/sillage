@@ -841,9 +841,9 @@ export class GrokRunner implements AgentRunner {
   }
 
   /** Steers through `_x.ai/interject`, injecting text at the next safe point (probed). Another `session/prompt` would queue until completion. Attachments use paths. */
-  async steer(text: string, attachments: OutgoingAttachment[]): Promise<boolean> {
+  async steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[] = [], skills: string[] = []): Promise<boolean> {
     if (!this.client || !this.sessionId || !this.turn.open) return false
-    const { blocks, promptText } = describeOutgoingMessage(text, attachments.map((attachment) => ({ ...attachment, inlineImage: false })), this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
+    const { blocks, promptText } = describeOutgoingMessage(text, attachments.map((attachment) => ({ ...attachment, inlineImage: false })), this.ctx.sessionReferenceContext?.(text, this.appliedConfig), { mentions, skills })
     await this.client.request('_x.ai/interject', { sessionId: this.sessionId, text: promptText })
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     return true

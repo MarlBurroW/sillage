@@ -858,7 +858,7 @@ export class OpencodeRunner implements AgentRunner {
   async steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<boolean> {
     if (!this.server || !this.sessionId || !this.turn.open) return false
 
-    const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
+    const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig), { mentions })
     await this.server.post(`/session/${this.sessionId}/prompt_async`, this.promptBody(promptText, attachments, mentions))
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     return true

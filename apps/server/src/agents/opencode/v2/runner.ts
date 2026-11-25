@@ -933,7 +933,7 @@ export class Opencode2Runner implements AgentRunner {
   /** 2.x prompts steer by default: taken at the next step boundary of the running execution. */
   async steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[], skills: string[] = []): Promise<boolean> {
     if (!this.server || !this.sessionId || !this.turn.open) return false
-    const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
+    const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig), { mentions, skills: this.skillsOf(skills).map((skill) => skill.id) })
     await this.server.post(`/api/session/${this.sessionId}/prompt`, { text: promptText, files: this.files(attachments, mentions), skills: this.skillsOf(skills), delivery: 'steer' })
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     return true
