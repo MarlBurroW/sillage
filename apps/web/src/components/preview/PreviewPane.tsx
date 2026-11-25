@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { PreviewTargetDto } from '@sillage/protocol'
 import { useOpenPreview, usePreviews } from '../../lib/previews'
+import { usePanelPreviewPort } from '../../lib/panel'
 import { useTranslate } from '../../lib/i18n'
 import { useCurrentUser } from '../../lib/session'
 import { PanelEmptyState } from '../panel/PanelEmptyState'
@@ -30,6 +31,9 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
   const openTab = useOpenPreview()
   const targets = projectTargets(data?.targets ?? [], projectId, conversationId)
   const [port, setPort] = useState<number | null>(null)
+  // A port asked from the thread wins over the current choice, each time it is asked.
+  const requested = usePanelPreviewPort()
+  useEffect(() => { if (requested !== null) setPort(requested) }, [requested])
   const [manual, setManual] = useState('')
   const [reloads, setReloads] = useState(0)
   const [copied, setCopied] = useState(false)

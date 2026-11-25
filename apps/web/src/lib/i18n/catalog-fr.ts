@@ -1395,6 +1395,8 @@ export const fr: Catalog = {
   'preview.pick.selector': 'sélecteur :',
   'preview.pick.text': 'texte : « {text} »',
   'preview.pick.box': 'boîte : {width}×{height} en {x},{y}, fenêtre de {viewport}',
+  'preview.activity.ready': 'Le serveur de dev tourne',
+  'preview.activity.open': "Ouvrir l'aperçu",
   'preview.reload': 'Recharger',
   'preview.openTab': 'Ouvrir dans un nouvel onglet',
   'preview.copy': "Copier l'adresse",

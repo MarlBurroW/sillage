@@ -1,3 +1,4 @@
+import { PreviewActivity } from '../components/preview/PreviewActivity'
 import { BrowserActivity } from '../components/browser/BrowserActivity'
 import { CreateProjectDialog } from '../components/chat/CreateProjectDialog'
 import { benchmarkPath, conversationPath } from '@sillage/protocol'
@@ -1435,6 +1436,7 @@ export function ConversationPage() {
     
               {activity && !concentration ? <TurnActivity label={activity} /> : null}
               <BrowserActivity conversationId={conversationId} />
+              <PreviewActivity conversationId={conversationId} />
               {stream.state.turnRunning && !concentration ? <NewsTicker key={conversationId} /> : null}
     
               {/* Below the indicator: what the agent has not read yet. */}

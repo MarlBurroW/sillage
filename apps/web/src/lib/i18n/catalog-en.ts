@@ -1404,6 +1404,8 @@ export const en = {
   'preview.pick.selector': 'selector:',
   'preview.pick.text': 'text: “{text}”',
   'preview.pick.box': 'box: {width}×{height} at {x},{y} in a {viewport} viewport',
+  'preview.activity.ready': 'Your dev server is running',
+  'preview.activity.open': 'Open the preview',
   'preview.reload': 'Reload',
   'preview.openTab': 'Open in a new tab',
   'preview.copy': 'Copy the address',

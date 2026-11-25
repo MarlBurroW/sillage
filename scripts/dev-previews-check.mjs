@@ -212,16 +212,13 @@ try {
         await page.goto(`${base}/api/health`)
         assert.equal(await page.evaluate(async () => (await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'alex', password: 'sillage-demo' }) })).status), 200)
         await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
-        await page.getByRole('button', { name: 'Ouvrir le panneau' }).first().click({ timeout: 60000 })
-        // The tab's name carries its count ("Aperçu, 1").
-        const tab = page.getByRole('button', { name: /^Aperçu\b/ }).first()
-        await tab.waitFor({ timeout: 15000 }).catch(async (error) => {
-          await page.screenshot({ path: join(shots, 'failure.png') })
-          console.error('previews seen by the page:', JSON.stringify((await page.evaluate(async () => (await fetch('/api/previews')).json())).targets.filter((t) => t.projectId)))
-          console.error('tabs:', await page.locator('nav button[aria-label]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('aria-label'))))
-          throw error
-        })
-        await tab.click()
+        // The thread says the conversation's dev server is ready; one click opens its preview.
+        const card = page.locator('[data-preview-activity]')
+        await card.waitFor({ timeout: 60000 })
+        assert.match(await card.innerText(), new RegExp(`Le serveur de dev tourne[\\s\\S]*:${vitePort}`))
+        const ready = card.getByRole('button', { name: "Ouvrir l'aperçu" }).first()
+        await page.screenshot({ path: join(shots, `ready-${name}-${theme}.png`) })
+        await ready.click()
         const frame = page.frameLocator('[data-preview-frame]')
         await frame.locator('#t[data-ready="yes"]').waitFor({ timeout: 30000 }).catch(async (error) => {
           await page.screenshot({ path: join(shots, 'failure-frame.png') })

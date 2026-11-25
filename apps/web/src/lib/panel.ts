@@ -187,6 +187,26 @@ export function showBrowser(): void {
   for (const listener of listeners) listener()
 }
 
+/**
+ * Port the Preview tab should show, asked from the thread. Kept here for the same reason as the
+ * selected subagent: one click opens the panel, picks the tab and the port.
+ */
+let previewPort: number | null = null
+
+export function usePanelPreviewPort(): number | null {
+  return useSyncExternalStore(subscribe, () => previewPort, () => null)
+}
+
+/** Open a dev server's preview, from the thread's reminder line. */
+export function showPreview(port: number): void {
+  setPanelOpen(true)
+  tab = 'preview'
+  subAgentId = null
+  checkpointKey = null
+  previewPort = port
+  for (const listener of listeners) listener()
+}
+
 export function clearCheckpoint(): void {
   if (checkpointKey === null) return
   checkpointKey = null
