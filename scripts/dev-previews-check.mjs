@@ -149,6 +149,10 @@ try {
   assert.equal(page.status, 200)
   assert.match(page.body, /Preview v1/)
   assert.match(page.body, /\/@vite\/client/)
+  // Before the app's scripts: right after <head>, or after the doctype when the page has no head.
+  assert.match(page.body, /^<!doctype html><script src="\/__sillage\/picker\.js"><\/script>/i, 'picker injected before the app')
+  assert.match((await raw('/__sillage/picker.js', { cookie: previewCookie })).body, /sillage-picked/)
+  assert.equal((await raw('/__sillage/picker.js')).status, 401, 'the picker needs the preview cookie')
   const client = await raw('/@vite/client', { cookie: previewCookie })
   const wsToken = /const wsToken = "([^"]+)"/.exec(client.body)?.[1]
   assert.ok(wsToken, 'Vite client token')
@@ -170,6 +174,7 @@ try {
   assert.equal(visitor.status, 200, 'a visitor without Sillage gets the app')
   assert.match(visitor.body, /Preview v1/)
   assert.equal(visitor.headers['x-robots-tag'], 'noindex, nofollow')
+  assert.doesNotMatch(visitor.body, /__sillage/, 'demo visitors get the bare app')
   const visitorSocket = await new Promise((resolve, reject) => {
     const socket = connect(previewPort, '127.0.0.1', () => {
       socket.write(`GET /?token=${wsToken} HTTP/1.1\r\nHost: ${shareHost}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: vite-hmr\r\n\r\n`)
@@ -228,6 +233,24 @@ try {
           // Hot reload through the proxy: an edit reaches the open frame without reloading Sillage.
           await writeFile(join(app, 'index.html'), '<!doctype html><title>Fixture</title><h1 id="t">Preview v2</h1><script type="module" src="/src/main.js"></script>')
           await frame.getByText('Preview v2').waitFor({ timeout: 20000 })
+          // Pick the heading: its selector, text and markup land in the composer.
+          const pick = page.getByRole('button', { name: 'Choisir un élément pour le message' })
+          await pick.waitFor({ timeout: 15000 })
+          await pick.click()
+          await page.getByText("Clique un élément de la page").waitFor()
+          await frame.locator('#t').hover()
+          await page.screenshot({ path: join(shots, `picking-${name}-${theme}.png`) })
+          await frame.locator('#t').click()
+          const composer = page.getByPlaceholder('Écris ton message…')
+          await page.waitForFunction(() => /sélecteur/.test(document.querySelector('textarea')?.value ?? ''))
+          const message = await composer.inputValue()
+          assert.match(message, /Élément de l'aperçu \(port \d+, page \/\), un <h1>/)
+          assert.match(message, /sélecteur : `#t`/)
+          assert.match(message, /« Preview v2 »/)
+          assert.match(message, /```html\n<h1 id="t"/)
+          assert.equal(await page.getByText("Clique un élément de la page").count(), 0, 'picking ends after a pick')
+          await page.screenshot({ path: join(shots, `picked-${name}-${theme}.png`) })
+          await composer.fill('')
           first = false
         }
         await page.waitForTimeout(300)

@@ -1,7 +1,8 @@
-import { Copy, ExternalLink, MonitorPlay, RotateCw, Share2 } from 'lucide-react'
+import { Copy, Crosshair, ExternalLink, MonitorPlay, RotateCw, Share2 } from 'lucide-react'
+import { prefillComposer } from '../../lib/composer-ref'
 import { copyText } from '../../lib/clipboard'
 import { PreviewShareDialog } from './PreviewShareDialog'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { PreviewTargetDto } from '@sillage/protocol'
 import { useOpenPreview, usePreviews } from '../../lib/previews'
@@ -47,6 +48,35 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
   }, [chosen, ready])
   const opened = open.data && open.variables === chosen ? open.data : null
   const frame = opened ? { url: reloads ? opened.address : opened.url, address: opened.address, key: `${chosen}-${reloads}` } : null
+
+  // Element picking talks to the page the proxy injected, on its own origin. `pickable` waits for
+  // the page's hello, so the button never offers what a page cannot do.
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const frameOrigin = frame ? new URL(frame.address).origin : null
+  const [pickable, setPickable] = useState(false)
+  const [picking, setPicking] = useState(false)
+  useEffect(() => { setPickable(false); setPicking(false) }, [frame?.key])
+  useEffect(() => {
+    if (!frameOrigin) return
+    const receive = (event: MessageEvent) => {
+      if (event.origin !== frameOrigin || event.source !== frameRef.current?.contentWindow) return
+      const message = event.data as { type?: string } & Partial<PickedElement>
+      if (message.type === 'sillage-picker-ready') setPickable(true)
+      else if (message.type === 'sillage-picker-stopped') setPicking(false)
+      else if (message.type === 'sillage-picked') {
+        setPicking(false)
+        prefillComposer(describePicked(message as PickedElement, chosen ?? 0, t))
+      }
+    }
+    window.addEventListener('message', receive)
+    return () => window.removeEventListener('message', receive)
+  }, [frameOrigin, chosen, t])
+  const togglePicking = () => {
+    if (!frameOrigin) return
+    const next = !picking
+    frameRef.current?.contentWindow?.postMessage({ type: 'sillage-picker', action: next ? 'start' : 'stop' }, frameOrigin)
+    setPicking(next)
+  }
 
   if (data?.mode === 'unconfigured') {
     return (
@@ -99,6 +129,12 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
             onClick={() => { if (frame) void copyText(frame.address).then((ok) => { if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500) } }) }}>
             <Copy size={14} />
           </IconButton>
+          {pickable ? (
+            <IconButton label={picking ? t('preview.pick.stop') : t('preview.pick')} size="sm" aria-pressed={picking}
+              className={picking ? 'bg-accent/15 text-accent' : undefined} onClick={togglePicking}>
+              <Crosshair size={14} />
+            </IconButton>
+          ) : null}
           {/* Public demo links need the proxy: Desktop has no public address to hand out. */}
           {data?.mode === 'proxy' ? (
             <IconButton label={t('preview.share')} size="sm" onClick={() => setSharing(true)}><Share2 size={14} /></IconButton>
@@ -106,6 +142,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
         </div>
         {frame ? <p className="truncate px-1 font-mono text-[11px] text-ink-faint" title={frame.address}>{frame.address}</p> : null}
       </div>
+      {picking ? <Banner tone="info">{t('preview.pick.banner')}</Banner> : null}
       {open.error ? (
         <div className="p-3"><Banner tone="critical">{open.error.message}</Banner><Button variant="ghost" onClick={reopen}>{t('preview.retry')}</Button></div>
       ) : null}
@@ -113,6 +150,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
       <div className="relative flex min-h-0 flex-1 bg-sunken">
         {frame ? (
           <iframe
+            ref={frameRef}
             key={frame.key}
             data-preview-frame
             title={t('preview.frame', { port: chosen })}
@@ -146,4 +184,35 @@ function ManualPort({ value, onChange, onOpen }: { value: string; onChange: (val
       <Button type="submit" disabled={!valid}>{t('preview.manual.open')}</Button>
     </form>
   )
+}
+
+/** What the page's picker sends back (see `apps/server/src/previews/picker.ts`). */
+interface PickedElement {
+  selector: string
+  tag: string
+  text: string
+  html: string
+  truncated: boolean
+  path: string
+  rect: { x: number; y: number; width: number; height: number }
+  viewport: { width: number; height: number }
+}
+
+/**
+ * The picked element as the user's message to the agent: where it is, how to find it in the
+ * code, and its markup. Text the person goes on writing below.
+ */
+function describePicked(picked: PickedElement, port: number, t: ReturnType<typeof useTranslate>): string {
+  const fence = picked.html.includes('```') ? '~~~' : '```'
+  return [
+    t('preview.pick.message', { port, path: picked.path, tag: picked.tag }),
+    `- ${t('preview.pick.selector')} \`${picked.selector}\``,
+    picked.text ? `- ${t('preview.pick.text', { text: picked.text })}` : null,
+    `- ${t('preview.pick.box', { width: picked.rect.width, height: picked.rect.height, x: picked.rect.x, y: picked.rect.y, viewport: `${picked.viewport.width}×${picked.viewport.height}` })}`,
+    '',
+    `${fence}html`,
+    picked.html + (picked.truncated ? '\n<!-- … -->' : ''),
+    fence,
+    '',
+  ].filter((line) => line !== null).join('\n')
 }

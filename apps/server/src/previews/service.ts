@@ -7,6 +7,7 @@ import { PREVIEW_HOST_PREFIX } from '@sillage/protocol'
 import { previewShares, users, type Db } from '@sillage/db'
 import { eq } from 'drizzle-orm'
 import { previewTargets } from './targets.js'
+import { PICKER_PATH, PICKER_SCRIPT, injectPicker } from './picker.js'
 
 export type PreviewShareRow = typeof previewShares.$inferSelect
 import type { Config } from '../config.js'
@@ -180,20 +181,43 @@ export class PreviewService {
       notice(res, 401, 'Open this preview from Sillage to sign in to it.')
       return
     }
+    // The element picker, for previews opened from Sillage only: demo visitors get the bare app.
+    if (!target.public && url.pathname === PICKER_PATH) {
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(PICKER_SCRIPT)
+      return
+    }
+    const headersOut = forwardHeaders(req, target)
+    // Uncompressed pages for private previews, so HTML can carry the picker. Loopback costs nothing.
+    if (!target.public) headersOut['accept-encoding'] = 'identity'
     const upstream = httpRequest({
       host: '127.0.0.1',
       port: target.port,
       method: req.method,
       path: req.url,
-      headers: forwardHeaders(req, target),
+      headers: headersOut,
     }, (reply) => {
       const headers = { ...reply.headers }
       // Demo links are shared by hand, never meant for search engines.
       if (target.public) headers['x-robots-tag'] = 'noindex, nofollow'
       // Absolute redirects to the loopback address the app believes it serves.
       if (typeof headers.location === 'string') headers.location = headers.location.replace(/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):\d+/i, '')
-      res.writeHead(reply.statusCode ?? 502, headers)
-      reply.pipe(res)
+      const html = !target.public && reply.statusCode === 200 && /^text\/html/i.test(String(headers['content-type'] ?? '')) && !headers['content-encoding']
+      if (!html) {
+        res.writeHead(reply.statusCode ?? 502, headers)
+        reply.pipe(res)
+        return
+      }
+      const chunks: Buffer[] = []
+      reply.on('data', (chunk: Buffer) => chunks.push(chunk))
+      reply.on('end', () => {
+        const body = Buffer.from(injectPicker(Buffer.concat(chunks).toString('utf8')))
+        delete headers['transfer-encoding']
+        headers['content-length'] = String(body.length)
+        res.writeHead(200, headers)
+        res.end(body)
+      })
+      reply.on('error', () => res.destroy())
     })
     upstream.on('error', () => {
       if (!res.headersSent) notice(res, 502, `Nothing answers on port ${target.port} any more. Is the dev server still running?`)

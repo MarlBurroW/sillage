@@ -212,6 +212,10 @@ The periodic cleanup removes expired, revoked and orphaned files.
   Sillage account, valid for an hour, a day, a week or 30 days, and revocable. It serves the app
   only while the dev server still listens for its owner (checked at least every 30 seconds), and
   tells search engines not to index it.
+  **Pick an element** (crosshair in the same toolbar) highlights what the pointer hovers in a
+  preview opened from Sillage; a click adds the element to your message: page, CSS selector, text,
+  size and position, and its HTML. Sillage injects a small script into the preview's HTML pages
+  for this, never into demo links. Desktop's direct previews have no picker.
 - **Choose the tools agents get.** Sillage's own tools come in families (history,
   board, coordination, schedules and automations, worktrees, project actions,
   instructions, project setup) plus extra tools such as the browser. An administrator
