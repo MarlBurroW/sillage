@@ -1,3 +1,4 @@
+import { BrowserActivity } from '../components/browser/BrowserActivity'
 import { CreateProjectDialog } from '../components/chat/CreateProjectDialog'
 import { benchmarkPath, conversationPath } from '@sillage/protocol'
 import { recordPerformance } from '../lib/performance-diagnostics'
@@ -1433,6 +1434,7 @@ export function ConversationPage() {
               </WorkflowTasksContext.Provider>
     
               {activity && !concentration ? <TurnActivity label={activity} /> : null}
+              <BrowserActivity conversationId={conversationId} />
               {stream.state.turnRunning && !concentration ? <NewsTicker key={conversationId} /> : null}
     
               {/* Below the indicator: what the agent has not read yet. */}

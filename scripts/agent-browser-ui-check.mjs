@@ -147,6 +147,10 @@ try {
 
         // Thread shortcut → panel Browser tab with the live page.
         await page.goto(`${base}/p/${conversation.projectId}/c/${conversation.id}`)
+        // The line above the composer says a browser is open, whatever opened it.
+        const reminder = page.locator('[data-browser-activity]')
+        await reminder.waitFor({ timeout: 60000 })
+        assert.match(await reminder.innerText(), /L'agent utilise un navigateur/)
         const shortcut = page.getByRole('button', { name: 'Voir le navigateur' }).last()
         await shortcut.waitFor({ timeout: 60000 })
         await shortcut.scrollIntoViewIfNeeded()
