@@ -136,7 +136,8 @@ else if (process.argv.slice(2).join(' ') === 'auth status') process.stdout.write
   await setDate(30)
   await page.getByRole('button', { name: 'Revérifier la connexion de l’hôte', exact: true }).click()
   await page.getByText('Renouvelle la connexion maintenant', { exact: false }).waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
+  // The label gains "· Mise à jour disponible" whenever GitHub has a newer release than this build.
+  await page.getByRole('button', { name: /^Ouvrir la navigation/ }).click()
   await page.locator('[data-nav-space="activity"]').click()
   await activity.waitFor()
   assert.equal(await activity.getByRole('link', { name: /Connexion Claude à renouveler/ }).count(), 0)
