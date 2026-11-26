@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 // Windows user feedback (October 20, 2026): CLI installation progress, hideable
 // missing CLIs, table-cell text selection, sidebar right-click. Real components/API,
-// temporary database. Codex/Grok point to missing binaries to force absence.
+// temporary database. Codex/Grok are made absent by hiding them from the server's PATH.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -50,9 +51,29 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.opencode]\nenabled = false\n[agents.codex]\nbinary = "/nonexistent/codex"\n[agents.grok]\nbinary = "/nonexistent/grok"\n')
+  // Since 2eface80f, only CLIs configured under their default name are installable: a custom path
+  // would not be satisfied by the package Sillage installs, so a missing "/nonexistent/codex" gets
+  // no install row. Keep the default names and drop from PATH every directory holding codex or grok
+  // (the managed prefix lives in the fresh data directory). Grok also falls back to its official
+  // installer's ~/.grok/bin, so the server gets an empty home (with a Git identity, which the demo
+  // seed's commits need without the user's ~/.gitconfig). Claude and Antigravity get absolute
+  // paths, which are never installable, so exactly the two CLIs under test offer a row whatever
+  // this machine has installed; Claude keeps its real binary, so its card stays selectable.
+  const home = join(data, 'home')
+  await mkdir(home)
+  const pathDirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
+  const holds = (dir, name) => existsSync(join(dir, name))
+  const claudeBinary = pathDirs.map((dir) => join(dir, 'claude')).find((file) => existsSync(file)) ?? '/nonexistent/claude'
+  await writeFile(config, `[agents.opencode]\nenabled = false\n[agents.claude]\nbinary = ${JSON.stringify(claudeBinary)}\n[agents.antigravity]\nbinary = "/nonexistent/agy_acp_server.par"\n`)
   const env = {
     ...process.env,
+    PATH: pathDirs.filter((dir) => !holds(dir, 'codex') && !holds(dir, 'grok')).join(delimiter),
+    HOME: home,
+    USERPROFILE: home,
+    GIT_AUTHOR_NAME: 'Alex Demo',
+    GIT_AUTHOR_EMAIL: 'alex@example.test',
+    GIT_COMMITTER_NAME: 'Alex Demo',
+    GIT_COMMITTER_EMAIL: 'alex@example.test',
     SILLAGE_PORT: String(apiPort),
     SILLAGE_HOST: '127.0.0.1',
     SILLAGE_CONFIG: config,
