@@ -66,9 +66,16 @@ try {
   db.prepare("INSERT INTO app_settings (key, value, updated_at) VALUES ('turnUsageHistory', '1', 0)").run()
   const insert = db.prepare(`INSERT INTO turn_usage (conversation_id, seq, model, ts, user_id, project_id, agent, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-  const noon = new Date()
-  noon.setHours(12, 0, 0, 0)
-  const daysAgo = (days) => noon.getTime() - days * 86_400_000
+  // Past days at noon, away from DST shifts. Today halfway between midnight and now: the report
+  // ends at the current instant, so a turn dated noon today vanished on morning runs (card #109).
+  const now = Date.now()
+  const midnight = new Date(now).setHours(0, 0, 0, 0)
+  const daysAgo = (days) => {
+    if (days === 0) return Math.floor((midnight + now) / 2)
+    const day = new Date(midnight)
+    day.setDate(day.getDate() - days)
+    return day.setHours(12, 0, 0, 0)
+  }
   // Opus 5.5 at 4 / 20 / 0.2 / 5 / 8 dollars per million: 4 + 2 + 0.4 + 0.5 + 0.8 = 7.70 a day.
   for (const days of [0, 1, 3]) insert.run(conversation.id, 1000 + days, 'claude-opus-5-5', daysAgo(days), admin.id, project.id, 'claude', 1_000_000, 100_000, 2_000_000, 100_000, 100_000)
   // GPT-6 Astra at 10 / 50: 1 + 0.5 = 1.50, outside any project, on a session since deleted.

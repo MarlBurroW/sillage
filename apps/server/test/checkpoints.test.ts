@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test, type TestContext } from 'node:test'
@@ -312,6 +312,33 @@ test('un projet sous la racine du dépôt ne voit que son sous-arbre, en chemins
   assert.equal(read(repo, 'app/index.ts'), 'one\n')
   assert.equal(existsSync(join(repo, 'app/new.ts')), false)
   assert.equal(read(repo, 'a.txt'), 'outside\n')
+})
+
+// On a coarse clock (CI kernels tick every few ms, git may compare whole seconds) a same-size
+// rewrite can share its mtime with the committed entry. Git then rereads the file only because
+// the index itself carries that same mtime ("racily clean"). This pins that situation: whole
+// seconds, no ctime, file and index dated alike. A scratch index copied with a fresh date would
+// trust the stale stat data and miss the edit (card #108).
+test('une réécriture de même taille, à la même date que le commit, reste vue comme modifiée', async (t) => {
+  const repo = createRepo(t)
+  git(repo, 'config', 'core.checkStat', 'minimal')
+  const stamp = Math.floor(Date.now() / 1000) - 120
+  write(repo, 'index.ts', 'one\n')
+  utimesSync(join(repo, 'index.ts'), stamp, stamp)
+  git(repo, 'add', '-A')
+  git(repo, 'commit', '-q', '-m', 'Base')
+  utimesSync(join(repo, '.git', 'index'), stamp, stamp)
+
+  await captureSnapshot(repo, before())
+  write(repo, 'index.ts', 'two\n')
+  utimesSync(join(repo, 'index.ts'), stamp, stamp)
+  await captureSnapshot(repo, after_())
+
+  const diff = await diffCheckpoint(repo, CONV, 'tour-1', ['index.ts'])
+  assert.deepEqual(summary(diff.files), [['index.ts', 'modified']])
+  // Checked last: `git status` may rewrite the index and its date. Git sees the edit too, so the
+  // situation is racy, not an undetectable forgery.
+  assert.deepEqual(porcelain(repo), [' M index.ts'])
 })
 
 test('hors dépôt git, la capture refuse avec un code reconnaissable', async (t) => {

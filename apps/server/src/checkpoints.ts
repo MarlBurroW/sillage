@@ -144,8 +144,11 @@ export async function captureSnapshot(cwd: string, ref: string): Promise<Snapsho
   try {
     const workIndex = join(tmp, 'work')
     const snapIndex = join(tmp, 'snap')
-    // Newly initialized repositories have no index yet: start from nothing.
-    await Promise.all([cp(repo.index, workIndex).catch(() => {}), cp(repo.index, snapIndex).catch(() => {})])
+    // Newly initialized repositories have no index yet: start from nothing. Keep the index's date:
+    // git rereads entries as new as the index ("racily clean"), and a fresh date would make it
+    // trust stale stat data and miss a same-size edit made within the same clock tick.
+    const copy = { preserveTimestamps: true }
+    await Promise.all([cp(repo.index, workIndex, copy).catch(() => {}), cp(repo.index, snapIndex, copy).catch(() => {})])
 
     // The working-tree walk, the index tree and HEAD are independent: run them side by side.
     // Sends wait for this capture, and sequential git processes made Windows users wait seconds
