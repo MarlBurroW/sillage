@@ -48,7 +48,10 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
+  // This check creates a fresh Claude session to get a genuinely empty journal. A disabled CLI refuses new sessions
+  // (503 cli_disabled), so Claude stays enabled but points at a binary that does not exist:
+  // creating a session never launches the CLI, and nothing can reach the real `claude`.
+  await writeFile(config, `[agents.claude]\nbinary = ${JSON.stringify(join(data, 'claude-absent'))}\n[agents.codex]\nenabled = false\n`)
   const env = {
     ...process.env,
     // The demo repository has no identity: git uses the environment's identity.
