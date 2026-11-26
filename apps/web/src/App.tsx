@@ -13,7 +13,6 @@ import { useCurrentUser } from './lib/session'
 import { useUserSettings } from './lib/user-settings'
 import { ONBOARDING_EXIT_PARAM } from './lib/onboarding'
 import { useProjects } from './lib/projects'
-import { DesignPage } from './routes/DesignPage'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
 import { HomePage } from './routes/HomePage'
@@ -34,6 +33,9 @@ const OnboardingPage = lazyWithReload(() => import('./routes/OnboardingPage').th
 const NewBenchmarkPage = lazyWithReload(() => import('./routes/NewBenchmarkPage').then((module) => ({ default: module.NewBenchmarkPage })))
 // Same for a benchmark's page, with its tables, comparison and outputs viewer.
 const BenchmarkPage = lazyWithReload(() => import('./routes/BenchmarkPage').then((module) => ({ default: module.BenchmarkPage })))
+// Rarely opened, and the main bundle sits at the PWA precache limit: kept out of it.
+const SkillEditorPage = lazyWithReload(() => import('./routes/SkillEditorPage').then((module) => ({ default: module.SkillEditorPage })))
+const DesignPage = lazyWithReload(() => import('./routes/DesignPage').then((module) => ({ default: module.DesignPage })))
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
@@ -43,7 +45,6 @@ import { CliVersionsSettingsPage } from './routes/CliVersionsSettingsPage'
 import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from './routes/DictationSettingsPage'
 import { McpSettingsPage } from './routes/McpSettingsPage'
-import { SkillEditorPage } from './routes/SkillEditorPage'
 import { InstructionsSettingsPage } from './routes/InstructionsSettingsPage'
 import { SkillLibrarySettingsPage } from './routes/SkillLibrarySettingsPage'
 import { NotificationsSection } from './routes/NotificationsSection'
@@ -198,8 +199,8 @@ export function App() {
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />
           </Route>
-          <Route path="/skills/:skillId" element={<SkillEditorPage />} />
-          <Route path="/design" element={<DesignPage />} />
+          <Route path="/skills/:skillId" element={<Suspense fallback={null}><SkillEditorPage /></Suspense>} />
+          <Route path="/design" element={<Suspense fallback={null}><DesignPage /></Suspense>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
