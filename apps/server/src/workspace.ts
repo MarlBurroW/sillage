@@ -1,6 +1,6 @@
 import { readableConversation } from './conversations/access.js'
 import { personalWorkspace } from './conversations/personal-workspaces.js'
-import { createWriteStream } from 'node:fs'
+import { createWriteStream, statSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -43,6 +43,25 @@ export function projectWorkspace(db: Db, projectId: string, userId: string): str
     throw notFound('project_not_found', 'Project not found.')
   }
   return row.workspacePath
+}
+
+/**
+ * Throws `working_directory_missing` when `dir` is not a directory on disk.
+ *
+ * A CLI spawned in a vanished directory fails with `spawn <binary> ENOENT`, which names the binary:
+ * the Claude SDK even blames the libc. Users went looking for a broken install while their project
+ * folder or worktree had been moved or deleted. Check before spawning and name the real culprit.
+ */
+export function assertWorkingDirectory(dir: string): void {
+  let exists = false
+  try {
+    exists = statSync(dir).isDirectory()
+  } catch {
+    // Missing or unreadable: both leave the CLI without a working directory.
+  }
+  if (!exists) {
+    throw new HttpError(409, 'working_directory_missing', `The working directory ${dir} no longer exists. Restore it, or move the project or worktree to its new location.`, { path: dir })
+  }
 }
 
 /**

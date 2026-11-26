@@ -3751,6 +3751,7 @@ export const fr: Catalog = {
   'decision.worktree.expiry': "Sans réponse, l'arbre reste en l'état.",
   'decision.worktree.open': 'Ouvrir les chantiers',
   'error.worktree_exists': "Le worktree {name} existe déjà.",
+  'error.working_directory_missing': "Le dossier de travail {path} n’existe plus. Restaurez-le, ou indiquez au projet ou au worktree son nouvel emplacement.",
   'error.worktree_not_found': "Worktree introuvable.",
   'error.worktree_leftovers_changed': 'Les fichiers restants de ce worktree ont changé. Revois-les.',
   'error.worktree_keep_forbidden': 'Seul le propriétaire du projet peut garder les fichiers d’un worktree.',

@@ -15,7 +15,7 @@ import type { GrokAccountHomes } from '../../grok-accounts/homes.js'
 import type { AntigravityAccountHomes } from '../../antigravity-accounts/homes.js'
 import type { GrokAccountStore } from '../../grok-accounts/store.js'
 import type { AntigravityAccountStore } from '../../antigravity-accounts/store.js'
-import { projectCwd } from '../../workspace.js'
+import { assertWorkingDirectory, projectCwd } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
@@ -203,6 +203,8 @@ export function registerAgentRoutes(
     const { id } = request.params as { id: string }
     const { agent, worktreeId, refresh, account } = commandsQuerySchema.parse(request.query)
     const cwd = projectCwd(ctx.db, id, user.id, worktreeId)
+    // Before the CLI, whose spawn failure would blame its own binary.
+    assertWorkingDirectory(cwd)
     const adapter = resolveAdapter(agent)
 
     const credential = account ? accountCredential(agent, user.id, account) : undefined

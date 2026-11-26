@@ -1579,6 +1579,9 @@ export class SessionManager {
       } catch (journalErr) {
         console.error('sillage: send failure not journaled', journalErr)
       }
+      // `announce` opened a turn no CLI will close: the recoverable error above does not end it in
+      // the thread, which kept its activity indicator and Stop button forever.
+      this.closeOpenTurn(conversationId, 'failed')
       this.pendingDeliveries.delete(conversationId)
       this.setStatus(conversationId, 'idle')
       return false
@@ -1847,10 +1850,33 @@ export class SessionManager {
     }
     const managed = this.runners.get(conversationId)
     if (!managed) {
+      // No CLI to answer with a `turn.completed`: a turn left open in the journal (a CLI that died,
+      // a failed hand-over) would keep Stop visible and apparently ineffective.
+      this.closeOpenTurn(conversationId, 'interrupted')
       this.setStatus(conversationId, 'idle')
       return
     }
-    await managed.runner.interrupt()
+    try {
+      await managed.runner.interrupt()
+    } catch (err) {
+      // A CLI that is already gone rejects the interrupt (Claude SDK: "Query closed before response
+      // received"). Stop is still honoured: drop the runner and close the turn ourselves.
+      console.warn(`[sessions] interrupt of ${conversationId} failed, stopping its runner`, err)
+      await this.stopRunner(conversationId)
+      this.closeOpenTurn(conversationId, 'interrupted')
+      this.setStatus(conversationId, 'idle')
+    }
+  }
+
+  /** Journals the end of a turn the journal still shows as open, so the thread stops showing it as running. No-op when the last turn already ended. */
+  private closeOpenTurn(conversationId: string, stopReason: 'interrupted' | 'failed'): void {
+    try {
+      const last = this.log.latest(conversationId, ['turn.started', 'turn.completed', 'session.ended'], 1)[0]
+      if (last?.event.type !== 'turn.started') return
+      this.log.append(conversationId, { type: 'turn.completed', stopReason, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
+    } catch (err) {
+      console.error(`sillage: closing the open turn of ${conversationId} failed`, err)
+    }
   }
 
   /** Permanently stops unwatched conversations: turn, process, background work and loops. `interrupt` alone leaves CLI-hosted work alive indefinitely, unsuitable for overlong scheduled runs. */

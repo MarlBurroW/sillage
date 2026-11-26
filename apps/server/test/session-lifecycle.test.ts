@@ -48,13 +48,18 @@ async function harness(t: TestContext, rows: Record<string, ConversationStatus>,
   const runners = new Map<string, Fake>()
   /** Set per conversation to hold its CLI start, or make it fail. */
   const starts = new Map<string, () => Promise<void>>()
+  /** Conversations whose CLI is gone: interrupting it rejects, like the Claude SDK after its process died. */
+  const dead = new Set<string>()
   const adapter = fakeAdapter('codex', config.paths.agents, (ctx) => {
     const fake: Fake = { ctx, sends: [], interrupts: 0, stops: 0 }
     runners.set(ctx.conversationId, fake)
     return fakeRunner(ctx, {
       async start() { await starts.get(ctx.conversationId)?.() },
       async send(text: string) { fake.sends.push(text); ctx.setStatus('running') },
-      async interrupt() { fake.interrupts++ },
+      async interrupt() {
+        fake.interrupts++
+        if (dead.has(ctx.conversationId)) throw new Error('Query closed before response received')
+      },
       async stop() { fake.stops++ },
     })
   })
@@ -70,7 +75,7 @@ async function harness(t: TestContext, rows: Record<string, ConversationStatus>,
     await sessions.sendMessage(id, clientMessageId, text)
     await until(() => !deliveries.has(id))
   }
-  return { db, log, sessions, runners, starts, deliveries, row, events, types, run, workspace }
+  return { db, log, sessions, runners, starts, dead, deliveries, row, events, types, run, workspace }
 }
 
 test('restart recovery interrupts open turns, closes what they left open, and spares idle conversations', async (t) => {
@@ -121,6 +126,7 @@ test('a resent client message id is delivered once, and becomes sendable again w
   h.starts.set('f', async () => { throw new Error('spawn ENOENT') })
   await h.run('f', 'm1')
   assert.ok(h.events('f').some((event) => event.type === 'error' && event.code === 'send_failed'))
+  assert.equal(h.events('f').at(-1)?.type, 'turn.completed', 'the turn opened for the message is closed, or the thread shows it running forever')
   assert.equal(h.row('f').status, 'idle')
   h.starts.delete('f')
   await h.run('f', 'm1')
@@ -145,6 +151,7 @@ test('a CLI dying between its start and the hand-over fails the send instead of 
   assert.deepEqual(h.runners.get('c')!.sends, [])
   assert.ok(h.events('c').some((event) => event.type === 'error' && event.code === 'send_failed'))
   assert.equal(h.row('c').status, 'idle')
+  assert.equal(h.events('c').at(-1)?.type, 'turn.completed', 'the thread no longer shows the turn running')
 })
 
 test('a missing working directory fails the send with a clear error before any CLI starts', async (t) => {
@@ -156,6 +163,7 @@ test('a missing working directory fails the send with a clear error before any C
   const failure = h.events('c').find((event) => event.type === 'error' && event.code === 'send_failed')
   assert.ok(failure?.type === 'error' && failure.message.includes(`${h.workspace.path} does not exist`))
   assert.equal(h.row('c').status, 'idle')
+  assert.equal(h.events('c').at(-1)?.type, 'turn.completed', 'the thread no longer shows the turn running')
 })
 
 test('a message sent during a turn waits for its end, then leaves alone', async (t) => {
@@ -258,4 +266,22 @@ test('at the session limit the oldest quiet CLI without detached work makes room
   await h.run('last', 'e')
   assert.ok(h.events('last').some((event) => event.type === 'error' && event.code === 'send_failed'))
   assert.equal(h.sessions.isWarm('old') && h.sessions.isWarm('next'), true)
+})
+
+test('Stop closes a turn left open when no CLI can answer it', async (t) => {
+  const h = await harness(t, { orphan: 'running', dying: 'idle' })
+  // A turn whose CLI went away without closing it.
+  h.log.append('orphan', { type: 'turn.started' })
+  await h.sessions.interrupt('orphan')
+  assert.equal(h.events('orphan').at(-1)?.type, 'turn.completed')
+  assert.equal(h.row('orphan').status, 'idle')
+
+  // A live runner whose CLI has died: its interrupt rejects, Stop still ends the turn.
+  await h.run('dying', 'm1')
+  h.dead.add('dying')
+  await h.sessions.interrupt('dying')
+  assert.equal(h.runners.get('dying')!.interrupts, 1)
+  assert.ok(h.events('dying').some((event) => event.type === 'turn.completed' && event.stopReason === 'interrupted'))
+  assert.equal(h.row('dying').status, 'idle')
+  assert.equal(h.sessions.activeCount(), 0, 'the dead runner no longer holds a slot')
 })
