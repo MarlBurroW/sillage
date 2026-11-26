@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { existsSync } from 'node:fs'
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -16,6 +17,13 @@ import { transcriptPath, translateTranscript } from '../apps/server/src/agents/c
 
 // Production builds and synthetic external CLI writes; never start an actual CLI.
 const root = fileURLToPath(new URL('../', import.meta.url))
+// The check runs the production server and web builds (the desktop profile only exists there), so
+// missing builds would otherwise surface as a module-not-found from the spawned server.
+const missing = ['apps/server/dist/main.js', 'apps/web/dist/index.html'].filter((path) => !existsSync(join(root, path)))
+if (missing.length) {
+  console.error(`Missing production build (${missing.join(', ')}). Run \`NODE_ENV=production pnpm build\` first.`)
+  process.exit(1)
+}
 const scratch = await mkdtemp(join(tmpdir(), 'sillage-claude-sync-ui-'))
 const browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
 try {
