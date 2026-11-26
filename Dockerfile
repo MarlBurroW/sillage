@@ -57,6 +57,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build --chown=node:node /out /app
 
-EXPOSE 7317
+# 7318: dev-server previews (docs/previews.md), reached by the reverse proxy for pv-* hosts.
+EXPOSE 7317 7318
 ENTRYPOINT ["tini", "--"]
 CMD ["node", "--max-old-space-size=512", "/app/server/main.js"]

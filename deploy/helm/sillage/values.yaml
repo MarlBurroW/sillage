@@ -17,6 +17,8 @@ fullnameOverride: ""
 service:
   type: ClusterIP
   port: 7317
+  # Dev-server previews listener (docs/previews.md).
+  previewPort: 7318
 
 ingress:
   enabled: false
@@ -37,6 +39,20 @@ ingress:
     # Name of kubernetes.io/tls Secret. This cluster has no cert-manager: create
     # manually (`kubectl create secret tls ...`) or install cert-manager.
     secretName: sillage-tls
+
+# --- Dev-server previews ----------------------------------------------------------
+# Previews are served on hosts of their own, pv-<id>.<domain>, never on Sillage's
+# address. Set the same domain under Settings › Previews. It needs a wildcard DNS
+# record and a wildcard certificate (*.<domain>): a dedicated subdomain such as
+# preview.example.com keeps the wildcard away from your other services.
+# See docs/previews.md.
+previews:
+  enabled: false
+  domain: preview.example.com
+  tls:
+    enabled: false
+    # kubernetes.io/tls Secret covering *.<domain>.
+    secretName: sillage-previews-tls
 
 # --- Storage -----------------------------------------------------------------
 # Set storageClass, especially for `data`, and choose block storage over NFS:

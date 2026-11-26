@@ -208,6 +208,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
   for a minute, and only reach ports they see in Services. The app receives requests for
   `localhost:<port>`, so Vite, Next or Django need no host configuration, and hot reload goes
   through. Desktop opens the loopback port directly; off Linux, name the port yourself.
+  [Setting up previews](previews.md).
   On Server, **Demo link** in the preview's toolbar makes a public address for people without a
   Sillage account, valid for an hour, a day, a week or 30 days, and revocable. It serves the app
   only while the dev server still listens for its owner (checked at least every 30 seconds), and

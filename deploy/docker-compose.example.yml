@@ -22,6 +22,9 @@ services:
       # Server does not handle TLS: expose this port only locally or behind
       # a reverse proxy / VPN, never directly to the Internet.
       - "127.0.0.1:7317:7317"
+      # Dev-server previews: your reverse proxy sends pv-*.<preview domain> here.
+      # See docs/previews.md; leave it out if you do not use previews.
+      - "127.0.0.1:7318:7318"
     volumes:
       # Database, attachments, worktrees, logs, and interface-installed agent CLIs.
       # Required volume: without it, CLIs need reinstalling on every container replacement.

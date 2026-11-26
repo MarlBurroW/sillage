@@ -1,11 +1,11 @@
-import { MonitorPlay, ShieldCheck } from 'lucide-react'
+import { BookOpen, CircleCheck, MonitorPlay, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { PREVIEW_HOST_PREFIX } from '@sillage/protocol'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field } from '../components/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useUpdateAppSettings } from '../lib/app-settings'
-import { usePreviews } from '../lib/previews'
+import { PREVIEWS_DOCS_URL, useCheckPreviews, usePreviews } from '../lib/previews'
 import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 
@@ -19,8 +19,15 @@ export function PreviewSettingsPage() {
   const { data: settings } = useAppSettings()
   const { data: previews } = usePreviews()
   const update = useUpdateAppSettings()
+  const check = useCheckPreviews()
   const [domain, setDomain] = useState('')
   useEffect(() => { if (settings) setDomain(settings.previewDomain) }, [settings])
+  // Checked on opening and after each save, so the page always says whether previews work.
+  const saved = settings?.previewDomain ?? ''
+  useEffect(() => {
+    if (saved && me?.isAdmin) check.mutate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved, me?.isAdmin])
 
   if (me?.isAdmin !== true) {
     return <EmptyState icon={<ShieldCheck size={22} />} title={t('previewSettings.adminOnly.title')} description={t('previewSettings.adminOnly.description')} />
@@ -37,6 +44,9 @@ export function PreviewSettingsPage() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title={t('previewSettings.title')} description={t('previewSettings.description')} />
+      <a href={PREVIEWS_DOCS_URL} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1.5 text-sm text-accent underline-offset-2 hover:underline">
+        <BookOpen size={15} />{t('previewSettings.docs')}
+      </a>
       <Card>
         <CardHeader title={t('previewSettings.domain.title')} icon={<MonitorPlay size={16} />} />
         <CardBody>
@@ -56,6 +66,25 @@ export function PreviewSettingsPage() {
           </form>
         </CardBody>
       </Card>
+      {saved ? (
+        <Card>
+          <CardHeader title={t('previewSettings.check.title')} icon={<RefreshCw size={16} />} />
+          <CardBody className="flex flex-col gap-3 text-sm">
+            {check.data ? (
+              <div data-preview-check={check.data.status} className={`flex items-start gap-2 ${check.data.status === 'ok' ? 'text-positive' : 'text-caution'}`}>
+                {check.data.status === 'ok' ? <CircleCheck size={16} className="mt-0.5 shrink-0" /> : <TriangleAlert size={16} className="mt-0.5 shrink-0" />}
+                <div className="min-w-0">
+                  <p className="font-medium">{t(`previewSettings.check.${check.data.status}`)}</p>
+                  {check.data.status !== 'ok' ? <p className="text-ink-soft">{t(`previewSettings.check.${check.data.status}.fix`, { port: previews?.listenerPort ?? 7318, domain: saved })}</p> : null}
+                  {check.data.url ? <p className="mt-1 break-all font-mono text-[11px] text-ink-faint">{check.data.url}{check.data.detail ? ` · ${check.data.detail}` : ''}</p> : null}
+                </div>
+              </div>
+            ) : check.isPending ? <p className="text-ink-faint">{t('previewSettings.check.running')}</p> : null}
+            {check.error instanceof ApiRequestError ? <Banner tone="critical">{check.error.message}</Banner> : null}
+            <div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={check.isPending} onClick={() => check.mutate()}>{t('previewSettings.check.run')}</Button></div>
+          </CardBody>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader title={t('previewSettings.proxy.title')} icon={<ShieldCheck size={16} />} />
         <CardBody className="flex flex-col gap-3 text-sm">
@@ -67,6 +96,7 @@ export function PreviewSettingsPage() {
 \t}
 }`}</pre>
           <p className="text-xs text-ink-faint">{t('previewSettings.proxy.isolation')}</p>
+          <p className="text-xs text-ink-faint">{t('previewSettings.proxy.more')}</p>
         </CardBody>
       </Card>
     </div>

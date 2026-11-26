@@ -50,6 +50,8 @@ spec:
               value: "0.0.0.0"
             - name: SILLAGE_PORT
               value: "7317"
+            - name: SILLAGE_PREVIEW_PORT
+              value: "7318"
             - name: SILLAGE_DATA_DIR
               value: /home/node/.local/share/sillage
             - name: SILLAGE_LOG_LEVEL
@@ -64,6 +66,9 @@ spec:
           ports:
             - name: http
               containerPort: 7317
+              protocol: TCP
+            - name: preview
+              containerPort: 7318
               protocol: TCP
           # Use /api/health, not /health: unknown routes fall back to SPA returning
           # 200 HTML. /health would therefore pass even with broken application server.

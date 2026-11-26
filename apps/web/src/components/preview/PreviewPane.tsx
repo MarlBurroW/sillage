@@ -5,7 +5,7 @@ import { PreviewShareDialog } from './PreviewShareDialog'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { PreviewTargetDto } from '@sillage/protocol'
-import { useOpenPreview, usePreviews } from '../../lib/previews'
+import { PREVIEWS_DOCS_URL, useOpenPreview, usePreviews } from '../../lib/previews'
 import { usePanelPreviewPort } from '../../lib/panel'
 import { useTranslate } from '../../lib/i18n'
 import { useCurrentUser } from '../../lib/session'
@@ -87,6 +87,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
       <PanelEmptyState>
         <EmptyState icon={<MonitorPlay size={22} />} title={t('preview.unconfigured.title')} description={t(me?.isAdmin ? 'preview.unconfigured.admin' : 'preview.unconfigured.member')} />
         {me?.isAdmin ? <Link to="/settings/apercus" className="text-sm text-accent hover:underline">{t('preview.unconfigured.link')}</Link> : null}
+        <a href={PREVIEWS_DOCS_URL} target="_blank" rel="noreferrer" className="text-sm text-accent hover:underline">{t('preview.unconfigured.docs')}</a>
       </PanelEmptyState>
     )
   }

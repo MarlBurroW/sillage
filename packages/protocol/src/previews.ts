@@ -72,3 +72,33 @@ export interface PreviewShareDto {
 export interface PreviewShareListDto {
   shares: PreviewShareDto[]
 }
+
+/**
+ * Outcome of the settings page's routing check: Sillage requests a preview host over the public
+ * address and says which link of the chain fails, so the admin knows what to fix.
+ */
+export type PreviewCheckStatus =
+  /** A preview host reached this very process: previews work. */
+  | 'ok'
+  /** No preview domain set yet. */
+  | 'unconfigured'
+  /** The preview listener could not start (its port is taken). */
+  | 'listener_down'
+  /** The name does not resolve: no wildcard DNS record. */
+  | 'dns'
+  /** Resolved, but TLS failed: no certificate covering `*.domain`. */
+  | 'tls'
+  /** Nothing accepted the connection, or it timed out. */
+  | 'unreachable'
+  /** The reverse proxy answered with a gateway error: its preview rule cannot reach the listener. */
+  | 'upstream'
+  /** Something answered, but not Sillage's preview listener: no reverse proxy rule for `pv-*` hosts. */
+  | 'not_routed'
+
+export interface PreviewCheckDto {
+  status: PreviewCheckStatus
+  /** The address requested, to show and try by hand. */
+  url: string | null
+  /** Low-level detail (error code, HTTP status) for the curious. */
+  detail: string | null
+}

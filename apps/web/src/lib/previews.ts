@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PREVIEW_SHARE_HOURS, PreviewListDto, PreviewOpenDto, PreviewShareDto, PreviewShareListDto } from '@sillage/protocol'
+import type { PREVIEW_SHARE_HOURS, PreviewCheckDto, PreviewListDto, PreviewOpenDto, PreviewShareDto, PreviewShareListDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
@@ -49,3 +49,10 @@ export function useRevokePreviewShare() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SHARES_KEY }),
   })
 }
+
+/** Admin routing check: which link of DNS, certificate and proxy fails, if any. */
+export function useCheckPreviews() {
+  return useMutation({ mutationFn: () => api.post<PreviewCheckDto>('/api/previews/check') })
+}
+
+export const PREVIEWS_DOCS_URL = 'https://github.com/MarlBurroW/sillage/blob/main/docs/previews.md'

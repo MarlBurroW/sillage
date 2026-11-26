@@ -19,6 +19,7 @@ const SIGN_IN_TTL_MS = 60_000
 const COOKIE_TTL_MS = 12 * 60 * 60_000
 const COOKIE = 'sillage_preview'
 const SIGN_IN_PATH = '/__sillage/preview-sign-in'
+export const HEALTH_PATH = '/__sillage/preview-health'
 
 export interface PreviewTarget {
   id: string
@@ -43,6 +44,10 @@ export class PreviewService {
   private readonly shareChecks = new Map<string, { at: number; ok: boolean }>()
   private readonly key: Buffer
   private server: Server | null = null
+  /** Whether the listener is up: a busy port leaves previews off, and the check says so. */
+  listening = false
+  /** Answered on every preview host, so the settings check knows the proxy reached this process. */
+  readonly instanceNonce = randomBytes(12).toString('hex')
 
   constructor(private readonly db: Db, private readonly config: Config) {
     this.key = loadKey(join(config.paths.data, 'previews', 'key'))
@@ -75,7 +80,9 @@ export class PreviewService {
     this.server.on('upgrade', (req, socket: Socket, head) => this.upgrade(req, socket, head))
     await new Promise<void>((resolve, reject) => {
       this.server!.once('error', reject)
-      this.server!.listen(this.listenerPort, '127.0.0.1', () => resolve())
+      // Same interface as Sillage itself: loopback on a host install, 0.0.0.0 in a container, where
+      // the reverse proxy runs outside and could not reach a loopback-only listener.
+      this.server!.listen(this.listenerPort, this.config.server.host, () => { this.listening = true; resolve() })
     })
   }
 
@@ -114,6 +121,11 @@ export class PreviewService {
     this.shareChecks.delete(id)
   }
 
+  private isPreviewHost(req: IncomingMessage): boolean {
+    const host = (req.headers.host ?? '').toLowerCase().replace(/:\d+$/, '')
+    return Boolean(this.domain()) && host.startsWith(PREVIEW_HOST_PREFIX) && host.endsWith(`.${this.domain()}`)
+  }
+
   /**
    * Target for a request's Host: a preview opened from Sillage, a public link, or a reason to
    * refuse. Public links stay valid only while the owner still sees the port in Services: a
@@ -147,6 +159,12 @@ export class PreviewService {
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
+    // Any preview host answers this, open preview or not: the routing check needs no target.
+    if ((req.url ?? '').split('?')[0] === HEALTH_PATH && this.isPreviewHost(req)) {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ sillagePreview: this.instanceNonce }))
+      return
+    }
     this.targetOf(req).then((target) => this.serve(req, res, target), () => notice(res, 502, 'The preview is unavailable.'))
   }
 

@@ -139,6 +139,13 @@ try {
     req.end()
   })
   assert.equal((await raw('/')).status, 401, 'no cookie, no page')
+  // Any preview host answers the health path with this instance's nonce, for the settings check.
+  const health = await raw('/__sillage/preview-health', { host: 'pv-c4ec4ec4ec4e.preview.test' })
+  assert.equal(health.status, 200)
+  assert.match(health.body, /"sillagePreview":"[0-9a-f]{24}"/)
+  // The check runs from the server; nothing resolves preview.test here, so it names DNS.
+  const checked = (await call('POST', '/api/previews/check')).body
+  assert.equal(checked.status, 'dns', JSON.stringify(checked))
   assert.equal((await raw('/', { host: 'pv-000000000000.preview.test' })).status, 404, 'unknown preview')
   const signIn = await raw(new URL(opened.url).pathname + new URL(opened.url).search)
   assert.equal(signIn.status, 302)
@@ -269,6 +276,8 @@ try {
         await page.goto(`${base}/settings/apercus`)
         await page.getByLabel('Domaine').waitFor()
         await page.waitForFunction(() => document.querySelector('input[placeholder="example.com"]')?.value === 'preview.test')
+        await page.locator('[data-preview-check="dns"]').waitFor({ timeout: 20000 })
+        await page.getByRole('link', { name: /Mettre en place les aperçus/ }).waitFor()
         await page.screenshot({ path: join(shots, `settings-${name}-${theme}.png`) })
         await context.close()
       }

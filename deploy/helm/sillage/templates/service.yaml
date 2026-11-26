@@ -11,5 +11,9 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    - port: {{ .Values.service.previewPort }}
+      targetPort: preview
+      protocol: TCP
+      name: preview
   selector:
     {{- include "sillage.selectorLabels" . | nindent 4 }}
