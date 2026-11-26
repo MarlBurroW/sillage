@@ -1,27 +1,17 @@
 import type { BrowserManager } from '../browser/manager.js'
 import { detach } from '../detach.js'
-import { randomUUID } from 'node:crypto'
-import { statSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
 import { and, eq } from 'drizzle-orm'
-import {
-  conversations,
-  permissionRequests,
-  type ConversationRow,
-  type Db,
-  mcpServers,
-} from '@sillage/db'
-import {
-  parseAgentConfig,
-  type AgentConfig,
-  type AgentKind,
-  type BackgroundTaskOutput,
-  type ConversationMetrics,
-  type ConversationStatus,
-  type SillageEvent,
+import { conversations, permissionRequests, type ConversationRow, type Db } from '@sillage/db'
+import type {
+  AgentConfig,
+  AgentKind,
+  BackgroundTaskOutput,
+  ConversationMetrics,
+  ConversationStatus,
+  SillageEvent,
 } from '@sillage/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
-import { describeOutgoingMessage } from '../agents/outgoing.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { checkpointBeforeProjectMove } from '../conversations/project-transfer.js'
 import type { SecretStore } from '../secrets/store.js'
@@ -33,7 +23,6 @@ import type { AntigravityAccountHomes } from '../antigravity-accounts/homes.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
 import type { AntigravityAccountStore } from '../antigravity-accounts/store.js'
 import type {
-  AgentRunner,
   ElicitationAnswer,
   OutgoingAttachment,
   OutgoingMention,
@@ -44,25 +33,20 @@ import type {
 } from '../agents/types.js'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
-import { readAppSettings } from '../settings/app-settings.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
 import type { TurnUsageRecorder } from '../consumption/recorder.js'
 import { notifyIfAway, type ConversationNotifier } from './session-notifications.js'
-import {
-  clearActivity,
-  closeDetachedWork,
-  closeInterruptedTurn,
-  closeOpenTurn,
-  expireOpenPrompts,
-  recoverInterrupted,
-  statusSnapshot,
-} from './session-journal.js'
+import { closeInterruptedTurn, closeOpenTurn, expireOpenPrompts, recoverInterrupted, statusSnapshot } from './session-journal.js'
 import { SessionAccounts } from './session-accounts.js'
-import { RunnerContextFactory, type RunnerLease } from './runner-context.js'
+import { RunnerContextFactory } from './runner-context.js'
 import { ClientMessageDedupe, MessageQueue } from './message-queue.js'
 import { TurnCheckpoints, type RestoreResult } from './turn-checkpoints.js'
 import { ProjectMoves } from './project-moves.js'
+import { RunnerPool } from './runner-pool.js'
+import { MessageDelivery } from './message-delivery.js'
+import { LiveConfig } from './live-config.js'
+import { CliGate } from './cli-gate.js'
 
 export type { ConversationNotifier } from './session-notifications.js'
 
@@ -86,32 +70,6 @@ type ConversationPhase =
   /** A warm CLI with no turn: idle, interrupted, or failed and about to be stopped. */
   | 'idle'
 
-/** A message announced by `announce`, until `deliver` has handed it over or given up. */
-interface Delivery {
-  /** The CLI has been given the message: from then on only the CLI can stop the turn. */
-  handing: boolean
-  /** Stop asked before the hand-over. The turn is already closed in the journal; `deliver` drops the message, and with `terminate` stops the CLI it may have started. */
-  cancel: 'interrupt' | 'terminate' | null
-}
-
-interface ManagedRunner {
-  runner: AgentRunner
-  lastActivity: number
-  status: ConversationStatus
-  idleTimer: NodeJS.Timeout | null
-  /** Live background work from the latest `background.updated`, held in memory rather than databases because it belongs to CLI processes and dies with them. Reloaded conversations have none after restart. */
-  background: number
-  /** Armed loops from the latest `loops.updated`, memory-only like background work because they cannot outlive CLI processes. */
-  loops: number
-  /** Reason a runner needs restarting when settings cannot apply live during turns. Restart waits for turn completion; otherwise null. See `reloadConfig`. */
-  pendingRestart: string | null
-  /** Identity of this runner's context: see `RunnerLease`. */
-  lease: RunnerLease
-}
-
-/** Sends slower than this are logged with their phases. */
-const SLOW_SEND_MS = 1_000
-
 /** Bus `status` payload reused unchanged by same-named WebSocket messages: hubs merely rebroadcast. */
 export interface StatusBroadcast {
   conversationId: string
@@ -126,17 +84,14 @@ export interface StatusBroadcast {
 }
 
 export class SessionManager {
-  private readonly runners = new Map<string, ManagedRunner>()
-  /** In-progress starts so concurrent sends wait instead of duplicate processes. */
-  private readonly startingRunners = new Map<string, Promise<AgentRunner>>()
-  private readonly updatingClis = new Set<AgentKind>()
-  private readonly cliOperations = new Map<AgentKind, number>()
+  private readonly pool: RunnerPool
+  private readonly cliGate: CliGate
   private readonly clientMessages = new ClientMessageDedupe()
   private readonly queue: MessageQueue
   private readonly turnCheckpoints: TurnCheckpoints
   private readonly moves: ProjectMoves
-  /** Conversations whose announced message has not reached the CLI yet; see `announce`. */
-  private readonly pendingDeliveries = new Map<string, Delivery>()
+  private readonly delivery: MessageDelivery
+  private readonly liveConfig: LiveConfig
   /** Set by `stopAll`: the daemon is going away, nothing new starts and stopped runners write nothing more. */
   private closing = false
   /** Set later because the WebSocket hub tracking viewers does not exist when managers are constructed. */
@@ -148,7 +103,7 @@ export class SessionManager {
   constructor(
     private readonly db: Db,
     private readonly log: EventLog,
-    private readonly config: Config,
+    config: Config,
     private readonly registry: AgentRegistry,
     secrets: SecretStore,
     claudeAccounts: ClaudeAccountStore,
@@ -156,18 +111,38 @@ export class SessionManager {
     grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
     antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
     /** Absent in tests that do not look at consumption. */
-    private readonly usage: TurnUsageRecorder | null = null,
+    usage: TurnUsageRecorder | null = null,
   ) {
     this.statusBus.setMaxListeners(200)
+    this.cliGate = new CliGate(registry)
     this.accounts = new SessionAccounts(log, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts)
     this.queue = new MessageQueue(log)
+    this.pool = new RunnerPool(db, log, config, registry, usage, {
+      isQuiescent: (conversationId) => this.isQuiescent(conversationId),
+      assertOpen: () => this.assertOpen(),
+      loadConversation: (conversationId) => this.loadConversation(conversationId),
+      assertCliEnabled: (kind) => this.assertCliEnabled(kind),
+      buildContext: (conversation, lease) => this.contexts.build(conversation, lease),
+      expireQueue: (conversationId) => this.queue.expire(conversationId),
+      broadcastStatus: (conversationId, status, warm) => this.broadcastStatus(conversationId, status, warm),
+    })
     this.turnCheckpoints = new TurnCheckpoints(db, log, (conversationId) => this.workingDirectory(conversationId))
+    this.delivery = new MessageDelivery(log, this.pool, this.turnCheckpoints, this.queue, {
+      openCheckpoint: (conversation) => this.openCheckpoint(conversation),
+      setStatus: (conversationId, status) => this.setStatus(conversationId, status),
+      settleIdle: (conversationId) => this.settleIdle(conversationId),
+    })
+    this.liveConfig = new LiveConfig(db, log, this.pool, {
+      loadConversation: (conversationId) => this.loadConversation(conversationId),
+      isBusy: (conversationId) => this.isBusy(conversationId),
+      setStatus: (conversationId, status) => this.setStatus(conversationId, status),
+    })
     this.moves = new ProjectMoves(db, log, this.statusBus, {
       canMove: (conversationId) => {
         const phase = this.phase(conversationId)
         return (phase === 'idle' || phase === 'cold') && !this.hasDetachedWork(conversationId)
       },
-      stopRunner: (conversationId, options) => this.stopRunner(conversationId, options),
+      stopRunner: (conversationId, options) => this.pool.stop(conversationId, options),
       flushQueue: (conversationId) => this.flushQueue(conversationId),
       broadcastStatus: (conversationId, status, warm) => this.broadcastStatus(conversationId, status, warm),
     })
@@ -182,6 +157,21 @@ export class SessionManager {
       adoptSuggestedTitle: (conversationId) => this.adoptSuggestedTitle(conversationId),
       stopAntigravityAccount: (accountId, exceptId) => this.stopAntigravityAccount(accountId, exceptId),
     })
+  }
+
+  /** Live runners, owned by the pool. */
+  private get runners() {
+    return this.pool.runners
+  }
+
+  /** Starts in progress, owned by the pool. */
+  private get startingRunners() {
+    return this.pool.starting
+  }
+
+  /** Conversations whose announced message has not reached the CLI yet, owned by the delivery. */
+  private get pendingDeliveries() {
+    return this.delivery.pending
   }
 
   /** Agent browsers, wired after construction like other optional services; absent in tests. */
@@ -229,7 +219,7 @@ export class SessionManager {
     // Errored runners are irrecoverably dead: retaining them routes subsequent
     // messages to unusable processes. Stop to free capacity;
     // the next message resumes through a fresh session.
-    if (status === 'error') detach(this.stopRunner(conversationId), 'stopping a failed runner')
+    if (status === 'error') detach(this.pool.stop(conversationId), 'stopping a failed runner')
   }
 
   /** Broadcasts status. Pass `warm` explicitly: stopping runners announces cold sessions while the map still contains warm entries. */
@@ -319,39 +309,27 @@ export class SessionManager {
     detach(notifyIfAway(this.db, this.notifier, conversationId, event), 'notification of an absent user')
   }
 
-  /** Rejects CLIs turned off with `[agents.<cli>] enabled = false`. Called before anything is written or spawned: the interface hides them, but stale clients, the API and scheduled tasks can still name them. */
+  /** Rejects CLIs turned off with `[agents.<cli>] enabled = false`; see `CliGate.assertEnabled`. */
   assertCliEnabled(kind: AgentKind): void {
-    this.registry.adapter(kind).cli.assertEnabled()
+    this.cliGate.assertEnabled(kind)
   }
 
   /** Reserve the CLI synchronously before awaiting checkpoints/startup, when runner status can still be idle. */
   private useCli(kind: AgentKind): () => void {
-    this.assertCliEnabled(kind)
-    if (this.updatingClis.has(kind)) {
-      throw new HttpError(503, 'cli_updating', '{label} is being updated. Try again when installation finishes.',
-        { label: this.registry.adapter(kind).label })
-    }
-    this.cliOperations.set(kind, (this.cliOperations.get(kind) ?? 0) + 1)
-    return () => {
-      const count = (this.cliOperations.get(kind) ?? 1) - 1
-      if (count) this.cliOperations.set(kind, count)
-      else this.cliOperations.delete(kind)
-    }
+    return this.cliGate.use(kind)
   }
 
   /** Wait for turns, questions, background tasks and queued work; idle sessions resume on the new binary. */
   async prepareCliUpdate(kind: AgentKind): Promise<(() => void) | null> {
-    if (this.updatingClis.has(kind) || this.cliOperations.has(kind)) return null
-    const runners = [...this.runners].filter(([, managed]) => managed.runner.appliedConfig.agent === kind)
-    if (runners.some(([id]) => !this.isQuiescent(id) || this.hasDetachedWork(id) || this.queue.has(id))) return null
-    this.updatingClis.add(kind)
-    try {
-      await Promise.all(runners.map(([id]) => this.stopRunner(id, { keepQueue: true })))
-      return () => { this.updatingClis.delete(kind) }
-    } catch (err) {
-      this.updatingClis.delete(kind)
-      throw err
-    }
+    return this.cliGate.prepareUpdate(
+      kind,
+      () => {
+        const runners = [...this.runners].filter(([, managed]) => managed.runner.appliedConfig.agent === kind)
+        if (runners.some(([id]) => !this.isQuiescent(id) || this.hasDetachedWork(id) || this.queue.has(id))) return null
+        return runners.map(([id]) => id)
+      },
+      (ids) => Promise.all(ids.map((id) => this.pool.stop(id, { keepQueue: true }))),
+    )
   }
 
   /** Whether a CLI process still runs for this conversation. */
@@ -383,8 +361,7 @@ export class SessionManager {
 
   /** Work living in the CLI process beyond turns (dev servers, loops): stopping the process ends it. */
   private hasDetachedWork(conversationId: string): boolean {
-    const managed = this.runners.get(conversationId)
-    return Boolean(managed && (managed.background > 0 || managed.loops > 0))
+    return this.pool.hasDetachedWork(conversationId)
   }
 
   /** Nothing would be lost by stopping this CLI now, apart from detached work, which callers weigh. */
@@ -402,7 +379,7 @@ export class SessionManager {
     if (managed?.pendingRestart) {
       const reason = managed.pendingRestart
       managed.pendingRestart = null
-      await this.restartForConfig(conversationId, reason)
+      await this.liveConfig.restart(conversationId, reason)
       return
     }
 
@@ -430,8 +407,8 @@ export class SessionManager {
 
     try {
       const prepared = this.prepareSend(conversationId, next.mentions)
-      this.announce(prepared.conversation, next.text, next.attachments, prepared.resolved, next.skills)
-      await this.deliver(prepared.conversation, prepared.release, next.text, next.attachments, prepared.resolved, next.skills)
+      this.delivery.announce(prepared.conversation, next.text, next.attachments, prepared.resolved, next.skills)
+      await this.delivery.deliver(prepared.conversation, prepared.release, next.text, next.attachments, prepared.resolved, next.skills)
     } catch (err) {
       this.log.append(conversationId, {
         type: 'error',
@@ -468,7 +445,7 @@ export class SessionManager {
     if (!steered) return 'unavailable'
 
     this.log.append(conversationId, { type: 'message.dequeued', queueId, reason: 'steered' })
-    this.touch(conversationId)
+    this.pool.touch(conversationId)
     return 'steered'
   }
 
@@ -499,7 +476,7 @@ export class SessionManager {
     for (const [id, managed] of this.runners) {
       const config = managed.runner.appliedConfig
       if (id === exceptId || config.agent !== 'antigravity' || config.account !== accountId) continue
-      await this.stopRunner(id)
+      await this.pool.stop(id)
       this.log.append(id, { type: 'session.ended', reason: 'interrupted' })
       this.setStatus(id, 'idle')
     }
@@ -516,132 +493,6 @@ export class SessionManager {
     } finally {
       release()
     }
-  }
-
-  /** Makes room at session limits by stopping the oldest idle runner, which resumes on the next message without user loss. Reject when all work rather than exceed machine memory budgets. */
-  private async makeRoom(): Promise<void> {
-    // Reread limits at every start: settings are editable through the interface,
-    // whereas constructor-captured values would wait for restart.
-    const limit = readAppSettings(this.db, this.config).maxConcurrentSessions
-
-    // Loop rather than stop once: lowering limits through the interface can leave
-    // more live runners than available capacity.
-    while (this.runners.size >= limit) {
-      // A runner still starting, or about to receive a message, has an idle status: the phase
-      // tells it apart, evicting it would cut a launch in progress. Runners hosting a dev server
-      // or a loop go last, since stopping them ends that work too.
-      const idle = [...this.runners.entries()]
-        .filter(([id]) => this.isQuiescent(id))
-        .sort((a, b) => Number(this.hasDetachedWork(a[0])) - Number(this.hasDetachedWork(b[0])) || a[1].lastActivity - b[1].lastActivity)
-
-      const oldest = idle[0]
-      if (!oldest) {
-        throw new HttpError(
-          503,
-          'session_limit_reached',
-          'All {limit} concurrent sessions are busy. Wait for a conversation to finish.',
-          { limit },
-        )
-      }
-
-      await this.stopRunner(oldest[0])
-    }
-  }
-
-  private async ensureRunner(conversation: ConversationRow): Promise<AgentRunner> {
-    const existing = this.runners.get(conversation.id)
-    if (existing) return existing.runner
-
-    // Only one startup per conversation: `makeRoom` yields control, so concurrent sends
-    // could launch duplicate CLIs,
-    // one leaking forever.
-    const inFlight = this.startingRunners.get(conversation.id)
-    if (inFlight) return inFlight
-
-    const starting = this.startRunner(conversation.id).finally(() => {
-      this.startingRunners.delete(conversation.id)
-    })
-    this.startingRunners.set(conversation.id, starting)
-    return starting
-  }
-
-  private async startRunner(conversationId: string): Promise<AgentRunner> {
-    // A CLI started now would outlive the `stopAll` snapshot, with nothing left to stop it.
-    this.assertOpen()
-    await this.makeRoom()
-
-    // Reread from the database: previous runners may have set agentSessionId.
-    const fresh = this.loadConversation(conversationId)
-    // Last guard before spawning: queued deliveries outlive the check made when they were accepted.
-    this.assertCliEnabled(fresh.agent)
-    // Spawning in a missing directory fails with ENOENT, which the Claude SDK reports as a broken binary.
-    const cwd = this.resolveCwd(fresh)
-    if (!statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
-      throw new Error(`The working directory ${cwd} does not exist: check the project's path.`)
-    }
-    const lease: RunnerLease = { conversationId }
-    const context = this.contexts.build(fresh, lease)
-    const runner = this.registry.adapter(fresh.agent).createRunner(context)
-
-    this.runners.set(conversationId, {
-      runner,
-      lastActivity: Date.now(),
-      status: 'idle',
-      idleTimer: null,
-      background: 0,
-      loops: 0,
-      pendingRestart: null,
-      lease,
-    })
-
-    try {
-      await runner.start()
-    } catch (err) {
-      // Failed starts must not occupy live slots; otherwise later sends would retry
-      // nonexistent processes.
-      if (this.runners.get(conversationId)?.lease === lease) this.runners.delete(conversationId)
-      clearActivity(this.db, conversationId)
-      await runner.stop().catch(() => undefined)
-      throw err
-    }
-    // Stopped while it was starting (terminate, a deletion): its entry is gone, and a runner
-    // nobody tracks would keep a CLI alive that no interrupt, reaper or shutdown can reach.
-    if (this.runners.get(conversationId)?.lease !== lease) {
-      await runner.stop().catch(() => undefined)
-      throw new Error('The session was stopped while its CLI was starting.')
-    }
-    return runner
-  }
-
-  private touch(conversationId: string): void {
-    const managed = this.runners.get(conversationId)
-    if (!managed) return
-
-    managed.lastActivity = Date.now()
-    this.armIdleTimer(conversationId, managed)
-  }
-
-  private armIdleTimer(conversationId: string, managed: ManagedRunner): void {
-    if (managed.idleTimer) clearTimeout(managed.idleTimer)
-    managed.idleTimer = setTimeout(
-      () => this.reapIfIdle(conversationId),
-      this.config.limits.sessionIdleTimeoutMin * 60 * 1000,
-    )
-    // Idle runners alone must not keep processes alive.
-    managed.idleTimer.unref()
-  }
-
-  /** Inactivity deadline. User actions alone advance timers, so long autonomous turns previously expired and were interrupted: rearm while busy. Pending requests are also busy, as `isBusy` consistently reports. Waiting CLI tool calls consume nothing, and reaping lost questions and killed sessions after timers partly consumed by prior agent work; human requests must wait as long as needed. Detached work also counts: background dev servers live within CLI processes and must not die thirty minutes after messages. Check separately from `isBusy`, whose queue/control meaning remains 'CLI has control'; conversations hosting dev servers are still available for messages. */
-  private reapIfIdle(conversationId: string): void {
-    const managed = this.runners.get(conversationId)
-    if (!managed) return
-
-    if (!this.isQuiescent(conversationId) || this.hasDetachedWork(conversationId)) {
-      this.armIdleTimer(conversationId, managed)
-      return
-    }
-
-    detach(this.stopRunner(conversationId), 'idle runner reaping')
   }
 
   /** Resolves client mentions to absolute paths within working directories. Reject escaping `../` rather than truncate so agents never receive files different from those named. */
@@ -673,7 +524,7 @@ export class SessionManager {
       const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
 
       steered = await managed.runner.steer(text, attachments, resolved, skills, options)
-      if (steered) this.touch(conversationId)
+      if (steered) this.pool.touch(conversationId)
       return steered
     } finally {
       if (!steered) this.clientMessages.release(conversationId, clientMessageId)
@@ -696,7 +547,7 @@ export class SessionManager {
     // and mix into current-turn context.
     if (this.isBusy(conversationId) || this.moves.isPending(conversationId)) {
       this.queue.push(conversationId, { clientMessageId, text, attachments, mentions, skills })
-      this.touch(conversationId)
+      this.pool.touch(conversationId)
       return
     }
 
@@ -709,114 +560,12 @@ export class SessionManager {
       this.clientMessages.release(conversationId, clientMessageId)
       throw err
     }
-    this.announce(prepared.conversation, text, attachments, prepared.resolved, skills)
+    this.delivery.announce(prepared.conversation, text, attachments, prepared.resolved, skills)
     // Detached: the reply is 'accepted' and the thread already shows the message. The CLI start
     // that follows is what took seconds on Windows.
-    detach(this.deliver(prepared.conversation, prepared.release, text, attachments, prepared.resolved, skills).then((delivered) => {
+    detach(this.delivery.deliver(prepared.conversation, prepared.release, text, attachments, prepared.resolved, skills).then((delivered) => {
       if (!delivered) this.clientMessages.release(conversationId, clientMessageId)
     }), 'message delivery')
-  }
-
-  /** Journals the user's message and opens the turn before any CLI work. Starting a CLI takes seconds on Windows, MCP servers included, and users saw nothing until then: the thread shows the message and the activity indicator at Enter, for every CLI alike. Runners therefore no longer echo in `send`. `isBusy` holds until the hand-over so a second message queues instead of racing the start. */
-  private announce(conversation: ConversationRow, text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[], skills: string[]): void {
-    // Commands the CLI last published for this conversation: a leading `/name` among them is one.
-    const published = this.log.latest(conversation.id, ['commands.updated'], 1)[0]?.event as { commands?: { name: string }[] } | undefined
-    const commands = published?.commands?.map((command) => command.name) ?? []
-    const { blocks } = describeOutgoingMessage(text, attachments, null, { mentions, skills, commands })
-    this.log.append(conversation.id, { type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
-    this.log.append(conversation.id, { type: 'turn.started' })
-    this.pendingDeliveries.set(conversation.id, { handing: false, cancel: null })
-    this.setStatus(conversation.id, 'running')
-  }
-
-  /** Hands an announced message to the CLI, starting it when necessary. Failures are journaled where the message already sits and the conversation returns to idle: nobody awaits an HTTP reply anymore. Returns whether the CLI took the message. */
-  private async deliver(
-    conversation: ConversationRow,
-    release: () => void,
-    text: string,
-    attachments: OutgoingAttachment[],
-    resolved: OutgoingMention[],
-    skills: string[],
-  ): Promise<boolean> {
-    const conversationId = conversation.id
-    const delivery = this.pendingDeliveries.get(conversationId)
-    const started = Date.now()
-    try {
-      // Cold starts and the before snapshot are independent, and both are slow on Windows:
-      // overlap them rather than paying for one after the other.
-      const [runner] = await Promise.all([this.ensureRunner(conversation), this.openCheckpoint(conversation)])
-      if (delivery?.cancel) {
-        await this.dropDelivery(conversationId, delivery.cancel)
-        return false
-      }
-      // The CLI may have died or been stopped while the snapshot finished: handing it the message
-      // would reopen a turn that no process closes.
-      if (this.runners.get(conversationId)?.runner !== runner) throw new Error('The CLI stopped before receiving the message.')
-      if (delivery) delivery.handing = true
-      const prepared = Date.now()
-      await runner.send(text, attachments, resolved, skills)
-      // Only slow hand-overs are worth a log line: the Desktop keeps stderr, and this is what
-      // the user waits for after Enter.
-      if (Date.now() - started > SLOW_SEND_MS) {
-        console.warn(`[sessions] slow send ${conversationId}: ${prepared - started} ms to start and snapshot, ${Date.now() - prepared} ms to hand over`)
-      }
-      this.touch(conversationId)
-      return true
-    } catch (err) {
-      this.turnCheckpoints.forget(conversationId)
-      // Stopped while its CLI was starting: the stop explains the failure and has closed the turn.
-      if (delivery?.cancel) {
-        await this.dropDelivery(conversationId, delivery.cancel)
-        return false
-      }
-      // The failure may be the journal itself, or a conversation deleted while its CLI started:
-      // journaling must not throw past the status reset below, or the thread stays busy.
-      try {
-        this.log.append(conversationId, {
-          type: 'error',
-          code: 'send_failed',
-          message: `The message could not be handed to the CLI: ${err instanceof Error ? err.message : String(err)}`,
-          recoverable: true,
-        })
-      } catch (journalErr) {
-        console.error('sillage: send failure not journaled', journalErr)
-      }
-      // `announce` opened a turn no CLI will close: the recoverable error above does not end it in
-      // the thread, which kept its activity indicator and Stop button forever.
-      closeOpenTurn(this.log, conversationId, 'failed')
-      this.pendingDeliveries.delete(conversationId)
-      this.setStatus(conversationId, 'idle')
-      return false
-    } finally {
-      this.pendingDeliveries.delete(conversationId)
-      release()
-    }
-  }
-
-  /**
-   * Stop asked while a message was on its way and the CLI did not have it yet: a cold start takes
-   * seconds on Windows, and the message used to reach the CLI anyway once it was up. Closes the turn
-   * `announce` opened, now, so Stop takes effect at once; `deliver` then drops the message.
-   */
-  private cancelDelivery(conversationId: string, kind: 'interrupt' | 'terminate'): boolean {
-    const delivery = this.pendingDeliveries.get(conversationId)
-    if (!delivery || delivery.handing) return false
-    if (delivery.cancel) return true
-    delivery.cancel = kind
-    this.log.append(conversationId, { type: 'turn.completed', stopReason: 'interrupted', costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
-    return true
-  }
-
-  /** `deliver`'s side of a cancellation: the message is dropped, a terminated conversation loses its CLI, an interrupted one keeps it warm and sends what was queued meanwhile. */
-  private async dropDelivery(conversationId: string, kind: 'interrupt' | 'terminate'): Promise<void> {
-    this.pendingDeliveries.delete(conversationId)
-    this.turnCheckpoints.close(conversationId)
-    if (kind === 'terminate') {
-      await this.stopRunner(conversationId)
-      this.queue.expire(conversationId)
-      return
-    }
-    await this.settleIdle(conversationId)
   }
 
   /** Synchronous part of a send: the conversation, the CLI lock and the mentions. Invalid mentions must reject sends rather than leave launched sessions with lost messages. */
@@ -901,9 +650,9 @@ export class SessionManager {
     const conversation = this.loadConversation(conversationId)
     const release = this.useCli(conversation.agent)
     try {
-      const runner = await this.ensureRunner(conversation)
+      const runner = await this.pool.ensure(conversation)
       const compacted = await runner.compact()
-      if (compacted) this.touch(conversationId)
+      if (compacted) this.pool.touch(conversationId)
       return compacted
     } finally {
       release()
@@ -925,7 +674,7 @@ export class SessionManager {
   }
 
   async interrupt(conversationId: string): Promise<void> {
-    if (this.cancelDelivery(conversationId, 'interrupt')) {
+    if (this.delivery.cancel(conversationId, 'interrupt')) {
       // Idle now, though the queue waits for `deliver` to let go of the conversation.
       this.setStatus(conversationId, 'idle')
       return
@@ -944,7 +693,7 @@ export class SessionManager {
       // A CLI that is already gone rejects the interrupt (Claude SDK: "Query closed before response
       // received"). Stop is still honoured: drop the runner and close the turn ourselves.
       console.warn(`[sessions] interrupt of ${conversationId} failed, stopping its runner`, err)
-      await this.stopRunner(conversationId)
+      await this.pool.stop(conversationId)
       closeOpenTurn(this.log, conversationId, 'interrupted')
       this.setStatus(conversationId, 'idle')
     }
@@ -953,15 +702,15 @@ export class SessionManager {
   /** Permanently stops unwatched conversations: turn, process, background work and loops. `interrupt` alone leaves CLI-hosted work alive indefinitely, unsuitable for overlong scheduled runs. */
   async terminate(conversationId: string): Promise<void> {
     // A CLI still starting has no turn to interrupt: stopping it is enough, and `deliver` will not hand it the message.
-    const starting = this.cancelDelivery(conversationId, 'terminate')
+    const starting = this.delivery.cancel(conversationId, 'terminate')
     const managed = this.runners.get(conversationId)
     if (managed && starting) {
       expireOpenPrompts(this.log, conversationId)
-      await this.stopRunner(conversationId)
+      await this.pool.stop(conversationId)
     } else if (managed) {
       await managed.runner.interrupt().catch(() => undefined)
       expireOpenPrompts(this.log, conversationId)
-      await this.stopRunner(conversationId)
+      await this.pool.stop(conversationId)
     }
     // CLIs may die before announcing turn completion.
     const { status } = this.loadConversation(conversationId)
@@ -972,7 +721,7 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
     const resolved = managed.runner.resolvePermission(requestId, decision)
-    if (resolved) this.touch(conversationId)
+    if (resolved) this.pool.touch(conversationId)
     return resolved
   }
 
@@ -980,7 +729,7 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
     const answered = await managed.runner.answerQuestion(requestId, answer)
-    if (answered) this.touch(conversationId)
+    if (answered) this.pool.touch(conversationId)
     return answered
   }
 
@@ -992,7 +741,7 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
     const resolved = managed.runner.resolveElicitation(requestId, answer)
-    if (resolved) this.touch(conversationId)
+    if (resolved) this.pool.touch(conversationId)
     return resolved
   }
 
@@ -1000,7 +749,7 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return false
     const reviewed = managed.runner.reviewPlan(requestId, review)
-    if (reviewed) this.touch(conversationId)
+    if (reviewed) this.pool.touch(conversationId)
     return reviewed
   }
 
@@ -1039,157 +788,32 @@ export class SessionManager {
     adoptSessionTitle(this.db, this.statusBus, conversationId, title, 'cli')
   }
 
-  /** Applies reread database configuration. SDK live model, effort and permission updates preserve context; stop and resume only on CLI rejection. Known exception: Claude `bypassPermissions` changes require startup in both directions. Entering explicitly fails ('the session was not launched with --dangerously-skip-permissions'); leaving apparently succeeds but is ineffective, so runners reject explicitly. Delay restart until turn completion to avoid losing ongoing work for future settings. */
+  /** Applies reread database configuration; see `LiveConfig.reload`. */
   async reloadConfig(conversationId: string): Promise<void> {
-    const managed = this.runners.get(conversationId)
-    if (!managed) return
-
-    const conversation = this.loadConversation(conversationId)
-    const config = parseAgentConfig(conversation.config)
-
-    let applied = false
-    let reason: string | null = null
-    try {
-      applied = await managed.runner.applyConfig(config)
-      if (!applied) reason = 'the CLI cannot apply this change live'
-    } catch (err) {
-      reason = err instanceof Error ? err.message : String(err)
-    }
-    if (applied) {
-      // Returning settings to live-applicable values cancels promised restarts:
-      // otherwise sessions would restart needlessly after turns.
-      managed.pendingRestart = null
-      return
-    }
-
-    if (this.isBusy(conversationId)) {
-      managed.pendingRestart = reason
-      this.log.append(conversationId, {
-        type: 'error',
-        code: 'config_restart_deferred',
-        message: 'This setting requires restarting the session: it will take effect at the end of the turn.',
-        recoverable: true,
-      })
-      return
-    }
-
-    await this.restartForConfig(conversationId, reason)
+    await this.liveConfig.reload(conversationId)
   }
 
-  /**
-   * Retries one failed MCP server in an open session. Allowed mid-turn, unlike compaction: the
-   * agent itself often starts the dependency and needs the tools before the turn ends. A cold
-   * conversation has nothing to reconnect, its next start connects everything anew.
-   */
+  /** Retries one failed MCP server in an open session; see `LiveConfig.reconnectMcpServer`. */
   async reconnectMcpServer(conversationId: string, name: string): Promise<boolean> {
-    const managed = this.runners.get(conversationId)
-    if (!managed) {
-      throw new HttpError(409, 'conversation_cold', 'The session is not running: its next message reconnects every server.')
-    }
-    try {
-      return await managed.runner.reconnectMcpServer(name)
-    } catch (err) {
-      if (err instanceof HttpError) throw err
-      // The CLI's own words (ECONNREFUSED, 401…) tell the user what to fix; a generic 500 would hide them.
-      throw new HttpError(502, 'mcp_reconnect_failed', err instanceof Error ? err.message : String(err))
-    }
+    return this.liveConfig.reconnectMcpServer(conversationId, name)
   }
 
-  /** Reloads skills in affected open sessions: all for global scope (`null`), project sessions otherwise. Fire and forget without failure: writes already succeeded and unsuccessful reloads apply on next resume. */
+  /** Reloads skills in affected open sessions; see `LiveConfig.reloadSkillLibrary`. */
   reloadSkillLibrary(projectId: string | null): void {
-    for (const [conversationId, managed] of this.runners) {
-      if (projectId !== null) {
-        const row = this.db
-          .select({ projectId: conversations.projectId })
-          .from(conversations)
-          .where(eq(conversations.id, conversationId))
-          .get()
-        if (row?.projectId !== projectId) continue
-      }
-      managed.runner.reloadSkillLibrary().catch((err: unknown) => {
-        process.stderr.write(
-          `[skills ${conversationId}] rechargement impossible : ${err instanceof Error ? err.message : String(err)}\n`,
-        )
-      })
-    }
+    this.liveConfig.reloadSkillLibrary(projectId)
   }
 
-  /** Reapplies configuration in open sessions using an edited or deleted registry server: those selecting it, and every open session of the project it is scoped to, since project servers apply without selection. Runners compare resolved servers, so an unchanged ID list with a new URL or token still reconnects; restarts wait for turn ends like any setting change. `formerProjectId` covers the sessions a deletion or a move takes the server from, which the row no longer names. Fire and forget: the write already succeeded. */
+  /** Reapplies configuration in open sessions using an edited or deleted registry server; see `LiveConfig.reloadMcpServer`. */
   reloadMcpServer(serverId: string, formerProjectId: string | null = null): void {
-    const scopedProject = this.db.select({ projectId: mcpServers.projectId }).from(mcpServers).where(eq(mcpServers.id, serverId)).get()?.projectId ?? null
-    for (const conversationId of this.runners.keys()) {
-      const row = this.db
-        .select({ config: conversations.config, projectId: conversations.projectId })
-        .from(conversations)
-        .where(eq(conversations.id, conversationId))
-        .get()
-      if (!row) continue
-      const concerned = parseAgentConfig(row.config).mcpServers.includes(serverId)
-        || (row.projectId !== null && (row.projectId === scopedProject || row.projectId === formerProjectId))
-      if (!concerned) continue
-      this.reloadConfig(conversationId).catch((err: unknown) => {
-        process.stderr.write(
-          `[mcp ${conversationId}] reconfiguration failed: ${err instanceof Error ? err.message : String(err)}\n`,
-        )
-      })
-    }
-  }
-
-  /** Stops runners to reload current configuration. Explain fallback in conversations because reloading context has real cost users should understand. */
-  private async restartForConfig(conversationId: string, reason: string | null): Promise<void> {
-    // Queues survive: the next send finds them, and `deliver` starts fresh runners
-    // with current configuration. Expiring messages would lose them
-    // for restarts that otherwise lose nothing.
-    await this.stopRunner(conversationId, { keepQueue: true })
-    this.log.append(conversationId, {
-      type: 'error',
-      code: 'config_applied_by_restart',
-      message: `Settings applied by restarting the session (${reason ?? 'no reason given'}).`,
-      recoverable: true,
-    })
-    this.setStatus(conversationId, 'idle')
+    this.liveConfig.reloadMcpServer(serverId, formerProjectId)
   }
 
   /** Stops running conversation runners and reports release. Transcript resynchronization needs this because warm context ignores external CLI turns, while resume loads complete files. Refuse active turns: although callers check before reading, turns may start meanwhile; interruption loses work and adds `[Request interrupted by user]` messages later reimported. Live activity takes precedence. */
   async releaseRunner(conversationId: string): Promise<boolean> {
     if (this.isBusy(conversationId) || this.phase(conversationId) === 'starting') return false
 
-    await this.stopRunner(conversationId)
+    await this.pool.stop(conversationId)
     return true
-  }
-
-  /** `keepQueue` preserves queues for intentional restarts immediately followed by fresh runners. Other stops are final. */
-  private async stopRunner(
-    conversationId: string,
-    { keepQueue = false }: { keepQueue?: boolean } = {},
-  ): Promise<void> {
-    const managed = this.runners.get(conversationId)
-    if (!managed) return
-
-    // Pending messages cannot depart after runner shutdown: leaving them queued
-    // would silently lose them at the next message.
-    if (!keepQueue) this.queue.expire(conversationId)
-
-    this.runners.delete(conversationId)
-    this.usage?.forget(conversationId)
-    clearActivity(this.db, conversationId)
-    if (managed.idleTimer) clearTimeout(managed.idleTimer)
-    try {
-      await managed.runner.stop()
-    } catch (err) {
-      // The rest still has to run: background work closed in the journal, cold status announced.
-      console.error(`sillage: stopping the runner of ${conversationId} failed`, err)
-    }
-    // After shutdown, CLIs can no longer overwrite our final list;
-    // synchronous writes persist even when daemon shutdown
-    // follows immediately.
-    closeDetachedWork(this.log, conversationId, managed.loops > 0)
-
-    // Runner expiry does not change status: broadcast cold state or interfaces
-    // would keep showing nonexistent warm sessions. Unless a successor already serves the
-    // conversation (a configuration restart, a project move): it owns the status now.
-    if (this.runners.has(conversationId)) return
-    this.broadcastStatus(conversationId, managed.status, false)
   }
 
   /**
@@ -1217,7 +841,7 @@ export class SessionManager {
         console.error(`sillage: closing the turn of ${conversationId} failed`, err)
       }
     }
-    await Promise.allSettled([...this.runners.keys()].map((id) => this.stopRunner(id)))
+    await Promise.allSettled([...this.runners.keys()].map((id) => this.pool.stop(id)))
   }
 
   private assertOpen(): void {
