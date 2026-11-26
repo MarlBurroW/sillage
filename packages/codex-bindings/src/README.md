@@ -13,6 +13,6 @@ discovered in production.
 `pnpm codex:types:check` regenerates into a temporary directory and fails if the
 result differs from committed content. This flags a Codex version bump to address.
 
-Generated with **codex-cli 0.169.0**. Any protocol value used elsewhere in Sillage
+Generated with **codex-cli 0.172.0**. Any protocol value used elsewhere in Sillage
 (approval modes, sandbox, effort levels) must derive from these types, never be
 copied manually.

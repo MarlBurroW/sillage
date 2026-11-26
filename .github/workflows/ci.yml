@@ -29,7 +29,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Same version as checked bindings; updates are handled explicitly.
-      - run: npm install --global @openai/codex@0.169.0
+      - run: npm install --global @openai/codex@0.172.0
       - run: pnpm codex:types:check
       # Likewise for OpenCode: script starts disposable `opencode serve` to read OpenAPI.
       - run: npm install --global opencode-ai@1.19.5

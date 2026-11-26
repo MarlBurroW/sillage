@@ -96,4 +96,6 @@ export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore'
   'thread/attachment/updated': 'ignore',
   // Thread continuation prediction (0.162) provides nothing to display.
   'thread/prediction/updated': 'ignore',
+  // Partial results of thread/search/stream (0.171), a method Sillage never calls.
+  'thread/search/partial': 'ignore',
 } satisfies Record<ServerNotification['method'], 'handled' | 'notice' | 'ignore'>
