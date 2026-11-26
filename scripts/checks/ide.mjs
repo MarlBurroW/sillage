@@ -81,7 +81,10 @@ export async function checkIde({ page, context, base, project }) {
   const full = await panel.boundingBox()
   assert.equal(Math.round(full.x), 0)
   assert.equal(Math.round(full.height), 900)
-  await panel.getByText('Nimbus · workspace', { exact: true }).waitFor()
+  // Full screen still names the workspace being edited. On the Files tab that subtitle became the
+  // folder switcher in 88ef87da0 (projects can attach extra folders), which names the folder shown.
+  const workspaceFolder = project.workspacePath.split(/[\\/]/).filter(Boolean).at(-1)
+  await panel.getByRole('button', { name: `Changer de dossier · ${workspaceFolder}`, exact: true }).waitFor()
   assert.equal(await code.evaluate(node => node === window.ideCodeNode), true)
   await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).focus()
   for (let i = 0; i < 8; i++) {

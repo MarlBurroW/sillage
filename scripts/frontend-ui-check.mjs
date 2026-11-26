@@ -378,9 +378,15 @@ try {
   const unreadEntry = all.find((entry) => !entry.archivedAt && !entry.scheduleId && entry.lastNotableSeq > entry.lastReadSeq)
   assert.ok(unreadEntry)
   const unreadLink = activity.getByRole('region', { name: 'Non lues', exact: true }).locator(`[data-sidebar-session="${unreadEntry.id}"] .sidebar-session-link`)
+  // Beside the wall (desktop), a row brings its tile forward rather than leaving the space
+  // (e76c4aa54): the focused tile reads the session, and its title opens the conversation.
   await unreadLink.click()
-  await page.waitForURL(`**/c/${unreadEntry.id}`)
+  await page.waitForURL(`**/wall?show=unread&tile=${unreadEntry.id}`)
+  const unreadTile = page.locator(`article.wall-tile-focused[data-conversation-id="${unreadEntry.id}"]`)
+  await unreadTile.waitFor()
   await unreadLink.waitFor({ state: 'hidden' })
+  await unreadTile.locator('a.wall-tile-title').click()
+  await page.waitForURL(`**/c/${unreadEntry.id}`)
   console.log('OK : activité en direct, travaux de fond, lecture et retour aux projets.')
 
   // Resume cannot cross accounts or enter a now-inaccessible project.
