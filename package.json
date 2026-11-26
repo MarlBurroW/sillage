@@ -12,7 +12,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @sillage/server test",
+    "test": "pnpm --filter @sillage/server --filter @sillage/web test",
     "test:api-mcp-ui": "node scripts/api-mcp-ui-check.mjs",
     "test:agent-tools-ui": "node scripts/agent-tools-ui-check.mjs",
     "test:agent-browser": "node scripts/agent-browser-check.mjs",
