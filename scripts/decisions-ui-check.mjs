@@ -101,7 +101,12 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('heading', { name: 'Board' }).waitFor()
-  assert.equal(await page.getByRole('region', { name: 'À décider' }).count(), 0, 'No section without pending decisions')
+  // Pending decisions live in the Activity column since the rail navigation (7e731f4d0), as rows of
+  // its "awaiting" section; that section only exists while something waits.
+  await page.locator('[data-nav-space="activity"]').click()
+  const section = page.locator('[data-activity-section="awaiting"]')
+  await page.locator('[data-nav-activity]').waitFor()
+  assert.equal(await section.count(), 0, 'No awaiting section without pending decisions')
 
   // Session asks: toast and section appear without reload.
   ask({
@@ -112,7 +117,6 @@ try {
   })
   const toast = page.getByRole('region', { name: 'Notifications' })
   await toast.getByText('Monter vite en 7.0 maintenant ?').waitFor({ timeout: 15000 })
-  const section = page.getByRole('region', { name: 'À décider' })
   await section.getByText('Monter vite en 7.0 maintenant ?').waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ path: join(shots, 'decisions-toast.png') })
