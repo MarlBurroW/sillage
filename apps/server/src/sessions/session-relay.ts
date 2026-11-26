@@ -133,7 +133,7 @@ export class SessionRelay {
 
   private async attempt(message: SessionMessageRow, force: boolean): Promise<void> {
     const outcome = await this.deliver(message, force).catch((err: unknown): Outcome => {
-      this.logger?.warn({ err, message: message.id }, 'message entre sessions non remis')
+      this.logger?.warn({ err, message: message.id }, 'session message not delivered')
       return { via: 'failed' }
     })
 

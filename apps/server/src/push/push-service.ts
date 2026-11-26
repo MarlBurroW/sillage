@@ -233,7 +233,7 @@ export class PushService {
           }
           // Messages matter as much as status: unreachable endpoints and rejected
           // content require different diagnoses.
-          this.log.warn({ status, endpoint: row.endpoint, cause: reason }, 'notification push non delivree')
+          this.log.warn({ status, endpoint: row.endpoint, cause: reason }, 'push notification not delivered')
           return { endpoint: row.endpoint, service, outcome: 'failed', status, reason }
         }
       }),

@@ -426,15 +426,17 @@ export class SessionManager {
     conversationId: string,
     queueId: string,
   ): Promise<'steered' | 'gone' | 'unavailable'> {
-    if (!this.queue.contains(conversationId, queueId)) return 'gone'
+    const queued = this.queue.peek(conversationId, queueId)
+    if (!queued) return 'gone'
 
     const managed = this.runners.get(conversationId)
     if (!managed) return 'unavailable'
 
-    const { entry, restore } = this.queue.take(conversationId, queueId)!
-
+    // Resolve before taking the entry out: a throw here must leave the message in the queue, since
+    // only the steer call below puts it back on failure.
     const conversation = this.loadConversation(conversationId)
-    const resolved = this.resolveMentions(this.resolveCwd(conversation), entry.mentions)
+    const resolved = this.resolveMentions(this.resolveCwd(conversation), queued.mentions)
+    const { entry, restore } = this.queue.take(conversationId, queueId)!
 
     let steered = false
     try {
@@ -585,12 +587,13 @@ export class SessionManager {
     await this.turnCheckpoints.open(conversation)
   }
 
-  /** Restores pre-turn workspace state. Reject during active turns to avoid racing agent writes. Serialize with Git tab actions on the same repository. Agents still remember the turn; adjacent fork actions also rewind conversation context. */
   /**
    * Restores the workspace to its state before a turn, or with `undo` puts it back as it was just
    * before the turn's last restoration. Either way the current state is captured first: a
    * restoration rewrites the whole directory, including work made since by the user or another
-   * session, and nothing else would keep it.
+   * session, and nothing else would keep it. Refused during an active turn, which would race the
+   * agent's writes, and serialized with Git tab actions on the same repository. The agent still
+   * remembers the turn; the adjacent fork actions also rewind the conversation's context.
    */
   async restoreCheckpoint(
     conversationId: string,

@@ -76,7 +76,7 @@ export class Scheduler {
       log.debug({ job: job.name, ms: Date.now() - startedAt }, 'tache planifiee terminee')
     } catch (err) {
       // Catch here so failing jobs affect neither the process nor other jobs.
-      log.error({ job: job.name, err }, 'tache planifiee en echec')
+      log.error({ job: job.name, err }, 'scheduled job failed')
     }
   }
 }

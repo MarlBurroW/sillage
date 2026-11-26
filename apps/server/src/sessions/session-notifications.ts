@@ -13,8 +13,7 @@ const NOTIFIABLE: Partial<Record<SillageEvent['type'], string>> = {
   'turn.completed': "L'agent a terminé",
 }
 
-/** Notification-layer contract without depending on its implementation. */
-/** Notification routing (`notifications/dispatcher.ts`) as viewed here. */
+/** Notification routing (`notifications/dispatcher.ts`) as viewed here, without depending on its implementation. */
 export interface ConversationNotifier {
   dispatch(userId: string, notification: OutgoingNotification): Promise<void>
 }
@@ -98,7 +97,7 @@ export async function notifyIfAway(
     // Lost notifications are not conversation failures, but swallowing them
     // silently would prevent diagnosis.
     process.stderr.write(
-      `[push] notification non emise pour ${conversationId} : ${
+      `[push] notification not sent for ${conversationId}: ${
         err instanceof Error ? err.message : String(err)
       }\n`,
     )

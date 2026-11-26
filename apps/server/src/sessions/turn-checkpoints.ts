@@ -76,7 +76,7 @@ export class TurnCheckpoints {
       () => true,
       (err: unknown) => {
         if (!(err instanceof CheckpointError && err.code === 'checkpoint_not_repository')) {
-          console.warn(`[checkpoints] capture avant le tour impossible (${conversation.id}) :`, err)
+          console.warn(`[checkpoints] could not capture before the turn (${conversation.id}):`, err)
         }
         return false
       },
@@ -147,7 +147,7 @@ export class TurnCheckpoints {
       }
     })().catch((err: unknown) => {
       // Conversations may disappear during capture, leaving no journal to write.
-      console.warn(`[checkpoints] capture après le tour perdue (${conversationId}) :`, err)
+      console.warn(`[checkpoints] capture after the turn lost (${conversationId}):`, err)
     })
   }
 
@@ -186,7 +186,7 @@ export class TurnCheckpoints {
     try {
       await copyCheckpoints(this.workingDirectory(toId), fromId, toId)
     } catch (err) {
-      console.warn(`[checkpoints] copie au fork impossible (${fromId} -> ${toId}) :`, err)
+      console.warn(`[checkpoints] could not copy on fork (${fromId} -> ${toId}):`, err)
     }
   }
 
@@ -196,7 +196,7 @@ export class TurnCheckpoints {
     try {
       await deleteCheckpoints(this.workingDirectory(conversationId), conversationId)
     } catch (err) {
-      console.warn(`[checkpoints] nettoyage impossible (${conversationId}) :`, err)
+      console.warn(`[checkpoints] could not clean up (${conversationId}):`, err)
     }
   }
 }

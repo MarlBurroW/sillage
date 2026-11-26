@@ -80,7 +80,7 @@ export class TaskScheduler {
       await this.fireDue(now)
       await this.drainWebhooks()
     } catch (err) {
-      this.logger?.error({ err }, 'balayage des tâches planifiées en échec')
+      this.logger?.error({ err }, 'scheduled task sweep failed')
     } finally {
       this.busy = false
     }
@@ -277,7 +277,7 @@ export class TaskScheduler {
       const error = `Lancement impossible : ${err instanceof Error ? err.message : String(err)}`
       update({ status: 'failed', finishedAt: Date.now(), error })
       this.announceFailure(task.id, run.id, error)
-      this.logger?.warn({ err, task: task.id }, 'tir planifié en échec à la vérification')
+      this.logger?.warn({ err, task: task.id }, 'scheduled run failed at its check')
     } finally {
       this.firing.delete(task.id)
     }
@@ -376,7 +376,7 @@ export class TaskScheduler {
       run.status = 'failed'
       run.finishedAt = Date.now()
       run.error = `Lancement impossible : ${err instanceof Error ? err.message : String(err)}`
-      this.logger?.warn({ err, task: task.id }, 'tir planifié en échec au lancement')
+      this.logger?.warn({ err, task: task.id }, 'scheduled run failed to launch')
     } finally {
       this.firing.delete(task.id)
     }

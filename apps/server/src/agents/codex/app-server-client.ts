@@ -116,7 +116,7 @@ export class CodexAppServerClient {
     } catch {
       // CLI startup occasionally writes non-JSON stdout lines. Ignoring them
       // silently could hide actual protocol issues, so report them.
-      process.stderr.write(`[codex] ligne non JSON ignorée : ${line.slice(0, 200)}\n`)
+      process.stderr.write(`[codex] ignored non-JSON line: ${line.slice(0, 200)}\n`)
       return
     }
 

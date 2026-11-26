@@ -325,7 +325,7 @@ export class DecisionService {
         .all()
       for (const row of late) await this.deliver(row)
     } catch (err) {
-      this.logger?.warn({ err }, 'passage des décisions en échec')
+      this.logger?.warn({ err }, 'decision sweep failed')
     } finally {
       this.ticking = false
     }
@@ -351,7 +351,7 @@ export class DecisionService {
         await this.sessions.sendMessage(row.conversationId, randomUUID(), this.message(row))
       } catch (err) {
         // Retry delivery next pass; decisions themselves are already resolved.
-        this.logger?.warn({ err, decision: row.id }, 'réponse de décision non remise')
+        this.logger?.warn({ err, decision: row.id }, 'decision answer not delivered')
         return
       }
     }
@@ -427,7 +427,7 @@ export class DecisionService {
           projectName: project?.name ?? '',
         },
       })
-      .catch((err: unknown) => this.logger?.warn({ err, decision: row.id }, 'notification de décision non émise'))
+      .catch((err: unknown) => this.logger?.warn({ err, decision: row.id }, 'decision notification not sent'))
   }
 
   private toDtos(rows: DecisionRow[]): DecisionDto[] {

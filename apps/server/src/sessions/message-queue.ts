@@ -80,9 +80,9 @@ export class MessageQueue {
     }
   }
 
-  /** Whether a message is queued, without touching it. */
-  contains(conversationId: string, queueId: string): boolean {
-    return this.queues.get(conversationId)?.some((item) => item.queueId === queueId) ?? false
+  /** A queued message, without touching the queue. */
+  peek(conversationId: string, queueId: string): QueuedMessage | null {
+    return this.queues.get(conversationId)?.find((item) => item.queueId === queueId) ?? null
   }
 
   /** Removes queued messages before sending. */

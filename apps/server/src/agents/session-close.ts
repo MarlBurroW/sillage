@@ -9,6 +9,6 @@ export function journalDeath(ctx: Pick<RunnerContext, 'emit'>, error: ErrorEvent
     if (error) ctx.emit(error)
     ctx.emit({ type: 'session.ended', reason: 'interrupted' })
   } catch (err) {
-    console.error('sillage: fin de session non journalisée', err)
+    console.error('sillage: session end not journaled', err)
   }
 }

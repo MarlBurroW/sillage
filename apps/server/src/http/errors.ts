@@ -101,7 +101,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
         .send({ error: { code: err.code ?? 'bad_request', message: err.message } })
     }
 
-    request.log.error({ err }, 'erreur non gérée')
+    request.log.error({ err }, 'unhandled error')
     return reply
       .status(500)
       .send({ error: { code: 'internal_error', message: 'Erreur interne du serveur.' } })

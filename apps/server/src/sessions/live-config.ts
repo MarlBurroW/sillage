@@ -91,7 +91,7 @@ export class LiveConfig {
       }
       managed.runner.reloadSkillLibrary().catch((err: unknown) => {
         process.stderr.write(
-          `[skills ${conversationId}] rechargement impossible : ${err instanceof Error ? err.message : String(err)}\n`,
+          `[skills ${conversationId}] reload failed: ${err instanceof Error ? err.message : String(err)}\n`,
         )
       })
     }

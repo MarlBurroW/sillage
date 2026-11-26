@@ -330,7 +330,7 @@ export class BoardSync {
           .run()
       } catch (err) {
         const code = err instanceof BoardGitHubError ? err.code : 'board_github_unreachable'
-        if (!(err instanceof BoardGitHubError)) this.logger?.warn({ err, projectId }, 'synchronisation du board en échec')
+        if (!(err instanceof BoardGitHubError)) this.logger?.warn({ err, projectId }, 'board sync failed')
         // A refused token or a rate limit fails every request alike: retrying each tick would
         // only extend the limit. Wait as long as GitHub asks, or until the next pull.
         if (err instanceof BoardGitHubError && err.scope === 'link' && (err.retryAfterMs !== null || !err.transient)) {
@@ -623,7 +623,7 @@ export class BoardSync {
       try {
         if ((await this.responder!.respond(event)) === 'limited') notice = 'board_maintenance_rate_limited'
       } catch (err) {
-        this.logger?.warn({ err, issue: event.issue.number }, 'session de maintenance impossible à lancer')
+        this.logger?.warn({ err, issue: event.issue.number }, 'could not start the maintenance session')
         notice = 'board_maintenance_failed'
       }
     }

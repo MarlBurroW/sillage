@@ -232,7 +232,7 @@ export class OpencodeServer<E = Event> {
         try {
           event = JSON.parse(data) as E
         } catch {
-          process.stderr.write(`[opencode] trame SSE illisible ignorée : ${data.slice(0, 200)}\n`)
+          process.stderr.write(`[opencode] ignored unreadable SSE frame: ${data.slice(0, 200)}\n`)
           continue
         }
         onFrame()

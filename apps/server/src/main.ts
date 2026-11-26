@@ -247,12 +247,12 @@ async function main(): Promise<void> {
     const workspaces = db.select({ path: projects.workspacePath }).from(projects).all().map((row) => row.path)
     upgradeCredentialHelpers(workspaces, config.paths)
       .then((upgraded) => {
-        if (upgraded.length > 0) app.log.info({ repos: upgraded }, 'helper git des depots clones mis a jour')
+        if (upgraded.length > 0) app.log.info({ repos: upgraded }, 'git helper of cloned repositories updated')
       })
-      .catch((err: unknown) => app.log.warn({ err }, 'mise a jour du helper git des depots impossible'))
+      .catch((err: unknown) => app.log.warn({ err }, 'could not update the git helper of repositories'))
   } catch (err) {
     // Incomplete installations without `.mjs` still serve without helpers.
-    app.log.warn({ err }, 'lanceur du helper git non installe')
+    app.log.warn({ err }, 'git helper launcher not installed')
   }
 
   // Shutdown requests may overlap (signals followed by desktop closing stdin):
@@ -261,7 +261,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string, code = 0) => {
     if (stopping) return
     stopping = true
-    app.log.info({ signal }, 'arrêt en cours')
+    app.log.info({ signal }, 'shutting down')
     // A step that hangs (a client socket that never closes, a CLI that ignores its signal) must
     // not keep the process alive until systemd kills it: the Desktop launcher gives it 15 s.
     setTimeout(() => {
@@ -274,7 +274,7 @@ async function main(): Promise<void> {
       try {
         await run()
       } catch (err) {
-        app.log.error({ err, step: name }, 'étape d’arrêt en échec')
+        app.log.error({ err, step: name }, 'shutdown step failed')
       }
     }
     // Before stopAll expires requests: statuses still identify in-flight work,

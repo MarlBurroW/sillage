@@ -130,7 +130,7 @@ export class WorktreeStatusService {
           for (const listener of this.listeners) {
             void Promise.resolve()
               .then(() => listener(project, value))
-              .catch((err: unknown) => console.warn('[worktrees] abonné en échec :', err))
+              .catch((err: unknown) => console.warn('[worktrees] subscriber failed:', err))
           }
           return value
         })

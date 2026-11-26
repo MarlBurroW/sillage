@@ -47,7 +47,7 @@ export function registerMaintenanceJobs(
       // settings are editable through the interface, and deferring changes until restart
       // would defeat that purpose.
       const archived = runArchivePass(deps.db, deps.config)
-      if (archived) deps.log.info({ archived }, 'conversations rangees pour inactivite')
+      if (archived) deps.log.info({ archived }, 'conversations archived for inactivity')
     },
   })
 }

@@ -195,7 +195,7 @@ export class AutomationReceiver {
     const now = Date.now()
     this.ctx.db.update(automationWebhooks).set({ trippedAt: now }).where(eq(automationWebhooks.taskId, hook.taskId)).run()
     this.ctx.db.update(scheduledTasks).set({ enabled: false, updatedAt: now }).where(eq(scheduledTasks.id, task.id)).run()
-    this.logger?.warn({ task: task.id }, 'disjoncteur d’automatisation déclenché')
+    this.logger?.warn({ task: task.id }, 'automation circuit breaker tripped')
     void this.push
       .notify(task.userId, {
         title: `Automatisation en pause : ${task.name}`,
@@ -203,6 +203,6 @@ export class AutomationReceiver {
         url: `/p/${task.projectId}/schedules`,
         tag: `automation-${task.id}`,
       })
-      .catch((err: unknown) => this.logger?.warn({ err }, 'notification du disjoncteur en échec'))
+      .catch((err: unknown) => this.logger?.warn({ err }, 'circuit breaker notification failed'))
   }
 }
