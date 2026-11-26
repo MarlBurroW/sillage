@@ -266,6 +266,11 @@ export class AgentRequests {
       if (!request.projectId) throw new Refusal('Select a target project for this action.')
       const project = this.ctx.db.select().from(projects).where(eq(projects.id, request.projectId)).get()
       if (!project || (project.ownerId !== userId && project.visibility !== 'shared')) throw new Refusal('The target project is unavailable to this account.')
+      // An archived project is dormant: the scheduler, automations and the API leave it alone, and
+      // so do other sessions. A session inside it keeps working there, since archiving did not stop it.
+      if (project.archivedAt !== null && conversation?.projectId !== project.id) {
+        throw new Refusal(`Project “${project.name}” is archived. The user can unarchive it in Sillage before you act on it.`)
+      }
       const requester: Requester = conversation
         ? {
             ...conversation,

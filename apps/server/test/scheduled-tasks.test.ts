@@ -378,6 +378,18 @@ test('schedule_task creates a task from a session, within the agent guard rails'
   assert.match(selfReplicating.content[0]!.text, /itself a scheduled run/)
 
   assert.equal(db.select().from(scheduledTasks).all().length, 1)
+
+  // The cap bounds what agents add: tasks the user created never lock agents out (card #117).
+  const template = db.select().from(scheduledTasks).get()!
+  for (let i = 0; i < 20; i++) {
+    db.insert(scheduledTasks).values({ ...template, id: `ui-${i}`, name: `UI ${i}`, createdByConversationId: null }).run()
+  }
+  const beside = await mcp('parent', { name: 'Beside the user', prompt: 'x', every_minutes: 60 })
+  assert.equal(beside.isError, undefined, beside.content[0]?.text)
+  db.update(scheduledTasks).set({ createdByConversationId: 'parent' }).run()
+  const capped = await mcp('parent', { name: 'One too many', prompt: 'x', every_minutes: 60 })
+  assert.equal(capped.isError, true)
+  assert.match(capped.content[0]!.text, /agents already created 20/)
 })
 
 test('runCheck turns the exit code into a verdict and keeps the output', async (t) => {

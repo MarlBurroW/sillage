@@ -59,7 +59,8 @@ export class ActionRequests {
     const row = this.projectAction(requester, payload.id)
     await this.actions?.forget(row)
     deleteAction(this.ctx.db, row.id)
-    return `Action “${row.label}” deleted${row.kind === 'service' ? ', and its service stopped' : ''}.`
+    // Without a runner nothing could have started the service, so there is nothing to claim stopped.
+    return `Action “${row.label}” deleted${row.kind === 'service' && this.actions ? ', and its service stopped' : ''}.`
   }
 
   /** Runs actions in requester worktrees, even proposed actions: agents could run identical shell commands already. Review protects user clicks rather than agents from themselves. */

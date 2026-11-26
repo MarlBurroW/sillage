@@ -1,5 +1,5 @@
 import { Cron } from 'croner'
-import { count, eq } from 'drizzle-orm'
+import { and, count, eq, isNotNull } from 'drizzle-orm'
 import { scheduledTasks, type ProjectRow } from '@sillage/db'
 import {
   AUTOMATION_TEMPLATES,
@@ -42,6 +42,23 @@ export class ScheduleRequests {
     private readonly encryptionKey?: Buffer,
   ) {}
 
+  /**
+   * Tasks counted against the agents' cap. The cap bounds what agents add on their own, so a
+   * session only counts tasks some session created (`createdByConversationId`): the user's own
+   * tasks must not lock agents out. A sessionless caller (API token) cannot be told apart from the
+   * UI in that column, so it keeps counting every task of the project.
+   */
+  private agentScheduleCount(requester: Requester, projectId: string): number {
+    const [row] = this.ctx.db
+      .select({ total: count() })
+      .from(scheduledTasks)
+      .where(requester.id
+        ? and(eq(scheduledTasks.projectId, projectId), isNotNull(scheduledTasks.createdByConversationId))
+        : eq(scheduledTasks.projectId, projectId))
+      .all()
+    return row?.total ?? 0
+  }
+
   // --- schedule_task -------------------------------------------------------------
 
   /** Creates scheduled tasks like interface forms. Model/effort choices remain available but permissions retain project defaults, especially important for unattended runs. Responses repeat them so agents can inform users. */
@@ -69,14 +86,10 @@ export class ScheduleRequests {
       )
     }
 
-    const [existing] = this.ctx.db
-      .select({ total: count() })
-      .from(scheduledTasks)
-      .where(eq(scheduledTasks.projectId, project.id))
-      .all()
-    if ((existing?.total ?? 0) >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
+    const existing = this.agentScheduleCount(requester, project.id)
+    if (existing >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
       throw new Refusal(
-        `Refused: this project already has ${MAX_AGENT_SCHEDULES_PER_PROJECT} scheduled tasks. The user can remove some in Scheduling.`,
+        `Refused: agents already created ${MAX_AGENT_SCHEDULES_PER_PROJECT} scheduled tasks and automations in this project. The user can remove some in Scheduling.`,
       )
     }
 
@@ -187,13 +200,9 @@ export class ScheduleRequests {
       settings.verification = chosen
     }
 
-    const [existing] = this.ctx.db
-      .select({ total: count() })
-      .from(scheduledTasks)
-      .where(eq(scheduledTasks.projectId, project.id))
-      .all()
-    if ((existing?.total ?? 0) >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
-      throw new Refusal(`Refused: this project already has ${MAX_AGENT_SCHEDULES_PER_PROJECT} automations and scheduled tasks.`)
+    const existing = this.agentScheduleCount(requester, project.id)
+    if (existing >= MAX_AGENT_SCHEDULES_PER_PROJECT) {
+      throw new Refusal(`Refused: agents already created ${MAX_AGENT_SCHEDULES_PER_PROJECT} scheduled tasks and automations in this project. The user can remove some in Scheduling.`)
     }
 
     const agent = this.configs.parseAgent(payload.agent, requester.agent)

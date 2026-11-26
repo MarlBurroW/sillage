@@ -725,6 +725,25 @@ test('a project session acts on another project only once its project allows it'
   assert.match(out(await mcp('self', 'list_sessions', { project: 'Other' })), /Act on my other projects/)
 })
 
+test('the daemon refuses an archived project to other sessions, even without the MCP check', async (t) => {
+  const { db, dir, conversation, requests, mcp } = await harness(t)
+  conversation('self')
+  db.insert(projects).values({ id: 'other', name: 'Other', workspacePath: dir, ownerId: 'owner', visibility: 'private', archivedAt: 1, createdAt: 1 }).run()
+  db.update(projects).set({ crossProjects: true }).where(eq(projects.id, 'project')).run()
+  // The MCP already hides archived projects by name; a request naming one reaches the daemon
+  // when written straight to the queue. Archived reads as dormant, as for the scheduler (card #117).
+  db.insert(agentRequests).values({ id: 'forged', projectId: 'other', conversationId: 'self', userId: 'owner', kind: 'start_session', payload: JSON.stringify({ prompt: 'x' }), createdAt: Date.now() }).run()
+  await requests.sweep()
+  const row = db.select().from(agentRequests).where(eq(agentRequests.id, 'forged')).get()!
+  assert.equal(row.isError, true)
+  assert.match(row.result ?? '', /Project “Other” is archived/)
+
+  // A session already inside an archived project carries on there.
+  db.update(projects).set({ archivedAt: 1 }).where(eq(projects.id, 'project')).run()
+  const own = await mcp('self', 'start_session', { prompt: 'Keep going.' })
+  assert.equal(own.isError, undefined, own.content[0]?.text)
+})
+
 test('the daemon refuses a cross-project request when the setting is off, even without the MCP check', async (t) => {
   const { db, dir, conversation, requests } = await harness(t)
   conversation('self')
