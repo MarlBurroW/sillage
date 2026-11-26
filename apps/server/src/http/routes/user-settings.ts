@@ -12,6 +12,7 @@ import {
   writeProjectDefaults,
   writeProjectsDir,
   writeSessionViews,
+  writeRadioUrl,
   writeUsageLimitResume,
   writeUserAgentDefault,
 } from '../../settings/user-settings.js'
@@ -43,6 +44,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.onboarding) writeOnboarding(ctx.db, user.id, body.onboarding)
     if (body.projectDefaults) writeProjectDefaults(ctx.db, user.id, body.projectDefaults)
     if (body.sessionViews) writeSessionViews(ctx.db, user.id, body.sessionViews)
+    if (body.radioUrl !== undefined) writeRadioUrl(ctx.db, user.id, body.radioUrl)
     // Reread rather than rebuild from the body: the screen needs both CLIs, and
     // the body includes only one.
     return readUserSettings(ctx.db, user.id)

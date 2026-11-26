@@ -1,5 +1,6 @@
 import { DEFAULT_NEWS_PREFERENCES, newsPreferencesSchema, type NewsPreferences } from './news.js'
 import { z } from 'zod'
+import { MAX_RADIO_URL_CHARS, youtubeVideoId } from './radio.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { instructionsModeSchema } from './instructions.js'
 import { memoryModeSchema, type MemoryMode } from './memory.js'
@@ -122,6 +123,12 @@ export interface UserSettingsDto {
    * preferences, like permission mode.
    */
   projectDefaults: ProjectDefaults
+  /**
+   * YouTube link of the radio in the rail; `null` plays Claude FM.
+   *
+   * Account-level: what one listens to while working follows them to every device.
+   */
+  radioUrl: string | null
 }
 
 /**
@@ -297,6 +304,9 @@ export const appearancePrefsSchema = z.object({
     .refine((values) => Object.keys(values).length <= 32),
 })
 
+const radioUrlSchema = z.string().trim().max(MAX_RADIO_URL_CHARS)
+  .refine((link) => youtubeVideoId(link) !== null, 'Use a YouTube video or live link')
+
 export const storedUserSettingsSchema = z
   .object({
     news: newsPreferencesSchema.default(DEFAULT_NEWS_PREFERENCES).catch(DEFAULT_NEWS_PREFERENCES),
@@ -315,6 +325,7 @@ export const storedUserSettingsSchema = z
     onboarding: onboardingStateSchema.default(DEFAULT_ONBOARDING).catch(DEFAULT_ONBOARDING),
     projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
     sessionViews: z.array(sessionViewSchema).max(MAX_SESSION_VIEWS).nullable().default(null).catch(null),
+    radioUrl: radioUrlSchema.nullable().default(null).catch(null),
   })
   .catch({
     news: DEFAULT_NEWS_PREFERENCES,
@@ -330,6 +341,7 @@ export const storedUserSettingsSchema = z
     onboarding: DEFAULT_ONBOARDING,
     projectDefaults: DEFAULT_PROJECT_DEFAULTS,
     sessionViews: null,
+    radioUrl: null,
   })
 
 export const updateUserSettingsBodySchema = z.object({
@@ -362,4 +374,6 @@ export const updateUserSettingsBodySchema = z.object({
   sessionViews: z.array(sessionViewSchema).max(MAX_SESSION_VIEWS)
     .refine((views) => new Set(views.map((view) => view.id)).size === views.length, 'Duplicate view id')
     .optional(),
+  /** `null` goes back to Claude FM; absent leaves the station unchanged. */
+  radioUrl: radioUrlSchema.nullable().optional(),
 })

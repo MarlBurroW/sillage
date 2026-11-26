@@ -1,6 +1,7 @@
 import { compareCliVersions, PREFERRED_CLI_RELEASES } from '@sillage/protocol'
 import { registerDiscussionRoutes } from './routes/discussions.js'
 import { registerNewsRoutes } from './routes/news.js'
+import { registerRadioRoutes } from './routes/radio.js'
 import { existsSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import compress from '@fastify/compress'
@@ -327,6 +328,7 @@ export async function buildApp(
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
   registerNewsRoutes(app, ctx)
+  registerRadioRoutes(app, ctx)
   registerSystemRoutes(app, ctx)
   if (remoteAccess) registerRemoteAccessRoutes(app, remoteAccess)
   registerServiceRoutes(app, ctx)

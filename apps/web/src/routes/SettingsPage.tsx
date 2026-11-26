@@ -1,31 +1,4 @@
-import {
-  Archive,
-  Rss,
-  Bell,
-  BookOpen,
-  ChevronRight,
-  Search,
-  X,
-  FileText,
-  Cpu,
-  Info,
-  GitBranch,
-  Globe,
-  Shield,
-  Bot,
-  KeyRound,
-  Mic,
-  MonitorPlay,
-  Palette,
-  Plug,
-  Radio,
-  SlidersHorizontal,
-  Terminal,
-  TimerReset,
-  UserRound,
-  Users,
-  Wrench,
-} from 'lucide-react'
+import { Archive, Bell, BookOpen, Bot, ChevronRight, Cpu, FileText, GitBranch, Globe, Info, KeyRound, Mic, MonitorPlay, Palette, Plug, Radio, Rss, Search, Shield, SlidersHorizontal, Terminal, TimerReset, UserRound, Users, Wrench, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
@@ -106,6 +79,13 @@ const SECTIONS: Section[] = [
     descriptionKey: 'settings.section.notifications.description',
     icon: <Bell size={16} />,
     requires: 'webPush',
+  },
+  {
+    to: 'radio',
+    group: 'personal',
+    labelKey: 'radio.settings.title',
+    descriptionKey: 'radio.settings.description',
+    icon: <Radio size={16} />,
   },
   {
     to: 'cli',

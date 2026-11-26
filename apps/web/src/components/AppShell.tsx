@@ -19,6 +19,7 @@ import { DecisionDialog } from './decisions/DecisionDialog'
 import { Logo } from './Logo'
 import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigation'
 import { Navigation } from './nav/Navigation'
+import { RadioPlayer } from './RadioPlayer'
 import { Toaster } from './Toaster'
 import { UpdatePrompt } from './UpdatePrompt'
 import { cx } from './ui'
@@ -202,6 +203,7 @@ export function AppShell() {
       </div>
       {/* Outside the main column so decisions and toasts overlay every view including sidebar. */}
       <DecisionDialog />
+      <RadioPlayer />
       <InterfaceTour />
       <Toaster />
     </div>

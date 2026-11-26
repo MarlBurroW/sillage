@@ -3,11 +3,12 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { ProjectDto } from '@sillage/protocol'
-import { Activity, ChartColumn, FlaskConical, LogOut, MessageSquare, Minus, Plus, Search, Server, Settings, SlidersHorizontal } from 'lucide-react'
+import { Activity, ChartColumn, FlaskConical, LogOut, MessageSquare, Minus, Plus, Radio, Search, Server, Settings, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useState, type ComponentPropsWithRef, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { activityTone, type ActivityCounts } from '../../lib/activity'
 import { useTranslate } from '../../lib/i18n'
 import type { NavSpace } from '../../lib/nav-space'
+import { toggleRadio, useRadio, useRadioStation } from '../../lib/radio'
 import { PALETTE_SHORTCUT } from '../../lib/palette'
 import type { RailProjects } from '../../lib/rail-projects'
 import { Logo } from '../Logo'
@@ -58,6 +59,8 @@ export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hi
   const totalLabel = countsLabel(total, t)
   const hiddenTone = activityTone(hidden)
   const [list, ends] = useHiddenEnds(rail.kept.length, space)
+  const radio = useRadio()
+  const { data: station } = useRadioStation()
 
   const onDragEnd = (event: DragEndEvent) => {
     // Dragging ends with mouseup on the mark, causing a click: suppress it or reordering opens the project.
@@ -115,6 +118,11 @@ export function NavRail({ space, total, benchmarks, personal, rail, countsOf, hi
         )}
         <span className="nav-rail-rule" />
         <div className="sidebar-utilities">
+          {/* A switch rather than a space: the radio follows every page, so the entry opens no column. */}
+          <RailEntry label={station?.title ?? t('radio.title')} detail={t(`radio.rail.${radio}`)} aria-pressed={radio !== 'off'} onClick={toggleRadio} data-radio-toggle={radio}>
+            <Radio size={18} className={cx(radio !== 'off' && 'text-accent', radio === 'tuning' && 'animate-pulse')} />
+            {radio === 'playing' ? <span className="nav-rail-dot nav-tone-running" /> : radio === 'blocked' ? <span className="nav-rail-dot nav-tone-awaiting" /> : null}
+          </RailEntry>
           <RailEntry label={t('services.title')} current={space === 'services'} onClick={() => onSpace('services')} data-nav-space="services"><Server size={18} /></RailEntry>
           <RailEntry label={t('consumption.title')} detail={t('consumption.rail.hint')} current={space === 'consumption'} onClick={() => onSpace('consumption')} data-nav-space="consumption"><ChartColumn size={18} /></RailEntry>
           <RailEntry label={t('shell.settings.label')} detail={updateNotice} current={space === 'settings'} onClick={() => onSpace('settings')} data-nav-space="settings">

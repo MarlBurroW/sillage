@@ -2,6 +2,7 @@ import { DiscussionFilesPage } from './routes/DiscussionFilesPage'
 import { PersonalMemoryPage } from './routes/PersonalMemoryPage'
 import { BenchmarksPage } from './routes/BenchmarksPage'
 import { NewsSettingsPage } from './routes/NewsSettingsPage'
+import { RadioSettingsPage } from './routes/RadioSettingsPage'
 import { Suspense, useEffect } from 'react'
 import { lazyWithReload } from './lib/lazy-reload'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
@@ -172,6 +173,7 @@ export function App() {
             <Route path="compte" element={<AccountSection />} />
             <Route path="apparence" element={<AppearanceSection />} />
             <Route path="veille" element={<NewsSettingsPage />} />
+            <Route path="radio" element={<RadioSettingsPage />} />
             <Route path="notifications" element={<NotificationsSection />} />
             <Route path="cli" element={<CliDefaultsSettingsPage />} />
             <Route path="cli-versions" element={<CliVersionsSettingsPage />} />

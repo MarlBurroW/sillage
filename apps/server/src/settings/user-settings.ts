@@ -192,3 +192,10 @@ export function writeNewsPreferences(db: Db, userId: string, news: NewsPreferenc
   db.insert(userSettings).values({ userId, data })
     .onConflictDoUpdate({ target: userSettings.userId, set: { data } }).run()
 }
+
+/** `null` returns to Claude FM. */
+export function writeRadioUrl(db: Db, userId: string, radioUrl: string | null): void {
+  const data = JSON.stringify({ ...readUserSettings(db, userId), radioUrl })
+  db.insert(userSettings).values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } }).run()
+}
