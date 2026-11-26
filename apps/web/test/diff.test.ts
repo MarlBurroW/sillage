@@ -83,10 +83,9 @@ test('ignores text before the first file and restarts numbering at each hunk', (
   assert.deepEqual(file!.hunks.map((hunk) => hunk.lines.map(({ before, after }) => [before, after])), [[[1, 1]], [[40, 41]]])
 })
 
-// BUG: Git ends every patch with a newline (the server passes `git diff`/`git show` stdout through
-// untrimmed), so `split('\n')` yields a final empty string that is read as a context line. Every
-// diff view then ends its last hunk with a phantom blank row carrying line numbers past the hunk.
-test.todo('a trailing newline does not add a phantom context line', () => {
+// Git ends every patch with a newline, passed through untrimmed by the server: the empty string
+// after it once became a phantom numbered context row at the end of every diff.
+test('a trailing newline does not add a phantom context line', () => {
   const [file] = parseUnifiedDiff(`${MODIFIED}\n`)
   assert.equal(file!.hunks[0]!.lines.length, 6)
 })

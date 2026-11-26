@@ -60,9 +60,8 @@ test('loop details give cadence, wakeups and age from the render clock', () => {
   assert.equal(signal!.detail, '5m · 2 wakeups · last wakeup 3 min ago\ncheck CI\n\nself-paced · 1 wakeup · no wakeup yet\nlater')
 })
 
-// BUG (wording): `plural()` picks `.one` for any count up to 1, so a loop that has not fired yet
-// reads "0 wakeup" in English. French treats 0 as singular, English does not.
-test.todo('a loop that never fired reads "0 wakeups"', () => {
+// Plural forms follow the interface language: English pluralizes 0, French does not.
+test('a loop that never fired reads "0 wakeups"', () => {
   const [signal] = buildSignals({ ...idle, loops: [loop({ iterations: 0, lastFiredAt: null })] })
   assert.match(signal!.detail, /^5m · 0 wakeups ·/)
 })

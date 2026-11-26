@@ -64,10 +64,9 @@ test('relative link targets resolve against the document directory and may not c
   assert.deepEqual([...parseMarkdown('[doc](/D:/My%20Docs/a.txt)').candidates], ['D:/My Docs/a.txt'])
 })
 
-// BUG: `pathTarget` decodes `%20` precisely so paths with spaces reach the editor intact (see its
-// comment), but `PATH_CANDIDATE` has no space in its character class, so every non-Windows link or
-// image target containing a space is dropped: `[notes](my%20notes.md)` never becomes clickable.
-test.todo('link targets with encoded spaces are offered as files', () => {
+// `pathTarget` decodes `%20` so paths with spaces reach the editor intact; the path check once had
+// no space in its character class and dropped every such target.
+test('link targets with encoded spaces are offered as files', () => {
   assert.deepEqual([...parseMarkdown('[notes](docs/my%20notes.md)').candidates], ['docs/my notes.md'])
 })
 
@@ -80,4 +79,8 @@ test('card references link only to known cards and never inside code or links', 
   const out = html('fixes #12 and #99, `#12`, [#12](https://x.test)', { cards: new Set([12]) })
   assert.equal(out.match(/data-sg-card="12"/g)?.length, 1)
   assert.doesNotMatch(out, /data-sg-card="99"/)
+})
+
+test('a code span with spaces is a phrase, not a path', () => {
+  assert.deepEqual([...parseMarkdown('see `docs/my notes.md`').candidates], [])
 })

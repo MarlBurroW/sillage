@@ -50,7 +50,11 @@ export function parseUnifiedDiff(patch: string): DiffFile[] {
   let before = 0
   let after = 0
 
-  for (const line of patch.split('\n')) {
+  const lines = patch.split('\n')
+  // Git ends every patch with a newline: the empty string after it is no line of the file, and read
+  // as context it added a phantom numbered row to the last hunk. A real blank context line is " ".
+  if (lines.at(-1) === '') lines.pop()
+  for (const line of lines) {
     if (line.startsWith('diff --git ')) {
       const paths = parseHeaderPaths(line)
       file = {

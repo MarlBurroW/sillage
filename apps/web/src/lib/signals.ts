@@ -1,7 +1,7 @@
 import type { ConversationStatus } from '@sillage/protocol'
 import type { BackgroundWork } from './background'
 import type { QueuedMessage } from './chat-fold'
-import { translate } from './i18n'
+import { locale, translate } from './i18n'
 import { describeSchedule, formatAgo, type ArmedLoop } from './loops'
 import { subAgentLabel, type SubAgent } from './subagents'
 
@@ -195,7 +195,9 @@ type PluralPrefix =
   | 'conversation.loop.iterations'
 
 function plural(prefix: PluralPrefix, count: number): string {
-  return translate(`${prefix}.${count > 1 ? 'many' : 'one'}`, { count })
+  // The interface language decides: French reads 0 as singular ("0 réveil"), English does not.
+  const form = new Intl.PluralRules(locale()).select(count) === 'one' ? 'one' : 'many'
+  return translate(`${prefix}.${form}`, { count })
 }
 
 /** Cadence, counted wakeups, and latest wakeup age, one loop per line. */

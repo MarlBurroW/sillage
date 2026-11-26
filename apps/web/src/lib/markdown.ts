@@ -83,19 +83,24 @@ md.core.ruler.push('sg_task_lists', (state) => {
  * the editor.
  */
 const PATH_CANDIDATE = /^(?!-)(?!\w+:\/\/)[\w./@+-]{1,300}$/
+const PATH_CANDIDATE_WITH_SPACES = /^(?!-)(?!\w+:\/\/)(?! )[\w./@+ -]{1,300}(?<! )$/
 const LINE_SUFFIX = /:\d+(?::\d+)?$/
 const WINDOWS_ABSOLUTE = /^\/?[a-z]:[/\\](?![/\\])/i
 const WINDOWS_PATH_BODY = /^[\p{L}\p{N}\p{M}_ ./@+()'-]{1,300}$/u
 
-/** Path carried by a code span, or null if it cannot be one. */
-function pathCandidate(content: string): string | null {
+/**
+ * Path carried by a code span or link target, or null if it cannot be one. Spaces are allowed only
+ * in link targets, where `%20` marks them deliberately; in a code span they mostly separate words
+ * (`see foo.ts`), and each false candidate would cost a server lookup.
+ */
+function pathCandidate(content: string, spaces = false): string | null {
   // Strip the written `./` prefix: the workspace expects a path relative to its root.
   let path = content.replace(LINE_SUFFIX, '').replace(/^\.\//, '')
   // Agents also write URL-shaped drive paths (/D:/...), which Windows cannot resolve as-is.
   if (WINDOWS_ABSOLUTE.test(path)) {
     path = path.replace(/^\//, '').replace(/\\/g, '/')
     if (!WINDOWS_PATH_BODY.test(path.slice(3))) return null
-  } else if (!PATH_CANDIDATE.test(path)) return null
+  } else if (!(spaces ? PATH_CANDIDATE_WITH_SPACES : PATH_CANDIDATE).test(path)) return null
   // A path with no separator or extension is a word: `useState`, `null`, `main`. This excludes
   // `Makefile` and `LICENSE` unless written with their directory; otherwise every backticked word
   // in a sentence would reach the server.
@@ -136,7 +141,7 @@ function pathTarget(target: string | null, base?: string): string | null {
     if (joined === null) return null
     decoded = joined
   }
-  return pathCandidate(decoded)
+  return pathCandidate(decoded, true)
 }
 
 /**
