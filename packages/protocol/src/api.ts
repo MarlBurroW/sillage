@@ -1136,6 +1136,8 @@ export interface TreeListingDto {
 
 export const treeSearchQuerySchema = z.object({
   q: z.string().min(1).max(200),
+  /** `mention`: the composer's `@` completion, which also offers folders but not ignored files. */
+  for: z.literal('mention').optional(),
 })
 
 /** Search inside file contents. Fixed text: what users look for is a name or a phrase, not a pattern. */

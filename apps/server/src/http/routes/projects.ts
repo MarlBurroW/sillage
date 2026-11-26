@@ -24,7 +24,7 @@ import {
 import type { AttachmentStore } from '../../attachments/store.js'
 import type { TerminalManager } from '../../terminals/terminal-manager.js'
 import type { CloneJobs } from '../../clone-jobs.js'
-import { searchWorkspaceFiles } from '../../search/search-files.js'
+import { MENTION_RESULTS, searchWorkspaceEntries } from '../../search/search-files.js'
 import { credentialEnv, credentialHelperCommand } from '../../git-credential/helper.js'
 import { listBranches, readGitStatus } from '../../git.js'
 import type { AppContext } from '../context.js'
@@ -45,9 +45,6 @@ import { samePath } from '../../agents/paths.js'
 import { assertScopeWriter } from '../scope-access.js'
 import { assertFreeDestination, createProject, insertProject } from '../../projects/create.js'
 import { readProjectAgentTools } from '../../agents/agent-tools.js'
-
-/** Mention completion results: beyond this, lists no longer fit the composer's popover. */
-const MENTION_RESULTS = 30
 
 /** Users see projects they own or that are shared. Only owners can edit or delete them. */
 export function visibilityFilter(userId: string) {
@@ -469,15 +466,15 @@ export function registerProjectRoutes(
     return reply.status(204).send()
   })
 
-  /** Working-directory files for mention completion, ranked like the palette and the explorer. Project-scoped because the composer offers mentions before a conversation exists. Choosing a worktree changes the directory queried. */
+  /** Working-directory files and folders for mention completion, ranked like the palette and the explorer. Project-scoped because the composer offers mentions before a conversation exists. Choosing a worktree changes the directory queried. */
   app.get('/api/projects/:id/files', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const { q, worktreeId } = request.query as { q?: string; worktreeId?: string }
     const cwd = projectCwd(ctx.db, id, user.id, worktreeId)
 
-    const { paths } = await searchWorkspaceFiles(cwd, q ?? '', { limit: MENTION_RESULTS })
-    return { files: paths.map((path) => ({ path, name: path.slice(path.lastIndexOf('/') + 1) })) }
+    const { entries } = await searchWorkspaceEntries(cwd, q ?? '', { limit: MENTION_RESULTS })
+    return { files: entries.map(({ path, isDirectory }) => ({ path, name: path.slice(path.lastIndexOf('/') + 1), isDirectory })) }
   })
 
   app.get('/api/projects/:id/branches', async (request) => {

@@ -37,6 +37,9 @@ const NAME_WEIGHT = 1
 const DIR_WEIGHT = 0.6
 const PROJECT_WEIGHT = 0.35
 
+/** Mention completion results: beyond this, lists no longer fit the composer's popover. */
+export const MENTION_RESULTS = 30
+
 /** Explorer search results: beyond this, the list is unreadable. */
 const TREE_RESULTS = 80
 
@@ -54,6 +57,15 @@ interface Listing {
   capped: boolean
   /** Shortest paths first, computed on first empty query. */
   byLength?: string[]
+  /** Folders holding listed files, computed on the first search that offers folders. */
+  dirs?: { paths: string[]; folded: string[] }
+  /** Files and folders together, shortest first, for an empty mention query. */
+  entriesByLength?: WorkspaceEntry[]
+}
+
+export interface WorkspaceEntry {
+  path: string
+  isDirectory: boolean
 }
 
 const listings = new Map<string, { pending: Promise<Listing>; at: number }>()
@@ -132,6 +144,76 @@ export async function searchWorkspaceFiles(
   }
   scored.sort((a, b) => b.score - a.score || a.path.length - b.path.length || a.path.localeCompare(b.path))
   return { paths: scored.slice(0, limit).map(({ path }) => path), truncated: found.capped || scored.length > limit }
+}
+
+/**
+ * Folders that hold at least one listed file. Derived rather than listed: git knows no folders,
+ * and an empty one is no useful mention. Nested repositories, which git lists as `dir/`, count as
+ * folders and are dropped from the files.
+ */
+function directoriesOf(found: Listing): { paths: string[]; folded: string[] } {
+  if (!found.dirs) {
+    const seen = new Set<string>()
+    for (const path of found.paths) {
+      for (let slash = path.indexOf('/'); slash !== -1; slash = path.indexOf('/', slash + 1)) seen.add(path.slice(0, slash))
+    }
+    const paths = [...seen]
+    found.dirs = { paths, folded: paths.map(foldForMatch) }
+  }
+  return found.dirs
+}
+
+/**
+ * Files and folders for `@` mentions, best first. A query ending in `/` that names a folder lists
+ * what it directly holds, folders first, so picking a folder can lead into it; otherwise both kinds
+ * are ranked together, as files alone are by `searchWorkspaceFiles`.
+ */
+export async function searchWorkspaceEntries(
+  cwd: string,
+  query: string,
+  { limit }: { limit: number },
+): Promise<{ entries: WorkspaceEntry[]; truncated: boolean }> {
+  const found = await listing(cwd, 'workspace', FRESH_MS)
+  const dirs = directoriesOf(found)
+  const files = (index: number) => !(found.paths[index] as string).endsWith('/')
+
+  const prefix = query.trim()
+  if (prefix.endsWith('/')) {
+    const childOf = (path: string) => path.startsWith(prefix) && !path.includes('/', prefix.length)
+    const children = [
+      ...dirs.paths.filter(childOf).sort((a, b) => a.localeCompare(b)).map((path) => ({ path, isDirectory: true })),
+      ...found.paths.filter((path, index) => files(index) && childOf(path)).sort((a, b) => a.localeCompare(b)).map((path) => ({ path, isDirectory: false })),
+    ]
+    // A slash typed as a separator (`web/pal` style) names no folder: rank instead.
+    if (children.length > 0) return { entries: children.slice(0, limit), truncated: found.capped || children.length > limit }
+  }
+
+  const tokens = fuzzyTokens(query)
+  if (tokens.length === 0) {
+    found.entriesByLength ??= [
+      ...dirs.paths.map((path) => ({ path, isDirectory: true })),
+      ...found.paths.filter((_, index) => files(index)).map((path) => ({ path, isDirectory: false })),
+    ].sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path))
+    return { entries: found.entriesByLength.slice(0, limit), truncated: found.capped || found.entriesByLength.length > limit }
+  }
+
+  const scored: (WorkspaceEntry & { score: number })[] = []
+  const rank = (paths: string[], folded: string[], isDirectory: boolean) => {
+    for (const [index, path] of paths.entries()) {
+      if (!isDirectory && !files(index)) continue
+      const lower = folded[index] as string
+      if (!tokens.every((token) => containsInOrder(lower, token))) continue
+      const score = matchPath(path, lower, tokens)
+      if (score !== null) scored.push({ path, isDirectory, score })
+    }
+  }
+  rank(dirs.paths, dirs.folded, true)
+  rank(found.paths, found.folded, false)
+  scored.sort((a, b) => b.score - a.score || a.path.length - b.path.length || a.path.localeCompare(b.path))
+  return {
+    entries: scored.slice(0, limit).map(({ path, isDirectory }) => ({ path, isDirectory })),
+    truncated: found.capped || scored.length > limit,
+  }
 }
 
 /** The explorer's search, ignored loose files included: results as tree entries. */

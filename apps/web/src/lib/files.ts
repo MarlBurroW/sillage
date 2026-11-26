@@ -6,10 +6,15 @@ export interface FileMatchDto {
   /** Working-directory-relative path as written after `@`. */
   path: string
   name: string
+  /** Folders are mentioned as `@path/`; picking one with Tab lists what it holds. */
+  isDirectory?: boolean
 }
 
+/** What a mention writes after `@`: folders end with a slash, as the CLIs write them. */
+export const mentionPath = (file: FileMatchDto) => (file.isDirectory ? `${file.path}/` : file.path)
+
 /**
- * Files suggested for mentions. Key the query by project rather than conversation: composers
+ * Files and folders suggested for mentions. Key the query by project rather than conversation: composers
  * already complete mentions before a conversation exists.
  */
 export function useFileSuggestions(
@@ -23,8 +28,8 @@ export function useFileSuggestions(
     queryFn: async () => {
       if (!projectId && conversationId) {
         if ((query?.length ?? 0) < 2) return []
-        const result = await api.get<TreeSearchDto>(`/api/conversations/${conversationId}/tree/search?q=${encodeURIComponent(query ?? '')}`)
-        return result.entries.filter(entry => !entry.isDirectory).map(entry => ({ path: entry.path, name: entry.name }))
+        const result = await api.get<TreeSearchDto>(`/api/conversations/${conversationId}/tree/search?for=mention&q=${encodeURIComponent(query ?? '')}`)
+        return result.entries.map(entry => ({ path: entry.path, name: entry.name, isDirectory: entry.isDirectory }))
       }
       const params = new URLSearchParams({ q: query ?? '' })
       if (worktreeId) params.set('worktreeId', worktreeId)

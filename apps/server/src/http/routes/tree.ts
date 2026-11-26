@@ -17,7 +17,7 @@ import {
 } from '@sillage/protocol'
 import { readFileStates } from '../../git.js'
 import { searchContent } from '../../search/search-content.js'
-import { forgetListings, searchTree } from '../../search/search-files.js'
+import { MENTION_RESULTS, forgetListings, searchTree, searchWorkspaceEntries } from '../../search/search-files.js'
 import {
   copyEntry,
   createEntry,
@@ -107,10 +107,13 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
     app.get(`${base}/tree/search`, async (request): Promise<TreeSearchDto> => {
       const user = requireUser(request)
       const { id } = request.params as { id: string }
-      const { q } = treeSearchQuerySchema.parse(request.query)
+      const { q, for: purpose } = treeSearchQuerySchema.parse(request.query)
 
       const cwd = cwdOf(ctx.db, id, user.id)
-      return searchTree(cwd, q)
+      if (purpose !== 'mention') return searchTree(cwd, q)
+      // Same completion as a project's composer, for conversations outside any project.
+      const { entries, truncated } = await searchWorkspaceEntries(cwd, q, { limit: MENTION_RESULTS })
+      return { entries: entries.map(({ path, isDirectory }) => ({ name: path.slice(path.lastIndexOf('/') + 1), path, isDirectory })), truncated }
     })
 
     /** Lines containing a text throughout the working directory, grouped by file. */

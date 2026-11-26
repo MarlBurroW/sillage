@@ -1156,11 +1156,16 @@ let them expire, making next message pay CLI restart/context reload costs.
 Settings take effect next message and write to `conversations.config`. Mid-thread
 model changes appear as discreet separators.
 
-**`@` mentions.** Typing `@` opens working-directory files
+**`@` mentions.** Typing `@` opens working-directory files and folders
 (`GET /api/projects/:id/files`) with subsequence matching: `wsx` finds
 `web/src/index.tsx`. Search uses `git ls-files --cached --others --exclude-standard`,
-with nonrepository traversal fallback. Sillage performs it rather than CLI:
-otherwise completion would need a process and offer nothing before conversations start.
+with traversal fallback outside a repository or when git lists nothing (a folder
+ignored by an enclosing repository, such as a dotfiles repository in the home
+directory). Folders are those holding listed files, written `@path/`. Tab or the
+row's chevron opens a folder instead of mentioning it: a query ending in `/` that
+names a folder lists what it directly holds. Sillage performs the search rather
+than the CLI: otherwise completion would need a process and offer nothing before
+conversations start.
 
 Both CLIs inject mentions differently, hence an abstraction: paths travel beside
 text, each runner applies them its way.
@@ -1168,6 +1173,10 @@ text, each runner applies them its way.
 - **Claude Code** expands text `@path` itself. Installed-CLI check asked about
   mentioned file with all tools denied: response arrived without tools.
 - **Codex** expects separate `mention` input (`UserInput`) and expands nothing itself.
+
+For a folder, Claude Code 2.1.318 injects its listing; Codex 0.163.0 accepts the
+`mention` input without injecting anything, so the model reads the folder with its
+tools from the `@path/` left in the text.
 
 Only list-selected paths are sent: manually typed `@something` need not be a file,
 and Codex rejects nonexistent mentions. Server resolves paths, rejecting anything

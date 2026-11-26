@@ -38,7 +38,7 @@ import { ContextMeter } from './ContextMeter'
 import { ComposerInsert, type ComposerPrefix } from './ComposerInsert'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useCardSuggestions } from '../../lib/cards'
-import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
+import { mentionPath, useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
 import { useUpdateComposerLayout, useUserSettings } from '../../lib/user-settings'
@@ -58,7 +58,7 @@ import { SessionReference } from './SessionReference'
 import { matchSessions, useSessionReferences } from '../../lib/session-references'
 import { tourAnchor } from '../tour/steps'
 import { ComposerHighlights } from './ComposerHighlights'
-import { highlightRanges } from '../../lib/composer-highlights'
+import { highlightRanges, mentionsIn } from '../../lib/composer-highlights'
 
 /** The `@...` mention around the cursor. */
 /** Below this toolbar width, use the phone composer layout. */
@@ -335,7 +335,7 @@ export function Composer({
     })
   }, [draftKey, text, attachments, mentioned, invoked])
 
-  const { data: files, isFetching: searching } = useFileSuggestions(
+  const { data: files, isFetching: searching, isError: searchFailed } = useFileSuggestions(
     projectId,
     worktreeId,
     token?.query ?? null,
@@ -349,17 +349,28 @@ export function Composer({
   )
   const cardSuggestions = cardToken ? (cardMatches ?? []) : []
 
-  /** Replace the current token with the selected path and return focus to the field. */
-  const pickMention = (file: FileMatchDto) => {
+  /**
+   * Replace the current token with the selected path and return focus to the field. `open` (Tab on
+   * a folder) leaves the token unfinished so suggestions list what the folder holds; the folder is
+   * only a mention once picked to stay.
+   */
+  const pickMention = (file: FileMatchDto, { open = false }: { open?: boolean } = {}) => {
     const node = textarea.current
     if (!token || !node) return
 
-    const next = `${text.slice(0, token.start)}@${file.path} ${text.slice(token.end)}`
-    const caret = token.start + file.path.length + 2
+    const path = mentionPath(file)
+    const inserted = open ? `@${path}` : `@${path} `
+    const next = `${text.slice(0, token.start)}${inserted}${text.slice(token.end)}`
+    const caret = token.start + inserted.length
 
     setText(next)
-    setMentioned((current) => new Set(current).add(file.path))
-    setToken(null)
+    if (open) {
+      setToken({ query: path, start: token.start, end: caret })
+      setActive(0)
+    } else {
+      setMentioned((current) => new Set(current).add(path))
+      setToken(null)
+    }
     // After rendering: restoring the cursor before React writes the value would jump it to the end.
     requestAnimationFrame(() => {
       node.focus()
@@ -574,7 +585,7 @@ export function Composer({
     // authoritative, not previous clicks.
     const urls = sessionReferenceRanges(value, window.location.origin).filter(ref => projectId === null || referencesAnyProject || ref.projectId === projectId)
     for (const ref of urls.reverse()) value = `${value.slice(0, ref.start)}${sessionReference(ref.id)}${value.slice(ref.end)}`
-    const paths = [...mentioned].filter((path) => value.includes(`@${path}`))
+    const paths = mentionsIn(value, mentioned)
     const invocations = [...invoked].filter((name) => value.includes(`$${name}`))
 
     setSending(true)
@@ -718,7 +729,7 @@ export function Composer({
         const file = sigil || cardToken ? undefined : suggestions[active]
         if (file) {
           event.preventDefault()
-          pickMention(file)
+          pickMention(file, { open: event.key === 'Tab' && file.isDirectory === true })
           return
         }
       }
@@ -850,7 +861,9 @@ export function Composer({
               files={suggestions}
               active={active}
               loading={searching}
+              failed={searchFailed}
               onPick={pickMention}
+              onOpen={(file) => pickMention(file, { open: true })}
               onHover={setActive}
             />
           ) : null}

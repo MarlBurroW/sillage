@@ -27,7 +27,14 @@ const SKIPPED = new Set([
   'coverage',
 ])
 
-/** Git-tracked files excluding ignored directories. `--others --exclude-standard` includes untracked files while honoring .gitignore, so newly created files can be offered. */
+/**
+ * Git-tracked files excluding ignored directories. `--others --exclude-standard` includes untracked files while honoring .gitignore, so newly created files can be offered.
+ *
+ * An empty answer is not trusted: a folder that is not a repository but sits inside one that
+ * ignores it (a dotfiles repository in the home directory with `*` in .gitignore, a projects
+ * folder ignored by its parent) makes git succeed with nothing. Callers then walk the disk, which
+ * an empty repository survives too.
+ */
 async function gitFiles(cwd: string): Promise<string[] | null> {
   try {
     const { stdout } = await exec(
@@ -94,7 +101,8 @@ async function walk(cwd: string, { dotfiles }: { dotfiles: boolean }): Promise<s
 
 /** Working-directory files, tracked or not, excluding git-ignored entries. Offered to mentions and the palette. */
 export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
-  return (await gitFiles(cwd)) ?? (await walk(cwd, { dotfiles: false }))
+  const listed = await gitFiles(cwd)
+  return listed?.length ? listed : walk(cwd, { dotfiles: false })
 }
 
 /**
@@ -104,5 +112,5 @@ export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
  */
 export async function listBrowsableFiles(cwd: string): Promise<string[]> {
   const [listed, ignored] = await Promise.all([gitFiles(cwd), gitIgnoredFiles(cwd)])
-  return listed ? [...listed, ...ignored] : walk(cwd, { dotfiles: true })
+  return listed?.length ? [...listed, ...ignored] : walk(cwd, { dotfiles: true })
 }

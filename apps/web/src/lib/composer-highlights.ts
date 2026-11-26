@@ -31,6 +31,14 @@ function occurrences(text: string, token: string, kind: HighlightKind): Highligh
   return ranges
 }
 
+/**
+ * Picked mentions the text still names as whole tokens: `@src/` must not ride along with
+ * `@src/app.ts` once a folder was opened to pick a file inside it.
+ */
+export function mentionsIn(text: string, paths: Iterable<string>): string[] {
+  return [...paths].filter((path) => occurrences(text, `@${path}`, 'mention').length > 0)
+}
+
 export function highlightRanges(
   text: string,
   { mentions, skills, commands }: { mentions: Iterable<string>; skills: Iterable<string>; commands: Iterable<string> },

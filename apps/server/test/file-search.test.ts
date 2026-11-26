@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
-import { forgetListings, searchTree, searchWorkspaceFiles } from '../src/search/search-files.js'
+import { forgetListings, searchTree, searchWorkspaceEntries, searchWorkspaceFiles } from '../src/search/search-files.js'
 import { listDirectory } from '../src/workspace.js'
 
 async function directory(t: TestContext): Promise<string> {
@@ -60,6 +60,35 @@ test('mentions keep ignored files out, and listings follow explorer changes', as
   await writeFile(join(repo, 'src/lib/radar.ts'), 'x')
   forgetListings(repo)
   assert.deepEqual((await searchTree(repo, 'radar')).entries.map((entry) => entry.path), ['src/lib/radar.ts'])
+})
+
+test('a folder ignored by an enclosing repository still lists its files', async (t) => {
+  // A dotfiles repository in the home directory ignores everything; git answers nothing there.
+  const home = await directory(t)
+  execFileSync('git', ['init', '-q'], { cwd: home })
+  await writeFile(join(home, '.gitignore'), '*\n')
+  const project = join(home, 'mapper')
+  await mkdir(join(project, 'src'), { recursive: true })
+  await writeFile(join(project, 'src/map.ts'), 'x')
+
+  assert.deepEqual((await searchWorkspaceFiles(project, '', { limit: 30 })).paths, ['src/map.ts'])
+  assert.deepEqual((await searchTree(project, 'map')).entries.map((entry) => entry.path), ['src/map.ts'])
+})
+
+test('mentions offer folders, and a folder path ending in a slash lists what it holds', async (t) => {
+  const repo = await repository(t)
+  await mkdir(join(repo, 'src/forecasts'))
+  await writeFile(join(repo, 'src/forecasts/today.ts'), 'x')
+  const kinds = (entries: { path: string; isDirectory: boolean }[]) => entries.map((entry) => `${entry.path}${entry.isDirectory ? '/' : ''}`)
+
+  // Shortest first without a query: top-level folders come early, ignored ones never.
+  assert.deepEqual(kinds((await searchWorkspaceEntries(repo, '', { limit: 3 })).entries), ['src/', 'src/lib/', '.gitignore'])
+  assert.deepEqual(kinds((await searchWorkspaceEntries(repo, 'forecasts', { limit: 30 })).entries)[0], 'src/forecasts/')
+  // Folders first, then files, one level only.
+  assert.deepEqual(kinds((await searchWorkspaceEntries(repo, 'src/', { limit: 30 })).entries), ['src/forecasts/', 'src/lib/'])
+  assert.deepEqual(kinds((await searchWorkspaceEntries(repo, 'src/lib/', { limit: 30 })).entries), ['src/lib/forecast-cache.ts', 'src/lib/forecast.ts'])
+  // A slash that names no folder is a separator, as in the palette.
+  assert.deepEqual(kinds((await searchWorkspaceEntries(repo, 'lib/cache', { limit: 30 })).entries), ['src/lib/forecast-cache.ts'])
 })
 
 test('a file created outside the explorer shows up after a short pause', async (t) => {
