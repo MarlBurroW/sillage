@@ -2,14 +2,11 @@ import type { BrowserManager } from '../browser/manager.js'
 import { detach } from '../detach.js'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import {
-  conversationProjectMoves,
   conversations,
   permissionRequests,
-  projects,
   type ConversationRow,
   type Db,
   mcpServers,
@@ -26,7 +23,7 @@ import {
 import type { AgentRegistry } from '../agents/registry.js'
 import { describeOutgoingMessage } from '../agents/outgoing.js'
 import { adoptSessionTitle } from '../conversations/title.js'
-import { checkpointBeforeProjectMove, commitProjectMove, pendingProjectMove, prepareProjectMove, requestProjectMove } from '../conversations/project-transfer.js'
+import { checkpointBeforeProjectMove } from '../conversations/project-transfer.js'
 import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
@@ -50,18 +47,6 @@ import type { EventLog } from '../events/event-log.js'
 import { readAppSettings } from '../settings/app-settings.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
-import {
-  CheckpointError,
-  captureSnapshot,
-  checkpointRef,
-  copyCheckpoints,
-  deleteCheckpoints,
-  diffCheckpoint,
-  moveSnapshot,
-  readSnapshot,
-  restoreSnapshot,
-} from '../checkpoints.js'
-import { serialized } from '../git-workflow.js'
 import type { TurnUsageRecorder } from '../consumption/recorder.js'
 import { notifyIfAway, type ConversationNotifier } from './session-notifications.js'
 import {
@@ -75,18 +60,11 @@ import {
 } from './session-journal.js'
 import { SessionAccounts } from './session-accounts.js'
 import { RunnerContextFactory, type RunnerLease } from './runner-context.js'
+import { ClientMessageDedupe, MessageQueue } from './message-queue.js'
+import { TurnCheckpoints, type RestoreResult } from './turn-checkpoints.js'
+import { ProjectMoves } from './project-moves.js'
 
 export type { ConversationNotifier } from './session-notifications.js'
-
-/** Message written during a turn, waiting for its completion. */
-interface QueuedMessage {
-  queueId: string
-  clientMessageId: string
-  text: string
-  attachments: OutgoingAttachment[]
-  mentions: string[]
-  skills: string[]
-}
 
 /**
  * Where a conversation stands. That state is spread over the runner map, the delivery and the
@@ -131,26 +109,8 @@ interface ManagedRunner {
   lease: RunnerLease
 }
 
-/** Send deduplication window (invariant I5). See sendMessage(). */
-const DEDUPE_TTL_MS = 5 * 60 * 1000
-
-/** Open checkpoint for the current turn: before snapshot captured, after snapshot awaiting completion. Retain tool-touched files to distinguish turn work from files introduced by pulls. */
-interface ActiveCheckpoint {
-  key: string
-  cwd: string
-  edited: Set<string>
-  /** Resolves once the before snapshot exists, false when its capture failed. Turns may start while it runs. */
-  capture: Promise<boolean>
-}
-
-/** How long a send waits for the before snapshot. Capture takes tens of milliseconds on Linux but seconds on Windows, where every git process is slow: beyond this, the turn starts and the capture finishes alongside. The agent's first write follows a model round trip, so the snapshot still precedes it in practice. */
-const CHECKPOINT_WAIT_MS = 1_000
-
 /** Sends slower than this are logged with their phases. */
 const SLOW_SEND_MS = 1_000
-
-/** Beyond this limit, completion events omit files because conversations cannot display that many. */
-const CHECKPOINT_EVENT_FILES = 500
 
 /** Bus `status` payload reused unchanged by same-named WebSocket messages: hubs merely rebroadcast. */
 export interface StatusBroadcast {
@@ -171,15 +131,14 @@ export class SessionManager {
   private readonly startingRunners = new Map<string, Promise<AgentRunner>>()
   private readonly updatingClis = new Set<AgentKind>()
   private readonly cliOperations = new Map<AgentKind, number>()
-  private readonly recentClientMessages = new Map<string, number>()
-  /** Pending messages per conversation, memory-only: messages never reaching CLIs need not survive restarts, and journals already allow clean closure on recovery (see `expireQueuedMessages`). */
-  private readonly queues = new Map<string, QueuedMessage[]>()
-  private readonly checkpoints = new Map<string, ActiveCheckpoint>()
+  private readonly clientMessages = new ClientMessageDedupe()
+  private readonly queue: MessageQueue
+  private readonly turnCheckpoints: TurnCheckpoints
+  private readonly moves: ProjectMoves
   /** Conversations whose announced message has not reached the CLI yet; see `announce`. */
   private readonly pendingDeliveries = new Map<string, Delivery>()
   /** Set by `stopAll`: the daemon is going away, nothing new starts and stopped runners write nothing more. */
   private closing = false
-  private readonly projectMoveLocks = new Set<string>()
   /** Set later because the WebSocket hub tracking viewers does not exist when managers are constructed. */
   private notifier: ConversationNotifier | null = null
   readonly statusBus = new EventEmitter()
@@ -201,14 +160,25 @@ export class SessionManager {
   ) {
     this.statusBus.setMaxListeners(200)
     this.accounts = new SessionAccounts(log, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts)
+    this.queue = new MessageQueue(log)
+    this.turnCheckpoints = new TurnCheckpoints(db, log, (conversationId) => this.workingDirectory(conversationId))
+    this.moves = new ProjectMoves(db, log, this.statusBus, {
+      canMove: (conversationId) => {
+        const phase = this.phase(conversationId)
+        return (phase === 'idle' || phase === 'cold') && !this.hasDetachedWork(conversationId)
+      },
+      stopRunner: (conversationId, options) => this.stopRunner(conversationId, options),
+      flushQueue: (conversationId) => this.flushQueue(conversationId),
+      broadcastStatus: (conversationId, status, warm) => this.broadcastStatus(conversationId, status, warm),
+    })
     this.contexts = new RunnerContextFactory(db, log, config, registry, secrets, this.accounts, usage, {
       closing: () => this.closing,
       liveLease: (conversationId) => this.runners.get(conversationId)?.lease,
       setStatus: (conversationId, status) => this.setStatus(conversationId, status),
       setActivity: (conversationId, patch) => this.setActivity(conversationId, patch),
       notify: (conversationId, event) => notifyIfAway(this.db, this.notifier, conversationId, event),
-      markEdited: (conversationId, path) => { this.checkpoints.get(conversationId)?.edited.add(path) },
-      closeCheckpoint: (conversationId) => this.closeCheckpoint(conversationId),
+      markEdited: (conversationId, path) => this.turnCheckpoints.markEdited(conversationId, path),
+      closeCheckpoint: (conversationId) => this.turnCheckpoints.close(conversationId),
       adoptSuggestedTitle: (conversationId) => this.adoptSuggestedTitle(conversationId),
       stopAntigravityAccount: (accountId, exceptId) => this.stopAntigravityAccount(accountId, exceptId),
     })
@@ -373,7 +343,7 @@ export class SessionManager {
   async prepareCliUpdate(kind: AgentKind): Promise<(() => void) | null> {
     if (this.updatingClis.has(kind) || this.cliOperations.has(kind)) return null
     const runners = [...this.runners].filter(([, managed]) => managed.runner.appliedConfig.agent === kind)
-    if (runners.some(([id]) => !this.isQuiescent(id) || this.hasDetachedWork(id) || this.queues.has(id))) return null
+    if (runners.some(([id]) => !this.isQuiescent(id) || this.hasDetachedWork(id) || this.queue.has(id))) return null
     this.updatingClis.add(kind)
     try {
       await Promise.all(runners.map(([id]) => this.stopRunner(id, { keepQueue: true })))
@@ -395,7 +365,7 @@ export class SessionManager {
   }
 
   private phase(conversationId: string): ConversationPhase {
-    if (this.projectMoveLocks.has(conversationId)) return 'moving'
+    if (this.moves.isMoving(conversationId)) return 'moving'
     if (this.pendingDeliveries.has(conversationId)) return 'delivering'
     if (this.startingRunners.has(conversationId)) return 'starting'
     const managed = this.runners.get(conversationId)
@@ -424,8 +394,8 @@ export class SessionManager {
 
   /** On returning idle, apply pending restarts before flushing queues. Restarts call `setStatus('idle')` and reenter here; clear flags beforehand so reentry goes directly to queues and pending messages reach reconfigured runners. */
   private async settleIdle(conversationId: string): Promise<void> {
-    if (pendingProjectMove(this.db, conversationId)) {
-      await this.applyProjectMove(conversationId)
+    if (this.moves.isPending(conversationId)) {
+      await this.moves.apply(conversationId)
       return
     }
     const managed = this.runners.get(conversationId)
@@ -441,57 +411,12 @@ export class SessionManager {
 
   /** Agents request their own move during a turn; acknowledge it before stopping their MCP process. */
   async moveToProject(conversationId: string, userId: string, target: string) {
-    const result = await requestProjectMove(this.db, conversationId, userId, target)
-    await this.applyProjectMove(conversationId)
-    const stored = this.db.select().from(conversationProjectMoves).where(eq(conversationProjectMoves.id, result.move.id)).get()
-    if (stored?.error) throw new HttpError(409, 'project_move_failed', stored.error)
-    if (stored?.completedAt === null) this.log.append(conversationId, {
-      type: 'agent.notice', id: result.move.id, code: 'project_move_pending', level: 'info',
-      message: `Move to ${result.project.name} scheduled after the turn and background work finish.`,
-      details: { project: result.project.name },
-    })
-    this.statusBus.emit('lists')
-    return { projectId: result.project.id, projectName: result.project.name, pending: Boolean(pendingProjectMove(this.db, conversationId)) }
+    return this.moves.moveToProject(conversationId, userId, target)
   }
 
   /** Also swept by the daemon after recovery and when detached work finishes. */
   async applyPendingProjectMoves(): Promise<void> {
-    const pending = this.db.select({ conversationId: conversationProjectMoves.conversationId }).from(conversationProjectMoves)
-      .where(isNull(conversationProjectMoves.completedAt)).all()
-    await Promise.all(pending.map(move => this.applyProjectMove(move.conversationId)))
-  }
-
-  private async applyProjectMove(conversationId: string): Promise<void> {
-    const phase = this.phase(conversationId)
-    if ((phase !== 'idle' && phase !== 'cold') || this.hasDetachedWork(conversationId)) return
-    const pending = pendingProjectMove(this.db, conversationId)
-    if (!pending) return
-    this.projectMoveLocks.add(conversationId)
-    try {
-      const prepared = prepareProjectMove(this.db, this.log, conversationId)
-      if (!prepared) return
-      if (!(await stat(prepared.project.workspacePath).catch(() => null))?.isDirectory()) throw new Error('The destination project directory is missing.')
-      await this.stopRunner(conversationId, { keepQueue: true })
-      // Recheck access after stopping: project visibility may have changed meanwhile.
-      const current = prepareProjectMove(this.db, this.log, conversationId)
-      if (!current) return
-      commitProjectMove(this.db, current)
-      this.statusBus.emit('workspace', { conversationId })
-      // Revoke old viewers' subscriptions before publishing events in the destination project.
-      this.statusBus.emit('lists')
-      this.log.append(conversationId, {
-        type: 'agent.notice', id: current.move.id, code: 'project_moved', level: 'info',
-        message: `Session moved to ${current.project.name}. History is preserved; the next message uses the destination workspace and instructions.`,
-        details: { project: current.project.name, previousDirectory: current.move.fromCwd, directory: current.project.workspacePath },
-      })
-      this.broadcastStatus(conversationId, 'idle', false)
-    } catch (error) {
-      this.db.update(conversationProjectMoves).set({ completedAt: Date.now(), error: String(error) }).where(eq(conversationProjectMoves.id, pending.id)).run()
-      this.log.append(conversationId, { type: 'agent.notice', code: 'project_move_failed', level: 'warning', message: `The session could not be moved: ${error instanceof Error ? error.message : String(error)}`, details: String(error) })
-    } finally {
-      this.projectMoveLocks.delete(conversationId)
-    }
-    await this.flushQueue(conversationId)
+    await this.moves.applyPending()
   }
 
   /** Sends the first queued message only. `runner.send` returns to `running`, so the next waits for another `turn.completed`. Sending everything together would merge messages into one turn, defeating queues. */
@@ -500,16 +425,8 @@ export class SessionManager {
     // queued until the next idle transition.
     if (this.isBusy(conversationId)) return
 
-    const queue = this.queues.get(conversationId)
-    const next = queue?.shift()
-    if (!queue || !next) return
-    if (queue.length === 0) this.queues.delete(conversationId)
-
-    this.log.append(conversationId, {
-      type: 'message.dequeued',
-      queueId: next.queueId,
-      reason: 'sent',
-    })
+    const next = this.queue.shift(conversationId)
+    if (!next) return
 
     try {
       const prepared = this.prepareSend(conversationId, next.mentions)
@@ -532,16 +449,12 @@ export class SessionManager {
     conversationId: string,
     queueId: string,
   ): Promise<'steered' | 'gone' | 'unavailable'> {
-    const queue = this.queues.get(conversationId)
-    const entry = queue?.find((item) => item.queueId === queueId)
-    if (!queue || !entry) return 'gone'
+    if (!this.queue.contains(conversationId, queueId)) return 'gone'
 
     const managed = this.runners.get(conversationId)
     if (!managed) return 'unavailable'
 
-    const index = queue.indexOf(entry)
-    queue.splice(index, 1)
-    if (queue.length === 0) this.queues.delete(conversationId)
+    const { entry, restore } = this.queue.take(conversationId, queueId)!
 
     const conversation = this.loadConversation(conversationId)
     const resolved = this.resolveMentions(this.resolveCwd(conversation), entry.mentions)
@@ -550,11 +463,7 @@ export class SessionManager {
     try {
       steered = await managed.runner.steer(entry.text, entry.attachments, resolved, entry.skills)
     } finally {
-      if (!steered) {
-        const restored = this.queues.get(conversationId) ?? []
-        restored.splice(index, 0, entry)
-        this.queues.set(conversationId, restored)
-      }
+      if (!steered) restore()
     }
     if (!steered) return 'unavailable'
 
@@ -565,27 +474,7 @@ export class SessionManager {
 
   /** Removes queued messages before sending. */
   cancelQueued(conversationId: string, queueId: string): boolean {
-    const queue = this.queues.get(conversationId)
-    const index = queue?.findIndex((entry) => entry.queueId === queueId) ?? -1
-    if (!queue || index === -1) return false
-
-    queue.splice(index, 1)
-    if (queue.length === 0) this.queues.delete(conversationId)
-
-    this.log.append(conversationId, {
-      type: 'message.dequeued',
-      queueId,
-      reason: 'cancelled',
-    })
-    return true
-  }
-
-  /** Pending messages that can no longer depart: journaled as expired, rather than lost silently at the next message. */
-  private expireQueue(conversationId: string): void {
-    for (const entry of this.queues.get(conversationId) ?? []) {
-      this.log.append(conversationId, { type: 'message.dequeued', queueId: entry.queueId, reason: 'expired' })
-    }
-    this.queues.delete(conversationId)
+    return this.queue.cancel(conversationId, queueId)
   }
 
   antigravityHome(userId: string, accountId: string | null): string | undefined {
@@ -760,23 +649,6 @@ export class SessionManager {
     return relativePaths.map((relativePath) => resolveMention(cwd, relativePath))
   }
 
-  /** Records client message IDs and reports whether new (invariant I5). Memory windows suffice because duplicates are network retries seconds apart, never other processes. */
-  private claimClientMessage(conversationId: string, clientMessageId: string): boolean {
-    const key = `${conversationId}:${clientMessageId}`
-    const now = Date.now()
-    for (const [seen, ts] of this.recentClientMessages) {
-      if (now - ts > DEDUPE_TTL_MS) this.recentClientMessages.delete(seen)
-    }
-    if (this.recentClientMessages.has(key)) return false
-    this.recentClientMessages.set(key, now)
-    return true
-  }
-
-  /** Releases claimed but undelivered IDs when sends fail before reaching CLIs, so legitimate retries are not swallowed as duplicates. */
-  private releaseClientMessage(conversationId: string, clientMessageId: string): void {
-    this.recentClientMessages.delete(`${conversationId}:${clientMessageId}`)
-  }
-
   /** Steers current turns instead of opening new ones. False for unsupported CLIs, stopped sessions or turns finishing before clicks. Callers explain rather than silently queue: these actions have different outcomes. */
   async steer(
     conversationId: string,
@@ -788,7 +660,7 @@ export class SessionManager {
     options: SteerOptions = {},
   ): Promise<boolean> {
     // Network retries must not steer twice: the first already delivered.
-    if (!this.claimClientMessage(conversationId, clientMessageId)) return true
+    if (!this.clientMessages.claim(conversationId, clientMessageId)) return true
 
     // Rejected or failed steering delivered nothing: callers fall back to
     // ordinary sends using the same ID, which must not count as duplicates.
@@ -804,7 +676,7 @@ export class SessionManager {
       if (steered) this.touch(conversationId)
       return steered
     } finally {
-      if (!steered) this.releaseClientMessage(conversationId, clientMessageId)
+      if (!steered) this.clientMessages.release(conversationId, clientMessageId)
     }
   }
 
@@ -817,23 +689,13 @@ export class SessionManager {
     skills: string[] = [],
   ): Promise<void> {
     this.assertOpen()
-    if (pendingProjectMove(this.db, conversationId)) await this.applyProjectMove(conversationId)
-    if (!this.claimClientMessage(conversationId, clientMessageId)) return
+    if (this.moves.isPending(conversationId)) await this.moves.apply(conversationId)
+    if (!this.clientMessages.claim(conversationId, clientMessageId)) return
 
     // During active turns, messages wait rather than enter CLIs
     // and mix into current-turn context.
-    if (this.isBusy(conversationId) || pendingProjectMove(this.db, conversationId)) {
-      const queueId = randomUUID()
-      const queue = this.queues.get(conversationId) ?? []
-      queue.push({ queueId, clientMessageId, text, attachments, mentions, skills })
-      this.queues.set(conversationId, queue)
-
-      this.log.append(conversationId, {
-        type: 'message.queued',
-        queueId,
-        text,
-        attachmentCount: attachments.length,
-      })
+    if (this.isBusy(conversationId) || this.moves.isPending(conversationId)) {
+      this.queue.push(conversationId, { clientMessageId, text, attachments, mentions, skills })
       this.touch(conversationId)
       return
     }
@@ -844,14 +706,14 @@ export class SessionManager {
     } catch (err) {
       // Sends failed before reaching CLIs: release IDs so clients can retry
       // without deduplication swallowing their messages.
-      this.releaseClientMessage(conversationId, clientMessageId)
+      this.clientMessages.release(conversationId, clientMessageId)
       throw err
     }
     this.announce(prepared.conversation, text, attachments, prepared.resolved, skills)
     // Detached: the reply is 'accepted' and the thread already shows the message. The CLI start
     // that follows is what took seconds on Windows.
     detach(this.deliver(prepared.conversation, prepared.release, text, attachments, prepared.resolved, skills).then((delivered) => {
-      if (!delivered) this.releaseClientMessage(conversationId, clientMessageId)
+      if (!delivered) this.clientMessages.release(conversationId, clientMessageId)
     }), 'message delivery')
   }
 
@@ -901,7 +763,7 @@ export class SessionManager {
       this.touch(conversationId)
       return true
     } catch (err) {
-      this.checkpoints.delete(conversationId)
+      this.turnCheckpoints.forget(conversationId)
       // Stopped while its CLI was starting: the stop explains the failure and has closed the turn.
       if (delivery?.cancel) {
         await this.dropDelivery(conversationId, delivery.cancel)
@@ -948,10 +810,10 @@ export class SessionManager {
   /** `deliver`'s side of a cancellation: the message is dropped, a terminated conversation loses its CLI, an interrupted one keeps it warm and sends what was queued meanwhile. */
   private async dropDelivery(conversationId: string, kind: 'interrupt' | 'terminate'): Promise<void> {
     this.pendingDeliveries.delete(conversationId)
-    this.closeCheckpoint(conversationId)
+    this.turnCheckpoints.close(conversationId)
     if (kind === 'terminate') {
       await this.stopRunner(conversationId)
-      this.expireQueue(conversationId)
+      this.queue.expire(conversationId)
       return
     }
     await this.settleIdle(conversationId)
@@ -969,95 +831,9 @@ export class SessionManager {
     }
   }
 
-  /** Captures pre-turn workspace state when enabled. Failure never blocks delivery: snapshots are convenience; turns are the work. Outside git, do nothing silently. */
+  /** Captures pre-turn workspace state when enabled; see `TurnCheckpoints.open`. A method of its own so tests can hold a delivery between the CLI start and the hand-over. */
   private async openCheckpoint(conversation: ConversationRow): Promise<void> {
-    if (conversation.projectId === null || this.checkpoints.has(conversation.id)) return
-    const project = this.db
-      .select({ turnCheckpoints: projects.turnCheckpoints })
-      .from(projects)
-      .where(eq(projects.id, conversation.projectId))
-      .get()
-    if (!project?.turnCheckpoints) return
-
-    const cwd = this.resolveCwd(conversation)
-    const key = randomUUID()
-    const capture = captureSnapshot(cwd, checkpointRef(conversation.id, key, 'before')).then(
-      () => true,
-      (err: unknown) => {
-        if (!(err instanceof CheckpointError && err.code === 'checkpoint_not_repository')) {
-          console.warn(`[checkpoints] capture avant le tour impossible (${conversation.id}) :`, err)
-        }
-        return false
-      },
-    )
-    const entry: ActiveCheckpoint = { key, cwd, edited: new Set(), capture }
-
-    let timer: NodeJS.Timeout | undefined
-    const settled = await Promise.race([
-      capture,
-      new Promise<null>((resolveWait) => {
-        timer = setTimeout(() => resolveWait(null), CHECKPOINT_WAIT_MS)
-      }),
-    ])
-    clearTimeout(timer)
-    if (settled === false) return
-
-    // Journal the opening now even when the capture is still running: the thread attaches each
-    // checkpoint to the next user message, so the marker must precede it.
-    this.checkpoints.set(conversation.id, entry)
-    this.log.append(conversation.id, { type: 'checkpoint.started', key })
-    if (settled === null) {
-      detach(capture.then((ok) => {
-        if (ok || this.checkpoints.get(conversation.id) !== entry) return
-        this.checkpoints.delete(conversation.id)
-        this.failCheckpoint(conversation.id, key, 'The workspace could not be captured before the turn.')
-      }), 'late checkpoint capture')
-    }
-  }
-
-  private failCheckpoint(conversationId: string, key: string, reason: string): void {
-    this.log.append(conversationId, {
-      type: 'checkpoint.completed',
-      key,
-      status: 'failed',
-      reason,
-      files: [],
-      truncated: false,
-      excluded: 0,
-    })
-  }
-
-  /** Captures post-turn state and journals changes without blocking. Remove open checkpoints before capture because queued messages may start another turn needing its own checkpoint meanwhile. */
-  private closeCheckpoint(conversationId: string): void {
-    const active = this.checkpoints.get(conversationId)
-    if (!active) return
-    this.checkpoints.delete(conversationId)
-
-    void (async () => {
-      // A short turn can end before the before snapshot is in: without it there is nothing to diff.
-      if (!(await active.capture)) {
-        this.failCheckpoint(conversationId, active.key, 'The workspace could not be captured before the turn.')
-        return
-      }
-      try {
-        await captureSnapshot(active.cwd, checkpointRef(conversationId, active.key, 'after'))
-        const diff = await diffCheckpoint(active.cwd, conversationId, active.key, [...active.edited])
-        this.log.append(conversationId, {
-          type: 'checkpoint.completed',
-          key: active.key,
-          status: 'ready',
-          reason: null,
-          files: diff.files.slice(0, CHECKPOINT_EVENT_FILES),
-          truncated: diff.files.length > CHECKPOINT_EVENT_FILES,
-          excluded: diff.excluded,
-        })
-      } catch (err) {
-        this.failCheckpoint(conversationId, active.key, err instanceof Error ? err.message : String(err))
-      }
-    })().catch((err: unknown) => {
-      // Conversations may disappear during capture, leaving no journal to write.
-      console.warn(`[checkpoints] capture après le tour perdue (${conversationId}) :`, err)
-    })
+    await this.turnCheckpoints.open(conversation)
   }
 
   /** Restores pre-turn workspace state. Reject during active turns to avoid racing agent writes. Serialize with Git tab actions on the same repository. Agents still remember the turn; adjacent fork actions also rewind conversation context. */
@@ -1071,7 +847,7 @@ export class SessionManager {
     conversationId: string,
     key: string,
     options: { undo?: boolean } = {},
-  ): Promise<{ written: number; deleted: number; indexRestored: boolean; skipped: number }> {
+  ): Promise<RestoreResult> {
     if (checkpointBeforeProjectMove(this.db, conversationId, key)) throw new HttpError(409, 'checkpoint_previous_project', 'This checkpoint belongs to the previous project and cannot be restored here.')
     if (this.isBusy(conversationId)) {
       throw new HttpError(
@@ -1090,32 +866,7 @@ export class SessionManager {
       throw new HttpError(409, 'checkpoint_workspace_busy', 'Another session is working in this directory: wait for its turn to finish before restoring.')
     }
 
-    const undoRef = checkpointRef(conversationId, key, 'undo')
-    const result = await serialized(cwd, async () => {
-      if (!options.undo) {
-        await captureSnapshot(cwd, undoRef)
-        return restoreSnapshot(cwd, checkpointRef(conversationId, key, 'before'))
-      }
-      if (!(await readSnapshot(cwd, undoRef))) {
-        throw new CheckpointError('checkpoint_missing', 'There is no restoration of this turn to undo.')
-      }
-      // Undoing is a restoration too: keep what it replaces, then make that the next undo point.
-      const swap = `${undoRef}-next`
-      await captureSnapshot(cwd, swap)
-      const restored = await restoreSnapshot(cwd, undoRef)
-      await moveSnapshot(cwd, swap, undoRef)
-      return restored
-    })
-    this.log.append(conversationId, {
-      type: 'checkpoint.restored',
-      key,
-      written: result.written,
-      deleted: result.deleted,
-      skipped: result.skipped,
-      undoable: !options.undo,
-      undone: options.undo === true,
-    })
-    return result
+    return this.turnCheckpoints.restore(cwd, conversationId, key, options)
   }
 
   /** `workingDirectory` for a conversation that may have been deleted meanwhile. */
@@ -1129,21 +880,12 @@ export class SessionManager {
 
   /** Gives forks source snapshots so copied journal markers resolve. */
   async inheritCheckpoints(fromId: string, toId: string): Promise<void> {
-    try {
-      await copyCheckpoints(this.workingDirectory(toId), fromId, toId)
-    } catch (err) {
-      console.warn(`[checkpoints] copie au fork impossible (${fromId} -> ${toId}) :`, err)
-    }
+    await this.turnCheckpoints.inherit(fromId, toId)
   }
 
   /** Removes deleted/archived conversation snapshots without blocking. */
   async dropCheckpoints(conversationId: string): Promise<void> {
-    this.checkpoints.delete(conversationId)
-    try {
-      await deleteCheckpoints(this.workingDirectory(conversationId), conversationId)
-    } catch (err) {
-      console.warn(`[checkpoints] nettoyage impossible (${conversationId}) :`, err)
-    }
+    await this.turnCheckpoints.drop(conversationId)
   }
 
   /** Compacts conversation context. Restart cold runners because compaction requires loaded sessions and the next message would resume them anyway. */
@@ -1426,7 +1168,7 @@ export class SessionManager {
 
     // Pending messages cannot depart after runner shutdown: leaving them queued
     // would silently lose them at the next message.
-    if (!keepQueue) this.expireQueue(conversationId)
+    if (!keepQueue) this.queue.expire(conversationId)
 
     this.runners.delete(conversationId)
     this.usage?.forget(conversationId)
@@ -1470,7 +1212,7 @@ export class SessionManager {
         const managed = this.runners.get(conversationId)
         if (managed) managed.status = 'interrupted'
         // Already expired from the journal: `stopRunner` would announce them a second time.
-        this.queues.delete(conversationId)
+        this.queue.discard(conversationId)
       } catch (err) {
         console.error(`sillage: closing the turn of ${conversationId} failed`, err)
       }
