@@ -10,6 +10,7 @@ import {
   type HookCallback,
   type McpServerConfig,
   type OnElicitation,
+  type PermissionMode,
   type PermissionResult,
   type Query,
   type SDKMessage,
@@ -38,6 +39,7 @@ import { journalDeath } from '../session-close.js'
 import { toWorkspacePath } from '../paths.js'
 import { ToolDurations } from '../tool-durations.js'
 import { parseWorkflowProgress } from './workflow-progress.js'
+import { mcpServersDelivery, type McpServersDelivery } from './mcp-delivery.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -47,6 +49,7 @@ import type {
   PlanReview,
   QuestionAnswer,
   RunnerContext,
+  SteerOptions,
 } from '../types.js'
 import { toDto as toCommandDtos } from './command-catalog.js'
 import { editedPath, fileExists } from './file-edits.js'
@@ -206,6 +209,8 @@ export class ClaudeRunner implements AgentRunner {
   private appliedMcpServers: Record<string, McpServerConfig> = {}
   /** Omission from `setMcpServers` does not remove servers supplied at launch (SDK 0.3.325). */
   private launchMcpNames = new Set<string>()
+  /** How launch-time MCP servers were handed to the CLI; see `mcpServersDelivery`. */
+  private mcpDelivery: McpServersDelivery = 'argv'
   /** Servers that failed to launch, added to CLI-reported inventory. */
   private mcpFailures: McpServerStatus[] = []
   /** Last inventory the CLI reported, so each turn knows which servers to retry. */
@@ -225,6 +230,8 @@ export class ClaudeRunner implements AgentRunner {
     private readonly ctx: RunnerContext,
     /** Model sent to the CLI for a configured one; the adapter names the model behind "default". */
     private readonly cliModel: (model: string) => string = (model) => model,
+    /** Version of `ctx.binary`, which decides how MCP servers reach it; null keeps the command line. */
+    private readonly cliVersion: () => Promise<string | null> = async () => null,
   ) {
     this.conversationId = ctx.conversationId
     this.config = ctx.config as ClaudeConfig
@@ -245,6 +252,7 @@ export class ClaudeRunner implements AgentRunner {
     const overview = this.ctx.projectOverview(config)
     this.skillRoots = this.ctx.skillRoots(config)
     const library = skillLibraryLaunchOptions(this.skillRoots)
+    this.mcpDelivery = mcpServersDelivery(await this.cliVersion().catch(() => null))
 
     this.session = query({
       prompt: this.input,
@@ -274,6 +282,8 @@ export class ClaudeRunner implements AgentRunner {
         // therefore lacks these servers, the cost of leaving user files untouched. Established by
         // probe, not inferable from documentation.
         mcpServers: this.appliedMcpServers,
+        // Over stdin when the CLI accepts it, so server secrets stay out of `ps`; see mcp-delivery.ts.
+        mcpServersDelivery: this.mcpDelivery,
         // Only the built-in tool can name this session; it never overrides a human title.
         allowedTools: resolved.servers.filter((server) => server.id === BUILTIN_MCP_SERVER_ID)
           .map((server) => `mcp__${server.name}__rename_session`),
@@ -560,17 +570,7 @@ export class ClaudeRunner implements AgentRunner {
           return
         }
         if (message.subtype === 'init') {
-          if (message.permissionMode !== toPermissionMode(this.config.permissionMode)) {
-            process.stderr.write(
-              `[claude ${this.conversationId}] permission mode mismatch: requested=${toPermissionMode(this.config.permissionMode)} actual=${message.permissionMode} version=${message.claude_code_version}\n`,
-            )
-            this.ctx.emit({
-              type: 'agent.notice', id: 'claude-permission-mode', code: 'claude_permission_mode_adjusted',
-              level: 'warning',
-              message: `Claude Code is using permission mode ${message.permissionMode} instead of ${toPermissionMode(this.config.permissionMode)}.`,
-              details: { requested: toPermissionMode(this.config.permissionMode), actual: message.permissionMode },
-            })
-          }
+          this.reportPermissionMode(toPermissionMode(this.config.permissionMode), message.permissionMode, message.claude_code_version)
           this.capabilities = message.capabilities ?? []
           const first = this.sessionId === null
           this.sessionId = message.session_id
@@ -578,6 +578,7 @@ export class ClaudeRunner implements AgentRunner {
           // Init `slash_commands` has names only. Completion needs descriptions/argument shapes,
           // supplied only by this request.
           if (first) detach(this.publishSupportedCommands(), 'slash command publication')
+          if (first) detach(this.checkMcpDelivery(), 'MCP delivery check')
           // CLI emits init every turn, not just launch: database counted equal `session.started`
           // and turns. Only first is startup; later journaled only on session/model changes,
           // revealing typed `/model`, fallback, `/clear` opening another session.
@@ -1060,6 +1061,39 @@ export class ClaudeRunner implements AgentRunner {
    *
    * CLI pushes list changes itself; explicitly request only at startup before any push.
    */
+  /** Warns, in the log and the conversation, when the CLI runs another permission mode than asked. */
+  private reportPermissionMode(requested: PermissionMode, actual: PermissionMode, version?: string): void {
+    if (actual === requested) return
+    process.stderr.write(
+      `[claude ${this.conversationId}] permission mode mismatch: requested=${requested} actual=${actual}${version ? ` version=${version}` : ''}\n`,
+    )
+    this.ctx.emit({
+      type: 'agent.notice', id: 'claude-permission-mode', code: 'claude_permission_mode_adjusted',
+      level: 'warning',
+      message: `Claude Code is using permission mode ${actual} instead of ${requested}.`,
+      details: { requested, actual },
+    })
+  }
+
+  /**
+   * Servers sent over the initialize request are only known to be read when the CLI says so. An
+   * absent `mcp_servers_applied` (a CLI too old for this delivery) already ends the session in the
+   * SDK with an explicit error (0.3.332); an explicit `false` lets it run without the tools Sillage
+   * shows, so say it in the conversation instead of failing quietly.
+   */
+  private async checkMcpDelivery(): Promise<void> {
+    if (this.mcpDelivery !== 'initialize' || this.launchMcpNames.size === 0 || !this.session) return
+    const result = await this.session.initializationResult()
+    if (result.mcp_servers_applied === true) return
+    process.stderr.write(`[claude ${this.conversationId}] MCP servers sent at initialize were not applied\n`)
+    this.ctx.emit({
+      type: 'agent.notice', id: 'claude-mcp-delivery', code: 'claude_mcp_servers_not_applied',
+      level: 'warning',
+      message: 'Claude Code did not load the MCP servers sent at launch: their tools are unavailable in this session. Restarting the session usually restores them.',
+      details: { servers: [...this.launchMcpNames] },
+    })
+  }
+
   private async publishSupportedCommands(): Promise<void> {
     const session = this.session
     if (!session) return
@@ -1178,12 +1212,19 @@ export class ClaudeRunner implements AgentRunner {
    * Two installed-CLI probe limits absent from docs: only tool-batch boundaries fold messages, so
    * final answers without further calls finish before message starts next turn. Stream never
    * reports which happened: `true` means sent during open turn, not guaranteed redirection.
+   *
+   * Since 2.1.332, where feature flags are not fetched (telemetry off, cloud providers) a mid-turn
+   * message counts as the user's unless marked `isSynthetic`. The CLI then presents it as untrusted
+   * content: probed on 2.1.332 (Haiku), the model read such a note but ignored it 2 times in 6,
+   * against 0 in 5 unmarked. So only text from outside the user's control is marked; messages from
+   * the user's own sessions stay instructions, as they are wherever flags are fetched.
    */
   async steer(
     text: string,
     attachments: OutgoingAttachment[],
     mentions: OutgoingMention[],
     skills: string[],
+    options: SteerOptions = {},
   ): Promise<boolean> {
     if (!this.session || !this.turnOpen) return false
 
@@ -1205,6 +1246,7 @@ export class ClaudeRunner implements AgentRunner {
       parent_tool_use_id: null,
       session_id: '',
       priority: 'next',
+      ...(options.untrusted ? { isSynthetic: true } : {}),
     } as SDKUserMessage)
 
     return true
@@ -1251,7 +1293,7 @@ export class ClaudeRunner implements AgentRunner {
 
   /**
    * SDK `get_task_output` control request: the same 8 KiB tail as the terminal's /tasks detail.
-   * `Query` implements it but does not declare it (SDK 0.3.301 through 0.3.328), hence the
+   * `Query` implements it but does not declare it (SDK 0.3.301 through 0.3.332), hence the
    * structural check; a refusal (ended task whose file is gone, not a shell) reads as no output.
    */
   async readBackgroundTaskOutput(taskId: string): Promise<BackgroundTaskOutput | null> {
@@ -1305,7 +1347,11 @@ export class ClaudeRunner implements AgentRunner {
     // live change fail and fall back to a restart. Undefined is the SDK's way to ask for the default.
     await this.session.setModel(this.cliModel(config.model) || undefined)
     await this.session.applyFlagSettings(liveFlagSettings(this.config, config))
-    await this.session.setPermissionMode(toPermissionMode(config.permissionMode))
+    // Since 2.1.332 the answer names the mode now in effect, which the CLI may adjust (an auto mode
+    // the model refuses, for instance); older CLIs answer with no payload.
+    const requestedMode = toPermissionMode(config.permissionMode)
+    const effective = await this.session.setPermissionMode(requestedMode)
+    if (effective?.mode) this.reportPermissionMode(requestedMode, effective.mode)
 
     // Compare resolved servers, not IDs: registry entries corrected meanwhile must restart even
     // with identical ID list.

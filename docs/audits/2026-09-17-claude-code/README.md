@@ -572,3 +572,34 @@ Separately downloaded binary `@anthropic-ai/claude-code-linux-x64@2.1.312` under
 
 During an authorized deployment, run `claude install 2.1.312` through the
 supervised procedure.
+
+## November 26, 2026 addendum: target 2.1.332
+
+Card #83 covers 2.1.326 to 2.1.332 in one target/SDK bump (SDK `^0.3.332`). The host
+binary is still **2.1.318**; verification uses a separately downloaded **2.1.332**
+under `/var/tmp`, with the host login and no copied credentials.
+
+| Native surface | Integration decision | Verification |
+| --- | --- | --- |
+| `mcpServersDelivery` (0.3.326): `'argv'` puts server `env`/`headers` on the command line, readable through `ps`; the default will change to `'initialize'` | `'initialize'` when the detected CLI is at least the SDK's bundled `claudeCodeVersion`, explicit `'argv'` otherwise (`agents/claude/mcp-delivery.ts`) | Native probe: `mcp_servers_applied: true`, no secret and no `--mcp-config` in `/proc/<pid>/cmdline`, servers connected; fixture tests for both deliveries |
+| `mcp_servers_applied` | Absent: the SDK itself ends the session with an explicit error, which the version check avoids. `false`: Sillage posts a `claude_mcp_servers_not_applied` notice | Fixture test |
+| `setPermissionMode()` resolves with the mode in effect (2.1.332) | Live changes report a different effective mode with the same `claude_permission_mode_adjusted` notice as init | Fixture test |
+| Mid-turn messages count as the user's where feature flags are not fetched unless `isSynthetic` (2.1.332) | Only GitHub issue comments steered by the board responder are marked; messages between the user's own sessions are not | Native probe below |
+| `Stop` hook `decision: "block"` holds in more cases | Sillage's `Stop` hook only returns `{ continue: true }` | Read |
+| `claude auth login` exits 1 when a login cannot be saved | Not used: the guided login runs `claude setup-token` | Read |
+| Built-in `easel` mod (2.1.330) | Absent from a headless session's tools: nothing to render | `claude -p --output-format stream-json` init, 2.1.332 |
+
+`isSynthetic` is not neutral. With the same Haiku turn (a `sleep` in Bash, then a
+steered note asking to end with a given word), the unmarked note was followed in 5
+runs out of 5; marked, the model read it but ignored it in 2 runs out of 6, calling it
+a note slipped into tool output that did not come from the user. Sillage's
+cross-session messages are orchestration the user set up, so marking them would
+make agents drop them at random; GitHub comments can come from anyone, which is the
+case the marking exists for.
+
+Not adopted in this bump: `task_started.prompt` (card #22), `PreSkillShellCommand`,
+`CLAUDE_CODE_DISABLE_SHELL_HEAD_START`, `pluginDelivery: 'initialize'` (Windows
+command-line length; the skill library passes few plugins).
+
+During an authorized deployment, run `claude install 2.1.332` through the
+supervised procedure.

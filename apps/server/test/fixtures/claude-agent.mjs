@@ -20,10 +20,19 @@ for await (const line of createInterface({ input: process.stdin })) {
             response: { output: 'tick 1\ntick 2\n', total_bytes: 9000, truncated: true } } })
       continue
     }
+    // Like 2.1.332: initialize says whether launch servers were taken, set_permission_mode names
+    // the mode in effect. Both stay absent unless a test asks, as with older CLIs.
+    const extra = {}
+    if (message.request.subtype === 'initialize' && process.env.CLAUDE_FIXTURE_MCP_APPLIED) {
+      extra.mcp_servers_applied = process.env.CLAUDE_FIXTURE_MCP_APPLIED === 'true'
+    }
+    if (message.request.subtype === 'set_permission_mode' && process.env.CLAUDE_FIXTURE_EFFECTIVE_MODE) {
+      extra.mode = process.env.CLAUDE_FIXTURE_EFFECTIVE_MODE
+    }
     send({ type: 'control_response', response: invalid
       ? { subtype: 'error', request_id: message.request_id, error: 'Invalid flag settings' }
       : { subtype: 'success', request_id: message.request_id,
-          response: { commands: [], models: [], agents: [], mcpServers: [], added: [], removed: [], errors: {} } } })
+          response: { commands: [], models: [], agents: [], mcpServers: [], added: [], removed: [], errors: {}, ...extra } } })
     if (message.request.subtype === 'mcp_status' && !startupSent) {
       startupSent = true
       for (const event of JSON.parse(process.env.CLAUDE_FIXTURE_IDLE_EVENTS ?? '[]')) send(event)

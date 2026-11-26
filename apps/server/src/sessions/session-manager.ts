@@ -62,6 +62,7 @@ import type {
   PlanReview,
   QuestionAnswer,
   RunnerContext,
+  SteerOptions,
 } from '../agents/types.js'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
@@ -1446,6 +1447,7 @@ export class SessionManager {
     attachments: OutgoingAttachment[] = [],
     mentions: string[] = [],
     skills: string[] = [],
+    options: SteerOptions = {},
   ): Promise<boolean> {
     // Network retries must not steer twice: the first already delivered.
     if (!this.claimClientMessage(conversationId, clientMessageId)) return true
@@ -1460,7 +1462,7 @@ export class SessionManager {
       const conversation = this.loadConversation(conversationId)
       const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
 
-      steered = await managed.runner.steer(text, attachments, resolved, skills)
+      steered = await managed.runner.steer(text, attachments, resolved, skills, options)
       if (steered) this.touch(conversationId)
       return steered
     } finally {

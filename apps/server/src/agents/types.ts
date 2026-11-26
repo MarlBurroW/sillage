@@ -38,6 +38,15 @@ export interface PlanReview {
   decidedBy: string | null
 }
 
+/** Where steered text comes from. */
+export interface SteerOptions {
+  /**
+   * Written by someone the user does not control, such as a GitHub issue comment. Messages from the
+   * user's other sessions are not: they are orchestration the user set up and must be followed.
+   */
+  untrusted?: boolean
+}
+
 /** Session-manager inputs enabling runner output. */
 export interface RunnerContext {
   conversationId: string
@@ -140,12 +149,16 @@ export interface AgentRunner {
   answerQuestion(requestId: string, answer: QuestionAnswer): boolean | Promise<boolean>
   /** Answers MCP elicitations; false when no longer pending. */
   resolveElicitation(requestId: string, answer: ElicitationAnswer): boolean
-  /** Steers current turns immediately without interrupting or starting another. False when unsupported or no turn is active. */
+  /**
+   * Steers current turns immediately without interrupting or starting another. False when unsupported or no turn is active.
+   * `untrusted` marks text written by someone outside the user's control (a GitHub issue comment).
+   */
   steer(
     text: string,
     attachments: OutgoingAttachment[],
     mentions: OutgoingMention[],
     skills: string[],
+    options?: SteerOptions,
   ): Promise<boolean>
   /** Compacts context by requesting agent summaries. False when unsupported. Both CLIs support different paths, requiring this abstraction. */
   compact(): Promise<boolean>

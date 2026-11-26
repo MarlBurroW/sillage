@@ -115,7 +115,8 @@ export class BoardResponder implements Responder {
   /** Comments for existing sessions wait until current turns end, or steer when board settings request it and the CLI supports it. */
   private async deliver(conversationId: string, link: BoardLinkRow, text: string): Promise<void> {
     const messageId = randomUUID()
-    if (link.commentDelivery === 'steer' && (await this.sessions.steer(conversationId, messageId, text))) return
+    // Any GitHub account can comment: steered mid-turn, the CLI must not take it for the user's words.
+    if (link.commentDelivery === 'steer' && (await this.sessions.steer(conversationId, messageId, text, [], [], [], { untrusted: true }))) return
     await this.sessions.sendMessage(conversationId, messageId, text)
   }
 

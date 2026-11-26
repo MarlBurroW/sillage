@@ -70,10 +70,17 @@ export class ClaudeAdapter implements AgentAdapter {
     // Each CLI process picks its own default from a server-side flag (see `ClaudeModelCatalog`), so
     // "Default: Fable 5.1" in the selector could start a session on another model. Name the model
     // the selector announced instead; an unread catalog leaves the choice to the CLI.
-    return new ClaudeRunner(ctx, (model) =>
-      model === CLI_DEFAULT || model === 'default'
-        ? (this.catalog.defaultModel(claudeCredentialOfEnv(ctx.processEnv)) ?? model)
-        : model,
+    return new ClaudeRunner(
+      ctx,
+      (model) =>
+        model === CLI_DEFAULT || model === 'default'
+          ? (this.catalog.defaultModel(claudeCredentialOfEnv(ctx.processEnv)) ?? model)
+          : model,
+      // `ctx.binary` comes from the same resolution as this probe, cached between launches.
+      async () => {
+        const status = await this.cli.status()
+        return status.found ? status.version : null
+      },
     )
   }
 
