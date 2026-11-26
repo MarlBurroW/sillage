@@ -28,7 +28,9 @@ async function prompt(id, params) {
     update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '- **Gemini Pro**\n  - **Weekly Limit Remaining:** 91% remaining (resets Oct 29, 2026)' } })
     write({ id, result: { stopReason: 'end_turn' } }); return
   }
-  const scenario = text.startsWith('fixture:') ? JSON.parse(text.slice(8)) : { steps: [] }
+  // The scenario is the first line only: Sillage appends live session context to the first
+  // message of each launch.
+  const scenario = text.startsWith('fixture:') ? JSON.parse(text.slice(8).split('\n')[0]) : { steps: [] }
   active = id
   for (const step of scenario.steps ?? []) {
     if (active !== id) return
