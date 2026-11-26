@@ -3759,6 +3759,7 @@ export const en = {
   'decision.worktree.expiry': 'Without an answer, the tree stays as it is.',
   'decision.worktree.open': 'Open worktrees',
   'error.worktree_exists': "Worktree {name} already exists.",
+  'error.working_directory_missing': "The working directory {path} no longer exists. Restore it, or move the project or worktree to its new location.",
   'error.worktree_not_found': "Worktree not found.",
   'error.worktree_leftovers_changed': 'The files left in this worktree have changed. Review them again.',
   'error.worktree_keep_forbidden': 'Only the project owner can keep worktree files.',
