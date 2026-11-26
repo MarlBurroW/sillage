@@ -1,8 +1,3 @@
-import { DiscussionFilesPage } from './routes/DiscussionFilesPage'
-import { PersonalMemoryPage } from './routes/PersonalMemoryPage'
-import { BenchmarksPage } from './routes/BenchmarksPage'
-import { NewsSettingsPage } from './routes/NewsSettingsPage'
-import { RadioSettingsPage } from './routes/RadioSettingsPage'
 import { Suspense, useEffect } from 'react'
 import { lazyWithReload } from './lib/lazy-reload'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
@@ -16,12 +11,10 @@ import { useProjects } from './lib/projects'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
 import { HomePage } from './routes/HomePage'
-import { ServicesPage } from './routes/ServicesPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
 import { ProjectPage } from './routes/ProjectPage'
 import { NewProjectPage } from './routes/NewProjectPage'
-import { SchedulePage } from './routes/SchedulePage'
 // Load on demand: explorer and script editor are used only here and the main bundle has no precache headroom.
 const AutomationPage = lazyWithReload(() => import('./routes/AutomationPage').then((module) => ({ default: module.AutomationPage })))
 // The wall pulls its own styles and query tooling: keep them out of the main bundle, close to the precache limit.
@@ -38,32 +31,43 @@ const SkillEditorPage = lazyWithReload(() => import('./routes/SkillEditorPage').
 const DesignPage = lazyWithReload(() => import('./routes/DesignPage').then((module) => ({ default: module.DesignPage })))
 // The main bundle sits near the 3 MiB precache cap: a page few people open loads on demand.
 const ReleaseNotesSection = lazyWithReload(() => import('./routes/ReleaseNotesSection').then((module) => ({ default: module.ReleaseNotesSection })))
-import { AboutSection } from './routes/AboutSection'
-import { AccountSection } from './routes/AccountSection'
-import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
-import { RemoteAccessSettingsPage } from './routes/RemoteAccessSettingsPage'
-import { AppearanceSection } from './routes/AppearanceSection'
-import { CliVersionsSettingsPage } from './routes/CliVersionsSettingsPage'
-import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
-import { DictationSettingsPage } from './routes/DictationSettingsPage'
-import { McpSettingsPage } from './routes/McpSettingsPage'
-import { InstructionsSettingsPage } from './routes/InstructionsSettingsPage'
-import { SkillLibrarySettingsPage } from './routes/SkillLibrarySettingsPage'
-import { NotificationsSection } from './routes/NotificationsSection'
-import { ApiTokensSettingsPage } from './routes/ApiTokensSettingsPage'
-import { GitCredentialsSettingsPage } from './routes/GitCredentialsSettingsPage'
-import { ClaudeAccountsSettingsPage } from './routes/ClaudeAccountsSettingsPage'
-import { CodexAccountsSettingsPage } from './routes/CodexAccountsSettingsPage'
-import { GrokAccountsSettingsPage } from './routes/GrokAccountsSettingsPage'
-import { AntigravityAccountsSettingsPage } from './routes/AntigravityAccountsSettingsPage'
-import { DecisionsPage } from './routes/DecisionsPage'
-import { SecretsSettingsPage } from './routes/SecretsSettingsPage'
-import { SessionsSettingsPage } from './routes/SessionsSettingsPage'
-import { PreviewSettingsPage } from './routes/PreviewSettingsPage'
+// Screens opened now and then, off the main path of projects and conversations: the main bundle
+// must stay under the PWA precache limit, and every lazy chunk is precached all the same.
+const DiscussionFilesPage = lazyWithReload(() => import('./routes/DiscussionFilesPage').then((module) => ({ default: module.DiscussionFilesPage })))
+const PersonalMemoryPage = lazyWithReload(() => import('./routes/PersonalMemoryPage').then((module) => ({ default: module.PersonalMemoryPage })))
+const BenchmarksPage = lazyWithReload(() => import('./routes/BenchmarksPage').then((module) => ({ default: module.BenchmarksPage })))
+const ServicesPage = lazyWithReload(() => import('./routes/ServicesPage').then((module) => ({ default: module.ServicesPage })))
+const SchedulePage = lazyWithReload(() => import('./routes/SchedulePage').then((module) => ({ default: module.SchedulePage })))
+const DecisionsPage = lazyWithReload(() => import('./routes/DecisionsPage').then((module) => ({ default: module.DecisionsPage })))
+// Settings sections: only the layout and its section list stay in the main bundle. The agent
+// tools section stays eager because ProjectPage shows the same component.
+const AboutSection = lazyWithReload(() => import('./routes/AboutSection').then((module) => ({ default: module.AboutSection })))
+const AccountSection = lazyWithReload(() => import('./routes/AccountSection').then((module) => ({ default: module.AccountSection })))
+const ArchivingSettingsPage = lazyWithReload(() => import('./routes/ArchivingSettingsPage').then((module) => ({ default: module.ArchivingSettingsPage })))
+const RemoteAccessSettingsPage = lazyWithReload(() => import('./routes/RemoteAccessSettingsPage').then((module) => ({ default: module.RemoteAccessSettingsPage })))
+const AppearanceSection = lazyWithReload(() => import('./routes/AppearanceSection').then((module) => ({ default: module.AppearanceSection })))
+const CliVersionsSettingsPage = lazyWithReload(() => import('./routes/CliVersionsSettingsPage').then((module) => ({ default: module.CliVersionsSettingsPage })))
+const CliDefaultsSettingsPage = lazyWithReload(() => import('./routes/CliDefaultsSettingsPage').then((module) => ({ default: module.CliDefaultsSettingsPage })))
+const DictationSettingsPage = lazyWithReload(() => import('./routes/DictationSettingsPage').then((module) => ({ default: module.DictationSettingsPage })))
+const McpSettingsPage = lazyWithReload(() => import('./routes/McpSettingsPage').then((module) => ({ default: module.McpSettingsPage })))
+const InstructionsSettingsPage = lazyWithReload(() => import('./routes/InstructionsSettingsPage').then((module) => ({ default: module.InstructionsSettingsPage })))
+const SkillLibrarySettingsPage = lazyWithReload(() => import('./routes/SkillLibrarySettingsPage').then((module) => ({ default: module.SkillLibrarySettingsPage })))
+const NotificationsSection = lazyWithReload(() => import('./routes/NotificationsSection').then((module) => ({ default: module.NotificationsSection })))
+const ApiTokensSettingsPage = lazyWithReload(() => import('./routes/ApiTokensSettingsPage').then((module) => ({ default: module.ApiTokensSettingsPage })))
+const GitCredentialsSettingsPage = lazyWithReload(() => import('./routes/GitCredentialsSettingsPage').then((module) => ({ default: module.GitCredentialsSettingsPage })))
+const ClaudeAccountsSettingsPage = lazyWithReload(() => import('./routes/ClaudeAccountsSettingsPage').then((module) => ({ default: module.ClaudeAccountsSettingsPage })))
+const CodexAccountsSettingsPage = lazyWithReload(() => import('./routes/CodexAccountsSettingsPage').then((module) => ({ default: module.CodexAccountsSettingsPage })))
+const GrokAccountsSettingsPage = lazyWithReload(() => import('./routes/GrokAccountsSettingsPage').then((module) => ({ default: module.GrokAccountsSettingsPage })))
+const AntigravityAccountsSettingsPage = lazyWithReload(() => import('./routes/AntigravityAccountsSettingsPage').then((module) => ({ default: module.AntigravityAccountsSettingsPage })))
+const SecretsSettingsPage = lazyWithReload(() => import('./routes/SecretsSettingsPage').then((module) => ({ default: module.SecretsSettingsPage })))
+const SessionsSettingsPage = lazyWithReload(() => import('./routes/SessionsSettingsPage').then((module) => ({ default: module.SessionsSettingsPage })))
+const PreviewSettingsPage = lazyWithReload(() => import('./routes/PreviewSettingsPage').then((module) => ({ default: module.PreviewSettingsPage })))
+const UsageLimitsSettingsPage = lazyWithReload(() => import('./routes/UsageLimitsSettingsPage').then((module) => ({ default: module.UsageLimitsSettingsPage })))
+const UsersSettingsPage = lazyWithReload(() => import('./routes/UsersSettingsPage').then((module) => ({ default: module.UsersSettingsPage })))
+const NewsSettingsPage = lazyWithReload(() => import('./routes/NewsSettingsPage').then((module) => ({ default: module.NewsSettingsPage })))
+const RadioSettingsPage = lazyWithReload(() => import('./routes/RadioSettingsPage').then((module) => ({ default: module.RadioSettingsPage })))
 import { AgentToolsSettingsPage } from './components/agent-tools/AgentTools'
-import { UsageLimitsSettingsPage } from './routes/UsageLimitsSettingsPage'
 import { SettingsLayout } from './routes/SettingsPage'
-import { UsersSettingsPage } from './routes/UsersSettingsPage'
 
 /**
  * After onboarding: create the first project if none exists, otherwise show home. The tour may
@@ -154,52 +158,52 @@ export function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/discussions" element={<Navigate to="/discussions/new" replace />} />
           <Route path="/discussions/new" element={<DraftConversationPage key="personal" />} />
-          <Route path="/discussions/files" element={<DiscussionFilesPage />} />
-          <Route path="/discussions/memory" element={<PersonalMemoryPage />} />
+          <Route path="/discussions/files" element={<Suspense fallback={null}><DiscussionFilesPage /></Suspense>} />
+          <Route path="/discussions/memory" element={<Suspense fallback={null}><PersonalMemoryPage /></Suspense>} />
           <Route path="/discussions/:conversationId" element={<ConversationPage key="personal" />} />
-          <Route path="/benchmarks" element={<BenchmarksPage />} />
+          <Route path="/benchmarks" element={<Suspense fallback={null}><BenchmarksPage /></Suspense>} />
           <Route path="/benchmarks/new" element={<Suspense fallback={null}><NewBenchmarkPage /></Suspense>} />
           <Route path="/benchmarks/:id" element={<Suspense fallback={null}><BenchmarkPage /></Suspense>} />
           <Route path="/projects/new" element={<NewProjectPage />} />
-          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/services" element={<Suspense fallback={null}><ServicesPage /></Suspense>} />
           <Route path="/consumption" element={<Suspense fallback={null}><ConsumptionPage /></Suspense>} />
-          <Route path="/decisions" element={<DecisionsPage />} />
+          <Route path="/decisions" element={<Suspense fallback={null}><DecisionsPage /></Suspense>} />
           <Route path="/wall" element={<Suspense fallback={null}><WallPage /></Suspense>} />
           <Route path="/p/:projectId" element={<ProjectPage />} />
           <Route path="/p/:projectId/board" element={<BoardPage />} />
-          <Route path="/p/:projectId/schedules" element={<SchedulePage />} />
+          <Route path="/p/:projectId/schedules" element={<Suspense fallback={null}><SchedulePage /></Suspense>} />
           <Route path="/p/:projectId/schedules/:taskId" element={<Suspense fallback={null}><AutomationPage /></Suspense>} />
           {/* Before ID routes so new is not mistaken for a conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />
           <Route path="/settings" element={<SettingsLayout />}>
-            <Route path="compte" element={<AccountSection />} />
-            <Route path="apparence" element={<AppearanceSection />} />
-            <Route path="veille" element={<NewsSettingsPage />} />
-            <Route path="radio" element={<RadioSettingsPage />} />
-            <Route path="notifications" element={<NotificationsSection />} />
-            <Route path="cli" element={<CliDefaultsSettingsPage />} />
-            <Route path="cli-versions" element={<CliVersionsSettingsPage />} />
-            <Route path="limites" element={<UsageLimitsSettingsPage />} />
+            <Route path="compte" element={<Suspense fallback={null}><AccountSection /></Suspense>} />
+            <Route path="apparence" element={<Suspense fallback={null}><AppearanceSection /></Suspense>} />
+            <Route path="veille" element={<Suspense fallback={null}><NewsSettingsPage /></Suspense>} />
+            <Route path="radio" element={<Suspense fallback={null}><RadioSettingsPage /></Suspense>} />
+            <Route path="notifications" element={<Suspense fallback={null}><NotificationsSection /></Suspense>} />
+            <Route path="cli" element={<Suspense fallback={null}><CliDefaultsSettingsPage /></Suspense>} />
+            <Route path="cli-versions" element={<Suspense fallback={null}><CliVersionsSettingsPage /></Suspense>} />
+            <Route path="limites" element={<Suspense fallback={null}><UsageLimitsSettingsPage /></Suspense>} />
             <Route path="projets" element={<Navigate to="/projects/new" replace />} />
-            <Route path="mcp" element={<McpSettingsPage />} />
-            <Route path="consignes" element={<InstructionsSettingsPage />} />
-            <Route path="skills" element={<SkillLibrarySettingsPage />} />
-            <Route path="api" element={<ApiTokensSettingsPage />} />
-            <Route path="git" element={<GitCredentialsSettingsPage />} />
-            <Route path="comptes-claude" element={<ClaudeAccountsSettingsPage />} />
-            <Route path="comptes-codex" element={<CodexAccountsSettingsPage />} />
-            <Route path="comptes-grok" element={<GrokAccountsSettingsPage />} />
-            <Route path="comptes-antigravity" element={<AntigravityAccountsSettingsPage />} />
-            <Route path="secrets" element={<SecretsSettingsPage />} />
-            <Route path="dictee" element={<DictationSettingsPage />} />
-            <Route path="archivage" element={<ArchivingSettingsPage />} />
-            <Route path="acces-distant" element={<RemoteAccessSettingsPage />} />
-            <Route path="sessions" element={<SessionsSettingsPage />} />
-            <Route path="apercus" element={<PreviewSettingsPage />} />
+            <Route path="mcp" element={<Suspense fallback={null}><McpSettingsPage /></Suspense>} />
+            <Route path="consignes" element={<Suspense fallback={null}><InstructionsSettingsPage /></Suspense>} />
+            <Route path="skills" element={<Suspense fallback={null}><SkillLibrarySettingsPage /></Suspense>} />
+            <Route path="api" element={<Suspense fallback={null}><ApiTokensSettingsPage /></Suspense>} />
+            <Route path="git" element={<Suspense fallback={null}><GitCredentialsSettingsPage /></Suspense>} />
+            <Route path="comptes-claude" element={<Suspense fallback={null}><ClaudeAccountsSettingsPage /></Suspense>} />
+            <Route path="comptes-codex" element={<Suspense fallback={null}><CodexAccountsSettingsPage /></Suspense>} />
+            <Route path="comptes-grok" element={<Suspense fallback={null}><GrokAccountsSettingsPage /></Suspense>} />
+            <Route path="comptes-antigravity" element={<Suspense fallback={null}><AntigravityAccountsSettingsPage /></Suspense>} />
+            <Route path="secrets" element={<Suspense fallback={null}><SecretsSettingsPage /></Suspense>} />
+            <Route path="dictee" element={<Suspense fallback={null}><DictationSettingsPage /></Suspense>} />
+            <Route path="archivage" element={<Suspense fallback={null}><ArchivingSettingsPage /></Suspense>} />
+            <Route path="acces-distant" element={<Suspense fallback={null}><RemoteAccessSettingsPage /></Suspense>} />
+            <Route path="sessions" element={<Suspense fallback={null}><SessionsSettingsPage /></Suspense>} />
+            <Route path="apercus" element={<Suspense fallback={null}><PreviewSettingsPage /></Suspense>} />
             <Route path="outils-agents" element={<AgentToolsSettingsPage />} />
-            <Route path="comptes" element={<UsersSettingsPage />} />
-            <Route path="a-propos" element={<AboutSection />} />
+            <Route path="comptes" element={<Suspense fallback={null}><UsersSettingsPage /></Suspense>} />
+            <Route path="a-propos" element={<Suspense fallback={null}><AboutSection /></Suspense>} />
             <Route path="notes-de-version" element={<Suspense fallback={null}><ReleaseNotesSection /></Suspense>} />
           </Route>
           <Route path="/skills/:skillId" element={<Suspense fallback={null}><SkillEditorPage /></Suspense>} />
