@@ -8,6 +8,26 @@ import { SettingsHeading } from './SettingsPanel'
 
 export type ComposerPrefix = '@' | '@@' | '#' | '/' | '$'
 
+/** Prefixes this composer can open, in menu order; the placeholder and the trigger show the same set. */
+export function composerPrefixes({ project, commands, skills }: { project: boolean; commands: boolean; skills: boolean }): ComposerPrefix[] {
+  return [...(project ? ['@', '@@', '#'] as const : []), ...(commands ? ['/'] as const : []), ...(skills ? ['$'] as const : [])]
+}
+
+/** Empty-field text that names the prefixes: the menu alone went unnoticed, the field is where people look. */
+export function useComposerPlaceholder({ disabled, narrow, ...offer }: { disabled: boolean; narrow: boolean; project: boolean; commands: boolean; skills: boolean }): string {
+  const t = useTranslate()
+  if (disabled) return t('composer.placeholder.readonly')
+  const prefixes = composerPrefixes(offer)
+  if (prefixes.length === 0) return t('composer.placeholder.write')
+  const words: Record<ComposerPrefix, string> = {
+    '@': t('composer.placeholder.file'), '@@': t('composer.placeholder.session'), '#': t('composer.placeholder.card'),
+    '/': t('composer.placeholder.command'), '$': t('composer.placeholder.skill'),
+  }
+  // Phones only get the glyphs so the hint stays on one line.
+  const list = narrow ? prefixes.join(' ') : prefixes.map((prefix) => `${prefix} ${words[prefix]}`).join(', ')
+  return t('composer.placeholder.withShortcuts', { shortcuts: list })
+}
+
 /** Teach the same prefixes that typing opens; selecting a row only starts completion. */
 export function ComposerInsert({ inputRef, disabled, project, commands, skills, combinedCommands, onInsert, compact = false, onAttach, onDictate }: {
   inputRef: RefObject<HTMLTextAreaElement | null>
@@ -50,7 +70,11 @@ export function ComposerInsert({ inputRef, disabled, project, commands, skills, 
         <button type="button" disabled={disabled} aria-label={t('composer.insert.label')}
           className="mt-1 flex min-h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-ink-soft hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent data-[state=open]:bg-surface-high disabled:opacity-45 pointer-coarse:min-h-11"
         >
-          {t('composer.insert.trigger')}<ChevronDown size={12} aria-hidden />
+          {/* The glyphs make the button read as "the thing behind @ and /" rather than a generic insert. */}
+          {composerPrefixes({ project, commands, skills }).filter((prefix) => prefix !== '$' && prefix !== '@@').map((prefix) => (
+            <code key={prefix} aria-hidden className="rounded border border-line bg-surface-high px-1 font-mono text-[0.6875rem] leading-4 text-ink">{prefix}</code>
+          ))}
+          <span className="ml-0.5">{t('composer.insert.trigger')}</span><ChevronDown size={12} aria-hidden />
         </button>
       )}
     >

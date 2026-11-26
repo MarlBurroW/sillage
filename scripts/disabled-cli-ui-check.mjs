@@ -104,7 +104,7 @@ try {
     const held = new Promise((resolve) => { releaseAvailability = resolve })
     await page.route('**/api/agents', async (route) => { await held; await route.continue() })
     await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
-    const input = page.getByPlaceholder('Écris ton message…')
+    const input = page.getByPlaceholder(/^Écris ton message/)
     await input.fill('Ne doit jamais partir')
     await input.press('Enter')
     await page.getByText('Vérification des CLI disponibles. Réessaie dans un instant.').waitFor()

@@ -138,7 +138,7 @@ try {
       await page.screenshot({ path: join(shots, `message-${name}-${theme}.png`) })
 
       // The composer suggests the other project's sessions, naming their project.
-      const composer = page.getByPlaceholder('Écris ton message…')
+      const composer = page.getByPlaceholder(/^Écris ton message/)
       await composer.click()
       await composer.pressSequentially(`@@${sender.title.split(' ')[0]}`)
       const picker = page.getByRole('listbox', { name: 'Sessions de tes projets' })

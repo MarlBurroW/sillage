@@ -130,7 +130,7 @@ try {
   await walk(page, ['rail', 'column', 'agent', 'composer', 'panel', 'palette'])
   assert.equal(await due(), false)
   await page.reload()
-  await page.getByPlaceholder('Écris ton message…').waitFor()
+  await page.getByPlaceholder(/^Écris ton message/).waitFor()
   await delay(1000)
   assert.equal(await page.locator('[data-interface-tour]').count(), 0, 'vu une fois')
 

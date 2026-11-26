@@ -310,7 +310,7 @@ try {
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   const panel = page.locator('[data-panel="workspace"]')
   await panel.getByRole('button', { name: 'Afficher par-dessus la conversation', exact: true }).waitFor()
-  const composer = page.locator('form').filter({ has: page.getByPlaceholder('Écris ton message…') })
+  const composer = page.locator('form').filter({ has: page.getByPlaceholder(/^Écris ton message/) })
   await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-panel="workspace"]')).translate === '0px')
   const docked = await panel.boundingBox()
   const composerBounds = await composer.boundingBox()
@@ -417,7 +417,7 @@ try {
     windows: [{ id: 'session', label: 'Session', utilization: 0.95, resetsAt: Date.now() + 3_600_000 }, { id: 'week', label: 'Semaine', utilization: 0.25, resetsAt: null }],
   } }))
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
-  const message = page.getByPlaceholder('Écris ton message…')
+  const message = page.getByPlaceholder(/^Écris ton message/)
   await message.waitFor()
   await message.fill('Un brouillon qui doit rester en changeant d’agent.')
   const claude = page.getByRole('radio', { name: 'Claude Code', exact: true })

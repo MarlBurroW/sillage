@@ -35,7 +35,7 @@ import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerPrefill, useComposerReferences } from '../../lib/composer-ref'
 import { ContextMeter } from './ContextMeter'
-import { ComposerInsert, type ComposerPrefix } from './ComposerInsert'
+import { ComposerInsert, useComposerPlaceholder, type ComposerPrefix } from './ComposerInsert'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useCardSuggestions } from '../../lib/cards'
 import { mentionPath, useFileSuggestions, type FileMatchDto } from '../../lib/files'
@@ -498,6 +498,7 @@ export function Composer({
     () => (onCommand ? commands : commands.filter((c) => !NATIVE_SLASH_COMMANDS.has(c.name))),
     [commands, onCommand],
   )
+  const placeholder = useComposerPlaceholder({ disabled, narrow, project: Boolean(projectId), commands: offered.length > 0, skills: skills.length > 0 })
 
   const syncToken = (value: string, caret: number | null) => {
     const position = caret ?? value.length
@@ -899,7 +900,7 @@ export function Composer({
             aria-activedescendant={sessionToken && sessionSuggestions[active] ? `session-option-${active}` : undefined}
             rows={1}
             disabled={disabled}
-            placeholder={disabled ? t('composer.placeholder.readonly') : t('composer.placeholder.write')}
+            placeholder={placeholder}
             className={cx(
               'relative max-h-[200px] w-full resize-none bg-transparent',
               TEXT_BOX,

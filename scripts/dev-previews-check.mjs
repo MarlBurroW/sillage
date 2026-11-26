@@ -245,7 +245,7 @@ try {
           await frame.locator('#t').hover()
           await page.screenshot({ path: join(shots, `picking-${name}-${theme}.png`) })
           await frame.locator('#t').click()
-          const composer = page.getByPlaceholder('Écris ton message…')
+          const composer = page.getByPlaceholder(/^Écris ton message/)
           await page.waitForFunction(() => /sélecteur/.test(document.querySelector('textarea')?.value ?? ''))
           const message = await composer.inputValue()
           assert.match(message, /Élément de l'aperçu \(port \d+, page \/\), un <h1>/)
