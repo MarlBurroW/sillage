@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { browseQuerySchema, mkdirBodySchema, openExplorerFolderBodySchema, type ExplorerFolderDto, type FsEntryDto, type FsListingDto } from '@sillage/protocol'
 import { and, eq } from 'drizzle-orm'
 import { explorerFolders } from '@sillage/db'
-import { canonicalExplorerFolder, isDeniedFolder } from '../../projects/folder-path.js'
+import { canonicalExplorerFolder, isDeniedFolder, looksLikeProject } from '../../projects/folder-path.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -107,6 +107,7 @@ export function registerFsRoutes(app: FastifyInstance, ctx: AppContext): void {
       parent: parent === path ? null : parent,
       entries: described.filter((entry): entry is FsEntryDto => entry !== null),
       isGitRepo: existsSync(join(path, '.git')),
+      looksLikeProject: looksLikeProject(path),
       truncated,
       roots: [{ label: 'Accueil', path: home }, ...systemRoots()],
     }

@@ -13,6 +13,7 @@ import { ApiRequestError } from '../lib/api'
 import { useCreateProject, type CreateProjectInput } from '../lib/projects'
 import { useCapability } from '../lib/instance'
 import { useUserSettings } from '../lib/user-settings'
+import { useLooksLikeProject } from '../lib/fs'
 import { CloneForm } from '../components/CloneForm'
 import { SampleProjectForm } from '../components/SampleProjectForm'
 import { NewProjectFolders } from '../components/ProjectFolders'
@@ -66,6 +67,12 @@ export function NewProjectPage() {
   const [params] = useSearchParams()
   const requested = params.get('mode')
   const [mode, setMode] = useState<CreateMode>(isCreateMode(requested) ? requested : 'new')
+  // Carried over when "New folder" spots that its parent is already the project to add.
+  const [existingDraft, setExistingDraft] = useState({ name: '', path: '' })
+  const useExisting = (draft: { name: string; path: string }) => {
+    setExistingDraft(draft)
+    setMode('existing')
+  }
 
   const MODE_OPTIONS: Choice<CreateMode>[] = [
     {
@@ -114,8 +121,8 @@ export function NewProjectPage() {
           />
 
           {mode === 'clone' ? <CloneForm /> : null}
-          {mode === 'new' ? <NewFolderForm /> : null}
-          {mode === 'existing' ? <ExistingFolderForm /> : null}
+          {mode === 'new' ? <NewFolderForm onUseExisting={useExisting} /> : null}
+          {mode === 'existing' ? <ExistingFolderForm initialName={existingDraft.name} initialPath={existingDraft.path} /> : null}
           {mode === 'sample' ? <SampleProjectForm /> : null}
         </CardBody>
       </Card>
@@ -129,9 +136,11 @@ export function NewProjectPage() {
  * Directory name follows project name until manually edited; parent directory comes from the
  * last creation. The common case therefore requires only one field.
  */
-export function NewFolderForm({ initialName = '', onCreate, children, pending = false, error: externalError }: {
+export function NewFolderForm({ initialName = '', onCreate, onUseExisting, children, pending = false, error: externalError }: {
   initialName?: string
   onCreate?: (input: CreateProjectInput) => void
+  /** Offered when the parent is itself a project: register it instead of nesting a new folder. */
+  onUseExisting?: (draft: { name: string; path: string }) => void
   children?: ReactNode
   pending?: boolean
   error?: string
@@ -180,8 +189,14 @@ export function NewFolderForm({ initialName = '', onCreate, children, pending = 
 
   const error =
     createProject.error instanceof ApiRequestError ? createProject.error.message : null
-  const preview =
-    parentDir && directory ? `${parentDir.replace(/\/+$/, '')}/${directory}` : null
+  const parent = parentDir.trim().replace(/(.)[\\/]+$/, '$1')
+  const preview = parent && directory.trim() ? `${parent}/${directory.trim()}` : null
+  // Pointing "Projects folder" at the project itself creates `devtools/devtools`: the usual
+  // mistake when someone adds an existing project without switching to "Existing folder".
+  const parentIsProject = useLooksLikeProject(parent)
+  const parentName = parent.split(/[\\/]/).pop() ?? ''
+  const sameName = Boolean(parentName) && parentName.toLowerCase() === directory.trim().toLowerCase()
+  const nested = preview && (parentIsProject || sameName)
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
@@ -204,11 +219,30 @@ export function NewFolderForm({ initialName = '', onCreate, children, pending = 
         label={t('projects.create.directory')}
         value={directory}
         onChange={(event) => setDirectory(event.target.value)}
-        hint={preview ? t('projects.create.preview', { path: preview }) : t('projects.create.directory.hint')}
+        hint={t('projects.create.directory.hint')}
         autoCapitalize="none"
         autoCorrect="off"
         required
       />
+      {nested ? (
+        <Banner tone="caution">
+          <span className="flex flex-col items-start gap-2">
+            <span>
+              {t(parentIsProject ? 'projects.create.nested.project' : 'projects.create.nested.sameName', { parent: parentName })}
+            </span>
+            {onUseExisting ? (
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<FolderOpen size={15} />}
+                onClick={() => onUseExisting({ name: name.trim(), path: parent })}
+              >
+                {t('projects.create.nested.useExisting')}
+              </Button>
+            ) : null}
+          </span>
+        </Banner>
+      ) : null}
       <NewProjectFolders paths={folderPaths} onChange={setFolderPaths} initialPath={parentDir} />
       {sharedProjects ? (
         <Select
@@ -220,6 +254,12 @@ export function NewFolderForm({ initialName = '', onCreate, children, pending = 
       ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {children}
+      {preview ? (
+        <p className="flex flex-col gap-1 rounded-md border border-line bg-surface-high px-3 py-2 text-sm text-ink-soft">
+          {t('projects.create.preview.label')}
+          <span className="break-all font-mono text-ink">{preview}</span>
+        </p>
+      ) : null}
       {externalError || error ? <Banner>{externalError ?? error}</Banner> : null}
       <Button type="submit" disabled={pending || createProject.isPending} className="self-start">
         {createProject.isPending ? t('projects.create.pending') : t('projects.create.submit')}
@@ -229,15 +269,15 @@ export function NewFolderForm({ initialName = '', onCreate, children, pending = 
 }
 
 /** An existing directory anywhere on the machine: nothing is created. */
-function ExistingFolderForm() {
+function ExistingFolderForm({ initialName = '', initialPath = '' }: { initialName?: string; initialPath?: string }) {
   const t = useTranslate()
   const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
   const navigate = useNavigate()
   const visibilityOptions = useVisibilityOptions()
 
-  const [name, setName] = useState('')
-  const [workspacePath, setWorkspacePath] = useState('')
+  const [name, setName] = useState(initialName)
+  const [workspacePath, setWorkspacePath] = useState(initialPath)
   const [folderPaths, setFolderPaths] = useState<string[]>([])
   const [visibility, setVisibility] = useState<Visibility>('private')
   const [instructionsMode, setInstructionsMode] = useInstructionsModeChoice()

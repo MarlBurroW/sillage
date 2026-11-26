@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { FsEntryDto, FsListingDto } from '@sillage/protocol'
 import { api } from './api'
+import { useDebounced } from './search'
 
 export function readDirectory(path: string | null, showHidden: boolean) {
   const params = new URLSearchParams()
@@ -18,6 +19,23 @@ export function useDirectoryListing(path: string | null, showHidden: boolean) {
     staleTime: 5_000,
     placeholderData: (previous) => previous,
   })
+}
+
+/**
+ * Whether a typed folder is a project root (.git, package.json…), read once typing pauses.
+ * False while the path is partial or missing: the caller only warns on a confirmed answer.
+ */
+export function useLooksLikeProject(path: string): boolean {
+  const settled = useDebounced(path.trim().replace(/(.)[\\/]+$/, '$1'))
+  const absolute = settled.startsWith('/') || /^[A-Za-z]:[\\/]/.test(settled)
+  const { data } = useQuery({
+    queryKey: ['fs', settled, false],
+    queryFn: () => readDirectory(settled, false),
+    enabled: absolute,
+    staleTime: 5_000,
+    retry: false,
+  })
+  return absolute && data?.looksLikeProject === true
 }
 
 /** Create a directory in `path` and invalidate all open listings to reflect it. */
