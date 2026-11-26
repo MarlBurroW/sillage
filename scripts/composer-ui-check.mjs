@@ -138,7 +138,9 @@ try {
         return route.fulfill({ json: account })
       }
       if (path === '/api/conversations') return route.fulfill({ json: [] })
-      if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], sillageServer: true } })
+      // projectId null = a global server, the only kind the composer can toggle; project servers
+      // are inert rows since 4253a1062, so a mock without it no longer renders a switch.
+      if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true, projectId: null }], sillageServer: true } })
       if (path.endsWith('/messages')) {
         messages.push({ text: request.postDataJSON().text, config: structuredClone(stored[id]) })
         return route.fulfill({ json: { ok: true } })
@@ -584,7 +586,8 @@ try {
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     // The discoverable panel uses the same live catalogs and preserves unsent text and selection.
-    const insert = page.getByRole('button', { name: 'Insérer — aides de saisie', exact: true })
+    // Renamed from « Insérer » in 3fad52184, which names the typing shortcuts.
+    const insert = page.getByRole('button', { name: 'Raccourcis — aides de saisie', exact: true })
     await insert.click()
     const help = page.getByRole('dialog', { name: 'Aides de saisie', exact: true })
     await help.waitFor()
