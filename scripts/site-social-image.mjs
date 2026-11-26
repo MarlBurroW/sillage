@@ -1,11 +1,11 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 const root = new URL('../', import.meta.url)
 
-/** Render the site's social card from the same local brand and product assets. */
+/** Render the social card from the same local brand and product assets. The site and the app share it, so a link to either previews the same product. */
 export async function renderSiteSocialImage(browser) {
   const [symbol, font, screenshot] = await Promise.all([
     readFile(new URL('docs/brand/symbol.svg', root), 'utf8'),
@@ -32,7 +32,8 @@ export async function renderSiteSocialImage(browser) {
     </body></html>`)
     await page.evaluate(() => document.fonts.ready)
     await page.locator('.product img').evaluate((image) => image.decode())
-    await page.screenshot({ path: fileURLToPath(new URL('site/og.png', root)) })
+    const card = await page.screenshot()
+    await Promise.all(['site/og.png', 'apps/web/public/og.png'].map((path) => writeFile(fileURLToPath(new URL(path, root)), card)))
   } finally {
     await page.close()
   }

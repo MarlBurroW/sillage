@@ -37,7 +37,7 @@ The script uses Playwright, already included in development dependencies.
 | `apps/web/public/icon-512.png` | 512 × 512 | Rounded tile, manifest. |
 | `apps/web/public/icon-maskable-512.png` | 512 × 512 | Solid background; symbol within the 80% safe circle. |
 | `apps/web/public/apple-touch-icon.png` | 180 × 180 | Solid background; iOS applies its own mask. |
-| `apps/web/public/og.png`, `site/og.png` | 1200 × 630 | Social sharing thumbnail. |
+| `apps/web/public/og.png`, `site/og.png` | 1200 × 630 | Social sharing thumbnail, one image for the site and the app. Drawn by `scripts/site-social-image.mjs` from `site/screenshots/hero-light.webp`: regenerate it after new screenshots. |
 
 Product screenshots in `site/screenshots` are regenerated with
 `scripts/screenshots.mjs` on an isolated demo instance. Set `SILLAGE_SHOT_FORMAT=webp`
