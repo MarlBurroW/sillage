@@ -105,8 +105,7 @@ export class WorktreeCleanup {
     project: ProjectRow,
     options: { paths: string[]; deleteBranch: boolean; archiveSessions: boolean; stopServices: boolean },
   ): Promise<WorktreeBulkCleanupResultDto> {
-    this.status.invalidate(project.id)
-    const list = await this.status.current(project)
+    const list = await this.status.fresh(project)
     const byPath = new Map(list.worktrees.map((tree) => [tree.path, tree]))
     const items: WorktreeBulkCleanupItemDto[] = []
 

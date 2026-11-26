@@ -791,3 +791,37 @@ test('nettoyage groupé : fusionnés et introuvables partent, le reste est laiss
   assert.equal(db.select().from(conversations).where(sqlEq(conversations.id, 'working')).get()?.archivedAt, null)
   assert.deepEqual((await status.get(projectRow)).worktrees.map((entry) => entry.name).sort(), ['feat/busy', 'feat/late', 'feat/wip'])
 })
+
+test('a decision reads the tree as git has it now, not as cached before a commit and merge', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'sillage-worktree-fresh-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const project = db.select().from(projects).get()!
+  const status = new WorktreeStatusService(db, new EventLog(db))
+  const state = (list: { worktrees: { path: string; state: string }[] }, path: string) => list.worktrees.find((tree) => tree.path === path)?.state
+
+  // Cached while dirty, then an agent commits and fast-forwards main from its shell: nothing tells
+  // the service, and the cache is still within its lifetime.
+  const first = addTree(repo, trees, 'fix/first')
+  write(first, 'src/first.ts', 'export const first = 1\n')
+  assert.equal(state(await status.current(project), first), 'dirty')
+  commitAll(first, 'first')
+  git(repo, 'merge', '--ff-only', 'fix/first')
+  assert.equal(state(await status.current(project), first), 'dirty', 'the cache alone still says dirty')
+  assert.equal(state(await status.fresh(project), first), 'merged')
+
+  // A computation already running when the merge lands must not be the one a decision reads.
+  const second = addTree(repo, trees, 'fix/second')
+  write(second, 'src/second.ts', 'export const second = 2\n')
+  status.invalidate(project.id)
+  const running = status.get(project)
+  commitAll(second, 'second')
+  git(repo, 'merge', '--ff-only', 'fix/second')
+  await running
+  assert.equal(state(await status.fresh(project), second), 'merged')
+})

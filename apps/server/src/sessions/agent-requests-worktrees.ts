@@ -95,7 +95,7 @@ export class WorktreeRequests {
   /** Project trees and progress as shown in Worktrees. Await fresh calculations rather than return interface-acceptable stale lists because agents make reuse decisions from answers. */
   async list(requester: Requester, project: ProjectRow): Promise<string> {
     if (!this.worktreeStatus) throw new Refusal('Worktree progress is unavailable here.')
-    const list = await this.worktreeStatus.current(project)
+    const list = await this.worktreeStatus.fresh(project)
     if (list.worktrees.length === 0) {
       return list.base === null
         ? 'This project is not a Git repository: it has no worktrees.'
@@ -152,7 +152,7 @@ export class WorktreeRequests {
     const deleteBranch = typeof payload.delete_branch === 'boolean' ? payload.delete_branch : null
     const archive = payload.archive_sessions !== false
 
-    const list = await this.worktreeStatus.current(project)
+    const list = await this.worktreeStatus.fresh(project)
     const tree = list.worktrees.find((entry) => entry.name === target || entry.branch === target || entry.path === target)
     if (!tree) throw new Refusal(`No worktree “${target}” in this project. Use list_worktrees to see them.`)
     if (requester.worktreeId !== null && requester.worktreeId === tree.id) {

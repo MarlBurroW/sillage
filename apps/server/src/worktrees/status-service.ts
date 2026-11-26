@@ -155,6 +155,18 @@ export class WorktreeStatusService {
     return (await this.cache.get(project.id)?.pending) ?? list
   }
 
+  /**
+   * A list computed from now on, for decisions that act on a tree (removal, keeping leftovers).
+   * Invalidation is not enough: a commit or merge an agent runs with git in its shell invalidates
+   * nothing until its turn ends, and a computation already running may predate it; `current`
+   * would then serve that older state (a merged tree refused as unmerged, card #115).
+   */
+  async fresh(project: ProjectRow): Promise<WorktreeStatusListDto> {
+    await this.cache.get(project.id)?.pending?.catch(() => {})
+    this.invalidate(project.id)
+    return this.current(project)
+  }
+
   private async compute(project: ProjectRow): Promise<WorktreeStatusListDto> {
     const repo = project.workspacePath
     const [entries, base] = await Promise.all([listWorktrees(repo), defaultBase(repo)])

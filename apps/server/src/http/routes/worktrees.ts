@@ -121,8 +121,7 @@ export function registerWorktreeRoutes(
     const body = worktreeKeepBodySchema.parse(request.body)
     const project = loadProject(id, user.id)
     if (project.ownerId !== user.id) throw forbidden('worktree_keep_forbidden', 'Only the project owner can keep worktree files.')
-    worktreeStatus.invalidate(project.id)
-    const tree = (await worktreeStatus.current(project)).worktrees.find((entry) => entry.path === body.path)
+    const tree = (await worktreeStatus.fresh(project)).worktrees.find((entry) => entry.path === body.path)
     if (!tree) throw notFound('worktree_not_found', 'Worktree not found.')
     if (tree.state !== 'leftovers' || tree.fingerprint !== body.fingerprint) {
       throw conflict('worktree_leftovers_changed', 'The files left in this worktree have changed. Review them again.')
