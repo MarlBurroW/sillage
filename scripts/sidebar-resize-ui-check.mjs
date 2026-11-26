@@ -92,8 +92,10 @@ try {
   await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
   await page.locator('textarea').waitFor()
   await page.waitForTimeout(1000)
+  // The textarea now sits in its own wrapper (mention highlights overlay it), so the toolbar is no
+  // longer its sibling: reach the bar through its leading tool group, the only `.order-1` in the form.
   const threshold = await page.evaluate(() => {
-    const bar = document.querySelector('form textarea').parentElement.querySelector('div.flex.items-center.gap-1')
+    const bar = document.querySelector('form .order-1').parentElement
     const prefs = bar.querySelector('.min-w-0')
     const lead = bar.querySelector('.order-1')
     const trail = bar.querySelector('.order-3')
@@ -109,12 +111,12 @@ try {
   // Cross the exact threshold repeatedly in both directions, including the former oscillation band.
   for (const offset of [20, -1, -4, -8, -20, 0, 20]) {
     await page.evaluate(width => {
-      document.querySelector('form textarea').parentElement.querySelector('div.flex.items-center.gap-1').style.width = `${width}px`
+      document.querySelector('form .order-1').parentElement.style.width = `${width}px`
     }, threshold + offset)
     await page.waitForTimeout(80)
     assert.deepEqual(errors, [])
   }
-  await page.evaluate(() => document.querySelector('form textarea').parentElement.querySelector('div.flex.items-center.gap-1').style.removeProperty('width'))
+  await page.evaluate(() => document.querySelector('form .order-1').parentElement.style.removeProperty('width'))
   const drag = async (name, xs) => {
     const handle = page.getByRole('separator', { name, exact: true })
     const bounds = await handle.boundingBox()
