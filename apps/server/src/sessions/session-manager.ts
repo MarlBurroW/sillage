@@ -3,13 +3,12 @@ import { agentToolsFor, familyTableForMcp, sessionFamilies } from '../agents/age
 import { disabledSillageTools } from '@sillage/protocol'
 import { detach } from '../detach.js'
 import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
-import { conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import {
   conversationHandoffs,
   conversationProjectMoves,
@@ -27,10 +26,8 @@ import {
   type BackgroundTaskOutput,
   type ConversationMetrics,
   type ConversationStatus,
-  type CliRequestKind,
   type SillageEvent,
 } from '@sillage/protocol'
-import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { describeOutgoingMessage } from '../agents/outgoing.js'
@@ -45,7 +42,6 @@ import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
-import { claudeCredential } from '../agents/claude/credential.js'
 import type { CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
 import type { GrokAccountHomes } from '../grok-accounts/homes.js'
@@ -66,7 +62,6 @@ import type {
 } from '../agents/types.js'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
-import { conversationMetrics } from '../conversations/metrics.js'
 import { readAppSettings } from '../settings/app-settings.js'
 import { SkillLibraryLayout } from '../skill-library/layout.js'
 import { resolveConversationCwd, resolveMention } from '../workspace.js'
@@ -85,6 +80,19 @@ import {
 import { serialized } from '../git-workflow.js'
 import { linkedWorktreePaths } from '../worktrees/linked.js'
 import type { TurnUsageRecorder } from '../consumption/recorder.js'
+import { notifyIfAway, type ConversationNotifier } from './session-notifications.js'
+import {
+  clearActivity,
+  closeDetachedWork,
+  closeInterruptedTurn,
+  closeOpenTurn,
+  expireOpenPrompts,
+  recoverInterrupted,
+  statusSnapshot,
+} from './session-journal.js'
+import { SessionAccounts } from './session-accounts.js'
+
+export type { ConversationNotifier } from './session-notifications.js'
 
 /** Message written during a turn, waiting for its completion. */
 interface QueuedMessage {
@@ -171,16 +179,6 @@ const SLOW_SEND_MS = 1_000
 /** Beyond this limit, completion events omit files because conversations cannot display that many. */
 const CHECKPOINT_EVENT_FILES = 500
 
-/** Notifiable events and their meanings. Explicit allowlist rather than implicit rules: notifying every event would make notifications unread. Retain only agent decision requests and turn completions users cannot infer remotely. */
-const NOTIFIABLE: Partial<Record<SillageEvent['type'], string>> = {
-  'permission.requested': 'Une autorisation est demandée',
-  'question.requested': "L'agent te demande de choisir",
-  'elicitation.requested': 'Un service demande une saisie',
-  'plan.review_requested': 'Un plan attend ta validation',
-  'mcp_install.requested': "L'agent propose d'installer un serveur MCP",
-  'turn.completed': "L'agent a terminé",
-}
-
 /** Bus `status` payload reused unchanged by same-named WebSocket messages: hubs merely rebroadcast. */
 export interface StatusBroadcast {
   conversationId: string
@@ -192,34 +190,6 @@ export interface StatusBroadcast {
   appliedConfig: AgentConfig | null
   lastNotableSeq: number
   metrics: ConversationMetrics
-}
-
-/** Notification-layer contract without depending on its implementation. */
-/** Notification routing (`notifications/dispatcher.ts`) as viewed here. */
-export interface ConversationNotifier {
-  dispatch(userId: string, notification: OutgoingNotification): Promise<void>
-}
-
-/** One-line CLI wait description: tool and command or question. */
-function requestDetail(event: SillageEvent): string | null {
-  const clip = (text: string) => (text.length > 160 ? `${text.slice(0, 160)}…` : text)
-  if (event.type === 'permission.requested') {
-    const input = (event.input ?? {}) as Record<string, unknown>
-    const subject = [input.command, input.file_path, input.path, input.url, input.pattern].find((value) => typeof value === 'string')
-    return clip(subject ? `${event.toolName} : ${String(subject)}` : event.toolName)
-  }
-  if (event.type === 'question.requested') return event.questions[0] ? clip(event.questions[0].question) : null
-  if (event.type === 'elicitation.requested') return clip(`${event.serverName} : ${event.message}`)
-  if (event.type === 'mcp_install.requested') return clip(event.name)
-  return null
-}
-
-const REQUEST_KINDS: Partial<Record<SillageEvent['type'], CliRequestKind>> = {
-  'permission.requested': 'permission',
-  'question.requested': 'question',
-  'elicitation.requested': 'elicitation',
-  'plan.review_requested': 'plan',
-  'mcp_install.requested': 'mcpInstall',
 }
 
 export class SessionManager {
@@ -240,6 +210,7 @@ export class SessionManager {
   /** Set later because the WebSocket hub tracking viewers does not exist when managers are constructed. */
   private notifier: ConversationNotifier | null = null
   readonly statusBus = new EventEmitter()
+  private readonly accounts: SessionAccounts
 
   constructor(
     private readonly db: Db,
@@ -247,14 +218,15 @@ export class SessionManager {
     private readonly config: Config,
     private readonly registry: AgentRegistry,
     private readonly secrets: SecretStore,
-    private readonly claudeAccounts: ClaudeAccountStore,
-    private readonly codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
-    private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
-    private readonly antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
+    claudeAccounts: ClaudeAccountStore,
+    codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
+    grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
+    antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
     /** Absent in tests that do not look at consumption. */
     private readonly usage: TurnUsageRecorder | null = null,
   ) {
     this.statusBus.setMaxListeners(200)
+    this.accounts = new SessionAccounts(log, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts)
   }
 
   /** Agent browsers, wired after construction like other optional services; absent in tests. */
@@ -265,118 +237,7 @@ export class SessionManager {
 
   /** At startup no conversations can legitimately run: runners died with the previous process. Leaving `running` would misrepresent state and block messages. */
   recoverInterrupted(): string[] {
-    const stale = this.db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.status, 'running'))
-      .all()
-
-    const awaiting = this.db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.status, 'awaiting_input'))
-      .all()
-
-    // Read before writes: resets below erase information needed to identify
-    // conversations with detached work.
-    const detached = new Map(
-      this.db
-        .select({ id: conversations.id, loops: conversations.loopCount })
-        .from(conversations)
-        .where(or(gt(conversations.backgroundCount, 0), gt(conversations.loopCount, 0)))
-        .all()
-        .map((row) => [row.id, row.loops > 0]),
-    )
-
-    for (const row of [...stale, ...awaiting]) {
-      this.log.append(row.id, {
-        type: 'error',
-        code: 'daemon_restarted',
-        // Web clients translate codes; English messages serve journal readers without
-        // catalogs, including MCP and search.
-        message: 'The daemon restarted during this conversation. The agent was interrupted.',
-        recoverable: true,
-      })
-      this.expireOpenPrompts(row.id)
-      this.expireQueuedMessages(row.id)
-      this.closeDetachedWork(row.id, detached.get(row.id) ?? false)
-      detached.delete(row.id)
-      this.log.append(row.id, { type: 'session.ended', reason: 'interrupted' })
-      this.db
-        .update(conversations)
-        .set({ status: 'interrupted' })
-        .where(eq(conversations.id, row.id))
-        .run()
-    }
-
-    // Background work outlives turns, so idle conversations may still carry it.
-    // Their CLI processes died with the daemon too. These were not interrupted
-    // mid-turn: emit neither errors nor status changes,
-    // only closure for work no longer running.
-    for (const [conversationId, hadLoops] of detached) {
-      this.closeDetachedWork(conversationId, hadLoops)
-    }
-
-    // Conversations may already be idle, but their forms lost the runner
-    // that could deliver answers.
-    for (const conversationId of this.log.openAsyncQuestionConversationIds()) {
-      this.expireOpenPrompts(conversationId)
-    }
-
-    this.db
-      .update(permissionRequests)
-      .set({ status: 'expired', decidedAt: Date.now() })
-      .where(eq(permissionRequests.status, 'pending'))
-      .run()
-
-    // Database counterpart to journal closure above: sidebars read rows,
-    // pages read journals, and both must agree.
-    this.db
-      .update(conversations)
-      .set({ backgroundCount: 0, loopCount: 0 })
-      .where(or(gt(conversations.backgroundCount, 0), gt(conversations.loopCount, 0)))
-      .run()
-
-    return [...stale, ...awaiting].map((row) => row.id)
-  }
-
-  /** Closes unanswered requests in journals. Rendering folds know only journals; without these events, pre-shutdown questions and permissions would remain pending with buttons reaching nobody. */
-  private expireOpenPrompts(conversationId: string): void {
-    for (const { kind, requestId } of this.log.openPrompts(conversationId)) {
-      if (kind === 'permission') {
-        this.log.append(conversationId, {
-          type: 'permission.resolved',
-          requestId,
-          decision: 'expired',
-          scope: 'once',
-          decidedBy: null,
-        })
-      } else if (kind === 'elicitation') {
-        this.log.append(conversationId, {
-          type: 'elicitation.resolved',
-          requestId,
-          status: 'expired',
-          content: {},
-          decidedBy: null,
-        })
-      } else if (kind === 'question') {
-        this.log.append(conversationId, {
-          type: 'question.resolved',
-          requestId,
-          status: 'expired',
-          answers: {},
-          decidedBy: null,
-        })
-      } else {
-        this.log.append(conversationId, {
-          type: 'plan.review_resolved',
-          requestId,
-          decision: 'expired',
-          followUpMode: null,
-          decidedBy: null,
-        })
-      }
-    }
+    return recoverInterrupted(this.db, this.log)
   }
 
   private loadConversation(conversationId: string): ConversationRow {
@@ -423,23 +284,6 @@ export class SessionManager {
     status: ConversationStatus,
     warm: boolean,
   ): void {
-    // Reread `lastNotableSeq` and metrics on every broadcast: journals are written
-    // before status changes so values are fresh, and transitions occur only a few
-    // times per turn. No additional
-    // in-memory counters are needed.
-    const row = this.db
-      .select({
-        lastNotableSeq: conversations.lastNotableSeq,
-        turnCount: conversations.turnCount,
-        journalBytes: conversations.journalBytes,
-        contextUsedTokens: conversations.contextUsedTokens,
-        contextMaxTokens: conversations.contextMaxTokens,
-        model: conversations.model,
-      })
-      .from(conversations)
-      .where(eq(conversations.id, conversationId))
-      .get()
-
     const update: StatusBroadcast = {
       conversationId,
       status,
@@ -447,16 +291,7 @@ export class SessionManager {
       background: warm ? this.backgroundCount(conversationId) : 0,
       loops: warm ? this.loopCount(conversationId) : 0,
       appliedConfig: warm ? this.appliedConfig(conversationId) : null,
-      lastNotableSeq: row?.lastNotableSeq ?? 0,
-      metrics: conversationMetrics(
-        row ?? {
-          turnCount: 0,
-          journalBytes: 0,
-          contextUsedTokens: null,
-          contextMaxTokens: null,
-          model: null,
-        },
-      ),
+      ...statusSnapshot(this.db, conversationId),
     }
     this.statusBus.emit('status', update)
   }
@@ -479,34 +314,6 @@ export class SessionManager {
       .run()
 
     this.broadcastStatus(conversationId, managed.status, true)
-  }
-
-  /** Clears detached work when runner processes leave. Background work and loops belong to CLI processes and no longer exist; otherwise nonzero row counts would make conversations appear active forever. */
-  private clearActivity(conversationId: string): void {
-    this.db
-      .update(conversations)
-      .set({ backgroundCount: 0, loopCount: 0 })
-      .where(eq(conversations.id, conversationId))
-      .run()
-  }
-
-  /** Journals detached-work closure when processes leave, complementing `clearActivity`. Row resets suffice for database-reading sidebars but journal-only pages need events (invariant I2); otherwise final CLI lists show dead dev servers as alive forever. Write now instead of waiting for asynchronous abort-driven `session.ended`, which daemon shutdown may preempt. Close each task explicitly rather than silently empty lists: shells may survive hard daemon-only kills outside cgroup termination, and history must say work ended with sessions rather than normally. */
-  private closeDetachedWork(conversationId: string, hadLoops: boolean): void {
-    const live = this.log.openBackgroundTasks(conversationId)
-    for (const task of live) {
-      this.log.append(conversationId, {
-        type: 'task.completed',
-        taskId: task.id,
-        status: 'stopped',
-        summary: "Arrêté avec la session : le process CLI qui le portait s'est terminé.",
-        durationMs: null,
-        ambient: false,
-      })
-    }
-    if (live.length > 0) this.log.append(conversationId, { type: 'background.updated', tasks: [] })
-    // Loops die with processes too; CLIs list them only on demand,
-    // so nothing else clears their last known list.
-    if (hadLoops) this.log.append(conversationId, { type: 'loops.updated', loops: [] })
   }
 
   /** Current number of background tasks for this conversation. */
@@ -555,67 +362,7 @@ export class SessionManager {
 
   /** Same notification as runner events, for journal entries written elsewhere, such as an agent's MCP proposal posted by `AgentRequests`. */
   notifyRequest(conversationId: string, event: SillageEvent): void {
-    detach(this.notifyIfAway(conversationId, event), 'notification of an absent user')
-  }
-
-  /** Notifies owners unless viewing conversations. Sockets are the only reliable presence signal: subscribed tabs already receive live events, so additional system pushes would announce content being read. Errors never propagate because notification failures must not interrupt agents (invariant I1). */
-  private async notifyIfAway(conversationId: string, event: SillageEvent): Promise<void> {
-    const notifier = this.notifier
-    const title = NOTIFIABLE[event.type]
-    if (!notifier || !title) return
-
-    try {
-      const conversation = this.db
-        .select({
-          userId: conversations.userId,
-          title: conversations.title,
-          projectId: conversations.projectId,
-          scheduleId: conversations.scheduleId,
-        })
-        .from(conversations)
-        .where(eq(conversations.id, conversationId))
-        .get()
-      if (!conversation) return
-      // Scheduled run completion needs no announcement: hourly tasks would notify
-      // twenty-four times daily. Decision requests always pass,
-      // because runs remain blocked until someone responds.
-      if (conversation.scheduleId && event.type === 'turn.completed') return
-      const request = REQUEST_KINDS[event.type]
-
-      // Visible target conversation: nothing. Visible elsewhere: request toasts only,
-      // no turn-end toast because sidebars show it. Absent: system notification.
-      await notifier.dispatch(conversation.userId, {
-        kind: request ? 'cliRequest' : 'turnCompleted',
-        conversationId,
-        push: {
-          title,
-          body: conversation.title,
-          url: conversationPath({ projectId: conversation.projectId, id: conversationId }),
-          // Keep one displayed notification per conversation: five copies of 'agent finished'
-          // add nothing beyond the latest.
-          tag: conversationId,
-          kind: request ?? 'turnCompleted',
-        },
-        toast: request
-          ? {
-              kind: 'cliRequest',
-              request,
-              conversationId,
-              projectId: conversation.projectId,
-              conversationTitle: conversation.title,
-              detail: requestDetail(event),
-            }
-          : undefined,
-      })
-    } catch (err) {
-      // Lost notifications are not conversation failures, but swallowing them
-      // silently would prevent diagnosis.
-      process.stderr.write(
-        `[push] notification non emise pour ${conversationId} : ${
-          err instanceof Error ? err.message : String(err)
-        }\n`,
-      )
-    }
+    detach(notifyIfAway(this.db, this.notifier, conversationId, event), 'notification of an absent user')
   }
 
   /** Rejects CLIs turned off with `[agents.<cli>] enabled = false`. Called before anything is written or spawned: the interface hides them, but stale clients, the API and scheduled tasks can still name them. */
@@ -857,99 +604,21 @@ export class SessionManager {
     this.queues.delete(conversationId)
   }
 
-  /** Closes messages left queued at daemon shutdown. Memory queues are lost; without events, replay would show them pending forever for sends that cannot happen. */
-  private expireQueuedMessages(conversationId: string): void {
-    for (const queueId of this.log.openQueuedMessages(conversationId)) {
-      this.log.append(conversationId, { type: 'message.dequeued', queueId, reason: 'expired' })
-    }
-  }
-
-  /** Selected Claude account tokens placed in variables taking precedence over stored CLI authentication (probed 2.1.296). Nothing for CLI-default authentication or other agents. Missing/deleted/foreign shared-project account references do not block startup: fall back to CLI login and disclose it in history because a different subscription pays. */
-  private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
-    if (config.agent === 'antigravity') {
-      const home = this.antigravityHome(conversation.userId, config.account)
-      return { ...(home ? { GEMINI_HOME: home } : {}), SILLAGE_ANTIGRAVITY_SESSION_ROOT: this.antigravityAccounts.homes.sessions(conversation.userId) }
-    }
-    if (config.agent === 'opencode' || !config.account) return {}
-    const missing = (code: string, message: string) => {
-      this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
-      return {}
-    }
-    if (config.agent === 'claude') {
-      const resolved = this.claudeAccounts.resolveToken(conversation.userId, config.account)
-      if (!resolved) {
-        return missing(
-          'claude_account_missing',
-          "Le compte Claude choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-        )
-      }
-      // Both override stored CLI authentication; noninteractive API keys are accepted
-      // without prompts (probed 2.1.296).
-      return resolved.kind === 'apiKey'
-        ? { ANTHROPIC_API_KEY: resolved.token }
-        : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
-    }
-    // Grok follows Codex: per-account `GROK_HOME` with account-specific authentication.
-    // Never-connected accounts count as absent.
-    if (config.agent === 'grok') {
-      const account = this.grokAccounts.store.find(conversation.userId, config.account)
-      if (!account || account.status !== 'ready') {
-        return missing(
-          'grok_account_missing',
-          account
-            ? "Le compte Grok choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
-            : "Le compte Grok choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-        )
-      }
-      return { GROK_HOME: this.grokAccounts.homes.ensure(account.id) }
-    }
-    // Codex account home, where only auth.json is account-specific. Accounts never
-    // connected count as absent: without auth.json, app-servers reject turns.
-    const account = this.codexAccounts.store.find(conversation.userId, config.account)
-    if (!account || account.status !== 'ready') {
-      return missing(
-        'codex_account_missing',
-        account
-          ? "Le compte Codex choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
-          : "Le compte Codex choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-      )
-    }
-    return { CODEX_HOME: this.codexAccounts.homes.ensure(account.id) }
-  }
-
   antigravityHome(userId: string, accountId: string | null): string | undefined {
-    if (!accountId) return undefined
-    const account = this.antigravityAccounts.store.find(userId, accountId)
-    if (!account || account.status !== 'ready') throw notFound('agent_account_not_found', 'Unknown connected Google account.')
-    return this.antigravityAccounts.homes.ensure(account.id)
+    return this.accounts.antigravityHome(userId, accountId)
   }
 
   codexHome(userId: string, accountId: string | null): string | undefined {
-    if (!accountId) return undefined
-    const account = this.codexAccounts.store.find(userId, accountId)
-    if (!account || account.status !== 'ready') throw notFound('agent_account_not_found', 'Unknown connected Codex account.')
-    return this.codexAccounts.homes.ensure(account.id)
+    return this.accounts.codexHome(userId, accountId)
   }
 
   grokHome(userId: string, accountId: string | null): string | undefined {
-    if (!accountId) return undefined
-    const account = this.grokAccounts.store.find(userId, accountId)
-    if (!account || account.status !== 'ready') throw notFound('agent_account_not_found', 'Unknown connected Grok account.')
-    return this.grokAccounts.homes.ensure(account.id)
+    return this.accounts.grokHome(userId, accountId)
   }
 
   /** Catalog for the account the configuration names: plans differ in which models they list. */
   modelsFor(userId: string, config: AgentConfig) {
-    let credential: string | undefined
-    if (config.agent === 'antigravity') credential = this.antigravityHome(userId, config.account)
-    else if (config.agent === 'codex') credential = this.codexHome(userId, config.account)
-    else if (config.agent === 'grok') credential = this.grokHome(userId, config.account)
-    else if (config.agent === 'claude' && config.account) {
-      const resolved = this.claudeAccounts.resolveToken(userId, config.account)
-      if (!resolved) throw notFound('agent_account_not_found', 'Unknown Claude account.')
-      credential = claudeCredential(resolved.kind, resolved.token)
-    }
-    return this.registry.adapter(config.agent).models(credential)
+    return this.registry.adapter(config.agent).models(this.accounts.catalogCredential(userId, config))
   }
 
   /** A disconnected account must not continue requests from another warm session. */
@@ -1036,9 +705,9 @@ export class SessionManager {
       accountSignedOut: async () => {
         if (config.agent !== 'antigravity') return
         if (config.account) await this.stopAntigravityAccount(config.account, conversationId)
-        const home = this.antigravityHome(conversation.userId, config.account) ?? userAntigravityHome()
+        const home = this.accounts.antigravityHome(conversation.userId, config.account) ?? userAntigravityHome()
         await logoutAntigravity(await adapter.cli.executable(), home)
-        if (config.account) this.antigravityAccounts.store.setIdentity(config.account, { authMode: null, email: null, plan: null })
+        if (config.account) this.accounts.antigravityAccounts.store.setIdentity(config.account, { authMode: null, email: null, plan: null })
       },
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId, conversation.projectId === null ? conversation.userId : undefined),
@@ -1047,7 +716,7 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
-        ...this.accountEnv(conversation, config),
+        ...this.accounts.accountEnv(conversation, config),
       },
       // Sillage's server goes last: order resolves duplicate tool names,
       // and user-declared servers must win
@@ -1159,7 +828,7 @@ export class SessionManager {
         if (event.type === 'turn.completed' && conversation.projectId === null && !conversation.benchmarkId) {
           void readPersonalMemory(this.db, personalMemoryDir(this.config.paths.memory, conversation.userId), conversation.userId, conversationId).catch(err => console.warn('Personal memory refresh failed', err))
         }
-        detach(this.notifyIfAway(conversationId, event), 'notification of an absent user')
+        detach(notifyIfAway(this.db, this.notifier, conversationId, event), 'notification of an absent user')
         // Journals suffice for open conversations folding events; conversation lists and
         // other processes have only conversation rows to determine
         // that work continues elsewhere.
@@ -1373,7 +1042,7 @@ export class SessionManager {
       // Failed starts must not occupy live slots; otherwise later sends would retry
       // nonexistent processes.
       if (this.runners.get(conversationId)?.lease === lease) this.runners.delete(conversationId)
-      this.clearActivity(conversationId)
+      clearActivity(this.db, conversationId)
       await runner.stop().catch(() => undefined)
       throw err
     }
@@ -1583,7 +1252,7 @@ export class SessionManager {
       }
       // `announce` opened a turn no CLI will close: the recoverable error above does not end it in
       // the thread, which kept its activity indicator and Stop button forever.
-      this.closeOpenTurn(conversationId, 'failed')
+      closeOpenTurn(this.log, conversationId, 'failed')
       this.pendingDeliveries.delete(conversationId)
       this.setStatus(conversationId, 'idle')
       return false
@@ -1854,7 +1523,7 @@ export class SessionManager {
     if (!managed) {
       // No CLI to answer with a `turn.completed`: a turn left open in the journal (a CLI that died,
       // a failed hand-over) would keep Stop visible and apparently ineffective.
-      this.closeOpenTurn(conversationId, 'interrupted')
+      closeOpenTurn(this.log, conversationId, 'interrupted')
       this.setStatus(conversationId, 'idle')
       return
     }
@@ -1865,19 +1534,8 @@ export class SessionManager {
       // received"). Stop is still honoured: drop the runner and close the turn ourselves.
       console.warn(`[sessions] interrupt of ${conversationId} failed, stopping its runner`, err)
       await this.stopRunner(conversationId)
-      this.closeOpenTurn(conversationId, 'interrupted')
+      closeOpenTurn(this.log, conversationId, 'interrupted')
       this.setStatus(conversationId, 'idle')
-    }
-  }
-
-  /** Journals the end of a turn the journal still shows as open, so the thread stops showing it as running. No-op when the last turn already ended. */
-  private closeOpenTurn(conversationId: string, stopReason: 'interrupted' | 'failed'): void {
-    try {
-      const last = this.log.latest(conversationId, ['turn.started', 'turn.completed', 'session.ended'], 1)[0]
-      if (last?.event.type !== 'turn.started') return
-      this.log.append(conversationId, { type: 'turn.completed', stopReason, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
-    } catch (err) {
-      console.error(`sillage: closing the open turn of ${conversationId} failed`, err)
     }
   }
 
@@ -1887,11 +1545,11 @@ export class SessionManager {
     const starting = this.cancelDelivery(conversationId, 'terminate')
     const managed = this.runners.get(conversationId)
     if (managed && starting) {
-      this.expireOpenPrompts(conversationId)
+      expireOpenPrompts(this.log, conversationId)
       await this.stopRunner(conversationId)
     } else if (managed) {
       await managed.runner.interrupt().catch(() => undefined)
-      this.expireOpenPrompts(conversationId)
+      expireOpenPrompts(this.log, conversationId)
       await this.stopRunner(conversationId)
     }
     // CLIs may die before announcing turn completion.
@@ -2103,7 +1761,7 @@ export class SessionManager {
 
     this.runners.delete(conversationId)
     this.usage?.forget(conversationId)
-    this.clearActivity(conversationId)
+    clearActivity(this.db, conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
     try {
       await managed.runner.stop()
@@ -2114,7 +1772,7 @@ export class SessionManager {
     // After shutdown, CLIs can no longer overwrite our final list;
     // synchronous writes persist even when daemon shutdown
     // follows immediately.
-    this.closeDetachedWork(conversationId, managed.loops > 0)
+    closeDetachedWork(this.log, conversationId, managed.loops > 0)
 
     // Runner expiry does not change status: broadcast cold state or interfaces
     // would keep showing nonexistent warm sessions. Unless a successor already serves the
@@ -2136,7 +1794,7 @@ export class SessionManager {
       const phase = this.phase(conversationId)
       if (phase !== 'running' && phase !== 'awaiting' && phase !== 'delivering') continue
       try {
-        this.closeInterruptedTurn(conversationId, 'The daemon stopped during this conversation. The agent was interrupted.')
+        closeInterruptedTurn(this.db, this.log, conversationId, 'The daemon stopped during this conversation. The agent was interrupted.')
         const delivery = this.pendingDeliveries.get(conversationId)
         // A CLI that comes up after this snapshot is stopped by `deliver` instead of receiving the message.
         if (delivery && !delivery.handing) delivery.cancel = 'terminate'
@@ -2149,15 +1807,6 @@ export class SessionManager {
       }
     }
     await Promise.allSettled([...this.runners.keys()].map((id) => this.stopRunner(id)))
-  }
-
-  /** What a turn cut by the daemon leaves in the journal and the row, as `recoverInterrupted` writes it after a crash. */
-  private closeInterruptedTurn(conversationId: string, message: string): void {
-    this.log.append(conversationId, { type: 'error', code: 'daemon_restarted', message, recoverable: true })
-    this.expireOpenPrompts(conversationId)
-    this.expireQueuedMessages(conversationId)
-    this.log.append(conversationId, { type: 'session.ended', reason: 'interrupted' })
-    this.db.update(conversations).set({ status: 'interrupted' }).where(eq(conversations.id, conversationId)).run()
   }
 
   private assertOpen(): void {
