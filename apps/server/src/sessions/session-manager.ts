@@ -5,6 +5,7 @@ import { detach } from '../detach.js'
 import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
 import { conversationPath } from '@sillage/protocol'
 import { randomUUID } from 'node:crypto'
+import { statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
@@ -1345,6 +1346,11 @@ export class SessionManager {
     const fresh = this.loadConversation(conversationId)
     // Last guard before spawning: queued deliveries outlive the check made when they were accepted.
     this.assertCliEnabled(fresh.agent)
+    // Spawning in a missing directory fails with ENOENT, which the Claude SDK reports as a broken binary.
+    const cwd = this.resolveCwd(fresh)
+    if (!statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
+      throw new Error(`The working directory ${cwd} does not exist: check the project's path.`)
+    }
     const lease: RunnerLease = { conversationId }
     const context = this.buildContext(fresh, lease)
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
@@ -1541,6 +1547,9 @@ export class SessionManager {
         await this.dropDelivery(conversationId, delivery.cancel)
         return false
       }
+      // The CLI may have died or been stopped while the snapshot finished: handing it the message
+      // would reopen a turn that no process closes.
+      if (this.runners.get(conversationId)?.runner !== runner) throw new Error('The CLI stopped before receiving the message.')
       if (delivery) delivery.handing = true
       const prepared = Date.now()
       await runner.send(text, attachments, resolved, skills)

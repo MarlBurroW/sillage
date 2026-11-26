@@ -24,6 +24,28 @@ function runner() {
 const ping = (parent: string | null) => ({ type: 'stream_event', parent_tool_use_id: parent, event: { type: 'ping' } })
 const count = (events: SillageEvent[], type: SillageEvent['type']) => events.filter((event) => event.type === type).length
 
+test('a stream failure is journaled even though the error status stops the runner at once', async () => {
+  const f = runner()
+  // As the manager does: `error` stops the runner synchronously, before the death is journaled.
+  ;(f.instance as unknown as { ctx: RunnerContext }).ctx.setStatus = (status) => {
+    if (status === 'error') void f.instance.stop()
+  }
+  const internals = f.instance as unknown as { session: AsyncIterable<unknown>; consume(): Promise<void> }
+  internals.session = (async function* () { throw new Error('spawn ENOENT') })()
+  await internals.consume()
+
+  const failure = f.events.find((event) => event.type === 'error')
+  assert.ok(failure?.type === 'error' && failure.code === 'runner_failed' && failure.message === 'spawn ENOENT')
+  assert.equal(f.events.at(-1)?.type, 'session.ended')
+})
+
+test('a stopped session refuses a message rather than opening a turn nothing would close', async () => {
+  const f = runner()
+  await f.instance.stop()
+  await assert.rejects(f.instance.send('hello', [], [], []), /stopped before receiving/)
+  assert.equal(count(f.events, 'turn.started'), 0)
+})
+
 test('a sub-agent still talking neither keeps an interrupted turn open nor opens another', async (t) => {
   const grace = ClaudeRunner.turnCloseGraceMs
   ClaudeRunner.turnCloseGraceMs = 40
