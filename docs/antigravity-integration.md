@@ -57,6 +57,14 @@ Native settings, hooks and MCP configuration are retained. Native skill preceden
 is `config/skills`, project `.gemini/skills`, `antigravity-cli/skills`, then project
 `.agents/skills`. Sillage's supplied library is copied into the first root.
 
+At `session/new`, 1.4.3 also writes its own system skill `run-workflow`
+(`metadata.namespace: system`) into `<session cwd>/skills/system/`: the ACP session's
+folder, which is the project, so no launch option moves it (probed November 26, 2026).
+The agent reads it on demand, so it stays while a session runs; when the last
+Antigravity session in that folder stops, Sillage removes the untracked system skills
+and the folders this leaves empty (`agents/antigravity/system-skills.ts`). A system
+skill committed to the repository, or any other skill there, is left alone.
+
 ## Deliberate differences from Claude
 
 Shared services provide accounts, MCP, skills, events, tool presentation, handoff,

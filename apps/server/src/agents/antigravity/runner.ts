@@ -1,4 +1,5 @@
 import { antigravitySkills } from './skills.js'
+import { claimSystemSkills, releaseSystemSkills } from './system-skills.js'
 import { randomUUID } from 'node:crypto'
 import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
@@ -89,6 +90,8 @@ export class AntigravityRunner implements AgentRunner {
   private readonly durations = new ToolDurations()
   private readonly tools = new Map<string, ToolTrack>()
   private readonly closed = new Map<string, ClosedTool>()
+  /** Holds a claim on the workspace's materialized system skills; see system-skills.ts. */
+  private claimedSkills = false
   /** Grace before a still-open view_file is shown from disk; tests shorten it. */
   static readSettleMs = 3_000
   private early: [string, unknown][] | null = []
@@ -152,6 +155,8 @@ export class AntigravityRunner implements AgentRunner {
     await client.initialize(CLIENT_INFO)
     const overview = this.ctx.projectOverview(this.config)
     if (this.replaying && this.sessionId) this.ctx.emit({ type: 'session.started', agent: 'antigravity', agentSessionId: this.sessionId, model: this.config.model, cwd: this.ctx.cwd, tools: [] })
+    // The session request writes `skills/system/` into the workspace; `stop` takes it back out.
+    if (!this.claimedSkills) { claimSystemSkills(this.ctx.cwd); this.claimedSkills = true }
     const session = await client.request<{ sessionId?: string }>(this.sessionId ? this.replaying ? 'session/load' : 'session/resume' : 'session/new', {
       ...(this.sessionId ? { sessionId: this.sessionId } : {}), cwd: this.ctx.cwd,
       mcpServers: resolved.servers.map(toAcpMcpServer),
@@ -499,6 +504,7 @@ export class AntigravityRunner implements AgentRunner {
     const client = this.client; this.client = null
     await client?.closeAndWait()
     await this.persistArtifacts()
+    if (this.claimedSkills) { this.claimedSkills = false; releaseSystemSkills(this.ctx.cwd) }
   }
   private async persistArtifacts(): Promise<void> {
     const root = this.ctx.processEnv?.SILLAGE_ANTIGRAVITY_SESSION_ROOT
