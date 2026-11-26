@@ -48,8 +48,10 @@ export async function startFakeGitHub({ port = 0, repo = 'acme/nimbus', seed = t
     issues.set(full.number, full)
     return full
   }
-  const addComment = (issue, body, user = 'someone') => {
-    const comment = { id: nextComment++, issue, body, user, created: now(), updated: now() }
+  // `ago` backdates seeded comments: written in the same millisecond, their order on the
+  // card thread (newest first) would depend on timing.
+  const addComment = (issue, body, user = 'someone', ago = 0) => {
+    const comment = { id: nextComment++, issue, body, user, created: now() - ago, updated: now() - ago }
     comments.push(comment)
     issues.get(issue).updated = now()
     return comment
@@ -141,9 +143,10 @@ export async function startFakeGitHub({ port = 0, repo = 'acme/nimbus', seed = t
     addIssue({ number: 9, title: 'Export to CSV drops the last row', user: 'lena-k', state: 'closed', state_reason: 'completed', closed: now() - 3 * day, labels: ['bug'] })
     addIssue({ number: 3, title: 'Very old closed issue', user: 'someone', state: 'closed', state_reason: 'completed', closed: now() - 90 * day })
     addIssue({ number: 22, title: 'Bump dependencies', user: 'bot', pull: true })
-    addComment(12, 'Same here on Linux, Nimbus 2.3.0.', 'marco-p')
-    addComment(12, 'I can reproduce it, the folder is never recreated.', 'lena-k')
-    addComment(18, 'Would love this too!', 'amir')
+    const hour = 3_600_000
+    addComment(12, 'Same here on Linux, Nimbus 2.3.0.', 'marco-p', 2 * hour)
+    addComment(12, 'I can reproduce it, the folder is never recreated.', 'lena-k', hour)
+    addComment(18, 'Would love this too!', 'amir', hour)
   }
 
   return {

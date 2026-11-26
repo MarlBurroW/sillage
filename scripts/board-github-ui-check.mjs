@@ -139,7 +139,10 @@ try {
   const panel = page.getByRole('complementary', { name: /Carte/ })
   await panel.getByText('Issue #12, ouverte par @lena-k').waitFor()
   await panel.getByRole('button', { name: /Activité/ }).click()
-  await panel.getByText('@marco-p').waitFor()
+  // The thread shows the newest comment and folds older ones: both community comments arrive.
+  await panel.getByRole('listitem').filter({ hasText: 'I can reproduce it, the folder is never recreated.' }).getByText('@lena-k').waitFor()
+  await panel.getByText('Notes précédentes (1)').click()
+  await panel.getByRole('listitem').filter({ hasText: 'Same here on Linux, Nimbus 2.3.0.' }).getByText('@marco-p').waitFor()
   await panel.getByLabel('Ajouter une note').fill('Thanks for the report, a fix is on the way.')
   await panel.getByLabel(/Publier aussi en commentaire sur l’issue #12|Publier aussi en commentaire sur l'issue #12/).check()
   await panel.getByRole('button', { name: 'Ajouter et publier' }).click()
