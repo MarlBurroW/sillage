@@ -57,7 +57,10 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
+  // This check creates extra Claude sessions to exceed the ten-row list. A disabled CLI refuses new sessions
+  // (503 cli_disabled), so Claude stays enabled but points at a binary that does not exist:
+  // creating a session never launches the CLI, and nothing can reach the real `claude`.
+  await writeFile(config, `[agents.claude]\nbinary = ${JSON.stringify(join(data, 'claude-absent'))}\n[agents.codex]\nenabled = false\n`)
   const env = {
     ...process.env,
     SILLAGE_PORT: String(apiPort),
@@ -143,8 +146,9 @@ try {
     await context.close()
   }
 
-  // Focused view with more than ten sessions: only the first ten plus favorites are shown, and a
-  // drop next to a favorite shown beyond them must land next to it in the stored order.
+  // More than ten sessions: since the rail + column navigation the column lists every active
+  // session (no "show more" step), so a favorite stored beyond the tenth row stays in its place
+  // and a drop onto it, at the far end of a list that now scrolls, must land right after it.
   {
     const { context, page, project, apiOrder, domOrder, drag, expectMove, rows } = await session({ width: 1440, height: 900 }, false)
     const config = { agent: 'claude', model: 'sonnet', effort: 'medium', permissionMode: 'auto', additionalDirectories: [], mcpServers: [], sillageMcp: true, skillLibrary: true }
@@ -158,7 +162,7 @@ try {
     await page.reload()
     await page.locator('textarea').waitFor()
     await page.waitForTimeout(500)
-    assert.equal(await rows.count(), 11)
+    assert.equal(await rows.count(), stored.length, 'every active session is listed')
     await expectMove(0, 5)
     await expectMove(5, 0)
     const visible = await domOrder()
@@ -167,7 +171,7 @@ try {
     await drag(0, visible.length - 1)
     const after = await apiOrder()
     assert.equal(after.indexOf(dragged), after.indexOf(far) + 1, 'the row lands right after the favorite it was dropped on')
-    console.log('Collapsed list reordering verified, including a drop beyond the first ten rows')
+    console.log('Long list reordering verified, including a drop beyond the first ten rows')
     await context.close()
   }
 
