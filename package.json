@@ -93,7 +93,8 @@
     "test:benchmark-compare-ui": "node scripts/benchmark-compare-ui-check.mjs",
     "test:benchmark-slides-ui": "node scripts/benchmark-slides-ui-check.mjs",
     "test:benchmark-follow-up-ui": "node scripts/benchmark-follow-up-ui-check.mjs",
-    "test:consumption-ui": "node scripts/consumption-ui-check.mjs"
+    "test:consumption-ui": "node scripts/consumption-ui-check.mjs",
+    "test:release-notes-ui": "node scripts/release-notes-ui-check.mjs"
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0",

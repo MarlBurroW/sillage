@@ -2,7 +2,7 @@ import { homedir, hostname } from 'node:os'
 import { count } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { users } from '@sillage/db'
-import type { InstanceInfo, UpdateStatus, VersionInfo } from '@sillage/protocol'
+import type { InstanceInfo, ReleaseHistory, UpdateStatus, VersionInfo } from '@sillage/protocol'
 import { instanceInfo } from '../../instance/profile.js'
 import type { AppContext } from '../context.js'
 import { UpdateError, UpdateExecutor } from '../../update/executor.js'
@@ -38,6 +38,12 @@ export function registerSystemRoutes(app: FastifyInstance, ctx: AppContext): voi
       return checker.getVersionInfo(refresh)
     },
   )
+
+  // Shares the version check's hourly cache, so opening the notes adds no GitHub request.
+  app.get('/api/system/releases', async (request): Promise<ReleaseHistory> => {
+    requireUser(request)
+    return checker.getReleaseHistory()
+  })
 
   app.post('/api/system/update', async (request, reply): Promise<UpdateStatus> => {
     requireAdmin(request)

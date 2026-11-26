@@ -1,4 +1,4 @@
-import type { ReleaseNote, VersionInfo } from '@sillage/protocol'
+import type { ReleaseHistory, ReleaseNote, VersionInfo } from '@sillage/protocol'
 import { detectChannel } from './channel.js'
 import { CURRENT_VERSION, compareVersions, parseVersion } from './version.js'
 
@@ -24,32 +24,64 @@ export class ReleaseChecker {
   private checkError: VersionInfo['checkError'] = null
   private inflight: Promise<void> | null = null
 
+  /** `installed` is fixed at build time; tests pass their own. */
+  constructor(private readonly installed: string = CURRENT_VERSION) {}
+
   async getVersionInfo(forceRefresh = false): Promise<VersionInfo> {
+    await this.ensureFresh(forceRefresh)
+    const published = this.published()
+    const newer = this.newer(published)
+    return {
+      version: this.installed,
+      channel: detectChannel(),
+      latest: published[0]?.tag_name.replace(/^v/, '') ?? null,
+      updateAvailable: newer.length > 0,
+      releases: newer.map(toNote),
+      checkedAt: this.checkedAt(),
+      checkError: this.checkError,
+    }
+  }
+
+  /** Every release from the same cached reply, placed against the installed version. */
+  async getReleaseHistory(): Promise<ReleaseHistory> {
+    await this.ensureFresh(false)
+    const published = this.published()
+    const comparable = parseVersion(this.installed) !== null
+    return {
+      version: this.installed,
+      updateAvailable: this.newer(published).length > 0,
+      releases: published.map((release) => {
+        const order = compareVersions(release.tag_name, this.installed)
+        return {
+          ...toNote(release),
+          relation: !comparable ? null : order > 0 ? 'newer' : order === 0 ? 'installed' : 'older',
+        }
+      }),
+      checkedAt: this.checkedAt(),
+      checkError: this.checkError,
+    }
+  }
+
+  private async ensureFresh(forceRefresh: boolean): Promise<void> {
     const stale =
       this.fetchedAt === null || Date.now() - this.fetchedAt > CACHE_TTL_MS
     if (forceRefresh || stale) await this.refresh()
+  }
 
-    const installed = CURRENT_VERSION
-    const installedParsable = parseVersion(installed) !== null
-    const published = (this.releases ?? [])
+  private published(): GithubRelease[] {
+    return (this.releases ?? [])
       .filter((r) => !r.draft && !r.prerelease)
       .sort((a, b) => compareVersions(b.tag_name, a.tag_name))
+  }
 
-    const latest = published[0]?.tag_name.replace(/^v/, '') ?? null
-    const newer = installedParsable
-      ? published.filter((r) => compareVersions(r.tag_name, installed) > 0)
-      : []
+  private newer(published: GithubRelease[]): GithubRelease[] {
+    // Unparseable development versions must never trigger update suggestions.
+    if (parseVersion(this.installed) === null) return []
+    return published.filter((r) => compareVersions(r.tag_name, this.installed) > 0)
+  }
 
-    return {
-      version: installed,
-      channel: detectChannel(),
-      latest,
-      // Unparseable development versions must never trigger update suggestions.
-      updateAvailable: installedParsable && newer.length > 0,
-      releases: newer.map(toNote),
-      checkedAt: this.fetchedAt ? new Date(this.fetchedAt).toISOString() : null,
-      checkError: this.checkError,
-    }
+  private checkedAt(): string | null {
+    return this.fetchedAt ? new Date(this.fetchedAt).toISOString() : null
   }
 
   /** Release `tag` tarball URL for the current platform, if known. */

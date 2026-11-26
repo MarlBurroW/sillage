@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Compass, ExternalLink, MousePointerClick, RefreshCw } from 'lucide-react'
+import { Compass, ExternalLink, MousePointerClick, RefreshCw, ScrollText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { DEFAULT_ONBOARDING, type DesktopUpdateUnsupportedReason, type UpdatePhase } from '@sillage/protocol'
-import { Markdown } from '../components/chat/Markdown'
+import { ReleaseNote } from '../components/ReleaseNote'
 import { TOUR_REPLAY_PATH } from '../components/tour/steps'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog } from '../components/ui'
 import { api } from '../lib/api'
 import { useDesktopUpdate, type DesktopUpdates } from '../lib/desktop-updates'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
+import { RELEASE_NOTES_PATH } from '../lib/release-notes'
 import { useCurrentUser } from '../lib/session'
 import { useUpdateOnboarding, useUserSettings } from '../lib/user-settings'
 import {
@@ -162,8 +163,8 @@ export function AboutSection() {
             </p>
           ) : null}
 
-          {isAdmin ? (
-            <div>
+          <div className="flex flex-wrap gap-1">
+            {isAdmin ? (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -175,8 +176,12 @@ export function AboutSection() {
                 <RefreshCw size={14} className={refresh.isPending ? 'animate-spin' : undefined} />
                 {t('about.check.now')}
               </Button>
-            </div>
-          ) : null}
+            ) : null}
+            {/* Every version's notes, not only those of an update: what the installed one brought too. */}
+            <Button variant="ghost" icon={<ScrollText size={14} />} onClick={() => navigate(RELEASE_NOTES_PATH)}>
+              {t('settings.section.releaseNotes')}
+            </Button>
+          </div>
         </CardBody>
       </Card>
 
@@ -252,23 +257,7 @@ export function AboutSection() {
             )}
 
             {/* Release notes come directly from GitHub, in English. */}
-            {info?.releases.map((release) => (
-              <article key={release.tag} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
-                <header className="mb-1.5 flex items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-semibold">{release.name}</h3>
-                  <a
-                    href={release.htmlUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex shrink-0 items-center gap-1 text-xs text-ink-faint hover:text-ink"
-                  >
-                    {new Date(release.publishedAt).toLocaleDateString(locale())}
-                    <ExternalLink size={12} />
-                  </a>
-                </header>
-                <Markdown text={release.body} />
-              </article>
-            ))}
+            {info?.releases.map((release) => <ReleaseNote key={release.tag} release={release} />)}
           </CardBody>
         </Card>
       ) : null}

@@ -1,4 +1,4 @@
-import { Archive, Bell, BookOpen, Bot, ChevronRight, Cpu, FileText, GitBranch, Globe, Info, KeyRound, Mic, MonitorPlay, Palette, Plug, Radio, Rss, Search, Shield, SlidersHorizontal, Terminal, TimerReset, UserRound, Users, Wrench, X } from 'lucide-react'
+import { Archive, Bell, BookOpen, Bot, ChevronRight, Cpu, FileText, GitBranch, Globe, Info, KeyRound, Mic, MonitorPlay, Palette, Plug, Radio, Rss, ScrollText, Search, Shield, SlidersHorizontal, Terminal, TimerReset, UserRound, Users, Wrench, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
@@ -241,6 +241,13 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.about',
     descriptionKey: 'settings.section.about.description',
     icon: <Info size={16} />,
+  },
+  {
+    to: 'notes-de-version',
+    group: 'about',
+    labelKey: 'settings.section.releaseNotes',
+    descriptionKey: 'settings.section.releaseNotes.description',
+    icon: <ScrollText size={16} />,
   },
 ]
 

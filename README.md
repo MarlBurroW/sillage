@@ -300,7 +300,9 @@ replacing a binary and refreshes the available models afterward.
 
 Sillage checks for updates in Settings. Installer-based Server setups can update
 from the interface; Docker users pull a newer image, and Desktop downloads updates
-in the background and lets you install them from About.
+in the background and lets you install them from About. Settings > Release notes
+shows what each recent version brings, so you can read an update before installing
+it; the installed version and those not installed yet are marked.
 
 ## License
 

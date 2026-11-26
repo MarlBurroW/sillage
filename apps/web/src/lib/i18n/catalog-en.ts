@@ -1492,6 +1492,7 @@ export const en = {
   'settings.section.accounts': 'Accounts',
   'settings.section.accounts.description': "Manage the instance's accounts",
   'settings.section.about': 'About',
+  'settings.section.releaseNotes': 'Release notes',
   'settings.section.mcp': 'MCP servers',
   'settings.section.git': 'Git access',
   'settings.section.git.description': 'Clone and push tokens',
@@ -2007,6 +2008,7 @@ export const en = {
   'mcpInstall.error.generic': 'Could not record the answer.',
   'settings.section.mcp.description': 'Servers handed to your agents, declared once for every CLI',
   'settings.section.about.description': "Installed version, what's new, update",
+  'settings.section.releaseNotes.description': 'What each version brings',
   'settings.title': 'Settings',
   'settings.buildInfo': 'Sillage {version} · build from',
 
@@ -2067,6 +2069,19 @@ export const en = {
   'about.confirm.action': 'Update',
   'about.confirm.body': 'The service will be unavailable for a few seconds during the restart. Running conversations will be interrupted and will resume with the next message.',
 
+
+  // Release notes
+  'releaseNotes.description': 'What each version of Sillage brings, most recent first. The notes are published on GitHub, in English.',
+  'releaseNotes.loading': 'Loading the release notes…',
+  'releaseNotes.empty': 'No published version yet.',
+  'releaseNotes.error.rateLimited': 'GitHub is temporarily limiting requests: the release notes cannot be loaded right now.',
+  'releaseNotes.error.network': 'The release notes could not be loaded from GitHub right now.',
+  'releaseNotes.badge.newer': 'Available',
+  'releaseNotes.badge.installed': 'Installed',
+  'releaseNotes.update.title': 'Version {version} is available',
+  'releaseNotes.update.description': 'The versions published since yours ({version}) are open below.',
+  'releaseNotes.update.open': 'Go to update',
+  'releaseNotes.older': 'Older versions on GitHub',
   // File tree
   'filetree.search.placeholder': 'Search files...',
   'filetree.search.label': 'Search files',

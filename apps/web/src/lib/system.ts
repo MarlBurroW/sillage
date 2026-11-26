@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { UpdateStatus, VersionInfo } from '@sillage/protocol'
+import type { ReleaseHistory, UpdateStatus, VersionInfo } from '@sillage/protocol'
 import { api } from './api'
 import { useDesktopUpdate } from './desktop-updates'
 import { useCurrentUser } from './session'
@@ -16,6 +16,15 @@ const versionQuery = {
 
 export function useVersionInfo() {
   return useQuery(versionQuery)
+}
+
+/** Every recent release with its notes, for the release notes page only: the payload is the bodies. */
+export function useReleaseHistory() {
+  return useQuery({
+    queryKey: ['system', 'releases'],
+    queryFn: () => api.get<ReleaseHistory>('/api/system/releases'),
+    staleTime: versionQuery.staleTime,
+  })
 }
 
 /**

@@ -1483,6 +1483,7 @@ export const fr: Catalog = {
   'settings.section.accounts': 'Comptes',
   'settings.section.accounts.description': "Gérer les comptes de l'instance",
   'settings.section.about': 'À propos',
+  'settings.section.releaseNotes': 'Notes de version',
   'settings.section.mcp': 'Serveurs MCP',
   'settings.section.git': 'Accès git',
   'settings.section.git.description': 'Jetons de clonage et de push',
@@ -1999,6 +2000,7 @@ export const fr: Catalog = {
   'mcpInstall.error.generic': 'La réponse n’a pas pu être enregistrée.',
   'settings.section.mcp.description': 'Serveurs donnés à vos agents, déclarés une fois pour tous les CLI',
   'settings.section.about.description': 'Version installée, nouveautés, mise à jour',
+  'settings.section.releaseNotes.description': 'Ce qu’apporte chaque version',
   'settings.title': 'Réglages',
   'settings.buildInfo': 'Sillage {version} · build du',
 
@@ -2059,6 +2061,19 @@ export const fr: Catalog = {
   'about.confirm.action': 'Mettre à jour',
   'about.confirm.body': "Le service sera indisponible quelques secondes pendant le redémarrage. Les conversations en cours d'exécution seront interrompues et reprendront au prochain message.",
 
+
+  // Notes de version
+  'releaseNotes.description': 'Ce qu’apporte chaque version de Sillage, de la plus récente à la plus ancienne. Les notes sont publiées sur GitHub, en anglais.',
+  'releaseNotes.loading': 'Chargement des notes de version…',
+  'releaseNotes.empty': 'Aucune version publiée pour le moment.',
+  'releaseNotes.error.rateLimited': 'GitHub limite temporairement les requêtes : les notes de version ne peuvent pas être chargées pour le moment.',
+  'releaseNotes.error.network': 'Impossible de charger les notes de version depuis GitHub pour le moment.',
+  'releaseNotes.badge.newer': 'Disponible',
+  'releaseNotes.badge.installed': 'Installée',
+  'releaseNotes.update.title': 'La version {version} est disponible',
+  'releaseNotes.update.description': 'Les versions publiées depuis la vôtre ({version}) sont dépliées ci-dessous.',
+  'releaseNotes.update.open': 'Aller à la mise à jour',
+  'releaseNotes.older': 'Versions plus anciennes sur GitHub',
   // File tree
   'filetree.search.placeholder': 'Chercher un fichier...',
   'filetree.search.label': 'Chercher un fichier',

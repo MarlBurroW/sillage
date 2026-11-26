@@ -19,6 +19,27 @@ export interface ReleaseNote {
   htmlUrl: string
 }
 
+/** Where a published release stands against the installed version. */
+export type ReleaseRelation = 'newer' | 'installed' | 'older'
+
+export interface ReleaseHistoryEntry extends ReleaseNote {
+  /** Null when the installed version is a development build, which no release can be compared with. */
+  relation: ReleaseRelation | null
+}
+
+/**
+ * The release notes page: every release GitHub returned, not only the newer ones. Kept off
+ * `VersionInfo`, which the sidebar fetches at every opening to place its update dot.
+ */
+export interface ReleaseHistory {
+  version: string
+  updateAvailable: boolean
+  /** The most recent published releases, newest first; older ones stay on GitHub. */
+  releases: ReleaseHistoryEntry[]
+  checkedAt: string | null
+  checkError: 'rate_limited' | 'network' | null
+}
+
 export interface VersionInfo {
   /** Installed version (`X.Y.Z`, or git ID in development). */
   version: string

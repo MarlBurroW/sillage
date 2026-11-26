@@ -36,6 +36,8 @@ const BenchmarkPage = lazyWithReload(() => import('./routes/BenchmarkPage').then
 // Rarely opened, and the main bundle sits at the PWA precache limit: kept out of it.
 const SkillEditorPage = lazyWithReload(() => import('./routes/SkillEditorPage').then((module) => ({ default: module.SkillEditorPage })))
 const DesignPage = lazyWithReload(() => import('./routes/DesignPage').then((module) => ({ default: module.DesignPage })))
+// The main bundle sits near the 3 MiB precache cap: a page few people open loads on demand.
+const ReleaseNotesSection = lazyWithReload(() => import('./routes/ReleaseNotesSection').then((module) => ({ default: module.ReleaseNotesSection })))
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
@@ -198,6 +200,7 @@ export function App() {
             <Route path="outils-agents" element={<AgentToolsSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
             <Route path="a-propos" element={<AboutSection />} />
+            <Route path="notes-de-version" element={<Suspense fallback={null}><ReleaseNotesSection /></Suspense>} />
           </Route>
           <Route path="/skills/:skillId" element={<Suspense fallback={null}><SkillEditorPage /></Suspense>} />
           <Route path="/design" element={<Suspense fallback={null}><DesignPage /></Suspense>} />
