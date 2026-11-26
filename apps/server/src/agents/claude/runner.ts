@@ -342,12 +342,15 @@ export class ClaudeRunner implements AgentRunner {
       this.ctx.emit({ type: 'session.ended', reason: this.stopped ? 'interrupted' : 'completed' })
       this.ctx.setStatus('idle')
     } catch (err) {
+      // Read once, before `setStatus`: `error` makes the manager stop this runner synchronously,
+      // which sets `stopped`, and the failure was then journaled as a plain stop.
+      const stopped = this.stopped
       // Status before journal unlike normal path: journal writes may have killed runner; `running`
       // without runner would display in progress forever.
-      this.ctx.setStatus(this.stopped ? 'idle' : 'error')
+      this.ctx.setStatus(stopped ? 'idle' : 'error')
       journalDeath(
         this.ctx,
-        this.stopped
+        stopped
           ? null
           : {
               type: 'error',
@@ -1149,6 +1152,8 @@ export class ClaudeRunner implements AgentRunner {
   ): Promise<void> {
     // The manager journaled the message before starting this runner; only steering echoes here.
     const { prompt } = await buildUserMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
+    // A stopped session has no process left to close the turn `openTurn` would open.
+    if (this.stopped) throw new Error('The Claude session stopped before receiving the message.')
     this.openTurn()
     this.retryFailedMcpServers()
 

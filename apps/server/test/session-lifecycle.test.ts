@@ -70,7 +70,7 @@ async function harness(t: TestContext, rows: Record<string, ConversationStatus>,
     await sessions.sendMessage(id, clientMessageId, text)
     await until(() => !deliveries.has(id))
   }
-  return { db, log, sessions, runners, starts, deliveries, row, events, types, run }
+  return { db, log, sessions, runners, starts, deliveries, row, events, types, run, workspace }
 }
 
 test('restart recovery interrupts open turns, closes what they left open, and spares idle conversations', async (t) => {
@@ -125,6 +125,37 @@ test('a resent client message id is delivered once, and becomes sendable again w
   h.starts.delete('f')
   await h.run('f', 'm1')
   assert.deepEqual(h.runners.get('f')!.sends, ['work'])
+})
+
+test('a CLI dying between its start and the hand-over fails the send instead of leaving a turn no process closes', async (t) => {
+  const h = await harness(t, { c: 'idle' })
+  const gate = deferred()
+  const manager = h.sessions as unknown as { openCheckpoint: (conversation: unknown) => Promise<void>; startingRunners: Map<string, unknown> }
+  manager.openCheckpoint = () => gate.promise
+  await h.sessions.sendMessage('c', 'm1', 'never sent')
+  // Started, not starting: a stop during the start is another, already handled, path.
+  await until(() => h.sessions.isWarm('c') && !manager.startingRunners.has('c'))
+
+  // What a runner does when its stream throws: `error` makes the manager stop it.
+  h.runners.get('c')!.ctx.setStatus('error')
+  await until(() => !h.sessions.isWarm('c'))
+  gate.resolve()
+  await until(() => !h.deliveries.has('c'))
+
+  assert.deepEqual(h.runners.get('c')!.sends, [])
+  assert.ok(h.events('c').some((event) => event.type === 'error' && event.code === 'send_failed'))
+  assert.equal(h.row('c').status, 'idle')
+})
+
+test('a missing working directory fails the send with a clear error before any CLI starts', async (t) => {
+  const h = await harness(t, { c: 'idle' })
+  await rm(h.workspace.path, { recursive: true, force: true })
+  await h.run('c', 'm1')
+
+  assert.equal(h.runners.has('c'), false)
+  const failure = h.events('c').find((event) => event.type === 'error' && event.code === 'send_failed')
+  assert.ok(failure?.type === 'error' && failure.message.includes(`${h.workspace.path} does not exist`))
+  assert.equal(h.row('c').status, 'idle')
 })
 
 test('a message sent during a turn waits for its end, then leaves alone', async (t) => {
