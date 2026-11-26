@@ -67,12 +67,21 @@ export class PreviewService {
    */
   /** `secure` follows the request that opens it: https behind a TLS proxy, http on a local test. */
   open(userId: string, port: number, secure = true): { address: string; url: string } {
-    const id = createHmac('sha256', this.key).update(`${userId}:${port}`).digest('hex').slice(0, 12)
+    const id = this.idOf(userId, port)
     this.targets.set(id, { id, port, userId })
-    const address = `${secure ? 'https' : 'http'}://${PREVIEW_HOST_PREFIX}${id}.${this.domain()}/`
+    const address = this.address(userId, port, secure)
     const expires = Date.now() + SIGN_IN_TTL_MS
     const token = `${expires}.${this.sign(`sign-in:${id}:${expires}`)}`
     return { address, url: `${address.slice(0, -1)}${SIGN_IN_PATH}?t=${token}` }
+  }
+
+  /** The preview's stable address, to show before it is opened; loading it still needs `open`. */
+  address(userId: string, port: number, secure = true): string {
+    return `${secure ? 'https' : 'http'}://${PREVIEW_HOST_PREFIX}${this.idOf(userId, port)}.${this.domain()}/`
+  }
+
+  private idOf(userId: string, port: number): string {
+    return createHmac('sha256', this.key).update(`${userId}:${port}`).digest('hex').slice(0, 12)
   }
 
   async listen(): Promise<void> {

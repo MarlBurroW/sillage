@@ -21,7 +21,10 @@ export function registerPreviewRoutes(app: FastifyInstance, ctx: AppContext, pre
       mode: desktop ? 'direct' : domain ? 'proxy' : 'unconfigured',
       domain,
       listenerPort: previews?.listenerPort ?? null,
-      targets: await targets(user.id, user.isAdmin),
+      targets: (await targets(user.id, user.isAdmin)).map((target) => ({
+        ...target,
+        address: desktop ? `http://127.0.0.1:${target.port}/` : domain && previews ? previews.address(user.id, target.port, request.protocol === 'https') : null,
+      })),
     }
   })
 
@@ -66,7 +69,7 @@ export function registerPreviewRoutes(app: FastifyInstance, ctx: AppContext, pre
     if (!previews.domain()) throw new HttpError(409, 'previews_unconfigured', 'An administrator must set a preview domain first.')
     const target = (await targets(user.id, user.isAdmin)).find((entry) => entry.port === port)
     if (!target) throw new HttpError(404, 'preview_target_unknown', 'Nothing of yours listens on this port.')
-    const row = previews.createShare({ userId: user.id, projectId: target.projectId, port, label: target.label, hours })
+    const row = previews.createShare({ userId: user.id, projectId: target.projectId, port, label: target.title ?? target.label, hours })
     reply.status(201)
     return shareDto(row, request.protocol === 'https')
   })

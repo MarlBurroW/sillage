@@ -169,9 +169,10 @@ export function sessionTitleReminder(db: Db, input: { projectId: string | null; 
 
 /**
  * Shared tool guidance, part of the stable overview: it names tools, not state. One clause per
- * capability, tagged with its family, so a disabled family drops out of the sentence.
+ * capability, tagged with its family, so a disabled family drops out of the sentence; `null` for
+ * always-on tools.
  */
-const TOOL_CLAUSES: [AgentToolFamily, string][] = [
+const TOOL_CLAUSES: [AgentToolFamily | null, string][] = [
   ['history', '`search_history` and `read_conversation` for earlier decisions'],
   ['history', '`list_sessions` and `find_file_edits` for current work by others'],
   ['history', '`work_log` for time spent per day'],
@@ -186,11 +187,12 @@ const TOOL_CLAUSES: [AgentToolFamily, string][] = [
   ['automations', '`schedule_task` to schedule recurring or deferred work that survives this session'],
   ['automations', '`create_automation` to start a session on webhook calls (a labeled issue or failed CI)'],
   ['actions', '`list_actions` and `register_action` for project buttons that launch a server, tests or a script'],
+  [null, '`describe_preview` to title a dev server you start for the user, or keep an API or worker out of the thread'],
   ['project', '`list_mcp_servers` and `install_mcp_server` to propose an MCP server the user confirms, typing any secret themselves'],
 ]
 
 export function toolsGuidance(input: { families?: Families | null }): string | null {
-  const clauses = TOOL_CLAUSES.filter(([family]) => on(input, family)).map(([, clause]) => clause)
+  const clauses = TOOL_CLAUSES.filter(([family]) => family === null || on(input, family)).map(([, clause]) => clause)
   if (clauses.length === 0) return null
   const list = clauses.length === 1 ? clauses[0] : `${clauses.slice(0, -1).join(', ')}, and ${clauses.at(-1)}`
   return `The \`sillage\` server tools provide further context: ${list}.`

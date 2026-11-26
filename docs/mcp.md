@@ -36,6 +36,10 @@ The tool has no target-session parameter and is unavailable in global mode.
 Existing unnamed sessions receive the instruction when their runner next starts;
 disabling Sillage MCP keeps the native CLI naming behavior.
 
+Likewise, `describe_preview({ port, title?, show? })` titles a dev server the
+session started, or keeps it out of the thread (see [previews](previews.md)). It
+acts on the calling conversation only and is unavailable in global mode.
+
 **Global mode.** Without `SILLAGE_MCP_PROJECT`, the server serves the entire instance:
 
 - an extra tool, `list_projects`, returns projects with their directory, working

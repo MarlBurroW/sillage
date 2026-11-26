@@ -46,6 +46,7 @@ import { LaunchConfigs } from './agent-requests-models.js'
 import { ScheduleRequests } from './agent-requests-schedules.js'
 import { SessionOperations } from './agent-requests-sessions.js'
 import { describeError, Refusal, type Requester } from './agent-requests-shared.js'
+import { describePreview } from './agent-requests-previews.js'
 import { WorktreeRequests } from './agent-requests-worktrees.js'
 
 export { launchRefusal, MAX_LAUNCH_DEPTH, MAX_LAUNCH_PROMPT_CHARS } from './agent-requests-launch.js'
@@ -209,6 +210,11 @@ export class AgentRequests {
         const { title } = renameSessionBodySchema.parse(payload)
         const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, conversation.id, title, 'agent')
         this.settle(request.id, result === 'protected' ? 'The user chose the title; it is preserved.' : `Your session title: “${title}”.`, false)
+        return
+      }
+      if (request.kind === 'describe_preview') {
+        if (!conversation) throw new Refusal('This tool only presents dev servers your own session started.')
+        this.settle(request.id, await describePreview(this.ctx, conversation, user, payload), false)
         return
       }
       if (request.kind === 'move_session') {

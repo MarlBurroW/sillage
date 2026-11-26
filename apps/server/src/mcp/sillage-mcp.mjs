@@ -116,6 +116,8 @@ const MAX_PEER_MESSAGE_CHARS = 4000
 /** How long tools wait for daemon request processing. Session starts launch CLIs and sometimes worktrees, usually seconds but longer under load. After this timeout, report that processing continues rather than remain suspended. */
 const REQUEST_WAIT_MS = {
   rename_session: 15000,
+  // Lists listening ports like the Services page.
+  describe_preview: 15000,
   create_project: 30000,
   delete_project: 60000,
   continue_in_project: 60000,
@@ -170,6 +172,9 @@ const MAX_LAUNCH_PROMPT_CHARS = 20000
 
 /** Must match protocol `MAX_SESSION_TITLE_CHARS` in session-title.ts. */
 const MAX_SESSION_TITLE_CHARS = 60
+
+/** Must match protocol `MAX_PREVIEW_TITLE_CHARS` in previews.ts. */
+const MAX_PREVIEW_TITLE_CHARS = 60
 
 /** Scheduled task limits matching protocol `MAX_SCHEDULE_PROMPT_CHARS`, `DEFAULT_SCHEDULE_DURATION_MINUTES` and `MIN_AGENT_SCHEDULE_MINUTES` in `apps/server/src/sessions/agent-requests.ts`. The daemon revalidates; these only inform descriptions. */
 const MAX_SCHEDULE_PROMPT_CHARS = 20000
@@ -283,6 +288,22 @@ const TOOLS = [
       type: 'object',
       properties: { title: { type: 'string', minLength: 1, maxLength: MAX_SESSION_TITLE_CHARS, description: `Single-line title, at most ${MAX_SESSION_TITLE_CHARS} characters.` } },
       required: ['title'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'describe_preview',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    description:
+      "Say how a dev server you started appears in this conversation. Sillage detects servers your commands start and shows each in the thread with a button to open its preview, under a generic “Your dev server is running”. When you start a server meant for the user (a web app, a page, a demo), give it a title saying what it is. For servers no human opens (an API, a worker, a database, a mock), pass `show: false` so the user is not left picking among buttons; they stay available in the Preview tab. You may call it right after starting the server, before it listens. Omitted fields keep their previous value.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        port: { type: 'integer', minimum: 1, maximum: 65535, description: 'Port the server listens on.' },
+        title: { type: 'string', minLength: 1, maxLength: MAX_PREVIEW_TITLE_CHARS, description: `What the user will see, in their language, at most ${MAX_PREVIEW_TITLE_CHARS} characters, e.g. “Mockup of the new sidebar”.` },
+        show: { type: 'boolean', description: 'Whether the thread shows it. false for servers that are not for the user to open.' },
+      },
+      required: ['port'],
       additionalProperties: false,
     },
   },
@@ -1181,11 +1202,13 @@ function personalTools() {
       }
     }),
     TOOLS.find(tool => tool.name === 'rename_session'),
+    TOOLS.find(tool => tool.name === 'describe_preview'),
     ...PERSONAL_TOOLS,
   ]
 }
 
 const SESSION_ONLY_TOOLS = new Set([
+  'describe_preview',
   'attach_project_folder',
   'list_project_folders',
   'move_session',
@@ -1248,7 +1271,7 @@ function globalTools() {
 /** Global call project set in `callScope().projectId` and `callScope().memoryDir`, or rejection returned unchanged. Resolve by ID, exact name, then unique approximate name; guessing between two would write to the wrong project. */
 function selectProject(name, args) {
   if (name === 'list_projects') return null
-  if (PERSONAL && (['rename_session', 'create_project', 'continue_in_project'].includes(name) || (PERSONAL_DEFAULT_TOOLS.has(name) && !args?.project))) {
+  if (PERSONAL && (['rename_session', 'describe_preview', 'create_project', 'continue_in_project'].includes(name) || (PERSONAL_DEFAULT_TOOLS.has(name) && !args?.project))) {
     callScope().projectId = ''
     callScope().memoryDir = join(MEMORY_ROOT, 'users', USER.id)
     return null
@@ -3306,6 +3329,7 @@ async function callTool(name, args) {
 
   if (
     name === 'rename_session' ||
+    name === 'describe_preview' ||
     name === 'attach_project_folder' ||
     name === 'link_cards' ||
     name === 'unlink_cards' ||
@@ -3339,6 +3363,15 @@ async function callTool(name, args) {
       if (!title || title.length > MAX_SESSION_TITLE_CHARS) {
         return { ...text(`The \`title\` parameter must contain 1 to ${MAX_SESSION_TITLE_CHARS} characters.`), isError: true }
       }
+    }
+    if (name === 'describe_preview') {
+      if (!CURRENT_CONVERSATION) return { ...text('This tool presents dev servers in your own session only.'), isError: true }
+      if (!Number.isInteger(args?.port) || args.port < 1 || args.port > 65535) return { ...text('The `port` parameter is required: an integer from 1 to 65535.'), isError: true }
+      const title = typeof args?.title === 'string' ? args.title.trim() : undefined
+      if (title !== undefined && (!title || title.length > MAX_PREVIEW_TITLE_CHARS)) {
+        return { ...text(`The \`title\` parameter must contain 1 to ${MAX_PREVIEW_TITLE_CHARS} characters.`), isError: true }
+      }
+      if (args?.show !== undefined && typeof args.show !== 'boolean') return { ...text('The `show` parameter must be true or false.'), isError: true }
     }
     if (name === 'attach_project_folder' && !actingAccountOwnsProject()) {
       return { ...text('Only sessions of the project owner can attach folders.'), isError: true }
@@ -3552,7 +3585,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       try {
         result = TOOLS_OFF.has(name)
           ? { ...text(TOOL_FAMILY_OFF), isError: true }
-          : GLOBAL && SESSION_ONLY_TOOLS.has(name) && !(PERSONAL && name === 'rename_session')
+          : GLOBAL && SESSION_ONLY_TOOLS.has(name) && !(PERSONAL && (name === 'rename_session' || name === 'describe_preview'))
           ? { ...text(`Tool ${name} is unavailable outside a session: no session identity or turn to receive messages.`), isError: true }
           : (GLOBAL ? selectProject(name, args) : selectCrossProject(name, args)) || (await callTool(name, args))
       } catch (err) {

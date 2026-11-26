@@ -27,6 +27,12 @@ export interface PreviewTargetDto {
   projectId: string | null
   conversationId: string | null
   conversationTitle: string | null
+  /** What the agent that started it calls it (`describe_preview`), for the thread card. */
+  title: string | null
+  /** The agent left it out of the thread card (an API, a worker); the Preview tab still offers it. */
+  hidden: boolean
+  /** Where it opens outside Sillage, to show and copy; opening it goes through a signed link. */
+  address: string | null
 }
 
 export interface PreviewListDto {
@@ -40,6 +46,16 @@ export interface PreviewListDto {
 
 export const openPreviewBodySchema = z.object({
   port: z.number().int().min(1).max(65535),
+})
+
+/** Thread card titles stay short, like session titles. */
+export const MAX_PREVIEW_TITLE_CHARS = 60
+
+/** `describe_preview`: how an agent presents one of its dev servers in its own conversation. */
+export const describePreviewBodySchema = z.object({
+  port: z.number().int().min(1).max(65535),
+  title: z.string().trim().min(1).max(MAX_PREVIEW_TITLE_CHARS).optional(),
+  show: z.boolean().optional(),
 })
 
 export interface PreviewOpenDto {

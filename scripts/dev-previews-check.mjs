@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 // Dev-server previews end to end on a temporary demo instance: a real Vite dev server run as an
 // agent's sillage-app unit, opened through the preview listener (sign-in link, cookie, proxied
 // pages, hot reload over WebSocket), then the panel's Preview tab, the Services shortcut and the
+// thread card as the agent titles it (`describe_preview`, beside a second server it hides), and the
 // settings page at 1440 and 390 px. Needs Vite in /var/tmp/preview-probe/app (any vanilla
 // template; only its node_modules are used).
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -104,6 +105,26 @@ try {
     process.execPath, join(app, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(vitePort), '--strictPort'])
   for (let i = 0; i < 100 && !(await fetch(`http://127.0.0.1:${vitePort}/`).then((r) => r.ok, () => false)); i++) await delay(200)
 
+  // A second server of the same session, an API nobody opens: the agent keeps it out of the thread.
+  const apiServerPort = await freePort()
+  const apiUnit = `sillage-app-pvapi-${token.slice(0, 8)}`
+  units.push(`${apiUnit}.service`)
+  await promisify(execFile)('systemd-run', ['--user', '--collect', `--unit=${apiUnit}`, `--setenv=SILLAGE_PROCESS_ORIGIN=${token}`, `--working-directory=${app}`,
+    process.execPath, '-e', `require('node:http').createServer((_, res) => res.end('{}')).listen(${apiServerPort}, '127.0.0.1')`])
+
+  // The agent's own MCP server, answered by this instance's request sweep.
+  const describe = async (args) => {
+    const child = run([join(serverDir, 'src/mcp/sillage-mcp.mjs')], serverDir, { ...process.env, SILLAGE_MCP_DB: join(data, 'data', 'sillage.db'), SILLAGE_MCP_PROJECT: project.id, SILLAGE_MCP_CONVERSATION: conversation.id })
+    let out = ''
+    child.stdout.on('data', (chunk) => { out += chunk })
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'describe_preview', arguments: args } }) + '\n')
+    for (let i = 0; i < 200 && !out.includes('\n'); i++) await delay(100)
+    child.kill()
+    const result = JSON.parse(out).result
+    assert.ok(!result.isError, result.content[0].text)
+    return result.content[0].text
+  }
+
   const api = `http://127.0.0.1:${apiPort}`
   const login = await fetch(`${api}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'alex', password: 'sillage-demo' }) })
   const cookie = login.headers.getSetCookie().map((line) => line.split(';')[0]).join('; ')
@@ -124,6 +145,15 @@ try {
   assert.equal(target.projectId, project.id)
   assert.ok(!list.targets.some((entry) => entry.port === apiPort), 'Sillage itself is never a target')
   assert.equal((await call('POST', '/api/previews', { port: apiPort })).status, 404)
+  assert.equal(target.title, null)
+  assert.equal(target.hidden, false)
+  assert.match(target.address, /^http:\/\/pv-[0-9a-f]{12}\.preview\.test\/$/)
+  assert.match(await describe({ port: vitePort, title: 'Maquette du tableau de bord' }), /shown in the conversation thread as “Maquette du tableau de bord”/)
+  for (let i = 0; i < 50 && !(await call('GET', '/api/previews')).body.targets.some((entry) => entry.port === apiServerPort); i++) await delay(300)
+  assert.match(await describe({ port: apiServerPort, title: 'API des prévisions', show: false }), /left out of the conversation thread/)
+  const described = (await call('GET', '/api/previews')).body.targets
+  assert.deepEqual(described.filter((entry) => entry.conversationId === conversation.id).map(({ port, title, hidden }) => ({ port, title, hidden })).sort((a, b) => a.port - b.port),
+    [{ port: vitePort, title: 'Maquette du tableau de bord', hidden: false }, { port: apiServerPort, title: 'API des prévisions', hidden: true }].sort((a, b) => a.port - b.port))
   const opened = (await call('POST', '/api/previews', { port: vitePort })).body
   assert.match(opened.url, /^http:\/\/pv-[0-9a-f]{12}\.preview\.test\/__sillage\/preview-sign-in\?t=/)
   const host = new URL(opened.address).host
@@ -175,7 +205,7 @@ try {
   // Public demo links: no sign-in, noindex, hot reload too; revoked and expired links are refused.
   const share = (await call('POST', '/api/previews/shares', { port: vitePort, hours: 1 })).body
   assert.match(share.url, /^http:\/\/pv-[0-9a-f]{16}\.preview\.test\/$/)
-  assert.equal(share.label, 'node')
+  assert.equal(share.label, 'Maquette du tableau de bord')
   const shareHost = new URL(share.url).host
   const visitor = await raw('/', { host: shareHost })
   assert.equal(visitor.status, 200, 'a visitor without Sillage gets the app')
@@ -222,9 +252,19 @@ try {
         // The thread says the conversation's dev server is ready; one click opens its preview.
         const card = page.locator('[data-preview-activity]')
         await card.waitFor({ timeout: 60000 })
-        assert.match(await card.innerText(), new RegExp(`Le serveur de dev tourne[\\s\\S]*:${vitePort}`))
+        // Titled by the agent, with its address; the hidden API has no card of its own.
+        assert.match(await card.innerText(), new RegExp(`Maquette du tableau de bord[\\s\\S]*pv-[0-9a-f]{12}\\.preview\\.test[\\s\\S]*:${vitePort}`))
+        assert.equal(await card.getByRole('button', { name: "Ouvrir l'aperçu" }).count(), 1)
+        assert.doesNotMatch(await card.innerText(), new RegExp(`:${apiServerPort}`))
         const ready = card.getByRole('button', { name: "Ouvrir l'aperçu" }).first()
         await page.screenshot({ path: join(shots, `ready-${name}-${theme}.png`) })
+        if (first) {
+          // The address opens the app in a tab of its own, signed in on the way.
+          const [tab] = await Promise.all([page.context().waitForEvent('page'), card.getByRole('link').click()])
+          await tab.locator('#t').waitFor({ timeout: 30000 })
+          assert.match(tab.url(), /^http:\/\/pv-[0-9a-f]{12}\.preview\.test\/$/)
+          await tab.close()
+        }
         await ready.click()
         const frame = page.frameLocator('[data-preview-frame]')
         await frame.locator('#t[data-ready="yes"]').waitFor({ timeout: 30000 }).catch(async (error) => {

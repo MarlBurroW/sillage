@@ -1457,6 +1457,7 @@ export const en = {
   'preview.pick.box': 'box: {width}×{height} at {x},{y} in a {viewport} viewport',
   'preview.activity.ready': 'Your dev server is running',
   'preview.activity.open': 'Open the preview',
+  'preview.activity.openTab': 'Open in a new tab',
   'preview.reload': 'Reload',
   'preview.openTab': 'Open in a new tab',
   'preview.copy': 'Copy the address',

@@ -59,11 +59,11 @@ export const SILLAGE_TOOL_FAMILIES: Record<Exclude<AgentToolFamily, 'browser'>, 
 }
 
 /**
- * Never switched off: the session title, project discovery, memory (how CLIs other than Claude
+ * Never switched off: the session title and its dev servers' thread cards, project discovery, memory (how CLIs other than Claude
  * write it), decisions (already opted into per automation), and personal discussions' own tools.
  */
 export const ALWAYS_ON_SILLAGE_TOOLS: readonly string[] = [
-  'rename_session', 'list_projects', 'read_memory', 'write_memory', 'delete_memory', 'request_decision', 'withdraw_decision',
+  'rename_session', 'describe_preview', 'list_projects', 'read_memory', 'write_memory', 'delete_memory', 'request_decision', 'withdraw_decision',
   'create_project', 'continue_in_project', 'delete_project', 'find_files',
 ]
 

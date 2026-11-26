@@ -547,6 +547,13 @@
       "when": 1795640530709,
       "tag": "0077_illegal_reptil",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1795733653541,
+      "tag": "0078_white_tiger_shark",
+      "breakpoints": true
     }
   ]
 }

@@ -18,6 +18,7 @@ import {
   conversations,
   events,
   openDatabase,
+  previewLabels,
   projects,
   runMigrations,
   userSettings,
@@ -112,7 +113,7 @@ async function harness(t: TestContext) {
         config.model ? config : { ...config, model: CATALOG[agent]?.[0]?.value ?? '' },
     }),
   } as unknown as AgentRegistry
-  const config = { paths: { worktrees: join(dir, 'worktrees') } } as unknown as Config
+  const config = { paths: { worktrees: join(dir, 'worktrees'), data: join(dir, 'data') }, server: { port: 7317 } } as unknown as Config
   const log = new EventLog(db)
   const requests = new AgentRequests({ db, config }, sessions, registry, undefined, undefined, undefined, undefined, log)
 
@@ -251,6 +252,30 @@ test('an agent names only its own session and broadcasts the title without chang
   assert.equal(changedSubject.isError, undefined)
   assert.equal(titleEvents.at(-1)?.title, 'Corriger la connexion')
   assert.equal((await mcp('', 'rename_session', { project: 'project', title: 'Global' })).isError, true)
+})
+
+test('an agent titles or hides its own dev servers, keeping what it does not restate', async (t) => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('self')
+  const label = () => db.select().from(previewLabels).all().map(({ conversationId, port, title, hidden }) => ({ conversationId, port, title, hidden }))
+
+  const titled = await mcp('self', 'describe_preview', { port: 54_321, title: '  Maquette de la sidebar  ' })
+  assert.equal(titled.isError, undefined, titled.content[0]?.text)
+  // Nothing listens there in the test: the label waits for the server.
+  assert.match(titled.content[0]!.text, /“Maquette de la sidebar”.*applies once it does/)
+  assert.deepEqual(label(), [{ conversationId: 'self', port: 54_321, title: 'Maquette de la sidebar', hidden: false }])
+
+  await mcp('self', 'describe_preview', { port: 54_321, show: false })
+  assert.deepEqual(label(), [{ conversationId: 'self', port: 54_321, title: 'Maquette de la sidebar', hidden: true }])
+  await mcp('self', 'describe_preview', { port: 54_321, title: 'API' })
+  assert.deepEqual(label(), [{ conversationId: 'self', port: 54_321, title: 'API', hidden: true }])
+
+  for (const args of [{}, { port: 0 }, { port: 70_000 }, { port: '5173' }, { port: 5173, title: '' }, { port: 5173, title: 'x'.repeat(61) }, { port: 5173, show: 'no' }]) {
+    assert.equal((await mcp('self', 'describe_preview', args)).isError, true, JSON.stringify(args))
+  }
+  // A sessionless client has no thread to present a server in.
+  assert.equal((await mcp('', 'describe_preview', { project: 'project', port: 5173 })).isError, true)
+  assert.equal(label().length, 1)
 })
 
 test('human titles win over both explicit agent titles and delayed native CLI suggestions', async (t) => {

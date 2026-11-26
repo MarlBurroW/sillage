@@ -22,6 +22,21 @@ export function useOpenPreview() {
   })
 }
 
+/**
+ * Opens a preview in a browser tab, signed in. The tab is opened before the request resolves,
+ * or popup blockers would refuse it.
+ */
+export function useOpenPreviewInTab() {
+  const open = useOpenPreview()
+  return {
+    pending: open.isPending,
+    open: (port: number) => {
+      const tab = window.open('about:blank', '_blank')
+      open.mutateAsync(port).then((result) => { if (tab) tab.location.href = result.url }, () => tab?.close())
+    },
+  }
+}
+
 const SHARES_KEY = ['preview-shares']
 
 /** The account's public demo links, recent expired and revoked ones included. */

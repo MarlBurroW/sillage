@@ -652,6 +652,8 @@ export const agentRequests = sqliteTable(
         'create_worktree',
         'list_worktrees',
         'remove_worktree',
+        // Title or hide a dev server's thread card; previews are computed in the daemon.
+        'describe_preview',
       ],
     }).notNull(),
     /** Tool arguments as JSON, exactly as supplied by the agent. */
@@ -2098,6 +2100,20 @@ export const previewShares = sqliteTable('preview_shares', {
   expiresAt: timestamp('expires_at').notNull(),
   revokedAt: timestamp('revoked_at'),
 }, (t) => [index('idx_preview_shares_user').on(t.userId)])
+
+/**
+ * How an agent presents one of its dev servers in its conversation: a title for the thread card,
+ * or none at all for servers no human needs to open (APIs, workers). Keyed by conversation and
+ * port rather than process, so the choice survives the agent restarting its server.
+ */
+export const previewLabels = sqliteTable('preview_labels', {
+  conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  port: integer('port').notNull(),
+  title: text('title'),
+  /** Left out of the thread card; still offered in the Preview tab. */
+  hidden: integer('hidden', { mode: 'boolean' }).notNull().default(false),
+  updatedAt: timestamp('updated_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.conversationId, t.port] })])
 
 /** Published artifacts contain only the reviewed HTML. The journal remains the private source. */
 export const conversationShares = sqliteTable('conversation_shares', {

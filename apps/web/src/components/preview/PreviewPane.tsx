@@ -5,7 +5,7 @@ import { PreviewShareDialog } from './PreviewShareDialog'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { PreviewTargetDto } from '@sillage/protocol'
-import { PREVIEWS_DOCS_URL, useOpenPreview, usePreviews } from '../../lib/previews'
+import { PREVIEWS_DOCS_URL, useOpenPreview, useOpenPreviewInTab, usePreviews } from '../../lib/previews'
 import { usePanelPreviewPort } from '../../lib/panel'
 import { useTranslate } from '../../lib/i18n'
 import { useCurrentUser } from '../../lib/session'
@@ -28,7 +28,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
   const { data } = usePreviews()
   const { data: me } = useCurrentUser()
   const open = useOpenPreview()
-  const openTab = useOpenPreview()
+  const openTab = useOpenPreviewInTab()
   const targets = projectTargets(data?.targets ?? [], projectId, conversationId)
   const [port, setPort] = useState<number | null>(null)
   // A port asked from the thread wins over the current choice, each time it is asked.
@@ -117,17 +117,12 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
               placeholder={t('preview.port')}
               value={String(chosen)}
               onChange={(value) => setPort(Number(value))}
-              options={[...targets.map((target) => ({ value: String(target.port), label: `:${target.port} · ${target.label}`, hint: target.conversationTitle ?? target.command ?? undefined })),
+              options={[...targets.map((target) => ({ value: String(target.port), label: `:${target.port} · ${target.title ?? target.label}`, hint: target.conversationTitle ?? target.command ?? undefined })),
                 ...(targets.some((target) => target.port === chosen) ? [] : [{ value: String(chosen), label: `:${chosen}` }])]}
             />
           ) : <span className="flex-1 px-1 font-mono text-xs text-ink-soft">:{chosen}</span>}
           <IconButton label={t('preview.reload')} size="sm" onClick={() => setReloads((count) => count + 1)}><RotateCw size={14} /></IconButton>
-          <IconButton label={t('preview.openTab')} size="sm" disabled={openTab.isPending}
-            onClick={() => {
-              // Opened before the request resolves, or popup blockers would refuse it.
-              const tab = window.open('about:blank', '_blank')
-              openTab.mutateAsync(chosen).then((result) => { if (tab) tab.location.href = result.url }, () => tab?.close())
-            }}>
+          <IconButton label={t('preview.openTab')} size="sm" disabled={openTab.pending} onClick={() => openTab.open(chosen)}>
             <ExternalLink size={15} />
           </IconButton>
           <IconButton label={copied ? t('preview.copied') : t('preview.copy')} size="sm" disabled={!frame}
@@ -151,7 +146,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
       {open.error ? (
         <div className="p-3"><Banner tone="critical">{open.error.message}</Banner><Button variant="ghost" onClick={reopen}>{t('preview.retry')}</Button></div>
       ) : null}
-      {sharing ? <PreviewShareDialog port={chosen} label={targets.find((target) => target.port === chosen)?.label ?? `:${chosen}`} onClose={() => setSharing(false)} /> : null}
+      {sharing ? <PreviewShareDialog port={chosen} label={(() => { const target = targets.find((entry) => entry.port === chosen); return target?.title ?? target?.label ?? `:${chosen}` })()} onClose={() => setSharing(false)} /> : null}
       <div className="relative flex min-h-0 flex-1 bg-sunken">
         {frame ? (
           <iframe

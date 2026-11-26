@@ -17,6 +17,18 @@ to set it up.
 
 On Desktop off Linux, Sillage cannot list listening ports: type the port in the Preview tab.
 
+## In the conversation thread
+
+Each dev server a conversation starts also gets a card at the bottom of its thread, with a button
+that opens the Preview tab and the preview's address, which opens the app in a browser tab (signed
+in on the way). Without more, the card says “Your dev server is running”.
+
+The agent tells Sillage what each server is with the `describe_preview` tool: a title for the card
+(“Mockup of the new sidebar”), or `show: false` for servers nobody opens, such as an API, a worker
+or a mock, so the user does not have to find the right button among several. Hidden servers stay in
+the Preview tab's list. The choice belongs to the conversation and the port, so it survives the
+agent restarting its server; it is deleted with the conversation.
+
 ## Why previews need a domain of their own
 
 A preview runs the app's own code in your browser. If it were served under Sillage's address
