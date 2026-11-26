@@ -180,7 +180,7 @@ try {
   await card.getByText('À valider', { exact: true }).waitFor()
   await card.getByText('Script de vérification à valider').waitFor()
   await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
-  task = await until('tir bloqué', (entry) => /en attente de validation/.test(entry.runs[0]?.error ?? ''), 15_000)
+  task = await until('tir bloqué', (entry) => /awaiting approval/.test(entry.runs[0]?.error ?? ''), 15_000)
   assert.equal(task.runs[0].check, null, 'Un script non validé ne tourne pas')
 
   // Shortcut: beneath the agent's call in the conversation.
