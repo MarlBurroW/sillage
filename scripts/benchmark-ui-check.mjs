@@ -199,7 +199,9 @@ try {
   await table.getByRole('columnheader', { name: 'Durée', exact: true }).getByRole('button').click()
   await page.getByText('Terminé', { exact: true }).first().waitFor()
   assert.equal(await table.locator('[data-benchmark-check="passed"]').count(), 2)
-  await table.getByText('1/1 réussis').first().waitFor()
+  // A variant with a single run shows its own check result; the "n/m réussis" rate is only for
+  // variants with several runs (e0f8df2b4).
+  await table.locator('[data-benchmark-check="passed"]').first().getByText('réussie', { exact: true }).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'benchmark-results-desktop.png') })
 
   // Export: one CSV row per run with raw numbers.
@@ -237,8 +239,8 @@ try {
   assert.equal(await blindView.locator('svg[role="img"]').count(), 0, 'no CLI icon gives a variant away')
   await blindView.getByRole('radiogroup', { name: 'Note de Variante A', exact: true }).getByRole('radio', { name: '5 sur 5', exact: true }).click()
   await blindView.getByRole('radiogroup', { name: 'Note de Variante B', exact: true }).getByRole('radio', { name: '2 sur 5', exact: true }).click()
-  await blindView.getByRole('textbox', { name: 'Commentaire sur cette note', exact: true }).first().fill('Titre net')
-  await blindView.getByRole('textbox', { name: 'Commentaire sur cette note', exact: true }).first().blur()
+  await blindView.getByRole('textbox', { name: 'Ton commentaire sur ce résultat', exact: true }).first().fill('Titre net')
+  await blindView.getByRole('textbox', { name: 'Ton commentaire sur ce résultat', exact: true }).first().blur()
   const rated = await until('ratings saved', (entry) => entry.runs.every((run) => run.rating !== null) && entry.runs.some((run) => run.ratingNote === 'Titre net'), 15_000)
   assert.deepEqual(rated.runs.map((run) => run.rating).sort(), [2, 5])
   // The page shows both, whatever order the replies came back in.
@@ -256,7 +258,8 @@ try {
   // Ratings join the measures, as a column of their own.
   await page.getByRole('tab', { name: 'Mesures', exact: true }).click()
   await table.getByRole('columnheader', { name: 'Note', exact: true }).waitFor()
-  await table.getByText('5/5', { exact: true }).waitFor()
+  // The best value carries a screen-reader prefix ("Meilleur"), so match the cell, not exact text.
+  await table.locator('[data-metric="rating"]').filter({ hasText: /\b5\/5$/ }).first().waitFor()
 
   // Chart: one bar per variant at its median, with a tooltip on focus.
   await page.getByRole('tab', { name: 'Graphique', exact: true }).click()
@@ -269,7 +272,8 @@ try {
   await page.getByRole('tab', { name: 'Mesures', exact: true }).click()
 
   // The run opens as an ordinary conversation, headed back to its benchmark.
-  await table.getByRole('link', { name: /Run 1/ }).first().click()
+  // A single-run variant links its run by an icon named "Ouvrir le run"; "Run n" labels repetitions.
+  await table.getByRole('link', { name: 'Ouvrir le run', exact: true }).first().click()
   await page.getByRole('link', { name: 'Run de benchmark', exact: true }).waitFor()
   const thread = await api(`/api/conversations/${benchmark.runs[0].conversationId}/events?after=0`)
   const injected = thread.entries.map((entry) => entry.event).filter((event) => event.type === 'prompt.injected')
