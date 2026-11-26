@@ -111,7 +111,9 @@ try {
   processes.push({ kill: () => site.close() })
   const key = Buffer.from((await readFile(join(data, 'data', 'browser', 'key'), 'utf8')).trim(), 'hex')
   const endpoint = `ws://127.0.0.1:${apiPort}/api/browser-cdp/${conversation.id}?token=${createHmac('sha256', key).update(conversation.id).digest('hex')}`
-  const mcp = spawn(process.execPath, [join(data, 'data', 'browser', 'mcp', 'node_modules', '@playwright', 'mcp', 'cli.js'), '--cdp-endpoint', endpoint], { stdio: ['pipe', 'pipe', 'pipe'] })
+  // As in production (browser/manager.ts): without an output directory the MCP writes its
+  // snapshots into `.playwright-mcp/` under the current directory, the repository here.
+  const mcp = spawn(process.execPath, [join(data, 'data', 'browser', 'mcp', 'node_modules', '@playwright', 'mcp', 'cli.js'), '--cdp-endpoint', endpoint, '--output-dir', join(data, 'mcp-output')], { stdio: ['pipe', 'pipe', 'pipe'] })
   processes.push(mcp)
   let buffer = ''
   const replies = new Map()

@@ -83,7 +83,9 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const shots = join(root, 'docs/audits/2026-09-19-board')
+  // Captures go to a scratch folder: writing them into docs/audits rewrote tracked images on
+  // every run. Point BOARD_SHOTS there to refresh the audit on purpose.
+  const shots = process.env.BOARD_SHOTS ?? await mkdtemp(join(tmpdir(), 'sillage-board-shots-'))
   await mkdir(shots, { recursive: true })
   await page.goto(board)
   await page.getByRole('button', { name: 'Nouveau ticket', exact: true }).click()

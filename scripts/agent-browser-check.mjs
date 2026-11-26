@@ -108,7 +108,9 @@ try {
   assert.equal(refused, 4401)
 
   // The agent side: Playwright MCP over stdio, as a CLI launches it.
-  const mcp = spawn(process.execPath, [join(data, 'data', 'browser', 'mcp', 'node_modules', '@playwright', 'mcp', 'cli.js'), '--cdp-endpoint', endpoint], { stdio: ['pipe', 'pipe', 'pipe'] })
+  // As in production (browser/manager.ts): without an output directory the MCP writes its
+  // snapshots into `.playwright-mcp/` under the current directory, the repository here.
+  const mcp = spawn(process.execPath, [join(data, 'data', 'browser', 'mcp', 'node_modules', '@playwright', 'mcp', 'cli.js'), '--cdp-endpoint', endpoint, '--output-dir', join(data, 'mcp-output')], { stdio: ['pipe', 'pipe', 'pipe'] })
   processes.push(mcp)
   let buffer = ''
   const replies = new Map()
