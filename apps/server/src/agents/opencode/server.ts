@@ -85,9 +85,8 @@ export class OpencodeServer<E = Event> {
     // than run silently.
     await assertSupportedOpencode(options.binary)
     const password = randomBytes(24).toString('hex')
-    const port = await freePort()
     const launch = launchOf(options.binary)
-    const child = spawn(launch.command, [...launch.args, 'serve', '--port', String(port), '--hostname', '127.0.0.1'], {
+    const serve = (port: number) => spawn(launch.command, [...launch.args, 'serve', '--port', String(port), '--hostname', '127.0.0.1'], {
       windowsHide: true,
       cwd: options.cwd,
       env: {
@@ -101,12 +100,19 @@ export class OpencodeServer<E = Event> {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
+    // The free port is released before opencode binds it, so another process can take it in
+    // between (seen under load: EADDRINUSE). Only that failure is worth another port.
+    let child = serve(await freePort())
     let baseUrl: string
-    try {
-      baseUrl = await listeningUrl(child)
-    } catch (err) {
-      child.kill()
-      throw err
+    for (let attempt = 1; ; attempt++) {
+      try {
+        baseUrl = await listeningUrl(child)
+        break
+      } catch (err) {
+        child.kill()
+        if (attempt >= PORT_ATTEMPTS || !/EADDRINUSE|address already in use/i.test(String(err))) throw err
+        child = serve(await freePort())
+      }
     }
 
     // After announcement output serves diagnostics only.
@@ -293,6 +299,9 @@ export class OpencodeServer<E = Event> {
     this.child.kill()
   }
 }
+
+/** Launches tried when the chosen port is taken before opencode binds it. */
+const PORT_ATTEMPTS = 3
 
 /**
  * Free port requested from system then released, not reserved: if another process takes it,

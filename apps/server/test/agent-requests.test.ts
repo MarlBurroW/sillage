@@ -616,12 +616,14 @@ test('a slow request does not hold the other sessions’ requests', async (t) =>
   conversation('slow')
   conversation('quick')
   // Only `list_models` reads catalogs; with the sequential sweep, the rename behind it waited for the whole probe.
+  // Order, not a duration: a loaded machine can slow the rename past any fixed budget, but a
+  // sequential sweep can only answer it after the probe.
   setCatalogDelay('claude', 4000)
-  const started = Date.now()
-  const pending = mcp('slow', 'list_models', { agent: 'claude' })
+  let slowDone = false
+  const pending = mcp('slow', 'list_models', { agent: 'claude' }).finally(() => { slowDone = true })
   const quick = await mcp('quick', 'rename_session', { title: 'Vite' })
   assert.equal(quick.isError, undefined, quick.content[0]?.text)
-  assert.ok(Date.now() - started < 3000, 'the rename waited for the catalog probe')
+  assert.equal(slowDone, false, 'the rename waited for the catalog probe')
   const slow = await pending
   assert.match(slow.content[0]!.text, /`opus` \(Opus\)/)
 })
