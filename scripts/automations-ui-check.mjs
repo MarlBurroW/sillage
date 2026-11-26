@@ -123,7 +123,7 @@ try {
   assert.equal(await page.locator('[aria-label="Non remplie"]').count(), 0)
   assert.match(await bench.locator('pre').first().textContent(), /Traite l'issue #42 « Crash on startup when the cache is empty »/)
   await bench.getByRole('switch', { name: 'Message complet' }).click()
-  assert.match(await bench.locator('pre').first().textContent(), /\[Automatisation Sillage « Issues étiquetées »/)
+  assert.match(await bench.locator('pre').first().textContent(), /\[Sillage automation “Issues étiquetées”/)
   await bench.getByRole('switch', { name: 'Message complet' }).click()
   await page.screenshot({ path: join(shots, 'automations-launch.png') })
 
