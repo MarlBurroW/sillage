@@ -1,4 +1,4 @@
-import { CODEX_BUILTIN_MCP_SERVER_NAME, type ToolPresentation } from '@sillage/protocol'
+import { BROWSER_MCP_SERVER_NAME, CODEX_BUILTIN_MCP_SERVER_NAME, type ToolPresentation } from '@sillage/protocol'
 import { fields, text, outputText, scalar } from './tool-payload'
 import { toolWebInput } from './tool-web-input'
 import { toolEdits, type EditPresentation } from './tool-edits'
@@ -16,9 +16,43 @@ export function toolOrigin(name: string, presentation?: ToolPresentation): ToolO
   const slash = /^([^/]+)\/(.+)$/.exec(name)
   const legacy = name.startsWith('sillage_') ? ['','sillage',name.slice(8)] : null
   const match = claude ?? slash ?? legacy
-  return match ? { kind: (match[1] === 'sillage' || match[1] === CODEX_BUILTIN_MCP_SERVER_NAME) ? 'sillage' : 'mcp', server: match[1]!, name: match[2]! }
+  return match ? { kind: SILLAGE_SERVERS.has(match[1]!) ? 'sillage' : 'mcp', server: match[1]!, name: match[2]! }
     : { kind: 'native', server: '', name }
 }
+// The agent browser is Sillage's own server too, even though its tools come from Playwright MCP.
+// `server` stays as received so browser-specific affordances can still tell it apart.
+const SILLAGE_SERVERS = new Set(['sillage', CODEX_BUILTIN_MCP_SERVER_NAME, BROWSER_MCP_SERVER_NAME])
+const isBrowser = (origin: ToolOrigin) => origin.server === BROWSER_MCP_SERVER_NAME
+// Playwright MCP's tool names, pinned with PLAYWRIGHT_MCP_VERSION; an unlisted one keeps its derived name.
+const BROWSER_LABELS: Record<string, MessageKey> = {
+  browser_navigate: 'browserTool.navigate',
+  browser_navigate_back: 'browserTool.navigate_back',
+  browser_click: 'browserTool.click',
+  browser_hover: 'browserTool.hover',
+  browser_drag: 'browserTool.drag',
+  browser_drop: 'browserTool.drop',
+  browser_type: 'browserTool.type',
+  browser_press_key: 'browserTool.press_key',
+  browser_fill_form: 'browserTool.fill_form',
+  browser_select_option: 'browserTool.select_option',
+  browser_file_upload: 'browserTool.file_upload',
+  browser_handle_dialog: 'browserTool.handle_dialog',
+  browser_snapshot: 'browserTool.snapshot',
+  browser_take_screenshot: 'browserTool.take_screenshot',
+  browser_find: 'browserTool.find',
+  browser_wait_for: 'browserTool.wait_for',
+  browser_console_messages: 'browserTool.console_messages',
+  browser_network_requests: 'browserTool.network_requests',
+  browser_network_request: 'browserTool.network_request',
+  browser_evaluate: 'browserTool.evaluate',
+  browser_run_code_unsafe: 'browserTool.run_code_unsafe',
+  browser_tabs: 'browserTool.tabs',
+  browser_resize: 'browserTool.resize',
+  browser_emulate_media: 'browserTool.emulate_media',
+  browser_close: 'browserTool.close',
+}
+// Reading the page informs the agent; acting on it changes nothing in the repository.
+const BROWSER_INSPECT = new Set(['browser_snapshot', 'browser_take_screenshot', 'browser_find', 'browser_console_messages', 'browser_network_requests', 'browser_network_request'])
 const SILLAGE_LABELS: Record<string, MessageKey> = {
   rename_session: 'sillageTool.rename_session',
   move_session: 'sillageTool.move_session',
@@ -70,7 +104,7 @@ const SILLAGE_LABELS: Record<string, MessageKey> = {
 
 export function toolLabel(name: string, presentation?: ToolPresentation): string {
   const origin = toolOrigin(name, presentation)
-  const key = origin.kind === 'sillage' ? SILLAGE_LABELS[origin.name] : undefined
+  const key = origin.kind !== 'sillage' ? undefined : isBrowser(origin) ? BROWSER_LABELS[origin.name] : SILLAGE_LABELS[origin.name]
   if (key) return translate(key)
   // Connector action names label the operation; they must not hide its query/target summary.
   if (presentation?.label?.trim()) return presentation.label.trim()
@@ -83,6 +117,7 @@ export const INTENT_LABELS: Record<ToolIntent, MessageKey> = {
 }
 export function toolIntent(tool: ToolItem): ToolIntent {
   const origin = toolOrigin(tool.name, tool.presentation)
+  if (isBrowser(origin)) return BROWSER_INSPECT.has(origin.name) ? 'inspect' : 'other'
   if (origin.kind === 'sillage') {
     if (/^(read|list|search|find|count)_/.test(origin.name)) return 'context'
     return 'change'
@@ -134,6 +169,8 @@ export function toolSummary(tool: ToolItem, edits: EditPresentation | null = too
     : tool.name === 'Grep' || tool.name === 'Glob' ? ['pattern', 'query', 'path']
     : tool.name === 'WebFetch' ? ['url', 'query']
     : tool.name === 'WebSearch' ? ['query', 'pattern', 'url']
+    // Playwright MCP's `element` is the human description of what it clicks or types into.
+    : isBrowser(toolOrigin(tool.name, tool.presentation)) ? ['url', 'element', 'key', 'text', 'filename']
     : ['file_path', 'path', 'notebook_path', 'file', 'title', 'subject', 'query', 'pattern', 'skill', 'url', 'uri', 'command', 'prompt', 'card_number', 'number', 'issue_number', 'conversation_id', 'name']
   for (const key of keys) {
     const numericId = ['card_number', 'number', 'issue_number', 'taskId', 'task_id', 'id'].includes(key)

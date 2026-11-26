@@ -20,7 +20,8 @@ identifiers are displayable. Unknown tools and payloads keep the generic and raw
 
 MCP names arrive as `mcp__server__tool` (Claude), `server/tool` (Codex and normalized adapters),
 `server_tool` (OpenCode, resolved against known servers), or `use_tool` with `server__tool` (Grok).
-Sillage keeps its logo, primary color and friendly label. Other MCP servers keep their server badge.
+Sillage keeps its logo, primary color and friendly label, and so does its agent browser
+(`sillage-browser`, Playwright MCP tools). Other MCP servers keep their server badge.
 Codex's internal `Collaboration/…` and `Codex/…` namespaces are native, not MCP servers.
 
 Text results may be strings, content-block arrays or MCP `{content: [...]}` envelopes. Readable

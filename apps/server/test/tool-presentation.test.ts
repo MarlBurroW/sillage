@@ -11,7 +11,7 @@ import { toolWebInput } from '../../web/src/lib/tool-web-input.js'
 import { outputText } from '../../web/src/lib/tool-payload.js'
 
 Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => 'en' }, configurable: true })
-const { toolSummary, toolOrigin, toolPreview, toolLabel } = await import('../../web/src/lib/tool-presentation.js')
+const { toolSummary, toolOrigin, toolPreview, toolLabel, toolIntent } = await import('../../web/src/lib/tool-presentation.js')
 const { applyEvent, emptyChatState } = await import('../../web/src/lib/chat-fold.js')
 const tool = (name: string, input: unknown, output: unknown = null): ToolItem => ({
   kind: 'tool', id: 'edit', ts: 0, name, input, output, outputBytes: null, status: 'done', durationMs: 10, parentToolCallId: null,
@@ -95,6 +95,16 @@ test('MCP origins and text blocks survive all adapter encodings without misclass
     assert.equal(toolSummary(item)?.text, 'project.md')
   }
   assert.equal(toolOrigin(opencodeTool('git_hub_issue_read', {}, ['git', 'git_hub']).name).server, 'git_hub')
+  // The agent browser is Sillage's own server: its logo and labels, not a third-party MCP badge.
+  for (const name of ['mcp__sillage-browser__browser_click', 'sillage-browser/browser_click']) {
+    assert.deepEqual(toolOrigin(name), { kind: 'sillage', server: 'sillage-browser', name: 'browser_click' })
+    assert.equal(toolLabel(name), 'Click')
+    assert.equal(toolSummary(tool(name, { element: 'Submit button', ref: 'e12' }))?.text, 'Submit button')
+  }
+  assert.equal(toolLabel('mcp__sillage-browser__browser_future_tool'), 'browser future tool')
+  assert.equal(toolIntent(tool('mcp__sillage-browser__browser_snapshot', {})), 'inspect')
+  assert.equal(toolIntent(tool('mcp__sillage-browser__browser_click', {})), 'other')
+  assert.equal(toolSummary(tool('mcp__sillage-browser__browser_navigate', { url: 'https://example.com' }))?.text, 'https://example.com')
   assert.equal(toolOrigin('Collaboration/spawnAgent').kind, 'native')
   assert.equal(toolOrigin('Codex/futureTool').kind, 'native')
   assert.equal(toolOrigin('apply_patch').kind, 'native')
