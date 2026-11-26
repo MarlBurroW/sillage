@@ -351,7 +351,7 @@ export class AgentRequests {
       }
     } catch (err) {
       if (!(err instanceof Refusal) && !(err instanceof HttpError)) {
-        this.logger?.warn({ err, request: request.id, kind: request.kind }, 'demande d’agent en échec')
+        this.logger?.warn({ err, request: request.id, kind: request.kind }, 'agent request failed')
       }
       this.settle(request.id, describeError(err), true)
     }

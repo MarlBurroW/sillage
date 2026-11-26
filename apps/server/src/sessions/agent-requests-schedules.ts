@@ -222,7 +222,7 @@ export class ScheduleRequests {
 
     return [
       `Automation “${task.name}” created (id ${task.id}), enabled.`,
-      `Adresse : ${url}`,
+      `Address: ${url}`,
       verification.kind === 'none'
         ? 'Verification: none; the URL alone is sufficient. Tell the user.'
         : `Signing secret: ${secret} (${verification.kind === 'hmac' ? `HMAC ${verification.algorithm} in header ${verification.header}` : `token in header ${verification.header}`}). Copy it only into the webhook configuration.`,
