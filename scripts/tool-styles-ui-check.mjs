@@ -91,6 +91,7 @@ async function mount(page) {
       {...tool('task-id','TaskUpdate'),input:{taskId:'17',status:'completed'}},
       {...tool('skill-name','Skill'),input:{skill:'frontend-design'}},
       {...tool('dynamic-native','functions/custom'),input:{path:'src/a.ts'},presentation:{origin:'native'}},
+      {...tool('browser-click','mcp__sillage-browser__browser_click'),input:{element:'Bouton Envoyer',ref:'e12'}},
       {...tool('connector-label','github/search'),input:{query:'bugs in the parser'},presentation:{origin:'mcp',label:'Rechercher des tickets'}},
       tool('active','Read','running'),
     ]
@@ -173,6 +174,8 @@ try {
       assert.match(await heading('task-id').innerText(),/#17/)
       assert.match(await heading('skill-name').innerText(),/frontend-design/)
       assert.equal(await heading('dynamic-native').locator('.sg-mcp-mark').count(),0,'Dynamic native tools are not MCP')
+      assert.equal(await heading('browser-click').locator('.sg-mcp-mark').count(),0,'The agent browser is a Sillage tool, not a third-party MCP')
+      assert.match(await heading('browser-click').innerText(),/Cliquer[\s\S]*Bouton Envoyer/)
       for (const [id,expected] of [['codex-edit','+1−1'],['claude-edit','+2−1'],['opencode-patch','+2−1'],['write','+3']]) {
         assert.equal(await heading(id).locator('.sg-tool-counts').textContent(),expected)
         const badge=await heading(id).locator('.sg-tool-counts').boundingBox()
