@@ -258,6 +258,7 @@ test('an agent titles or hides its own dev servers, keeping what it does not res
   const { db, conversation, mcp } = await harness(t)
   conversation('self')
   const label = () => db.select().from(previewLabels).all().map(({ conversationId, port, title, hidden }) => ({ conversationId, port, title, hidden }))
+  const pathOf = () => db.select().from(previewLabels).get()?.path
 
   const titled = await mcp('self', 'describe_preview', { port: 54_321, title: '  Maquette de la sidebar  ' })
   assert.equal(titled.isError, undefined, titled.content[0]?.text)
@@ -270,7 +271,16 @@ test('an agent titles or hides its own dev servers, keeping what it does not res
   await mcp('self', 'describe_preview', { port: 54_321, title: 'API' })
   assert.deepEqual(label(), [{ conversationId: 'self', port: 54_321, title: 'API', hidden: true }])
 
-  for (const args of [{}, { port: 0 }, { port: 70_000 }, { port: '5173' }, { port: 5173, title: '' }, { port: 5173, title: 'x'.repeat(61) }, { port: 5173, show: 'no' }]) {
+  // A page to open, kept by later calls that do not restate it; `/` returns to the root.
+  assert.match((await mcp('self', 'describe_preview', { port: 54_321, path: '/settings?tab=2', show: true })).content[0]!.text, /on \/settings\?tab=2/)
+  await mcp('self', 'describe_preview', { port: 54_321, title: 'Réglages' })
+  assert.equal(pathOf(), '/settings?tab=2')
+  await mcp('self', 'describe_preview', { port: 54_321, path: '/' })
+  assert.equal(pathOf(), null)
+  // Nothing listened: no "stopped" line will claim it ran.
+  assert.equal(db.select().from(previewLabels).get()?.seenAt, null)
+
+  for (const args of [{}, { port: 0 }, { port: 70_000 }, { port: '5173' }, { port: 5173, title: '' }, { port: 5173, title: 'x'.repeat(61) }, { port: 5173, show: 'no' }, { port: 5173, path: 'settings' }, { port: 5173, path: '//evil.example' }, { port: 5173, path: '/\\evil.example' }, { port: 5173, path: '/a b' }]) {
     assert.equal((await mcp('self', 'describe_preview', args)).isError, true, JSON.stringify(args))
   }
   // A sessionless client has no thread to present a server in.

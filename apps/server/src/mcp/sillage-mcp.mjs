@@ -295,12 +295,13 @@ const TOOLS = [
     name: 'describe_preview',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
-      "Say how a dev server you started appears in this conversation. Sillage detects servers your commands start and shows each in the thread with a button to open its preview, under a generic “Your dev server is running”. When you start a server meant for the user (a web app, a page, a demo), give it a title saying what it is. For servers no human opens (an API, a worker, a database, a mock), pass `show: false` so the user is not left picking among buttons; they stay available in the Preview tab. You may call it right after starting the server, before it listens. Omitted fields keep their previous value.",
+      "Say how a dev server you started appears in this conversation. Call it every time you start one. Sillage shows each server your commands start in the thread, with a button to open its preview, under a generic “Your dev server is running” until you describe it. For a server meant for the user (a web app, a page, a demo), give a title saying what it is and, when you want them to look at a given page, its `path`. For servers no human opens (an API, a worker, a database, a mock), pass `show: false` so the user is not left picking among buttons; they stay available in the Preview tab. Call it again with a new `path` when the page to look at changes. You may call it right after starting the server, before it listens. Omitted fields keep their previous value.",
     inputSchema: {
       type: 'object',
       properties: {
         port: { type: 'integer', minimum: 1, maximum: 65535, description: 'Port the server listens on.' },
         title: { type: 'string', minLength: 1, maxLength: MAX_PREVIEW_TITLE_CHARS, description: `What the user will see, in their language, at most ${MAX_PREVIEW_TITLE_CHARS} characters, e.g. “Mockup of the new sidebar”.` },
+        path: { type: 'string', maxLength: 500, description: 'Page to open, from the root of the app, e.g. `/settings/profile` or `/demo?theme=dark`. `/` goes back to the root.' },
         show: { type: 'boolean', description: 'Whether the thread shows it. false for servers that are not for the user to open.' },
       },
       required: ['port'],
@@ -3372,6 +3373,10 @@ async function callTool(name, args) {
         return { ...text(`The \`title\` parameter must contain 1 to ${MAX_PREVIEW_TITLE_CHARS} characters.`), isError: true }
       }
       if (args?.show !== undefined && typeof args.show !== 'boolean') return { ...text('The `show` parameter must be true or false.'), isError: true }
+      // Same rule as protocol `previewPathSchema`: one leading slash, no spaces or control characters.
+      if (args?.path !== undefined && (typeof args.path !== 'string' || args.path.length > 500 || !/^\/(?![/\\])[^\s\u0000-\u001f]*$/.test(args.path))) {
+        return { ...text('The `path` parameter must be a page of the app starting with a single /, e.g. `/settings`.'), isError: true }
+      }
     }
     if (name === 'attach_project_folder' && !actingAccountOwnsProject()) {
       return { ...text('Only sessions of the project owner can attach folders.'), isError: true }

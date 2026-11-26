@@ -9,7 +9,7 @@ import { MobileNavigationButton } from '../components/MobileNavigation'
 import { Badge, Banner, Button, EmptyState, IconButton, Tabs } from '../components/ui'
 import { BrowsersList } from '../components/browser/BrowsersList'
 import { useBrowsers } from '../lib/browsers'
-import { useOpenPreview, usePreviews } from '../lib/previews'
+import { useOpenPreviewInTab, usePreviews } from '../lib/previews'
 import { api } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { formatBytes } from '../lib/attachments'
@@ -157,7 +157,7 @@ export function ServicesPage() {
 function PortBadge({ port }: { port: number }) {
   const t = useTranslate()
   const { data } = usePreviews()
-  const open = useOpenPreview()
+  const open = useOpenPreviewInTab()
   const previewable = data && data.mode !== 'unconfigured' && (data.mode === 'direct' || data.targets.some((target) => target.port === port))
   if (!previewable) return <Badge tone="accent">:{port}</Badge>
   return (
@@ -165,12 +165,8 @@ function PortBadge({ port }: { port: number }) {
       type="button"
       title={t('services.preview', { port })}
       aria-label={t('services.preview', { port })}
-      disabled={open.isPending}
-      onClick={() => {
-        // Opened before the request resolves, or popup blockers would refuse it.
-        const tab = window.open('about:blank', '_blank')
-        open.mutate(port, { onSuccess: (result) => { if (tab) tab.location.href = result.url }, onError: () => tab?.close() })
-      }}
+      disabled={open.pending}
+      onClick={() => open.open(port)}
       className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent hover:bg-accent/25"
     >
       :{port}<MonitorPlay size={11} />

@@ -40,6 +40,8 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
   const [sharing, setSharing] = useState(false)
 
   const chosen = port ?? targets[0]?.port ?? null
+  // The page the agent points at, kept on reload; the root for servers it did not describe.
+  const chosenPath = targets.find((target) => target.port === chosen)?.path ?? null
 
   // Sign in to the chosen port; reloading afterwards reuses the preview's own cookie. The frame
   // reads the mutation's state rather than a per-call callback, which a remount would drop.
@@ -47,11 +49,11 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
   useEffect(() => {
     if (chosen === null || !ready) return
     setReloads(0)
-    open.mutate(chosen)
+    open.mutate({ port: chosen, path: chosenPath })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chosen, ready])
-  const opened = open.data && open.variables === chosen ? open.data : null
-  const frame = opened ? { url: reloads ? opened.address : opened.url, address: opened.address, key: `${chosen}-${reloads}` } : null
+  }, [chosen, ready, chosenPath])
+  const opened = open.data && open.variables?.port === chosen ? open.data : null
+  const frame = opened ? { url: reloads ? `${opened.address}${chosenPath?.slice(1) ?? ''}` : opened.url, address: opened.address, key: `${chosen}-${reloads}` } : null
 
   // Element picking talks to the page the proxy injected, on its own origin. `pickable` waits for
   // the page's hello, so the button never offers what a page cannot do.
@@ -104,7 +106,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
 
   const reopen = () => {
     setReloads(0)
-    open.mutate(chosen)
+    open.mutate({ port: chosen, path: chosenPath })
   }
 
   return (
@@ -122,7 +124,7 @@ export function PreviewPane({ projectId, conversationId }: { projectId?: string;
             />
           ) : <span className="flex-1 px-1 font-mono text-xs text-ink-soft">:{chosen}</span>}
           <IconButton label={t('preview.reload')} size="sm" onClick={() => setReloads((count) => count + 1)}><RotateCw size={14} /></IconButton>
-          <IconButton label={t('preview.openTab')} size="sm" disabled={openTab.pending} onClick={() => openTab.open(chosen)}>
+          <IconButton label={t('preview.openTab')} size="sm" disabled={openTab.pending} onClick={() => openTab.open(chosen, chosenPath)}>
             <ExternalLink size={15} />
           </IconButton>
           <IconButton label={copied ? t('preview.copied') : t('preview.copy')} size="sm" disabled={!frame}

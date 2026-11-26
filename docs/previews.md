@@ -20,14 +20,21 @@ On Desktop off Linux, Sillage cannot list listening ports: type the port in the 
 ## In the conversation thread
 
 Each dev server a conversation starts also gets a card at the bottom of its thread, with a button
-that opens the Preview tab and the preview's address, which opens the app in a browser tab (signed
-in on the way). Without more, the card says “Your dev server is running”.
+that opens the Preview tab, the preview's address, which opens the app in a browser tab (signed in
+on the way), and buttons to copy that address or make a demo link. Without more, the card says
+“Your dev server is running”.
 
 The agent tells Sillage what each server is with the `describe_preview` tool: a title for the card
-(“Mockup of the new sidebar”), or `show: false` for servers nobody opens, such as an API, a worker
+(“Mockup of the new sidebar”), the page to open (`/settings/profile`), which the card, the Preview
+tab and the address all land on, or `show: false` for servers nobody opens, such as an API, a worker
 or a mock, so the user does not have to find the right button among several. Hidden servers stay in
 the Preview tab's list. The choice belongs to the conversation and the port, so it survives the
 agent restarting its server; it is deleted with the conversation.
+
+When a server stops, its card becomes a line saying so, which stays until it is dismissed or the
+server listens again. Sillage learns a server ran when someone lists previews (the thread does every
+few seconds) or when the agent describes it while it listens; it never sends the app requests of its
+own to find out.
 
 ## Why previews need a domain of their own
 

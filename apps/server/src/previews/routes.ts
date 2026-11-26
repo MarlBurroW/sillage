@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify'
-import { PREVIEW_HOST_PREFIX, createPreviewShareBodySchema, openPreviewBodySchema, type PreviewCheckDto, type PreviewListDto, type PreviewOpenDto, type PreviewShareDto, type PreviewShareListDto } from '@sillage/protocol'
-import { previewShares } from '@sillage/db'
-import { desc, eq } from 'drizzle-orm'
+import { PREVIEW_HOST_PREFIX, createPreviewShareBodySchema, openPreviewBodySchema, type PreviewCheckDto, type PreviewListDto, type PreviewOpenDto, type PreviewShareDto, type PreviewShareListDto, type StoppedPreviewListDto } from '@sillage/protocol'
+import { previewLabels, previewShares } from '@sillage/db'
+import { and, desc, eq } from 'drizzle-orm'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { requireAdmin, requireUser } from '../http/require-user.js'
 import { INSTANCE_PROFILE } from '../instance/profile.js'
-import { previewTargets } from './targets.js'
+import { previewTargets, recordSeen, seenPreviews } from './targets.js'
+import { canReadConversation } from '../http/routes/conversations.js'
 import { HEALTH_PATH, type PreviewService, type PreviewShareRow } from './service.js'
 
 export function registerPreviewRoutes(app: FastifyInstance, ctx: AppContext, previews: PreviewService | null): void {
@@ -17,25 +18,43 @@ export function registerPreviewRoutes(app: FastifyInstance, ctx: AppContext, pre
   app.get('/api/previews', async (request): Promise<PreviewListDto> => {
     const user = requireUser(request)
     const domain = previews?.domain() ?? ''
+    const listed = await targets(user.id, user.isAdmin)
+    recordSeen(ctx, listed)
     return {
       mode: desktop ? 'direct' : domain ? 'proxy' : 'unconfigured',
       domain,
       listenerPort: previews?.listenerPort ?? null,
-      targets: (await targets(user.id, user.isAdmin)).map((target) => ({
-        ...target,
-        address: desktop ? `http://127.0.0.1:${target.port}/` : domain && previews ? previews.address(user.id, target.port, request.protocol === 'https') : null,
-      })),
+      targets: listed.map((target) => {
+        const root = desktop ? `http://127.0.0.1:${target.port}/` : domain && previews ? previews.address(user.id, target.port, request.protocol === 'https') : null
+        return { ...target, address: root && target.path ? `${root}${target.path.slice(1)}` : root }
+      }),
     }
+  })
+
+  /** The conversation's servers that ran, for the thread's "stopped" lines. */
+  app.get<{ Params: { conversationId: string } }>('/api/previews/conversations/:conversationId', async (request): Promise<StoppedPreviewListDto> => {
+    const user = requireUser(request)
+    if (!canReadConversation(ctx, request.params.conversationId, user.id)) throw new HttpError(404, 'conversation_not_found', 'Conversation not found.')
+    return { previews: seenPreviews(ctx, request.params.conversationId) }
+  })
+
+  /** Dismisses a stopped server's line; it comes back, title kept, if the server listens again. */
+  app.delete<{ Params: { conversationId: string; port: string } }>('/api/previews/conversations/:conversationId/:port', async (request, reply) => {
+    const user = requireUser(request)
+    if (!canReadConversation(ctx, request.params.conversationId, user.id)) throw new HttpError(404, 'conversation_not_found', 'Conversation not found.')
+    ctx.db.update(previewLabels).set({ seenAt: null })
+      .where(and(eq(previewLabels.conversationId, request.params.conversationId), eq(previewLabels.port, Number(request.params.port)))).run()
+    return reply.status(204).send()
   })
 
   app.post('/api/previews', async (request): Promise<PreviewOpenDto> => {
     const user = requireUser(request)
-    const { port } = openPreviewBodySchema.parse(request.body)
+    const { port, path } = openPreviewBodySchema.parse(request.body)
     // Desktop's single account owns the machine, and discovery is Linux-only: any local port goes,
     // straight to loopback, which is already another origin than Sillage.
     if (desktop) {
       const address = `http://127.0.0.1:${port}/`
-      return { url: address, address }
+      return { url: path ? `${address}${path.slice(1)}` : address, address }
     }
     if (!previews?.domain()) throw new HttpError(409, 'previews_unconfigured', 'An administrator must set a preview domain first.')
     // Only ports this account sees in Services: never Sillage itself, another account's private
@@ -43,7 +62,7 @@ export function registerPreviewRoutes(app: FastifyInstance, ctx: AppContext, pre
     if (!(await targets(user.id, user.isAdmin)).some((target) => target.port === port)) {
       throw new HttpError(404, 'preview_target_unknown', 'Nothing of yours listens on this port.')
     }
-    return previews.open(user.id, port, request.protocol === 'https')
+    return previews.open(user.id, port, request.protocol === 'https', path)
   })
 
   const shareDto = (row: PreviewShareRow, secure: boolean): PreviewShareDto => ({

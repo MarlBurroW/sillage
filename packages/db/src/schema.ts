@@ -2102,16 +2102,24 @@ export const previewShares = sqliteTable('preview_shares', {
 }, (t) => [index('idx_preview_shares_user').on(t.userId)])
 
 /**
- * How an agent presents one of its dev servers in its conversation: a title for the thread card,
- * or none at all for servers no human needs to open (APIs, workers). Keyed by conversation and
+ * How an agent presents one of its dev servers in its conversation: a title and page for the thread
+ * card, or none at all for servers no human needs to open (APIs, workers), and whether the server
+ * ran, so a stopped one leaves a trace. Keyed by conversation and
  * port rather than process, so the choice survives the agent restarting its server.
  */
 export const previewLabels = sqliteTable('preview_labels', {
   conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
   port: integer('port').notNull(),
   title: text('title'),
+  /** Page the preview opens on, when the agent points at one (`/settings`); the root otherwise. */
+  path: text('path'),
   /** Left out of the thread card; still offered in the Preview tab. */
   hidden: integer('hidden', { mode: 'boolean' }).notNull().default(false),
+  /**
+   * When the server was first seen listening for this conversation. Rows with it outlive the
+   * server, so the thread keeps a "stopped" line; dismissing the line clears it.
+   */
+  seenAt: timestamp('seen_at'),
   updatedAt: timestamp('updated_at').notNull(),
 }, (t) => [primaryKey({ columns: [t.conversationId, t.port] })])
 

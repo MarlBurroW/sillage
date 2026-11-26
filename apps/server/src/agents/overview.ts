@@ -187,7 +187,7 @@ const TOOL_CLAUSES: [AgentToolFamily | null, string][] = [
   ['automations', '`schedule_task` to schedule recurring or deferred work that survives this session'],
   ['automations', '`create_automation` to start a session on webhook calls (a labeled issue or failed CI)'],
   ['actions', '`list_actions` and `register_action` for project buttons that launch a server, tests or a script'],
-  [null, '`describe_preview` to title a dev server you start for the user, or keep an API or worker out of the thread'],
+  [null, '`describe_preview` each time you start a dev server, to title it and name the page to open when it is for the user, or keep an API or worker out of the thread'],
   ['project', '`list_mcp_servers` and `install_mcp_server` to propose an MCP server the user confirms, typing any secret themselves'],
 ]
 

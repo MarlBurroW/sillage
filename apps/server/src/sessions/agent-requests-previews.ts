@@ -11,7 +11,7 @@ import { Refusal } from './agent-requests-shared.js'
  * another session's server holds the port.
  */
 export async function describePreview(ctx: AppContext, conversation: ConversationRow, user: UserRow, payload: Record<string, unknown>): Promise<string> {
-  const { port, title, show } = describePreviewBodySchema.parse(payload)
+  const { port, title, path, show } = describePreviewBodySchema.parse(payload)
   const target = (await previewTargets(ctx, [ctx.config.server.port], user.id, user.isAdmin)).find((entry) => entry.port === port)
   if (target?.conversationId && target.conversationId !== conversation.id) {
     throw new Refusal(`Port ${port} is a dev server started by another session: describe only servers you started.`)
@@ -19,10 +19,19 @@ export async function describePreview(ctx: AppContext, conversation: Conversatio
   const key = and(eq(previewLabels.conversationId, conversation.id), eq(previewLabels.port, port))
   const previous = ctx.db.select().from(previewLabels).where(key).get()
   // Omitted fields keep their earlier value, so retitling does not unhide and hiding keeps the title.
-  const row = { conversationId: conversation.id, port, title: title ?? previous?.title ?? null, hidden: show === undefined ? (previous?.hidden ?? false) : !show, updatedAt: Date.now() }
+  const listening = target?.conversationId === conversation.id
+  const row = {
+    conversationId: conversation.id, port,
+    title: title ?? previous?.title ?? null,
+    // `/` is how an agent points back at the root.
+    path: path === undefined ? (previous?.path ?? null) : path === '/' ? null : path,
+    hidden: show === undefined ? (previous?.hidden ?? false) : !show,
+    seenAt: previous?.seenAt ?? (listening ? Date.now() : null),
+    updatedAt: Date.now(),
+  }
   ctx.db.insert(previewLabels).values(row).onConflictDoUpdate({ target: [previewLabels.conversationId, previewLabels.port], set: row }).run()
   const shown = row.hidden
     ? `Port ${port} is left out of the conversation thread; the user can still open it from the Preview tab.`
-    : `Port ${port} is shown in the conversation thread${row.title ? ` as “${row.title}”` : ''}, with a button to open it.`
-  return target?.conversationId === conversation.id ? shown : `${shown} Nothing you started listens there yet: this applies once it does.`
+    : `Port ${port} is shown in the conversation thread${row.title ? ` as “${row.title}”` : ''}, with a button to open it${row.path ? ` on ${row.path}` : ''}.`
+  return listening ? shown : `${shown} Nothing you started listens there yet: this applies once it does.`
 }

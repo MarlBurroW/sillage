@@ -31,9 +31,23 @@ export interface PreviewTargetDto {
   title: string | null
   /** The agent left it out of the thread card (an API, a worker); the Preview tab still offers it. */
   hidden: boolean
-  /** Where it opens outside Sillage, to show and copy; opening it goes through a signed link. */
+  /** Page the agent points at (`/settings`), or null for the root. */
+  path: string | null
+  /** Where it opens outside Sillage, page included, to show and copy; opening it goes through a signed link. */
   address: string | null
 }
+
+/** A dev server the conversation ran and that stopped: the thread keeps a line until it is dismissed. */
+export interface StoppedPreviewDto {
+  port: number
+  title: string | null
+}
+
+export interface StoppedPreviewListDto {
+  /** Every server the conversation ran and did not hide; the thread leaves out those listening again. */
+  previews: StoppedPreviewDto[]
+}
+
 
 export interface PreviewListDto {
   mode: PreviewMode
@@ -44,8 +58,16 @@ export interface PreviewListDto {
   targets: PreviewTargetDto[]
 }
 
+/**
+ * A page of the app: rooted, and never `//host` or `/\host`, which browsers read as another site.
+ * The sign-in link redirects to it, so it must stay on the preview host.
+ */
+export const previewPathSchema = z.string().max(500).regex(/^\/(?![/\\])[^\s\u0000-\u001f]*$/, 'A page path starts with a single /, without spaces.')
+
 export const openPreviewBodySchema = z.object({
   port: z.number().int().min(1).max(65535),
+  /** Page to land on after signing in. */
+  path: previewPathSchema.optional(),
 })
 
 /** Thread card titles stay short, like session titles. */
@@ -55,6 +77,8 @@ export const MAX_PREVIEW_TITLE_CHARS = 60
 export const describePreviewBodySchema = z.object({
   port: z.number().int().min(1).max(65535),
   title: z.string().trim().min(1).max(MAX_PREVIEW_TITLE_CHARS).optional(),
+  /** `/` returns to the root. */
+  path: previewPathSchema.optional(),
   show: z.boolean().optional(),
 })
 

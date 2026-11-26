@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PREVIEW_SHARE_HOURS, PreviewCheckDto, PreviewListDto, PreviewOpenDto, PreviewShareDto, PreviewShareListDto } from '@sillage/protocol'
+import type { PREVIEW_SHARE_HOURS, PreviewCheckDto, PreviewListDto, PreviewOpenDto, PreviewShareDto, PreviewShareListDto, StoppedPreviewListDto } from '@sillage/protocol'
 import { api } from './api'
 
 /**
@@ -18,7 +18,7 @@ export function usePreviews() {
 /** Each call signs in afresh: the returned link carries a token valid for a minute. */
 export function useOpenPreview() {
   return useMutation({
-    mutationFn: (port: number) => api.post<PreviewOpenDto>('/api/previews', { port }),
+    mutationFn: ({ port, path }: { port: number; path?: string | null }) => api.post<PreviewOpenDto>('/api/previews', { port, ...(path ? { path } : {}) }),
   })
 }
 
@@ -30,11 +30,33 @@ export function useOpenPreviewInTab() {
   const open = useOpenPreview()
   return {
     pending: open.isPending,
-    open: (port: number) => {
+    /** `path` is the page to land on, the root without it. */
+    open: (port: number, path?: string | null) => {
       const tab = window.open('about:blank', '_blank')
-      open.mutateAsync(port).then((result) => { if (tab) tab.location.href = result.url }, () => tab?.close())
+      open.mutateAsync({ port, path }).then((result) => { if (tab) tab.location.href = result.url }, () => tab?.close())
     },
   }
+}
+
+/** Servers this conversation ran and did not hide, listening or not; the thread tells them apart. */
+export function useConversationPreviews(conversationId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['previews', 'conversation', conversationId],
+    queryFn: () => api.get<StoppedPreviewListDto>(`/api/previews/conversations/${conversationId}`),
+    select: (data) => data.previews,
+    // Follows the list of listening servers, so a server that stops turns into its line at once.
+    refetchInterval: 10_000,
+    enabled,
+  })
+}
+
+/** Removes a stopped server's line; it comes back if the server listens again. */
+export function useDismissStoppedPreview(conversationId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (port: number) => api.delete<void>(`/api/previews/conversations/${conversationId}/${port}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['previews', 'conversation', conversationId] }),
+  })
 }
 
 const SHARES_KEY = ['preview-shares']

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { connect, type Socket } from 'node:net'
 import { dirname, join } from 'node:path'
-import { PREVIEW_HOST_PREFIX } from '@sillage/protocol'
+import { PREVIEW_HOST_PREFIX, previewPathSchema } from '@sillage/protocol'
 import { previewShares, users, type Db } from '@sillage/db'
 import { eq } from 'drizzle-orm'
 import { previewTargets } from './targets.js'
@@ -66,13 +66,15 @@ export class PreviewService {
    * registry is in memory: after a restart the address answers "reopen from Sillage" until then.
    */
   /** `secure` follows the request that opens it: https behind a TLS proxy, http on a local test. */
-  open(userId: string, port: number, secure = true): { address: string; url: string } {
+  /** `path`, already checked by `previewPathSchema`, is where the sign-in link lands. */
+  open(userId: string, port: number, secure = true, path?: string): { address: string; url: string } {
     const id = this.idOf(userId, port)
     this.targets.set(id, { id, port, userId })
     const address = this.address(userId, port, secure)
     const expires = Date.now() + SIGN_IN_TTL_MS
     const token = `${expires}.${this.sign(`sign-in:${id}:${expires}`)}`
-    return { address, url: `${address.slice(0, -1)}${SIGN_IN_PATH}?t=${token}` }
+    const next = path && path !== '/' ? `&next=${encodeURIComponent(path)}` : ''
+    return { address, url: `${address.slice(0, -1)}${SIGN_IN_PATH}?t=${token}${next}` }
   }
 
   /** The preview's stable address, to show before it is opened; loading it still needs `open`. */
@@ -200,7 +202,9 @@ export class PreviewService {
       const https = req.headers['x-forwarded-proto'] === 'https'
       const attributes = https ? 'Secure; SameSite=None; Partitioned' : 'SameSite=Lax'
       res.setHeader('set-cookie', `${COOKIE}=${until}.${this.sign(`cookie:${target.id}:${until}`)}; Path=/; HttpOnly; ${attributes}; Max-Age=${COOKIE_TTL_MS / 1000}`)
-      res.writeHead(302, { location: '/' })
+      // Only a page of this host: a `//host` or `/\\host` would send the viewer to another site.
+      const next = previewPathSchema.safeParse(url.searchParams.get('next') ?? '/')
+      res.writeHead(302, { location: next.success ? next.data : '/' })
       res.end()
       return
     }

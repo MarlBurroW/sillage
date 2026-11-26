@@ -17,7 +17,8 @@ import { fileURLToPath } from 'node:url'
 // Dev-server previews end to end on a temporary demo instance: a real Vite dev server run as an
 // agent's sillage-app unit, opened through the preview listener (sign-in link, cookie, proxied
 // pages, hot reload over WebSocket), then the panel's Preview tab, the Services shortcut and the
-// thread card as the agent titles it (`describe_preview`, beside a second server it hides), and the
+// thread card as the agent titles it (`describe_preview`: title, page, beside a second server it
+// hides), the line a stopped server leaves, and the
 // settings page at 1440 and 390 px. Needs Vite in /var/tmp/preview-probe/app (any vanilla
 // template; only its node_modules are used).
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -148,7 +149,7 @@ try {
   assert.equal(target.title, null)
   assert.equal(target.hidden, false)
   assert.match(target.address, /^http:\/\/pv-[0-9a-f]{12}\.preview\.test\/$/)
-  assert.match(await describe({ port: vitePort, title: 'Maquette du tableau de bord' }), /shown in the conversation thread as “Maquette du tableau de bord”/)
+  assert.match(await describe({ port: vitePort, title: 'Maquette du tableau de bord', path: '/?view=board' }), /shown in the conversation thread as “Maquette du tableau de bord”.* on \/\?view=board/)
   for (let i = 0; i < 50 && !(await call('GET', '/api/previews')).body.targets.some((entry) => entry.port === apiServerPort); i++) await delay(300)
   assert.match(await describe({ port: apiServerPort, title: 'API des prévisions', show: false }), /left out of the conversation thread/)
   const described = (await call('GET', '/api/previews')).body.targets
@@ -157,6 +158,10 @@ try {
   const opened = (await call('POST', '/api/previews', { port: vitePort })).body
   assert.match(opened.url, /^http:\/\/pv-[0-9a-f]{12}\.preview\.test\/__sillage\/preview-sign-in\?t=/)
   const host = new URL(opened.address).host
+  // Pointed at a page: the sign-in link lands there, and never on another site.
+  const pointed = (await call('POST', '/api/previews', { port: vitePort, path: '/?view=board' })).body
+  assert.match(pointed.url, /&next=%2F%3Fview%3Dboard$/)
+  assert.equal((await call('POST', '/api/previews', { port: vitePort, path: '//evil.example' })).status, 400)
 
   // Raw requests to the preview listener, as the reverse proxy sends them.
   const raw = (path, headers = {}) => new Promise((resolve, reject) => {
@@ -179,6 +184,13 @@ try {
   assert.equal((await raw('/', { host: 'pv-000000000000.preview.test' })).status, 404, 'unknown preview')
   const signIn = await raw(new URL(opened.url).pathname + new URL(opened.url).search)
   assert.equal(signIn.status, 302)
+  assert.equal(signIn.headers.location, '/')
+  const signInUrl = new URL(pointed.url)
+  assert.equal((await raw(signInUrl.pathname + signInUrl.search)).headers.location, '/?view=board')
+  for (const next of ['//evil.example/', '/\\evil.example/', 'https://evil.example/']) {
+    signInUrl.searchParams.set('next', next)
+    assert.equal((await raw(signInUrl.pathname + signInUrl.search)).headers.location, '/', `no redirect to ${next}`)
+  }
   const previewCookie = signIn.headers['set-cookie'][0].split(';')[0]
   assert.match(signIn.headers['set-cookie'][0], /HttpOnly; SameSite=Lax/)
   assert.equal((await raw(new URL(opened.url).pathname + new URL(opened.url).search)).status, 302, 'link reusable within its minute')
@@ -252,18 +264,27 @@ try {
         // The thread says the conversation's dev server is ready; one click opens its preview.
         const card = page.locator('[data-preview-activity]')
         await card.waitFor({ timeout: 60000 })
+        // The demo account's saved theme wins over the color scheme: force the one being captured.
+        await page.evaluate((value) => { document.documentElement.dataset.theme = value }, theme)
         // Titled by the agent, with its address; the hidden API has no card of its own.
-        assert.match(await card.innerText(), new RegExp(`Maquette du tableau de bord[\\s\\S]*pv-[0-9a-f]{12}\\.preview\\.test[\\s\\S]*:${vitePort}`))
+        assert.match(await card.innerText(), new RegExp(`Maquette du tableau de bord[\\s\\S]*pv-[0-9a-f]{12}\\.preview\\.test/\\?view=board[\\s\\S]*:${vitePort}`))
+        assert.equal(await card.getByRole('button', { name: "Copier l'adresse" }).count(), 1)
         assert.equal(await card.getByRole('button', { name: "Ouvrir l'aperçu" }).count(), 1)
         assert.doesNotMatch(await card.innerText(), new RegExp(`:${apiServerPort}`))
         const ready = card.getByRole('button', { name: "Ouvrir l'aperçu" }).first()
+        await page.waitForTimeout(600)
         await page.screenshot({ path: join(shots, `ready-${name}-${theme}.png`) })
         if (first) {
           // The address opens the app in a tab of its own, signed in on the way.
           const [tab] = await Promise.all([page.context().waitForEvent('page'), card.getByRole('link').click()])
           await tab.locator('#t').waitFor({ timeout: 30000 })
-          assert.match(tab.url(), /^http:\/\/pv-[0-9a-f]{12}\.preview\.test\/$/)
+          assert.match(tab.url(), /^http:\/\/pv-[0-9a-f]{12}\.preview\.test\/\?view=board$/)
           await tab.close()
+          // The demo link window opens from the card too.
+          await card.getByRole('button', { name: 'Lien de démo' }).click()
+          await page.locator('[data-preview-share-dialog]').waitFor()
+          await page.keyboard.press('Escape')
+          await page.locator('[data-preview-share-dialog]').waitFor({ state: 'detached' })
         }
         await ready.click()
         const frame = page.frameLocator('[data-preview-frame]')
@@ -288,7 +309,8 @@ try {
           const composer = page.getByPlaceholder(/^Écris ton message/)
           await page.waitForFunction(() => /sélecteur/.test(document.querySelector('textarea')?.value ?? ''))
           const message = await composer.inputValue()
-          assert.match(message, /Élément de l'aperçu \(port \d+, page \/\), un <h1>/)
+          // The frame opened on the page the agent pointed at.
+          assert.match(message, /Élément de l'aperçu \(port \d+, page \/\?view=board\), un <h1>/)
           assert.match(message, /sélecteur : `#t`/)
           assert.match(message, /« Preview v2 »/)
           assert.match(message, /```html\n<h1 id="t"/)
@@ -300,7 +322,8 @@ try {
         await page.waitForTimeout(300)
         await page.screenshot({ path: join(shots, `panel-${name}-${theme}.png`) })
         // The demo link window lists the active link and makes another.
-        await page.getByRole('button', { name: 'Lien de démo' }).click()
+        // The panel's own button; the thread card has one too.
+        await page.locator('[data-preview-frame]').locator('xpath=ancestor::*[.//button[@aria-label="Lien de démo"]][1]').getByRole('button', { name: 'Lien de démo' }).click()
         const dialog = page.locator('[data-preview-share-dialog]')
         await dialog.getByText(demo.url).waitFor()
         if (name === 'desktop' && theme === 'light') {
@@ -334,6 +357,38 @@ try {
   const stopped = await raw('/', { host: new URL(demo.url).host })
   assert.equal(stopped.status, 410)
   assert.match(stopped.body, /not running/)
+
+  // The thread keeps a line for the stopped server, until dismissed; the hidden API still has none.
+  const after = await chromium.launch({ args: [`--host-resolver-rules=MAP app.preview.test 127.0.0.1:${webPort}, MAP *.preview.test 127.0.0.1:${previewPort}`] })
+  try {
+    for (const [name, viewport, mobile] of [['desktop', { width: 1440, height: 1000 }, false], ['phone', { width: 390, height: 844 }, true]]) {
+      const context = await after.newContext({ viewport, isMobile: mobile, hasTouch: mobile, locale: 'fr-FR', colorScheme: 'dark', serviceWorkers: 'block' })
+      const page = await context.newPage()
+      page.on('pageerror', (error) => errors.push(`stopped/${name}: ${error.message}`))
+      await page.goto(`${base}/api/health`)
+      await page.evaluate(async () => fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'alex', password: 'sillage-demo' }) }))
+      await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
+      const line = page.locator('[data-preview-stopped]')
+      await line.waitFor({ timeout: 30000 })
+      assert.match(await line.innerText(), new RegExp(`Maquette du tableau de bord · arrêté · :${vitePort}`))
+      assert.equal(await page.locator('[data-preview-card]').count(), 0)
+      await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: join(shots, `stopped-${name}-dark.png`) })
+      if (name === 'phone') {
+        await line.getByRole('button', { name: 'Masquer' }).click()
+        await line.waitFor({ state: 'detached' })
+        await page.reload()
+        await page.locator('[data-message-list], textarea').first().waitFor()
+        await page.waitForTimeout(1500)
+        assert.equal(await page.locator('[data-preview-stopped]').count(), 0, 'dismissed for good')
+      }
+      await context.close()
+    }
+  } finally {
+    await after.close()
+  }
+  assert.deepEqual(errors, [])
   console.log(`ok — captures in ${shots}`)
 } finally {
   for (const unit of units) await promisify(execFile)('systemctl', ['--user', 'stop', unit]).catch(() => {})
