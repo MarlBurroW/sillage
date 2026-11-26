@@ -90,7 +90,10 @@ try {
     page.on('pageerror', (error) => errors.push(error.message))
     return { context, page, errors, project, hero, rooted }
   }
-  const header = (page) => page.locator('header').filter({ has: page.getByRole('button', { name: /^(Ouvrir|Fermer) le panneau$/ }) })
+  // The conversation header is the one carrying the page's panel toggle. While the panel is open
+  // that copy leaves the accessibility tree (aria-hidden, the panel's own toggle takes over), and
+  // the Git panel opened above stays open across navigation: include hidden buttons to find it.
+  const header = (page) => page.locator('header').filter({ has: page.getByRole('button', { name: /^(Ouvrir|Fermer) le panneau$/, includeHidden: true }) })
 
   const worktreeBar = (page) => page.getByRole('region', { name: 'Worktree de la conversation' })
 
