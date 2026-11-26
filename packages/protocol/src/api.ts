@@ -1030,6 +1030,8 @@ export interface FsListingDto {
   parent: string | null
   entries: FsEntryDto[]
   isGitRepo: boolean
+  /** Holds a project marker (.git, package.json…): a project root rather than a folder of projects. */
+  looksLikeProject: boolean
   /** Listing truncated: the directory contains more entries than the limit. */
   truncated: boolean
   /** Starting locations suggested in the UI. */

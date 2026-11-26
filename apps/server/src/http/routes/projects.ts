@@ -1,6 +1,5 @@
 import { deleteProject } from '../../projects/delete.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
-import { resolve } from 'node:path'
 import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectFolders, projectImages, projectPins, projects, users, writeTransaction } from '@sillage/db'
@@ -31,7 +30,7 @@ import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
-import { writeProjectsDir } from '../../settings/user-settings.js'
+import { rememberProjectsDir } from '../../settings/user-settings.js'
 import { createSampleProject } from '../../projects/sample.js'
 import {
   projectImageDto,
@@ -195,7 +194,7 @@ export function registerProjectRoutes(
     const row = await createProject(ctx, user.id, body)
     if ('parentDir' in body) {
       // Only the interface remembers the directory suggested for the next creation.
-      writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
+      rememberProjectsDir(ctx.db, user.id, body.parentDir)
     }
 
     const dto: ProjectDto = {
@@ -220,7 +219,7 @@ export function registerProjectRoutes(
     const body = createSampleProjectBodySchema.parse(request.body)
 
     const row = await createSampleProject(ctx, user.id, body)
-    writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
+    rememberProjectsDir(ctx.db, user.id, body.parentDir)
 
     const dto: ProjectDto = {
       ...row,
@@ -253,7 +252,7 @@ export function registerProjectRoutes(
     const destination = await assertFreeDestination(body.parentDir, body.directory)
     const folderPaths = await resolveProjectFolderPaths(destination, body.folderPaths)
     // Remember the parent directory just as for projects created from scratch.
-    writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
+    rememberProjectsDir(ctx.db, user.id, body.parentDir)
 
     const job = cloneJobs.start({
       ownerId: user.id,

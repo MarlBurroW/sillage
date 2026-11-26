@@ -1,6 +1,6 @@
-import { constants, realpathSync } from 'node:fs'
+import { constants, existsSync, realpathSync } from 'node:fs'
 import { access, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { samePath } from '../agents/paths.js'
 import { badRequest, forbidden, notFound } from '../http/errors.js'
 
@@ -8,6 +8,20 @@ const DENIED_PREFIXES = ['/proc', '/sys', '/dev', '/run']
 
 export function isDeniedFolder(path: string): boolean {
   return DENIED_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`))
+}
+
+/**
+ * Files that mark a project root. A folder holding one is a project, not a place to create
+ * projects in: picking it as the parent of a new folder nests `devtools/devtools`.
+ */
+const PROJECT_MARKERS = [
+  '.git', 'package.json', 'Cargo.toml', 'go.mod', 'pyproject.toml', 'requirements.txt',
+  'composer.json', 'Gemfile', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'mix.exs',
+  'deno.json', 'CMakeLists.txt',
+]
+
+export function looksLikeProject(path: string): boolean {
+  return PROJECT_MARKERS.some(marker => existsSync(join(path, marker)))
 }
 
 export async function assertUsableWorkspace(path: string): Promise<string> {

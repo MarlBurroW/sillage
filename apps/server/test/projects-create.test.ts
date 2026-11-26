@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -12,6 +12,7 @@ import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
 import { registerUserSettingsRoutes } from '../src/http/routes/user-settings.js'
+import { registerFsRoutes } from '../src/http/routes/fs.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs, StartCloneParams } from '../src/clone-jobs.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
@@ -34,6 +35,7 @@ async function harness(t: TestContext, cloneJobs = {} as CloneJobs) {
   // Exercise project creation only; other collaborators are never invoked.
   registerProjectRoutes(app, ctx, {} as AttachmentStore, cloneJobs, { aliveCount: () => 0 } as unknown as TerminalManager)
   registerUserSettingsRoutes(app, ctx)
+  registerFsRoutes(app, ctx as never)
   t.after(() => app.close())
 
   const create = (body: Record<string, unknown>) =>
@@ -73,6 +75,23 @@ test('création : nouveau dossier créé dans le parent, et parent mémorisé', 
   await mkdir(join(parent, 'vide'))
   const empty = await create({ name: 'Vide', parentDir: parent, directory: 'vide' })
   assert.equal(empty.statusCode, 201, empty.body)
+})
+
+test('création : un parent qui est déjà un projet n’est pas mémorisé, et le listage le signale', async (t) => {
+  const { dir, db, app, create } = await harness(t)
+  // The devtools/devtools mistake: the project itself chosen as "Projects folder".
+  const project = join(dir, 'devtools')
+  await mkdir(project)
+  await writeFile(join(project, 'package.json'), '{}')
+
+  const browse = await app.inject({ url: `/api/fs/browse?path=${encodeURIComponent(project)}` })
+  assert.equal(browse.json().looksLikeProject, true)
+  const plain = await app.inject({ url: `/api/fs/browse?path=${encodeURIComponent(dir)}` })
+  assert.equal(plain.json().looksLikeProject, false)
+
+  const response = await create({ name: 'devtools', parentDir: project, directory: 'devtools' })
+  assert.equal(response.statusCode, 201, response.body)
+  assert.equal(readUserSettings(db, 'owner').projectsDir, null)
 })
 
 test('création : garde-fous sur le nom de dossier et le parent', async (t) => {

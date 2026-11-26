@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { userSettings, type Db } from '@sillage/db'
 import {
@@ -16,6 +17,7 @@ import {
   type SessionView,
   type UsageLimitResumePrefs,
 } from '@sillage/protocol'
+import { looksLikeProject } from '../projects/folder-path.js'
 
 export type UserSettings = UserSettingsDto
 
@@ -129,6 +131,15 @@ export function writeSessionViews(db: Db, userId: string, sessionViews: SessionV
 /** Initial due tour state at its first step, assigned to new accounts. */
 export function armOnboarding(db: Db, userId: string): void {
   writeOnboarding(db, userId, { ...DEFAULT_ONBOARDING, pending: true })
+}
+
+/**
+ * Remembers the parent of a project just created there, unless that parent is itself a project:
+ * suggesting it again would nest every following project inside it.
+ */
+export function rememberProjectsDir(db: Db, userId: string, parentDir: string): void {
+  const path = resolve(parentDir)
+  if (!looksLikeProject(path)) writeProjectsDir(db, userId, path)
 }
 
 /** Parent directory suggested for the next project, or `null` to forget it. */
