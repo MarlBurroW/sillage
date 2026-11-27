@@ -1,23 +1,9 @@
 import type { ClaudeAccountDto } from '@sillage/protocol'
 import type { RateLimitState } from '../../lib/chat-fold'
-import { locale, translate, useTranslate, type MessageKey } from '../../lib/i18n'
+import { locale, translate, useTranslate } from '../../lib/i18n'
+import { quotaWindowLabel } from '../../lib/usage'
 import { formatTokens } from '../../lib/tokens'
 import { cx } from '../ui'
-
-/** Quota-window labels reported by the CLI. */
-const WINDOW_LABEL_KEYS: Record<string, MessageKey> = {
-  five_hour: 'usage.window.fiveHour',
-  seven_day: 'usage.window.sevenDay',
-  seven_day_opus: 'usage.window.sevenDayOpus',
-  seven_day_sonnet: 'usage.window.sevenDaySonnet',
-  seven_day_overage_included: 'usage.window.sevenDayOverageIncluded',
-  overage: 'usage.window.overage',
-}
-
-function windowLabel(type: string): string {
-  const key = WINDOW_LABEL_KEYS[type]
-  return key ? translate(key) : type
-}
 
 function formatCountdown(resetsAt: number): string {
   const remaining = resetsAt - Date.now()
@@ -35,7 +21,7 @@ function formatCountdown(resetsAt: number): string {
  * instead.
  */
 function describeQuota(rateLimit: RateLimitState): string {
-  const window = windowLabel(rateLimit.type)
+  const window = quotaWindowLabel(rateLimit.type)
   if (rateLimit.utilization !== null) {
     return translate('usage.quota.utilization', {
       window,

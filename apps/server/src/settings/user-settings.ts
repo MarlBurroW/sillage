@@ -15,6 +15,7 @@ import {
   type UserSettingsDto,
   type NewsPreferences,
   type SessionView,
+  type StatusBarItem,
   type UsageLimitResumePrefs,
 } from '@sillage/protocol'
 import { looksLikeProject } from '../projects/folder-path.js'
@@ -200,6 +201,13 @@ function parseData(data: string | undefined): unknown {
 
 export function writeNewsPreferences(db: Db, userId: string, news: NewsPreferences): void {
   const data = JSON.stringify({ ...readUserSettings(db, userId), news })
+  db.insert(userSettings).values({ userId, data })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { data } }).run()
+}
+
+/** Whole status line in display order; `null` returns to the default line. */
+export function writeStatusBar(db: Db, userId: string, statusBar: StatusBarItem[] | null): void {
+  const data = JSON.stringify({ ...readUserSettings(db, userId), statusBar })
   db.insert(userSettings).values({ userId, data })
     .onConflictDoUpdate({ target: userSettings.userId, set: { data } }).run()
 }

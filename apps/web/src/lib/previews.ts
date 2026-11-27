@@ -6,12 +6,13 @@ import { api } from './api'
  * Dev-server previews (card #113): what can be previewed, and opening one. Screens decide the
  * presentation: the conversation panel, the Services page.
  */
-export function usePreviews() {
+export function usePreviews(enabled = true) {
   return useQuery({
     queryKey: ['previews'],
     queryFn: () => api.get<PreviewListDto>('/api/previews'),
     // Dev servers start and stop as agents work.
     refetchInterval: 10_000,
+    enabled,
   })
 }
 

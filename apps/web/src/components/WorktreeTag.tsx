@@ -29,9 +29,9 @@ export const WORKTREE_STATE_TEXT: Record<WorktreePreviewState, string> = {
 const STATE_ICONS = { missing: TriangleAlert, dirty: Pencil, unmerged: GitPullRequestArrow, leftovers: FileCheck, merged: Check, unknown: CircleHelp }
 
 /** The row and its explanation share the same glyph, including unavailable Git state. */
-export function WorktreeStateIcon({ state }: { state: WorktreePreviewState }) {
+export function WorktreeStateIcon({ state, size = 15 }: { state: WorktreePreviewState; size?: number }) {
   const Icon = STATE_ICONS[state]
-  return <Icon size={15} aria-hidden className={cx('shrink-0', WORKTREE_STATE_TEXT[state])} />
+  return <Icon size={size} aria-hidden className={cx('shrink-0', WORKTREE_STATE_TEXT[state])} />
 }
 
 /**

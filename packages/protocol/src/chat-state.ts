@@ -326,6 +326,16 @@ export interface ChatState {
   /** Track turn completion to display a reliable activity indicator. */
   turnRunning: boolean
   /**
+   * When the running turn began, by journal time; null between turns. Optional for the same
+   * reason as `cliVersion`: projections folded before the field lack it until the next turn.
+   */
+  turnStartedAt?: number | null
+  /**
+   * Tokens of the last completed turn, cache included: what the last message cost, which a quota
+   * percentage cannot say since other sessions of the account draw on it too.
+   */
+  lastTurnTokens?: number | null
+  /**
    * Size of the current reasoning, whether revealed or hidden. A non-null value means the agent is
    * thinking now: any other sign of progress resets it to null, so the indicator never claims
    * reasoning while text is being written or a tool is running.
@@ -447,6 +457,8 @@ export function emptyChatState(): ChatState {
     cliVersion: null,
     rateLimit: null,
     context: null,
+    turnStartedAt: null,
+    lastTurnTokens: null,
     editTurns: [],
     checkpoints: [],
     turnRunning: false,
@@ -711,6 +723,7 @@ export function applyEvent(
   // outlive the turn that spawned them (background tasks, or a Codex turn failing while its agents
   // keep going), and their output reopened a turn no completion would ever close, leaving a Stop
   // button that stopped nothing and a steer the server rejected.
+  const wasRunning = state.turnRunning
   if ((event.type === 'message.delta' || event.type === 'tool.started') && event.parentToolCallId == null) {
     state.turnRunning = true
   }
@@ -761,6 +774,7 @@ export function applyEvent(
       state.outputTokens += event.outputTokens
       state.cacheCreationTokens += event.cacheCreationTokens
       state.cacheReadTokens += event.cacheReadTokens
+      state.lastTurnTokens = event.inputTokens + event.outputTokens + event.cacheCreationTokens + event.cacheReadTokens
       break
     }
 
@@ -1374,6 +1388,10 @@ export function applyEvent(
   for (let i = previousLength; i < state.items.length; i++) {
     state.items[i] = { ...state.items[i]!, position: seq }
   }
+  // Every way a turn opens (`turn.started`, or output from a resumed session) and closes goes
+  // through `turnRunning`, so the start time follows it rather than any single event.
+  if (!state.turnRunning) state.turnStartedAt = null
+  else if (!wasRunning || state.turnStartedAt == null) state.turnStartedAt = ts
   state.lastSeq = Math.max(state.lastSeq, seq)
   return { ...state }
 }

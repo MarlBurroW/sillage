@@ -36,6 +36,7 @@
     "test:cli-updates-ui": "node scripts/cli-updates-ui-check.mjs",
     "test:concentration-ui": "node scripts/concentration-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
+    "test:status-bar-ui": "node scripts/status-bar-ui-check.mjs",
   "test:mentions-ui": "node scripts/mentions-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",
     "test:skill-updates-ui": "node scripts/skill-updates-ui-check.mjs",

@@ -322,6 +322,15 @@ The periodic cleanup removes expired, revoked and orphaned files.
   account, advisor or other controls supported by that CLI, and order them. Each
   CLI keeps its own layout; on a phone the chip stays and the rest lives in the
   settings panel.
+- **A status line you choose.** Under the composer, one line shows what you want
+  to watch: account quota as a bar, ring or text (the busiest window or all of
+  them), context, session and last-turn tokens, API-equivalent cost, running
+  sub-agents and background tasks, turn clock, actual model, CLI version,
+  worktree state, files changed, tool calls and active previews. One layout per
+  account for every CLI: an item a CLI does not report simply hides, and the
+  settings preview shows each CLI's line. Hover a figure for its detail and click
+  it to open its source; on a touch screen the line opens the full list. What
+  does not fit goes behind "+N".
 - **A task API for machines.** `/api/v1` speaks tasks rather than screens: open
   one in a project, follow its events, answer what it asks, steer or interrupt
   it, and take a webhook when it lands. Bearer tokens carry their own scopes and

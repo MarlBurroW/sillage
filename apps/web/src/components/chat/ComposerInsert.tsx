@@ -8,28 +8,22 @@ import { SettingsHeading } from './SettingsPanel'
 
 export type ComposerPrefix = '@' | '@@' | '#' | '/' | '$'
 
-/** Prefixes this composer can open, in menu order; the placeholder and the trigger show the same set. */
+/** Prefixes this composer can open, in menu order, as the trigger below the field shows them. */
 export function composerPrefixes({ project, commands, skills }: { project: boolean; commands: boolean; skills: boolean }): ComposerPrefix[] {
   return [...(project ? ['@', '@@', '#'] as const : []), ...(commands ? ['/'] as const : []), ...(skills ? ['$'] as const : [])]
 }
 
-/** Empty-field text that names the prefixes: the menu alone went unnoticed, the field is where people look. */
-export function useComposerPlaceholder({ disabled, narrow, ...offer }: { disabled: boolean; narrow: boolean; project: boolean; commands: boolean; skills: boolean }): string {
+/**
+ * Empty-field text. Short: the shortcuts trigger right below the field already names the prefixes,
+ * and spelling them out again ran the placeholder past the field's width.
+ */
+export function useComposerPlaceholder({ disabled }: { disabled: boolean }): string {
   const t = useTranslate()
-  if (disabled) return t('composer.placeholder.readonly')
-  const prefixes = composerPrefixes(offer)
-  if (prefixes.length === 0) return t('composer.placeholder.write')
-  const words: Record<ComposerPrefix, string> = {
-    '@': t('composer.placeholder.file'), '@@': t('composer.placeholder.session'), '#': t('composer.placeholder.card'),
-    '/': t('composer.placeholder.command'), '$': t('composer.placeholder.skill'),
-  }
-  // Phones only get the glyphs so the hint stays on one line.
-  const list = narrow ? prefixes.join(' ') : prefixes.map((prefix) => `${prefix} ${words[prefix]}`).join(', ')
-  return t('composer.placeholder.withShortcuts', { shortcuts: list })
+  return disabled ? t('composer.placeholder.readonly') : t('composer.placeholder.write')
 }
 
 /** Teach the same prefixes that typing opens; selecting a row only starts completion. */
-export function ComposerInsert({ inputRef, disabled, project, commands, skills, combinedCommands, onInsert, compact = false, onAttach, onDictate }: {
+export function ComposerInsert({ inputRef, disabled, project, commands, skills, combinedCommands, onInsert, compact = false, glyphsOnly = false, onAttach, onDictate }: {
   inputRef: RefObject<HTMLTextAreaElement | null>
   disabled: boolean
   project: boolean
@@ -38,6 +32,8 @@ export function ComposerInsert({ inputRef, disabled, project, commands, skills, 
   combinedCommands: boolean
   onInsert: (prefix: ComposerPrefix) => void
   compact?: boolean
+  /** Phones: the glyphs alone, leaving the status line beside it room for more than one item. */
+  glyphsOnly?: boolean
   onAttach?: () => void
   onDictate?: () => void
 }) {
@@ -74,7 +70,7 @@ export function ComposerInsert({ inputRef, disabled, project, commands, skills, 
           {composerPrefixes({ project, commands, skills }).filter((prefix) => prefix !== '$' && prefix !== '@@').map((prefix) => (
             <code key={prefix} aria-hidden className="rounded border border-line bg-surface-high px-1 font-mono text-[0.6875rem] leading-4 text-ink">{prefix}</code>
           ))}
-          <span className="ml-0.5">{t('composer.insert.trigger')}</span><ChevronDown size={12} aria-hidden />
+          {glyphsOnly ? null : <span className="ml-0.5">{t('composer.insert.trigger')}</span>}<ChevronDown size={12} aria-hidden />
         </button>
       )}
     >

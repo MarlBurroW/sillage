@@ -1,6 +1,7 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AgentKind, AgentUsage, UsageWindow } from '@sillage/protocol'
 import { api } from './api'
+import { translate, type MessageKey } from './i18n'
 
 /** `account` identifies an additional Claude account, null for the CLI login. */
 const usageKey = (agent: AgentKind, account: string | null) => ['usage', agent, account]
@@ -39,6 +40,22 @@ export function useRefreshUsage(agent: AgentKind, account: string | null = null)
     const fresh = await api.get<AgentUsage>(usagePath(agent, account, true))
     queryClient.setQueryData(usageKey(agent, account), fresh)
   }
+}
+
+/** Short names for Claude's quota windows, which the stream and usage read identify by type. */
+const WINDOW_LABEL_KEYS: Record<string, MessageKey> = {
+  five_hour: 'usage.window.fiveHour',
+  seven_day: 'usage.window.sevenDay',
+  seven_day_opus: 'usage.window.sevenDayOpus',
+  seven_day_sonnet: 'usage.window.sevenDaySonnet',
+  seven_day_overage_included: 'usage.window.sevenDayOverageIncluded',
+  overage: 'usage.window.overage',
+}
+
+/** A window's short name: known Claude types get one, other CLIs already name theirs. */
+export function quotaWindowLabel(id: string, label = id): string {
+  const key = WINDOW_LABEL_KEYS[id]
+  return key ? translate(key) : label
 }
 
 /** Most loaded windows first: the figures that decide which account to pick. */

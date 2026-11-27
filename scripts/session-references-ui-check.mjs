@@ -139,8 +139,8 @@ try {
 
   const composer = page.getByPlaceholder(/Écris ton message/)
   const insert = page.getByRole('button', { name: 'Raccourcis — aides de saisie', exact: true })
-  // The empty field names the prefixes, since the menu alone went unnoticed.
-  assert.match(await composer.getAttribute('placeholder'), /@ fichier, @@ session, # ticket/)
+  // The field stays short: the shortcuts trigger right below it names the prefixes.
+  assert.equal(await composer.getAttribute('placeholder'), 'Écris ton message…')
   await page.screenshot({ path: join(shots, 'desktop-placeholder.png') })
   await composer.fill('Consulte cette session')
   await composer.evaluate(node => node.setSelectionRange(9, node.value.length))
@@ -243,7 +243,9 @@ try {
   await phone.screenshot({ path: join(shots, 'phone-preview.png') })
   await detail.getByRole('button', { name: 'Fermer', exact: true }).tap()
   const phoneComposer = phone.getByPlaceholder(/Écris ton message/)
-  assert.match(await phoneComposer.getAttribute('placeholder'), /— @ @@ #/)
+  // Phones show the prefixes on the trigger under the field, which keeps only its glyphs.
+  assert.equal(await phoneComposer.getAttribute('placeholder'), 'Écris ton message…')
+  assert.match(await phone.getByRole('button', { name: 'Raccourcis — aides de saisie', exact: true }).innerText(), /^@\s*#/)
   await phone.screenshot({ path: join(shots, 'phone-placeholder.png') })
   await phoneComposer.fill('Consulte')
   await phone.getByRole('button', { name: 'Raccourcis — aides de saisie', exact: true }).tap()

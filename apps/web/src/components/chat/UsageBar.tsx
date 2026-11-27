@@ -19,7 +19,7 @@ function toneFor(utilization: number | null): string {
 }
 
 /** Readable remaining duration in days, hours, then minutes. */
-function untilReset(resetsAt: number | null): string | null {
+export function untilReset(resetsAt: number | null): string | null {
   if (resetsAt === null) return null
   const minutes = Math.round((resetsAt - Date.now()) / 60_000)
   if (minutes <= 0) return translate('usage.reset.imminent')

@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import type { ConversationDto, ConversationStatus, ProjectDto, SessionFacts, SessionState, WorktreeStatusDto, WorktreeStatusListDto } from '@sillage/protocol'
 import { useAllConversations } from './conversations'
 import { liveActivityAt, liveBackground, liveSeq, liveStatus, subscribeStatus } from './conversation-status'
@@ -22,16 +22,6 @@ export function sessionState(status: ConversationStatus, background: boolean): S
   if (status === 'awaiting_input') return 'attention'
   if (status === 'running' || background) return 'running'
   return status === 'error' ? 'error' : 'idle'
-}
-
-/** Current time, refreshed often enough for sliding windows such as `active:30m`. */
-export function useNow(intervalMs = 30_000): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), intervalMs)
-    return () => window.clearInterval(timer)
-  }, [intervalMs])
-  return now
 }
 
 export interface WallSources {

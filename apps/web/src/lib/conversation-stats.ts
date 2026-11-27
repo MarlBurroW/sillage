@@ -7,10 +7,11 @@ import { api } from './api'
  * list: the server prices turns and counts journal entries for it. A short stale time keeps a
  * working session's figures moving without refetching on every hover.
  */
-export function useConversationStats(conversationId: string) {
+export function useConversationStats(conversationId: string, enabled = true) {
   return useQuery({
     queryKey: ['conversation-stats', conversationId],
     queryFn: () => api.get<ConversationStatsDto>(`/api/conversations/${encodeURIComponent(conversationId)}/stats`),
     staleTime: 15_000,
+    enabled,
   })
 }

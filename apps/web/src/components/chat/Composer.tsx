@@ -500,7 +500,7 @@ export function Composer({
     () => (onCommand ? commands : commands.filter((c) => !NATIVE_SLASH_COMMANDS.has(c.name))),
     [commands, onCommand],
   )
-  const placeholder = useComposerPlaceholder({ disabled, narrow, project: Boolean(projectId), commands: offered.length > 0, skills: skills.length > 0 })
+  const placeholder = useComposerPlaceholder({ disabled })
 
   const syncToken = (value: string, caret: number | null) => {
     const position = caret ?? value.length
@@ -1031,7 +1031,7 @@ export function Composer({
 
       <div className={cx("mx-auto flex sg-conversation-width items-start gap-2", concentration && "hidden")}>
         <ComposerInsert inputRef={textarea} disabled={disabled} project={Boolean(projectId)}
-          commands={offered.length > 0} skills={skills.length > 0}
+          commands={offered.length > 0} skills={skills.length > 0} glyphsOnly={narrow && Boolean(footer)}
           combinedCommands={combinedCommands} onInsert={insertPrefix} />
         {footer ? <div className="min-w-0 flex-1">{footer}</div> : null}
       </div>

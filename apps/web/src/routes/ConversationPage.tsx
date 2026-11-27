@@ -8,7 +8,7 @@ import { AGENT_CAPABILITIES } from '@sillage/protocol'
 import { AGENT_LABELS } from '../components/AgentIcon'
 import { refreshFileLinks } from '../lib/file-links'
 import { Composer } from '../components/chat/Composer'
-import { ComposerStatus } from '../components/chat/ComposerStatus'
+import { ConversationStatusBar } from '../components/chat/status-bar/ConversationStatusBar'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { ConversationWorktreeBar } from '../components/chat/ConversationWorktreeBar'
 import { ThreadSearch } from '../components/chat/ThreadSearch'
@@ -34,6 +34,7 @@ import { describeActivity } from '../lib/chat-fold'
 import { SignalRow } from '../components/chat/Signals'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useWorktrees } from '../lib/worktrees'
+import { useStatusBar } from '../lib/status-bar'
 import { ConversationCommands } from './conversation/ConversationCommands'
 import { ConversationDialogs } from './conversation/ConversationDialogs'
 import { ConversationHeader } from './conversation/ConversationHeader'
@@ -118,6 +119,10 @@ export function ConversationPage() {
 
   const activity = describeActivity(stream.state)
   const concentration = useConcentration()
+  const statusBar = useStatusBar()
+  // Context on the status line takes the composer gauge's place, except in concentration mode,
+  // which hides the line and would otherwise leave no gauge at all.
+  const contextInBar = !concentration && statusBar.items.some((item) => item.key === 'context' && item.on)
   const panel = usePanelPresence()
   const panelLayout = usePanelLayout()
   const panelTab = usePanelTab()
@@ -438,7 +443,7 @@ export function ConversationPage() {
             config={config}
             status={stream.status}
             disabled={!isOwner}
-            context={stream.state.context}
+            context={contextInBar ? null : stream.state.context}
             onSteer={canSteer ? actions.steer : undefined}
             onSend={actions.send}
             onCommand={actions.runCommand}
@@ -453,10 +458,15 @@ export function ConversationPage() {
             projectId={conversation.projectId}
             worktreeId={conversation.worktreeId}
             footer={
-              <ComposerStatus
-                agent={conversation.agent}
-                connected={stream.connected}
-                warm={stream.warm}
+              <ConversationStatusBar
+                conversation={conversation}
+                stream={stream}
+                config={config}
+                runningSubAgents={runningSubAgents}
+                background={background}
+                items={statusBar.items}
+                onOpenUsage={() => dialogs.setUsageOpen(true)}
+                onOpenDetails={() => dialogs.setMetaOpen(true)}
               />
             }
           />

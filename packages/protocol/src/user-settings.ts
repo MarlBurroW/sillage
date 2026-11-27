@@ -132,7 +132,39 @@ export interface UserSettingsDto {
    * Account-level: what one listens to while working follows them to every device.
    */
   radioUrl: string | null
+  /**
+   * Status line under the composer: every item in display order, switched on or off; `null`
+   * until the account changes it, so the default line can still evolve for accounts that never
+   * touched it.
+   *
+   * One list for every CLI rather than one per CLI like the composer layout: most items (tokens,
+   * context, worktree) mean the same everywhere, and an item a CLI does not report simply hides
+   * in its sessions. Account-level so the line follows device changes.
+   */
+  statusBar: StatusBarItem[] | null
 }
+
+/** How a proportion (quota, context) is drawn in the status line. */
+export const statusBarFormatSchema = z.enum(['bar', 'ring', 'text'])
+export type StatusBarFormat = z.infer<typeof statusBarFormatSchema>
+
+/** Which quota windows the status line shows: the most used one, or all the CLI reports. */
+export const statusBarWindowsSchema = z.enum(['busiest', 'all'])
+export type StatusBarWindows = z.infer<typeof statusBarWindowsSchema>
+
+/**
+ * One status line item. `key` stays a free string: the catalog lives in the UI, and a key a later
+ * version drops must not invalidate the rest of the list; readers skip keys they do not know.
+ */
+export const statusBarItemSchema = z.object({
+  key: z.string().min(1).max(40),
+  on: z.boolean(),
+  format: statusBarFormatSchema.optional(),
+  windows: statusBarWindowsSchema.optional(),
+})
+export type StatusBarItem = z.infer<typeof statusBarItemSchema>
+
+const MAX_STATUS_BAR_ITEMS = 32
 
 /**
  * `auto` instructions: use the repository if it already has `AGENTS.md` or `CLAUDE.md`,
@@ -341,6 +373,7 @@ export const storedUserSettingsSchema = z
     projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
     sessionViews: z.array(sessionViewSchema).max(MAX_SESSION_VIEWS).nullable().default(null).catch(null),
     radioUrl: radioUrlSchema.nullable().default(null).catch(null),
+    statusBar: z.array(statusBarItemSchema).max(MAX_STATUS_BAR_ITEMS).nullable().default(null).catch(null),
   })
   .catch({
     news: DEFAULT_NEWS_PREFERENCES,
@@ -357,6 +390,7 @@ export const storedUserSettingsSchema = z
     projectDefaults: DEFAULT_PROJECT_DEFAULTS,
     sessionViews: null,
     radioUrl: null,
+    statusBar: null,
   })
 
 export const updateUserSettingsBodySchema = z.object({
@@ -391,4 +425,6 @@ export const updateUserSettingsBodySchema = z.object({
     .optional(),
   /** `null` goes back to Claude FM; absent leaves the station unchanged. */
   radioUrl: radioUrlSchema.nullable().optional(),
+  /** Whole list in display order; `null` goes back to the default line. */
+  statusBar: z.array(statusBarItemSchema).max(MAX_STATUS_BAR_ITEMS).nullable().optional(),
 })
