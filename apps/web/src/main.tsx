@@ -5,6 +5,7 @@ import { TooltipProvider } from './components/ui/Tooltip'
 import { DesktopTitleBar } from './components/DesktopTitleBar'
 import { App } from './App'
 import { AppCrash, ErrorBoundary } from './components/ErrorBoundary'
+import { restoreFonts } from './lib/fonts'
 import { initLocale } from './lib/i18n'
 import { reloadOnPreloadError } from './lib/lazy-reload'
 import { watchThemeColor } from './lib/theme'
@@ -27,9 +28,10 @@ const container = document.getElementById('root')
 if (!container) throw new Error('Élément #root absent du document.')
 
 // Load the selected language catalog before first render to avoid flashing English during download.
-// `initLocale` never rejects (English fallback); using `then` rather than top-level await avoids
+// Neither promise rejects (English fallback, system fonts); using `then` rather than top-level await avoids
 // requiring that syntax from target browsers.
-void initLocale().then(() => {
+// Fonts load alongside the catalog so a chosen family does not swap in after first paint.
+void Promise.all([initLocale(), restoreFonts()]).then(() => {
   createRoot(container).render(
     <StrictMode>
       <ErrorBoundary label="interface" fallback={(error, reset) => <AppCrash error={error} reset={reset} />}>

@@ -61,6 +61,9 @@ export default defineConfig({
         // Precache the app shell, never API responses, which would make the thread inconsistent
         // with the log (invariant I2).
         globPatterns: ['**/*.{js,css,html,woff2}'],
+        // Optional Fontsource families (lib/fonts.ts): precaching every script of every family would
+        // push megabytes to each client for fonts most never pick. They are cached once used instead.
+        globIgnores: ['**/*-wght-normal-*.woff2'],
         // The main bundle still exceeds the default 2 MiB limit (2.14 MB on October 17, 2026), even
         // after lazy-loading the French catalog, which accounted for under 190 KB of 2.33 MB. It is
         // downloaded at startup anyway; excluding it only breaks offline use. Returning to the
@@ -68,7 +71,11 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/s\//],
-        runtimeCaching: [{ urlPattern: /^\/api\//, handler: 'NetworkOnly' }],
+        runtimeCaching: [
+          { urlPattern: /^\/api\//, handler: 'NetworkOnly' },
+          // Hashed file names: a cached copy is never stale, and the chosen font keeps working offline.
+          { urlPattern: /\/assets\/.*-wght-normal-.*\.woff2$/, handler: 'CacheFirst', options: { cacheName: 'sillage-fonts' } },
+        ],
         cleanupOutdatedCaches: true,
       },
       devOptions: { enabled: false },

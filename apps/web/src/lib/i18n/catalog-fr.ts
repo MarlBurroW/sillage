@@ -3365,6 +3365,15 @@ export const fr: Catalog = {
   'appearance.readingSoftness.hint': 'Rapproche l\'encre du gris : moins dur sur fond très sombre',
   'appearance.messageContrast.title': 'Contraste des messages',
   'appearance.messageContrast.hint': 'Écart entre tes messages et les réponses',
+  'appearance.category.fonts': 'Polices',
+  'fonts.sans.title': "Police de l'interface",
+  'fonts.sans.description': 'Pour les menus, les boutons et les messages.',
+  'fonts.sans.hint': 'Les polices sont fournies avec Sillage : rien n’est demandé à Google, et elles fonctionnent hors ligne.',
+  'fonts.mono.title': 'Police du code',
+  'fonts.mono.description': "Pour le code, les appels d'outils, les diffs, l'éditeur et le terminal.",
+  'fonts.mono.hint': "L'aperçu montre 0 et O, 1, l et I : une bonne police de code les distingue au premier coup d'œil.",
+  'fonts.system': 'Système',
+  'fonts.default': 'Par défaut',
   'appearance.reset': 'Défaut',
 
   // Push notifications

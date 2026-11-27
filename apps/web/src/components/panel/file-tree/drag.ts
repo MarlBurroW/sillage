@@ -30,7 +30,7 @@ export function setDragBadge(event: DragEvent, label: string): void {
   const badge = document.createElement('div')
   badge.textContent = label
   badge.style.cssText =
-    'position:fixed;top:-100px;left:0;padding:2px 8px;border-radius:6px;font:12px system-ui;' +
+    'position:fixed;top:-100px;left:0;padding:2px 8px;border-radius:6px;font:12px var(--font-sans);' +
     'background:var(--sg-accent);color:var(--sg-accent-ink)'
   document.body.append(badge)
   event.dataTransfer.setDragImage(badge, -8, -8)

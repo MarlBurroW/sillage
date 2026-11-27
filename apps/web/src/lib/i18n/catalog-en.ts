@@ -3373,6 +3373,15 @@ export const en = {
   'appearance.readingSoftness.hint': 'Brings the ink closer to gray: less harsh on a very dark background',
   'appearance.messageContrast.title': 'Message contrast',
   'appearance.messageContrast.hint': 'How far your messages stand out from the answers',
+  'appearance.category.fonts': 'Fonts',
+  'fonts.sans.title': 'Interface font',
+  'fonts.sans.description': 'Used for menus, buttons and messages.',
+  'fonts.sans.hint': 'Fonts ship with Sillage: nothing is fetched from Google, and they work offline.',
+  'fonts.mono.title': 'Code font',
+  'fonts.mono.description': 'Used for code, tool calls, diffs, the editor and the terminal.',
+  'fonts.mono.hint': 'The preview shows 0 and O, 1, l and I: a good code font tells them apart at a glance.',
+  'fonts.system': 'System',
+  'fonts.default': 'Default',
   'appearance.reset': 'Reset',
 
   // Push notifications

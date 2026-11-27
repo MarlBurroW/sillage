@@ -9,13 +9,14 @@ import {
   type AppearanceKey,
 } from './appearance'
 import { api } from './api'
+import { applyFont, currentFonts, resolveFont, subscribeFonts } from './fonts'
 import { SYNTAX_THEMES, applySyntaxTheme, currentSyntaxTheme, subscribeSyntaxTheme, type SyntaxTheme } from './syntax-theme'
 import { THEMES, applyTheme, currentTheme, subscribeTheme, type Theme } from './theme'
 import { useUserSettings } from './user-settings'
 import { applyTypingIndicator, currentTypingIndicator, resolveTypingIndicator, subscribeTypingIndicator } from './typing-indicator'
 
 /**
- * Theme, code palette, indicator, and appearance sliders stored on the account. `localStorage`
+ * Theme, code palette, fonts, indicator, and appearance sliders stored on the account. `localStorage`
  * remains the pre-hydration cache read by `index.html` to prevent default-color flashes. The
  * account is authoritative: apply its copy when received and send every local change back.
  */
@@ -34,6 +35,7 @@ function snapshot(): AppearancePrefs {
     syntax: currentSyntaxTheme(),
     typingIndicator: currentTypingIndicator(),
     toolStyle: currentToolStyle(),
+    fonts: { ...currentFonts() },
     values: { ...currentAppearance() },
   }
 }
@@ -68,6 +70,11 @@ function adopt(prefs: AppearancePrefs): void {
     if (toolStyle !== currentToolStyle()) applyToolStyle(toolStyle)
     const typingIndicator = resolveTypingIndicator(prefs.typingIndicator)
     if (typingIndicator !== currentTypingIndicator()) applyTypingIndicator(typingIndicator)
+    // A missing or unknown family means the system stack, like a reset on another device.
+    for (const slot of ['sans', 'mono'] as const) {
+      const font = resolveFont(slot, prefs.fonts?.[slot])
+      if (font !== currentFonts()[slot]) applyFont(slot, font)
+    }
     // Ignore names removed since saving rather than applying them unchanged.
     if (prefs.theme && THEMES.includes(prefs.theme as Theme) && prefs.theme !== currentTheme()) {
       applyTheme(prefs.theme as Theme)
@@ -106,6 +113,7 @@ export function useAppearanceSync(): void {
       subscribeSyntaxTheme(schedulePush),
       subscribeTypingIndicator(schedulePush),
       subscribeToolStyle(schedulePush),
+      subscribeFonts(schedulePush),
       subscribeAppearance(schedulePush),
     ]
     return () => {

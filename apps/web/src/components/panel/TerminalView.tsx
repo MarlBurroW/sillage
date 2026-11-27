@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { TerminalClientMessage, TerminalServerMessage } from '@sillage/protocol'
 import { cx } from '../ui'
 import '@xterm/xterm/css/xterm.css'
+import { SYSTEM_FONT, currentFonts, loadFont, subscribeFonts } from '../../lib/fonts'
 import { translate, useTranslate } from '../../lib/i18n'
 
 /**
@@ -183,6 +184,31 @@ export function TerminalView({
     }
     parent.addEventListener('contextmenu', onContextMenu)
 
+    /*
+     * xterm measures its cell once per family name: re-apply the name after the chosen files are
+     * usable, or cells keep the fallback's width. The same name would be ignored, hence the
+     * detour through `monospace`. The new cell size changes cols/rows, so the PTY hears it too.
+     */
+    let disposed = false
+    const refreshFont = () => {
+      if (currentFonts().mono === SYSTEM_FONT) return
+      void loadFont('mono', currentFonts().mono).then(() => {
+        if (disposed) return
+        terminal.options.fontFamily = 'monospace'
+        terminal.options.fontFamily = readTokens(document.documentElement).fontFamily
+        pushSize()
+      })
+    }
+    const unsubscribeFonts = subscribeFonts(() => {
+      // Back to the system font: nothing to wait for.
+      if (currentFonts().mono === SYSTEM_FONT) {
+        terminal.options.fontFamily = readTokens(document.documentElement).fontFamily
+        pushSize()
+      } else refreshFont()
+    })
+    // The cached font may still be loading when the panel opens (the first-render wait is capped).
+    refreshFont()
+
     let timer: number | null = null
     const observer = new ResizeObserver(() => {
       if (timer !== null) window.clearTimeout(timer)
@@ -191,6 +217,8 @@ export function TerminalView({
     observer.observe(parent)
 
     return () => {
+      disposed = true
+      unsubscribeFonts()
       if (timer !== null) window.clearTimeout(timer)
       observer.disconnect()
       parent.removeEventListener('mouseup', onMouseUp)

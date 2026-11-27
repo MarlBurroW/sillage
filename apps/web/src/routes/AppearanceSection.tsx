@@ -1,9 +1,10 @@
 import { ToolStyleControls } from '../components/ToolStyleControls'
-import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote, Wrench } from 'lucide-react'
+import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote, Type, Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AppearanceControls } from '../components/AppearanceControls'
 import { AppearancePresets } from '../components/AppearancePresets'
+import { FontControls } from '../components/FontControls'
 import { ReadingPreview } from '../components/ReadingPreview'
 import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
 import { TypingIndicatorControls } from '../components/TypingIndicatorControls'
@@ -23,6 +24,7 @@ const THEME_ICONS: Record<Theme, ReactNode> = {
 const CATEGORIES = [
   { key: 'interface', icon: Palette },
   { key: 'reading', icon: TextQuote },
+  { key: 'fonts', icon: Type },
   { key: 'motion', icon: Logo },
   { key: 'code', icon: Code },
   { key: 'tools', icon: Wrench },
@@ -46,7 +48,7 @@ export function AppearanceSection() {
           title={t('settings.appearance.title')}
           description={t('settings.appearance.description')}
         />
-        <nav aria-label={t('appearance.navigation')} className="grid grid-cols-3 border-b sm:grid-cols-5 border-line">
+        <nav aria-label={t('appearance.navigation')} className="grid grid-cols-3 border-b sm:grid-cols-6 border-line">
           {CATEGORIES.map(({ key, icon: Icon }) => {
             const search = new URLSearchParams(params)
             search.set('section', key)
@@ -171,6 +173,20 @@ export function AppearanceSection() {
             </div>
           </CardBody>
         </Card>
+      </section>
+
+      <section aria-label={t('appearance.category.fonts')} hidden={category !== 'fonts'}
+        className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain', category !== 'fonts' && 'hidden')}>
+        <div className="flex flex-col gap-4 pb-1">
+          <Card>
+            <CardHeader title={t('fonts.sans.title')} description={t('fonts.sans.description')} icon={<Type size={16} />} />
+            <CardBody><FontControls slot="sans" active={category === 'fonts'} /></CardBody>
+          </Card>
+          <Card>
+            <CardHeader title={t('fonts.mono.title')} description={t('fonts.mono.description')} icon={<Code size={16} />} />
+            <CardBody><FontControls slot="mono" active={category === 'fonts'} /></CardBody>
+          </Card>
+        </div>
       </section>
 
       <section aria-label={t('appearance.category.motion')} hidden={category !== 'motion'}
