@@ -6,6 +6,8 @@ import { createInterface } from 'node:readline'
 let initialized = false
 let turn = null
 let nextTurn = 1
+const goalOf = (threadId, objective, status) =>
+  ({ threadId, objective, status, tokenBudget: 50000, tokensUsed: 1200, timeUsedSeconds: 30, createdAt: 1, updatedAt: 2 })
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
 const notify = (method, params) => {
   if (method === 'turn/completed' && params.threadId === 'root') turn = null
@@ -59,6 +61,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       ] },
     } }); break
     case 'account/rateLimitResetCredit/consume': send({ id, result: { outcome: process.env.FIXTURE_RESET_OUTCOME ?? 'reset' } }); break
+    // Thread goal: `FIXTURE_GOAL` is the objective a resumed thread already carries.
+    case 'thread/goal/get': send({ id, result: { goal: process.env.FIXTURE_GOAL ? goalOf(params.threadId, process.env.FIXTURE_GOAL, 'active') : null } }); break
+    case 'thread/goal/set': send({ id, result: { goal: goalOf(params.threadId, params.objective ?? 'Ship it', params.status ?? 'active') } }); break
     case 'skills/list': send({ id, result: { data: [] } }); break
     case 'mcpServerStatus/list': send({ id, result: { data: [], nextCursor: null } }); break
     case 'turn/start': {

@@ -32,6 +32,8 @@ export interface BackgroundWork {
   parentTaskId: string | null
   /** Agent type of a backgrounded sub-agent (`general-purpose`, a custom agent), null otherwise. */
   subagentType: string | null
+  /** Stoppable although the CLI cannot stop background work in general (a Codex goal, which pauses). */
+  stoppable: boolean
 }
 
 export function buildBackground(state: ChatState): BackgroundWork[] {
@@ -62,6 +64,7 @@ export function buildBackground(state: ChatState): BackgroundWork[] {
       workflow: task?.workflow ?? null,
       parentTaskId: live.parentTaskId ?? task?.parentTaskId ?? null,
       subagentType: live.subagentType ?? task?.subagentType ?? null,
+      stoppable: live.stoppable === true,
     })
   }
 

@@ -557,3 +557,56 @@ test('the catalog carries the speed tiers of each model as the CLI names and des
   // A CLI that predates tiers lists none rather than breaking the catalog.
   assert.deepEqual(codexModel(base as never).serviceTiers, [])
 })
+
+const goal = (status: string, tokensUsed = 1200) => ({ method: 'thread/goal/updated', params: { threadId: 'root', turnId: null,
+  goal: { threadId: 'root', objective: 'Improve the graphics', status, tokenBudget: 50000, tokensUsed, timeUsedSeconds: 30, createdAt: 1, updatedAt: 2 } } })
+
+// Probed on codex-cli 0.172.0: an active goal starts turns by itself and the budget is checked after
+// a turn, so the goal must be visible, and stoppable, while it runs.
+test('a thread goal shows as one replaced notice and, while active, as stoppable background work', async t => {
+  const f = await runnerFixture(t)
+  await f.emit([
+    { method: 'thread/goal/cleared', params: { threadId: 'root' } },
+    goal('active'), goal('budgetLimited', 61000),
+    { method: 'thread/goal/cleared', params: { threadId: 'root' } },
+    done(),
+  ])
+  const notices = f.events.filter(event => event.type === 'agent.notice')
+  // A clear with no known goal (every resume) says nothing.
+  assert.deepEqual(notices.map(event => [event.id, event.level, (event.details as { status: string }).status]), [
+    ['codex-goal:root', 'info', 'active'],
+    ['codex-goal:root', 'warning', 'budgetLimited'],
+    ['codex-goal:root', 'info', 'cleared'],
+  ])
+  const background = f.events.filter(event => event.type === 'background.updated').map(event => event.tasks)
+  assert.deepEqual(background, [
+    [{ id: 'codex-goal', kind: 'goal', description: 'Improve the graphics', stoppable: true }],
+    [],
+    [],
+  ])
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+test('stopping the goal pauses it as a user action; nothing else in the list can be stopped', async t => {
+  const f = await runnerFixture(t)
+  await f.emit([goal('active'), done()])
+  assert.equal(await f.runner.stopBackgroundTask('child-thread'), false)
+  assert.equal(await f.runner.stopBackgroundTask('codex-goal'), true)
+  const set = (await f.records()).filter(record => record.method === 'thread/goal/set')
+  assert.deepEqual(set.map(record => record.params), [{ threadId: 'root', status: 'paused', origin: 'user' }])
+  assert.deepEqual(f.events.filter(event => event.type === 'background.updated').at(-1), { type: 'background.updated', tasks: [] })
+  // Already paused: nothing more to stop.
+  assert.equal(await f.runner.stopBackgroundTask('codex-goal'), false)
+})
+
+test('a resumed thread shows the goal it already carries', async t => {
+  const transport = await fixture(t)
+  const state = context({ ...transport, resumeSessionId: 'existing-thread', processEnv: { FIXTURE_GOAL: 'Watch the sessions' } })
+  const runner = new CodexRunner(state.ctx)
+  transport.onClose(() => runner.stop())
+  await runner.start()
+  await runner.send(`fixture:${JSON.stringify({ notifications: [done()] })}`, [], [], [])
+  const notice = state.events.find(event => event.type === 'agent.notice' && event.code === 'codex_goal')
+  assert.ok(notice?.type === 'agent.notice')
+  assert.equal((notice.details as { objective: string }).objective, 'Watch the sessions')
+})

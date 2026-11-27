@@ -726,7 +726,8 @@ const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
 ])
 
 /** Notice codes rendered inline rather than grouped under a collapsed “warnings” row. */
-const PROMINENT_NOTICES = new Set<string>([USAGE_LIMIT_STOP_NOTICE, USAGE_LIMIT_RESUMED_NOTICE, DETACHED_WORK_EVICTED_NOTICE])
+// A Codex goal says what the agent pursues on its own across turns, and why it stopped.
+const PROMINENT_NOTICES = new Set<string>([USAGE_LIMIT_STOP_NOTICE, USAGE_LIMIT_RESUMED_NOTICE, DETACHED_WORK_EVICTED_NOTICE, 'codex_goal'])
 
 /**
  * Apply an event. Mutate state, then return it in a new object: deep-copying on every event is too

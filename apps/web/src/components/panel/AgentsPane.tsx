@@ -2,7 +2,7 @@ import { useThreadLayout } from '../../lib/use-thread-layout'
 import { PanelEmptyState } from './PanelEmptyState'
 import { TooltipButton } from '../ui/Tooltip'
 import { AGENT_CAPABILITIES, type AgentKind } from '@sillage/protocol'
-import { ArrowLeft, Bot, ChevronRight, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
+import { ArrowLeft, Bot, ChevronRight, Radio, Square, SquareTerminal, Target, Waves } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react'
 import { formatBytes } from '../../lib/attachments'
 import {
@@ -89,7 +89,7 @@ export function AgentsPane({
   return <AgentsList conversationId={conversationId} agent={agent} agents={agents} background={background} />
 }
 
-type BackgroundFamily = 'workflow' | 'shell' | 'subagent' | 'monitor'
+type BackgroundFamily = 'workflow' | 'shell' | 'subagent' | 'monitor' | 'goal'
 
 /**
  * CLI names for task families. SDK documents readable names (shell, subagent), while version 2.1
@@ -103,6 +103,7 @@ const KIND_ALIASES: Record<string, BackgroundFamily | undefined> = {
   subagent: 'subagent',
   mcp_task: 'monitor',
   monitor: 'monitor',
+  goal: 'goal',
 }
 
 const KIND_ICONS: Record<BackgroundFamily, ReactNode> = {
@@ -110,6 +111,7 @@ const KIND_ICONS: Record<BackgroundFamily, ReactNode> = {
   shell: <SquareTerminal size={13} />,
   subagent: <Bot size={13} />,
   monitor: <Radio size={13} />,
+  goal: <Target size={13} />,
 }
 
 const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
@@ -117,6 +119,7 @@ const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
   shell: 'panel.background.kind.shell',
   subagent: 'panel.background.kind.subagent',
   monitor: 'panel.background.kind.monitor',
+  goal: 'panel.background.kind.goal',
 }
 
 /**
@@ -256,13 +259,13 @@ function BackgroundRow({ task, rows }: { task: BackgroundWork; rows: BackgroundR
           </span>
         ) : null}
 
-        {rows.canStop ? (
+        {rows.canStop || task.stoppable ? (
           <TooltipButton
             type="button"
             onClick={() => rows.stop(task.id)}
             disabled={rows.stopping.has(task.id)}
-            title={t('panel.background.stop')}
-            aria-label={t('panel.background.stop')}
+            title={t(family === 'goal' ? 'panel.background.pauseGoal' : 'panel.background.stop')}
+            aria-label={t(family === 'goal' ? 'panel.background.pauseGoal' : 'panel.background.stop')}
             className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
           >
             <Square size={11} fill="currentColor" />

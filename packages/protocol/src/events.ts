@@ -160,6 +160,11 @@ export const backgroundTaskSchema = z.object({
   parentTaskId: z.string().optional(),
   /** Agent type of a sub-agent task (`general-purpose`, a custom agent's name). */
   subagentType: z.string().optional(),
+  /**
+   * This task can be stopped even though the CLI cannot stop background work in general
+   * (`AgentCapabilities.stopBackgroundTask`): a Codex goal, which stopping pauses.
+   */
+  stoppable: z.boolean().optional(),
 }).merge(runIdSchema)
 export type BackgroundTask = z.infer<typeof backgroundTaskSchema>
 

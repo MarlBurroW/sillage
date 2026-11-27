@@ -16,9 +16,8 @@ export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore'
   'thread/reverted': 'ignore',
   'skills/changed': 'handled',
   'thread/name/updated': 'handled',
-  'thread/goal/updated': 'notice',
-  // Sent on resuming a thread without a goal: nothing to say.
-  'thread/goal/cleared': 'ignore',
+  'thread/goal/updated': 'handled',
+  'thread/goal/cleared': 'handled',
   'thread/queue/changed': 'ignore',
   'project/changed': 'ignore',
   'thread/project/updated': 'ignore',

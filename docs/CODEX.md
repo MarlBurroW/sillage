@@ -70,6 +70,20 @@ that account's usage limit resume on the next pass instead of at the window's
 end. Tests only ever consume against the fixture app-server: a probe would
 spend a real reset.
 
+## Thread goals
+
+A thread can carry a goal (`ThreadGoal`: objective, status, tokens used against
+an optional budget). Probed on 0.172.0: setting a goal `active` starts a turn by
+itself, without `turn/start`, and the budget is checked after the turn (a goal
+with a 3,000-token budget spent 16,354 tokens, then turned `budgetLimited`).
+Sillage shows the goal as a thread line that each `thread/goal/updated` replaces
+(state, tokens against the budget), and, while it is active, as background work
+in the Agents pane whose stop button pauses it (`thread/goal/set`, `status:
+paused`, `origin: user`). A resumed thread reads its goal with `thread/goal/get`.
+`thread/goal/cleared` speaks only for a goal the session knew: Codex sends it on
+every resume. Resuming or clearing a goal, or setting one from the composer, is
+left to the agent.
+
 ## Activities
 
 Messages, proposed plans, work steps, commands, file changes, MCP and dynamic tools,

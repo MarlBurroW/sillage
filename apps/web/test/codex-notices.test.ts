@@ -21,3 +21,10 @@ test('texts that come from Codex itself are shown as sent', () => {
   assert.equal(noticeText(notice('codex_auto_review_denied', 'Too risky', { rationale: 'Too risky', action: {} })), 'Too risky')
   assert.equal(noticeText(notice('codex_auto_review_denied', 'x', { rationale: null, action: {} })), 'Automatic review denied this action.')
 })
+
+test('a Codex goal says its state and what it spent against the budget', () => {
+  const details = { objective: 'Improve the graphics', status: 'budgetLimited', tokensUsed: 813572, tokenBudget: 500000, timeUsedSeconds: 3600 }
+  assert.equal(noticeText(notice('codex_goal', 'x', details)), 'Goal stopped, budget spent: Improve the graphics · 813,572 of 500,000 tokens')
+  assert.equal(noticeText(notice('codex_goal', 'x', { ...details, status: 'active', tokenBudget: null })), 'Goal in progress: Improve the graphics · 813,572 tokens')
+  assert.equal(noticeText(notice('codex_goal', 'x', { ...details, status: 'cleared' })), 'Goal cleared: Improve the graphics')
+})

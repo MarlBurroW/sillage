@@ -23,6 +23,7 @@
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "test:subagent-pane-ui": "node scripts/subagent-pane-ui-check.mjs",
     "test:subagent-tree-ui": "node scripts/subagent-tree-ui-check.mjs",
+    "test:codex-goal-ui": "node scripts/codex-goal-ui-check.mjs",
     "test:board-priorities-ui": "node scripts/board-priorities-ui-check.mjs",
     "test:claude-sync-ui": "node --import ./apps/server/node_modules/tsx/dist/loader.mjs scripts/claude-sync-ui-check.mjs",
     "test:claude-login-expiry-ui": "node scripts/claude-login-expiry-ui-check.mjs",

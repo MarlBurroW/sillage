@@ -6,6 +6,7 @@ import {
   parseElicitationFields,
   type AgentConfig,
   type AgentQuestion,
+  type BackgroundTask,
   type AgentSkillDto,
   type CodexConfig,
   type ContentBlock,
@@ -20,6 +21,11 @@ import type {
   AccountUpdatedNotification,
   ConfigReadResponse,
   DeprecationNoticeNotification,
+  ThreadGoal,
+  ThreadGoalClearedNotification,
+  ThreadGoalGetResponse,
+  ThreadGoalSetResponse,
+  ThreadGoalUpdatedNotification,
   CommandExecutionOutputDeltaNotification,
   CommandExecutionRequestApprovalParams,
   CommandExecutionRequestApprovalResponse,
@@ -127,6 +133,9 @@ interface CliDefaults {
 }
 
 const NO_CLI_DEFAULTS: CliDefaults = { networkAccess: false, serviceTier: null }
+
+/** Background-task id of the thread's goal: one per thread, never a thread id. */
+const GOAL_TASK_ID = 'codex-goal'
 
 interface ChildThread {
   toolId: string
@@ -277,6 +286,8 @@ export class CodexRunner implements AgentRunner {
   private threadModel: string | null = null
   /** Sign-in and plan from the last account/updated, to report only real changes. */
   private account: string | null = null
+  /** The thread's goal as Codex last reported it; null without one. */
+  private goal: ThreadGoal | null = null
   /**
    * config.toml values as the CLI resolves them for this cwd and home, read once per process: what
    * the `CLI_DEFAULT` network access and service tier apply. A promise so the read overlaps thread
@@ -472,6 +483,34 @@ export class CodexRunner implements AgentRunner {
     )
     detach(this.publishMcpStatus(), 'MCP status publication')
     detach(this.publishSkills(), 'skills publication')
+    // A resumed thread may carry a goal set in an earlier process; nothing announces it again.
+    if (this.ctx.resumeSessionId) detach(this.readGoal(), 'goal read')
+  }
+
+  private async readGoal(): Promise<void> {
+    if (!this.client || !this.threadId) return
+    const { goal } = await this.client.call<ThreadGoalGetResponse, 'thread/goal/get'>('thread/goal/get', { threadId: this.threadId })
+    if (goal) this.updateGoal(goal)
+  }
+
+  /**
+   * A goal shows as a notice that each update replaces (objective, state, tokens against the
+   * budget) and, while active, as background work: probed on codex-cli 0.172.0, an active goal
+   * starts turns on its own, and the CLI checks the budget only after a turn (16 k tokens spent on
+   * a 3 k budget). Its stop button pauses it.
+   */
+  private updateGoal(goal: ThreadGoal | null): void {
+    const previous = this.goal
+    this.goal = goal
+    const shown = goal ?? previous
+    if (!shown) return
+    const stopped = goal !== null && (goal.status === 'blocked' || goal.status === 'usageLimited' || goal.status === 'budgetLimited')
+    this.notice('codex_goal', goal ? `Codex goal (${goal.status}): ${goal.objective}` : `Codex goal cleared: ${shown.objective}`,
+      stopped ? 'warning' : 'info',
+      { objective: shown.objective, status: goal?.status ?? 'cleared', tokensUsed: shown.tokensUsed, tokenBudget: shown.tokenBudget,
+        timeUsedSeconds: shown.timeUsedSeconds },
+      `codex-goal:${this.threadId ?? 'thread'}`)
+    this.publishSubAgents()
   }
 
   /**
@@ -937,6 +976,19 @@ export class CodexRunner implements AgentRunner {
        * only after external renaming (TUI, thread/name/set), so Codex conversations retain their
        * first-message excerpt.
        */
+      case 'thread/goal/updated': {
+        const p = params as ThreadGoalUpdatedNotification
+        if (p.threadId === this.threadId) this.updateGoal(p.goal)
+        return
+      }
+
+      // Also sent on resuming a thread that has none: only a goal this session knew says anything.
+      case 'thread/goal/cleared': {
+        const p = params as ThreadGoalClearedNotification
+        if (p.threadId === this.threadId && this.goal) this.updateGoal(null)
+        return
+      }
+
       case 'thread/name/updated': {
         const p = params as ThreadNameUpdatedNotification
         if (p.threadName) this.suggested = p.threadName
@@ -1050,10 +1102,15 @@ export class CodexRunner implements AgentRunner {
       summary: typeof output === 'string' ? output : JSON.stringify(output), durationMs: Date.now() - agent.startedAt, ambient: false })
   }
 
+  /** Running sub-agents, plus an active goal: the full list, as `background.updated` replaces it. */
   private publishSubAgents(): void {
-    this.ctx.emit({ type: 'background.updated', tasks: [...this.childThreads]
+    const tasks: BackgroundTask[] = [...this.childThreads]
       .filter(([, agent]) => agent.running)
-      .map(([id, agent]) => ({ id, kind: 'agent', description: agent.description })) })
+      .map(([id, agent]) => ({ id, kind: 'agent', description: agent.description }))
+    if (this.goal?.status === 'active') {
+      tasks.push({ id: GOAL_TASK_ID, kind: 'goal', description: this.goal.objective, stoppable: true })
+    }
+    this.ctx.emit({ type: 'background.updated', tasks })
   }
 
   private subAgentActivity(item: Extract<ThreadItem, { type: 'subAgentActivity' }>, parent: string | null): void {
@@ -1517,9 +1574,18 @@ export class CodexRunner implements AgentRunner {
     return true
   }
 
-  /** This adapter exposes no targeted stop from task lists. */
-  async stopBackgroundTask(): Promise<boolean> {
-    return false
+  /**
+   * Only the goal can be stopped from the task list, by pausing it (origin `user`): reversible,
+   * unlike clearing it, and it keeps the CLI from starting further goal turns. Sub-agents have no
+   * targeted stop in the protocol.
+   */
+  async stopBackgroundTask(taskId: string): Promise<boolean> {
+    if (taskId !== GOAL_TASK_ID || !this.client || !this.threadId || this.goal?.status !== 'active') return false
+    const { goal } = await this.client.call<ThreadGoalSetResponse, 'thread/goal/set'>('thread/goal/set', {
+      threadId: this.threadId, status: 'paused', origin: 'user',
+    })
+    this.updateGoal(goal)
+    return true
   }
 
   async applyConfig(config: AgentConfig): Promise<boolean> {

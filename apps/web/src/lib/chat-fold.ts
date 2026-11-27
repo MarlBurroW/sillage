@@ -1,7 +1,7 @@
 export * from '@sillage/protocol/chat-state'
 import { isAwaitingUser, type ChatState, type ChatItem, type NoticeItem } from '@sillage/protocol/chat-state'
 import { DETACHED_WORK_EVICTED_NOTICE, USAGE_LIMIT_RESUMED_NOTICE, USAGE_LIMIT_STOP_NOTICE } from '@sillage/protocol'
-import { locale, translate } from './i18n'
+import { formatCount, locale, translate, type MessageKey } from './i18n'
 import { describeUsageLimitStop, readUsageLimitDetails } from './usage-limit'
 
 /** Tokens in thousands, below which extra precision adds no useful information. */
@@ -98,6 +98,15 @@ export function activityOf(items: ChatItem[], thread: string | null): string | n
 }
 
 
+const GOAL_STATUS: Record<string, MessageKey> = {
+  active: 'codex.goal.status.active',
+  paused: 'codex.goal.status.paused',
+  blocked: 'codex.goal.status.blocked',
+  usageLimited: 'codex.goal.status.usageLimited',
+  budgetLimited: 'codex.goal.status.budgetLimited',
+  complete: 'codex.goal.status.complete',
+}
+
 /**
  * Codex notices written by Sillage itself. The server's English text stays as the fallback for
  * the journal, the API and older clients; the CLI's own texts (warnings, sub-agent messages,
@@ -125,6 +134,16 @@ function codexNoticeText(item: NoticeItem): string | null {
     case 'codex_translation_failed': return translate('codex.notice.translationFailed', { method: text('method'), reason: text('reason') })
     case 'codex_unsupported_request': return translate('codex.notice.unsupportedRequest', { method: text('method') })
     case 'codex_auto_review_denied': return text('rationale') || translate('codex.notice.autoReviewDenied')
+    case 'codex_goal': {
+      const status = text('status')
+      const used = typeof details.tokensUsed === 'number' ? formatCount(details.tokensUsed) : '0'
+      const usage = typeof details.tokenBudget === 'number'
+        ? translate('codex.goal.budget', { used, budget: formatCount(details.tokenBudget) })
+        : translate('codex.goal.tokens', { used })
+      return status === 'cleared'
+        ? translate('codex.notice.goalCleared', { objective: text('objective') })
+        : translate('codex.notice.goal', { status: translate(GOAL_STATUS[status] ?? 'codex.goal.status.active'), objective: text('objective'), usage })
+    }
     case 'enteredReviewMode': return translate('codex.notice.reviewStarted')
     case 'exitedReviewMode': return translate('codex.notice.reviewFinished')
     default: return null
