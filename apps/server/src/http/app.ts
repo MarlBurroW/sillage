@@ -58,6 +58,8 @@ import { registerSecretRoutes } from './routes/secrets.js'
 import type { SecretStore } from '../secrets/store.js'
 import { registerGitCredentialRoutes } from './routes/git-credentials.js'
 import { registerClaudeAccountRoutes } from './routes/claude-accounts.js'
+import { registerClaudeSandboxRoutes } from './routes/claude-sandbox.js'
+import { ClaudeSandboxSupport } from '../agents/claude/sandbox-support.js'
 import { registerCodexAccountRoutes } from './routes/codex-accounts.js'
 import { registerGrokAccountRoutes } from './routes/grok-accounts.js'
 import { registerAntigravityAccountRoutes } from './routes/antigravity-accounts.js'
@@ -313,6 +315,8 @@ export async function buildApp(
   app.addHook('onReady', async () => { claudeHostStatus.start(app.log) })
   app.addHook('onClose', async () => { claudeHostStatus.stop() })
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin, claudeHostStatus)
+  // Disabled Claude launches nothing, a sandbox check included.
+  registerClaudeSandboxRoutes(app, ctx.config.agents.claude.enabled ? new ClaudeSandboxSupport(() => registry.adapter('claude').cli.executable()) : null)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerAntigravityAccountRoutes(app, antigravityAccounts.store, antigravityLogin)

@@ -85,8 +85,8 @@ async function mount(page) {
         key: id, config: settings.config, draftKey: `composer-test-${id}`, status: running ? 'running' : 'idle', disabled,
         commands: catalog ? [{ name: 'review', aliases: [], description: 'Review the draft', argumentHint: '' }] : [],
         skills: catalog ? [{ name: 'writing', description: 'Edit prose', path: '/skills/writing' }] : [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
-        // Permission mode and suggestions are launch-only: the running session keeps the old values.
-        appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual', promptSuggestions: false } : null,
+        // Permission mode, suggestions and the Bash sandbox are launch-only: the running session keeps the old values.
+        appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual', promptSuggestions: false, bashSandbox: false } : null,
         onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
         onSend: async (text) => { await settings.flush(); await api.post(`/api/conversations/${id}/messages`, { text }) },
         onInterrupt: () => { window.interrupted = true },
@@ -122,6 +122,8 @@ try {
     let hold = null
     let failNext = false
     let catalogRefreshes = 0
+    // The host lacks what Claude Code's Bash sandbox needs until a check past the server cache.
+    let sandboxRefreshes = 0
     let active = 0
     let maxActive = 0
     await page.route('**/__composer_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main class="app-layer" style="display:flex;flex-direction:column;justify-content:flex-end"><div id="check"></div></main></body></html>' }))
@@ -135,6 +137,12 @@ try {
         if (refreshed) catalogRefreshes += 1
         const listed = refreshed ? [...models, { ...models[0], value: 'gamma', displayName: 'Modèle Gamma', description: 'Nouveau modèle', hint: null, isDefault: false }] : models
         return route.fulfill({ json: { models: listed, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
+      }
+      if (path === '/api/agents/claude/sandbox') {
+        if (new URL(request.url()).searchParams.get('refresh') === '1') sandboxRefreshes += 1
+        return route.fulfill({ json: sandboxRefreshes > 0
+          ? { state: 'available', reason: null, checkedAt: Date.now() }
+          : { state: 'unavailable', reason: 'socat not installed', checkedAt: Date.now() } })
       }
       if (path === '/api/me/settings') {
         if (request.method() === 'PATCH') { account.composerLayout = request.postDataJSON().composerLayout; layouts.push(account.composerLayout) }
@@ -524,6 +532,19 @@ try {
     await suggestions.click()
     await dialog.getByRole('switch', { name: 'Suggestions : Suggérées', exact: true }).waitFor()
     await dialog.getByText('En vigueur : Coupées', { exact: true }).waitFor()
+    // Bash sandbox: a host that cannot run it shows the choice greyed out with the CLI's reason,
+    // until a new check finds it; then launch-only like the suggestions.
+    await row('Bac à sable Bash').click()
+    const confined = (name) => dialog.getByRole('radio', { name, exact: true })
+    assert.equal(await confined('Confiné Indisponible sur cette machine : socat not installed').isDisabled(), true)
+    await dialog.getByRole('button', { name: 'Recharger Bac à sable Bash depuis le CLI', exact: true }).click()
+    const available = confined(/^Confiné Bash n’écrit que dans l’espace de travail/)
+    await available.waitFor()
+    assert.equal(sandboxRefreshes, 1, 'The button checks past the server cache')
+    await available.click()
+    await row('Bac à sable Bash').waitFor()
+    await dialog.getByRole('button', { name: /^Bac à sable Bash : Confiné/ }).waitFor()
+    await dialog.getByText('En vigueur : Coupé', { exact: true }).waitFor()
     await mcpView()
     await page.getByRole('switch', { name: /^N'utiliser que les serveurs/ }).click()
     assert.equal(await page.getByRole('switch', { name: /^Mémoire et coordination/ }).isDisabled(), true)
@@ -531,6 +552,7 @@ try {
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.claude.strictMcp, true)
     assert.equal(stored.claude.promptSuggestions, true)
+    assert.equal(stored.claude.bashSandbox, true)
     assert.match(await status().getAttribute('aria-label'), /Tout autoriser/)
     if (viewport.width >= 700) {
       await full.hover()

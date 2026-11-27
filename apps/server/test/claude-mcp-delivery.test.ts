@@ -29,11 +29,11 @@ const server: McpServer = {
 }
 const init = { type: 'system', subtype: 'init', uuid: 'u-init', session_id: 'fixture-session', permissionMode: 'default', cwd: '/', tools: [], model: 'x', mcp_servers: [], slash_commands: [] }
 
-async function setup(t: TestContext, options: { cliVersion?: string | null; env?: Record<string, string>; idle?: unknown[] } = {}) {
+async function setup(t: TestContext, options: { cliVersion?: string | null; env?: Record<string, string>; idle?: unknown[]; config?: Partial<ClaudeConfig> } = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'sillage-claude-delivery-'))
   const traceFile = join(cwd, 'trace.jsonl')
   const events: SillageEvent[] = []
-  const config: ClaudeConfig = { ...DEFAULT_CLAUDE_CONFIG, permissionMode: 'manual' }
+  const config: ClaudeConfig = { ...DEFAULT_CLAUDE_CONFIG, permissionMode: 'manual', ...options.config }
   const ctx: RunnerContext = {
     conversationId: 'test', cwd, config, resumeSessionId: null, attachmentsRoot: cwd,
     binary: fileURLToPath(new URL('./fixtures/claude-agent.mjs', import.meta.url)),
@@ -133,4 +133,19 @@ test('the CLI is told Sillage stops background tasks one by one, so an interrupt
   const f = await setup(t)
   const initialize = (await f.trace()).find((message) => message.request?.subtype === 'initialize')
   assert.equal(initialize?.request.perTaskStopAffordance, true)
+})
+
+test('the Bash sandbox is asked for only when chosen, required, and toggling it restarts the session', async (t) => {
+  // Card #136: `sandbox` reaches the CLI inside `--settings`.
+  const sandboxOf = async (f: Awaited<ReturnType<typeof setup>>) => {
+    const args: string[] = (await f.trace()).find((message) => message.type === 'launch')?.args ?? []
+    const index = args.indexOf('--settings')
+    return index === -1 ? undefined : JSON.parse(args[index + 1] ?? '{}').sandbox
+  }
+  const off = await setup(t)
+  assert.equal(await sandboxOf(off), undefined)
+  assert.equal(await off.runner.applyConfig({ ...off.config, bashSandbox: true }), false)
+
+  const on = await setup(t, { config: { bashSandbox: true } })
+  assert.deepEqual(await sandboxOf(on), { enabled: true, autoAllowBashIfSandboxed: true, failIfUnavailable: true })
 })

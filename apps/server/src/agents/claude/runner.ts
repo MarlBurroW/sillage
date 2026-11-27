@@ -72,6 +72,7 @@ import {
 } from './prompts.js'
 import { describeFastMode, describePluginErrors, translateSignal } from './signals.js'
 import { claudeTurnCost, claudeTurnTokens } from '../../consumption/turn-usage.js'
+import { sandboxFailureReason } from './sandbox-support.js'
 import { detach } from '../../detach.js'
 
 /**
@@ -349,6 +350,10 @@ export class ClaudeRunner implements AgentRunner {
         // sub-agent and workflow, 6 ms later. Probed on 2.1.332: declared, they survive the
         // interrupt and `stopTask` still stops them. `terminate` ends the process and all of it.
         perTaskStopAffordance: true,
+        // Required once asked for: a host without it refuses the session (reported below) rather
+        // than running Bash unconfined. Confined commands skip the permission prompt, which is
+        // what the sandbox is for. Launch-only, like the options around it.
+        ...(config.bashSandbox ? { sandbox: { enabled: true, autoAllowBashIfSandboxed: true, failIfUnavailable: true } } : {}),
         abortController: this.abort,
         ...(this.ctx.resumeSessionId ? { resume: this.ctx.resumeSessionId } : {}),
         // Always supplied, never left to SDK. Internal resolution searches platform package
@@ -835,6 +840,18 @@ export class ClaudeRunner implements AgentRunner {
         // both ended silently.
         if (interrupted) {
           // Nothing to explain: the user stopped it.
+        } else if (message.subtype !== 'success' && message.startup_failure_reason === 'sandbox_required_unavailable') {
+          // A code the thread can title in the reader's language, and the CLI's cause without
+          // its advice to run unconfined.
+          this.ctx.emit(
+            {
+              type: 'error',
+              code: 'sandbox_required_unavailable',
+              message: sandboxFailureReason(message.errors) ?? message.errors.join('\n'),
+              recoverable: true,
+            },
+            message,
+          )
         } else if (message.subtype !== 'success') {
           this.ctx.emit(
             {
@@ -1458,6 +1475,8 @@ export class ClaudeRunner implements AgentRunner {
 
     // Suggestions are a query option too, read only at launch.
     if (config.promptSuggestions !== this.config.promptSuggestions) return false
+    // The sandbox too.
+    if (config.bashSandbox !== this.config.bashSandbox) return false
 
     // Account too: token comes through process environment read at launch.
     if (config.account !== this.config.account) return false

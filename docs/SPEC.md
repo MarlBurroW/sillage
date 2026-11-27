@@ -67,7 +67,8 @@ Explicitly outside scope to prevent drift:
 
 - No cloud or remote-machine agent execution. Sillage drives CLIs installed on
   its own host.
-- No agent sandboxing. Rely on CLI permission modes.
+- No agent sandboxing of Sillage's own. Rely on CLI permission modes and the
+  sandboxes the CLIs provide (Codex's sandbox, Claude Code's Bash sandbox).
 - No integrated code editor. Sillage is a conversation client, not an IDE.
 - No per-user billing, quotas, or cost reporting in v1 (total conversation cost
   is shown without aggregation).

@@ -86,6 +86,14 @@ export const claudeConfigSchema = z.object({
    */
   promptSuggestions: z.boolean().default(false),
   /**
+   * Claude Code's OS sandbox for Bash (bubblewrap and socat on Linux, Seatbelt on macOS): commands
+   * write only inside the workspace and reach the network through a filtering proxy, and confined
+   * commands run without a permission prompt. Required once asked for: a host that cannot run it
+   * refuses the session rather than running Bash unconfined (`ClaudeSandboxSupportDto` says so
+   * beforehand). Launch-only, like the other query options.
+   */
+  bashSandbox: z.boolean().default(false),
+  /**
    * CLI output style (`Concise`, `Explanatory`, etc.) from the catalog. Empty leaves the
    * default style.
    */
@@ -393,6 +401,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   fastMode: false,
   ultracode: false,
   promptSuggestions: false,
+  bashSandbox: false,
   outputStyle: CLI_DEFAULT,
   advisorModel: CLI_DEFAULT,
   maxBudgetUsd: null,

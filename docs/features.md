@@ -323,6 +323,14 @@ The periodic cleanup removes expired, revoked and orphaned files.
   account, advisor or other controls supported by that CLI, and order them. Each
   CLI keeps its own layout; on a phone the chip stays and the rest lives in the
   settings panel.
+- **Claude Code's Bash sandbox, per conversation.** The composer's **Bash sandbox**
+  setting runs Claude's shell commands in the CLI's OS sandbox: writes only in the
+  workspace, network through a filtering proxy, and no permission prompt for
+  confined commands. It needs bubblewrap and socat on Linux, works natively on
+  macOS and not on native Windows (WSL 2 only). Sillage asks the CLI whether the
+  host can run it; when it cannot, the choice stays greyed out with the reason, and
+  a reload button checks again once the packages are installed. A session asked to
+  run confined never falls back to running unconfined.
 - **A status line you choose.** Under the composer, one line shows what you want
   to watch: account quota as a bar, ring or text (the busiest window or all of
   them), context, session and last-turn tokens, API-equivalent cost, running

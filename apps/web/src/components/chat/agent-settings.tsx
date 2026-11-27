@@ -10,6 +10,7 @@ import {
   type AgentModelDto,
   type AgentServiceTierDto,
   type ClaudeConfig,
+  type ClaudeSandboxSupportDto,
   type CodexApprovalName,
   type CodexConfig,
   type CodexMode,
@@ -22,6 +23,7 @@ import {
 } from '@sillage/protocol'
 import { catalogModel, effortLabel, effortsFor, modelsAccount, supportsFastMode, useAgentModels, useRefreshAgentModels } from '../../lib/agents'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
+import { useClaudeSandboxSupport, useRefreshClaudeSandboxSupport } from '../../lib/claude-sandbox'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
 import { useCopilotAccounts } from '../../lib/copilot-accounts'
@@ -241,6 +243,28 @@ function suggestionOptions(t: Translate): SettingChoice<SuggestionChoice>[] {
 }
 
 const suggestionChoice = (enabled: boolean): SuggestionChoice => (enabled ? 'on' : 'off')
+
+/**
+ * Claude's Bash sandbox. A menu rather than a switch: on a host that cannot run it, the enabled
+ * choice stays visible, greyed out, with the CLI's reason as its hint.
+ */
+type BashSandboxChoice = 'off' | 'on'
+
+function bashSandboxOptions(t: Translate, support: ClaudeSandboxSupportDto | undefined, loading: boolean): SettingChoice<BashSandboxChoice>[] {
+  const onHint = support?.state === 'available'
+    ? t('composer.bashSandbox.on.hint')
+    : support?.state === 'unavailable'
+      ? (support.reason ? t('composer.bashSandbox.unavailable.reason', { reason: support.reason }) : t('composer.bashSandbox.unavailable'))
+      : loading
+        ? t('composer.bashSandbox.checking')
+        : support?.reason ? t('composer.bashSandbox.unknown.reason', { reason: support.reason }) : t('composer.bashSandbox.unknown')
+  return [
+    { value: 'off', label: t('composer.bashSandbox.off'), hint: t('composer.bashSandbox.off.hint') },
+    { value: 'on', label: t('composer.bashSandbox.on'), hint: onHint, disabled: support?.state !== 'available' },
+  ]
+}
+
+const bashSandboxChoice = (enabled: boolean): BashSandboxChoice => (enabled ? 'on' : 'off')
 
 function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']>[] {
   return [
@@ -695,6 +719,8 @@ export function useAgentSettings({
    * category only when there is a choice; otherwise CLI login is implicit.
    */
   const { data: claudeAccountList } = useClaudeAccounts(claude !== null)
+  const sandboxSupport = useClaudeSandboxSupport(claude !== null)
+  const refreshSandbox = useRefreshClaudeSandboxSupport()
   // Codex: only connected accounts are selectable because empty homes would reject turns.
   const { data: codexAccountList } = useCodexAccounts(codex !== null)
   // Grok follows Codex: one home per account, connected or not.
@@ -732,6 +758,7 @@ export function useAgentSettings({
   const speedOptionList = speedOptions(t)
   const ultracodeOptionList = ultracodeOptions(t)
   const suggestionOptionList = suggestionOptions(t)
+  const bashSandboxOptionList = bashSandboxOptions(t, sandboxSupport.data, sandboxSupport.isPending && claude !== null)
   const opencodePermissionList = opencodePermissionOptions(t)
   const grokPermissionList = grokPermissionOptions(t)
   const antigravityPermissionList: SettingChoice<AntigravityConfig['permissionMode']>[] = [
@@ -824,6 +851,24 @@ export function useAgentSettings({
           ),
           t,
         ),
+      }),
+      setting({
+        key: 'bashSandbox',
+        label: t('composer.setting.bashSandbox'),
+        icon: <Box size={15} />,
+        options: bashSandboxOptionList,
+        value: bashSandboxChoice(claude.bashSandbox),
+        onChange: (choice) => onConfigChange({ ...claude, bashSandbox: choice === 'on' }),
+        notice: notice(
+          appliedLabel(
+            appliedConfig?.agent === 'claude' ? bashSandboxChoice(appliedConfig.bashSandbox) : undefined,
+            bashSandboxChoice(claude.bashSandbox),
+            bashSandboxOptionList,
+          ),
+          t,
+        ),
+        // Installing the missing packages does not tell Sillage: check again on request.
+        refresh: { run: () => refreshSandbox.mutate(), busy: refreshSandbox.isPending || sandboxSupport.isFetching },
       }),
       ...(accountOptions.length > 0
         ? [
