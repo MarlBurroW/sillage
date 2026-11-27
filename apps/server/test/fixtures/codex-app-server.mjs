@@ -35,7 +35,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         send({ id, error: { code: -32600, message: process.env.FIXTURE_CONFIG_ERROR } })
         break
       }
-      send({ id, result: { thread: { id: 'root' }, model: 'fixture', cwd: process.cwd() } })
+      send({ id, result: {
+        thread: { id: 'root' }, model: 'fixture', cwd: process.cwd(),
+        // What 0.156.0+ restores from the thread's last turn on resume.
+        ...(method === 'thread/resume' && process.env.FIXTURE_RESTORED_MODE ? { collaborationMode: {
+          mode: process.env.FIXTURE_RESTORED_MODE, settings: { model: 'fixture', reasoning_effort: null, developer_instructions: '# Restored mode' },
+        } } : {}),
+      } })
       break
     case 'skills/list': send({ id, result: { data: [] } }); break
     case 'mcpServerStatus/list': send({ id, result: { data: [], nextCursor: null } }); break

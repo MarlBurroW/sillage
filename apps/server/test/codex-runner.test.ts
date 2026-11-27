@@ -351,3 +351,30 @@ for (const resumeSessionId of [null, 'existing-thread']) {
     assert.equal(state.events.some(event => event.type === 'session.started'), false)
   })
 }
+
+// Probed on codex-cli 0.172.0: thread/resume reports the mode of the thread's last turn, but a
+// turn/start carrying collaborationMode runs in that mode; only an omitted field lets the restored
+// one win. The conversation's mode must therefore travel on every turn, default included.
+for (const [restored, wanted] of [['plan', 'default'], ['default', 'plan']] as const) {
+  test(`a resumed thread restored in ${restored} runs the conversation's ${wanted} mode`, async t => {
+    const transport = await fixture(t)
+    const updates: unknown[] = []
+    const state = context({
+      ...transport, resumeSessionId: 'existing-thread', processEnv: { FIXTURE_RESTORED_MODE: restored },
+      config: { ...DEFAULT_CODEX_CONFIG, collaborationMode: wanted },
+      updateConfig: (config) => { updates.push(config) },
+    })
+    const runner = new CodexRunner(state.ctx)
+    transport.onClose(() => runner.stop())
+    await runner.start()
+    await runner.send(`fixture:${JSON.stringify({ notifications: [done()] })}`, [], [], [])
+    const records = await transport.records()
+    assert.ok(records.some(record => record.method === 'thread/resume'))
+    const turn = records.find(record => record.method === 'turn/start')
+    assert.equal(turn.params.collaborationMode.mode, wanted)
+    assert.equal(turn.params.collaborationMode.settings.model, 'fixture')
+    // The conversation's setting is the one that runs: nothing to realign nor report.
+    assert.deepEqual(updates, [])
+    assert.equal(state.events.some(event => event.type === 'agent.notice'), false)
+  })
+}

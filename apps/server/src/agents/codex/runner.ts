@@ -35,6 +35,7 @@ import type {
   SkillsListResponse,
   ThreadItem,
   ThreadNameUpdatedNotification,
+  ThreadResumeResponse,
   ThreadStartResponse,
   ThreadTokenUsageUpdatedNotification,
   ToolRequestUserInputParams,
@@ -333,8 +334,14 @@ export class CodexRunner implements AgentRunner {
       'Sillage displays structured user questions as interactive forms. When asking the user to choose or clarify, use the available request_user_input or request_user_input_async tool instead of listing choices in a plain message. Never treat a suggested option as a submitted answer.',
     ].filter(Boolean).join('\n\n')
 
+    // The resume response's collaborationMode (0.156.0+) is the mode of the thread's last turn,
+    // which may differ from the conversation's: it is deliberately not read. Probed on
+    // codex-cli 0.172.0, a thread last run in Plan resumes reporting plan, yet the next turn/start
+    // carrying default runs in Default (and the reverse); the restored mode only applies to a turn
+    // that omits the field. Sillage always sends it (see collaborationMode()), so the composer's
+    // mode is the one that runs and there is no mismatch to align or report.
     const started = this.ctx.resumeSessionId
-      ? await this.client.call<ThreadStartResponse, 'thread/resume'>('thread/resume', {
+      ? await this.client.call<ThreadResumeResponse, 'thread/resume'>('thread/resume', {
           threadId: this.ctx.resumeSessionId,
           cwd: this.ctx.cwd,
           approvalPolicy: this.approvalPolicy(),
@@ -1280,7 +1287,8 @@ export class CodexRunner implements AgentRunner {
   /**
    * Turn collaboration mode, null until the actual model is known. Protocol settings.model is
    * required while conversation model may be CLI_DEFAULT; use thread/start's reported model.
-   * Without it omit mode rather than invent model IDs.
+   * Without it omit mode rather than invent model IDs. Never omit it to mean "default": on a resumed
+   * thread an omitted mode falls back to the one the CLI restored from the last turn.
    */
   private collaborationMode(): CollaborationMode | null {
     const model = this.config.model || this.threadModel
