@@ -14,7 +14,8 @@ const KEYS: Record<string, string> = {
   CommandLine: 'command', command_line: 'command', Cwd: 'cwd', working_dir: 'cwd', SearchPath: 'path', DirectoryPath: 'path',
   Query: 'query', Pattern: 'pattern', Url: 'url', URL: 'url', Content: 'content', CodeContent: 'content',
   TargetContent: 'old_string', ReplacementContent: 'new_string', ReplacementChunks: 'edits',
-  StartLine: 'offset', EndLine: 'end_line',
+  // 1.5.2's native view_file: 1-based, 0 for the start, like `offset` (probed 27 Nov 2026).
+  StartLine: 'offset', EndLine: 'end_line', start_line: 'offset',
 }
 
 /** The wire title is often prose or a shell command. MCP identity comes from metadata. */

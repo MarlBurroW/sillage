@@ -43,6 +43,18 @@ function outputOf(update: Record<string, unknown>): string {
 }
 
 /** The content a view_file showed the model, read again from disk; null when unreadable, binary, or when the requested lines lie beyond the scanned prefix. Antigravity's line bounds are 1-based and inclusive. */
+/**
+ * 1.5.2's native view_file (input `file_path`, where 1.4.3 sent `AbsolutePath`) closes a
+ * successful read with the summary the model wrote for the call as `rawOutput` ("View
+ * notes.txt", "Read ws notes.txt"), never the content (probed 27 Nov 2026): taken for the output,
+ * it hid the file read from disk. A failure's `rawOutput` is the error, and stays.
+ */
+function readSummary(update: Record<string, unknown>): boolean {
+  let input = update.rawInput
+  if (typeof input === 'string') { try { input = JSON.parse(input) } catch { return false } }
+  return update.status === 'completed' && typeof update.rawOutput === 'string' && typeof fields(input).file_path === 'string'
+}
+
 /** The trajectory a tool call id names (`<trajectory>:<n>`), null for ids without one. */
 function trajectoryOf(toolCallId: string): string | null {
   return /^([\w-]+):\d+$/.exec(toolCallId)?.[1] ?? null
@@ -177,7 +189,9 @@ export class AntigravityRunner implements AgentRunner {
       },
     })
     this.client = client
-    await client.initialize(CLIENT_INFO)
+    const initialized = await client.initialize(CLIENT_INFO)
+    // 1.5.2 honours additional roots and says so; 1.4.3 accepted and ignored them.
+    const rootsHonoured = 'additionalDirectories' in fields(fields(initialized.agentCapabilities).sessionCapabilities)
     const overview = this.ctx.projectOverview(this.config)
     if (this.replaying && this.sessionId) this.ctx.emit({ type: 'session.started', agent: 'antigravity', agentSessionId: this.sessionId, model: this.config.model, cwd: this.ctx.cwd, tools: [] })
     // The session request writes `skills/system/` into the workspace; `stop` takes it back out.
@@ -205,7 +219,7 @@ export class AntigravityRunner implements AgentRunner {
     this.mcp = [...failedStatuses(resolved.failures), ...resolved.servers.map((server) => ({ name: server.name, state: 'configured' as const, tools: [], error: null, external: false }))]
     this.ctx.emit({ type: 'mcp.updated', servers: this.mcp })
     this.ctx.emit({ type: 'skills.updated', skills: [...this.skills.values()].map(({ name, description }) => ({ name, description })) })
-    if (this.config.additionalDirectories.length) this.notice('additional_directories_unsupported', 'Antigravity 1.4.3 ignores additional workspace roots. Its native file tools remain scoped to the project.', null)
+    if (this.config.additionalDirectories.length && !rootsHonoured) this.notice('additional_directories_unsupported', 'This Antigravity version ignores additional workspace roots. Its native file tools remain scoped to the project.', null)
     const early = this.early
     this.early = null
     for (const [method, params] of early ?? []) this.notification(method, params)
@@ -306,6 +320,7 @@ export class AntigravityRunner implements AgentRunner {
     if (earlier && (update.status === 'completed' || update.status === 'failed')) { this.recloseTool(id, earlier, update); return }
     const merged = { ...(track?.update ?? earlier?.update), ...update }
     const described = describeAntigravityTool(merged)
+    if (described.name === 'Read' && readSummary(merged)) { update = { ...update }; delete update.rawOutput }
     const input = JSON.stringify([described.input, described.title])
     if (!track) {
       track = { update: merged, input, output: '', diffs: [], settle: null }
@@ -425,12 +440,12 @@ export class AntigravityRunner implements AgentRunner {
 
   /** A frame Sillage already closed comes back with a terminal status: only new facts change the row. */
   private recloseTool(id: string, earlier: ClosedTool, update: Record<string, unknown>): void {
-    const output = outputOf(update)
+    const merged = { ...earlier.update, ...update }
+    const output = describeAntigravityTool(merged).name === 'Read' && readSummary(merged) ? '' : outputOf(update)
     // The end-of-turn sweep repeats bare statuses for frames settled locally, and
     // marks every open frame failed after a cancellation: neither says anything new.
     if (!output) return
     const isError = update.status === 'failed'
-    const merged = { ...earlier.update, ...update }
     this.closed.set(id, { update: merged, isError })
     this.ctx.emit({ type: 'tool.completed', toolCallId: id, output, isError, durationMs: 0 }, { update: merged, diffs: [] })
   }

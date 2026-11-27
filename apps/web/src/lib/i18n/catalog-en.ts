@@ -3591,7 +3591,7 @@ export const en = {
   'grok.effortUnavailable.notice': '{model} does not offer the {requested} effort: the session continues on {effort}, shown in the composer.',
   'copilot.modelAdjusted.notice': 'The saved model or effort is not available for this GitHub Copilot account. Copilot kept an available one, shown in the composer.',
   'antigravity.modelAdjusted.notice': 'The saved model or thinking level is unavailable for this account. Antigravity selected an available default, shown in the composer.',
-  'antigravity.directories.notice': 'Antigravity 1.4.3 ignores additional workspace directories. Its native file tools remain scoped to the project.',
+  'antigravity.directories.notice': 'This Antigravity version ignores additional workspace directories. Its native file tools remain scoped to the project. Update Antigravity to use them.',
   'antigravity.sandbox.notice': 'Antigravity’s command sandbox could not start: commands and file reads failed with “connecting to sandbox server”. On Ubuntu, unprivileged user namespaces are restricted: grant userns to localharness_external with an AppArmor profile, as described in docs/antigravity-integration.md.',
   'plan.progress.title': 'Work plan',
   'plan.progress.pending': 'Pending',

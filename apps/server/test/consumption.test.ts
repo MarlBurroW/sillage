@@ -227,8 +227,10 @@ const net152 = { totalTokens: 226295, inputTokens: 43648, outputTokens: 4751, th
 test('Antigravity usage is read in its 1.4 form (cache inside the input) and its 1.5 form (reasoning inside the output)', () => {
   assert.deepEqual(antigravityTurnTokens(gross143), { inputTokens: 21414, outputTokens: 1590, cacheReadTokens: 37124, cacheCreationTokens: 0 })
   assert.deepEqual(antigravityTurnTokens(net152), { inputTokens: 43648, outputTokens: 4751, cacheReadTokens: 177896, cacheCreationTokens: 0 })
-  // Reasoning equal to the cache read makes both sums agree: the targeted release's form wins.
+  // Reasoning equal to the cache read makes both sums agree: the counters decide, then the
+  // targeted release's net form.
   assert.deepEqual(antigravityTurnTokens({ totalTokens: 1110, inputTokens: 1000, outputTokens: 10, thoughtTokens: 100, cachedReadTokens: 100 }), { inputTokens: 900, outputTokens: 110, cacheReadTokens: 100, cacheCreationTokens: 0 })
+  assert.deepEqual(antigravityTurnTokens({ totalTokens: 1200, inputTokens: 1000, outputTokens: 100, thoughtTokens: 100, cachedReadTokens: 100 }), { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 100, cacheCreationTokens: 0 })
   // Without a total, a cache larger than the input can only be net of it.
   assert.deepEqual(antigravityTurnTokens({ inputTokens: 40, outputTokens: 5, thoughtTokens: 2, cachedReadTokens: 900 }), { inputTokens: 40, outputTokens: 5, cacheReadTokens: 900, cacheCreationTokens: 0 })
   assert.deepEqual(antigravityTurnTokens({}), { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })

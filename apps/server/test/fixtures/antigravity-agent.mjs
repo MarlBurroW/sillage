@@ -51,7 +51,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   record(message)
   const reply = (result) => write({ id: message.id, result })
   switch (message.method) {
-    case 'initialize': return reply({ protocolVersion: 1, agentInfo: { name: 'antigravity-acp', version: '1.4.3' }, agentCapabilities: { loadSession: true, auth: { logout: {} }, sessionCapabilities: { list: {}, resume: {} }, promptCapabilities: { image: true, audio: true, embeddedContext: true } }, authMethods: [{ id: 'gemini-api-key', name: 'Gemini API key' }] })
+    case 'initialize': {
+      // 1.5.2 advertises additional roots; tests opt into it with a marker file.
+      const current = existsSync(join(root, 'version-1.5.2'))
+      return reply({ protocolVersion: 1, agentInfo: { name: 'antigravity-acp', version: current ? '1.5.2' : '1.4.3' }, agentCapabilities: { loadSession: true, auth: { logout: {} }, sessionCapabilities: { list: {}, resume: {}, ...(current ? { additionalDirectories: {} } : {}) }, promptCapabilities: { image: true, audio: true, embeddedContext: true } }, authMethods: [{ id: 'gemini-api-key', name: 'Gemini API key' }] })
+    }
     case 'authenticate':
       if (existsSync(join(root, 'reject-login'))) return write({ id: message.id, error: { code: -32000, message: `Rejected ${process.env.GEMINI_API_KEY || ''}` } })
       if (message.params.methodId.startsWith('oauth-')) {

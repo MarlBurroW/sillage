@@ -1,11 +1,11 @@
 # Google Antigravity integration
 
-Sillage uses Google's official Antigravity ACP distribution, pinned to **1.4.3**,
+Sillage uses Google's official Antigravity ACP distribution, pinned to **1.5.2**,
 to run Gemini. It is a native Google agent process, with its own tools, permissions,
 configuration and authentication.
 
 This inventory records implemented coverage and limits observed in the actual
-1.4.3 binary and bundled source. An RPC returning `{}` does not establish that a
+1.4.3 and 1.5.2 binaries and bundled sources. An RPC returning `{}` does not establish that a
 feature exists: Google's unimplemented fork endpoint does exactly that.
 
 ## Coverage inventory
@@ -17,14 +17,14 @@ feature exists: Google's unimplemented fork endpoint does exactly that.
 | Conversation | New session, text/thinking streaming, interruption, reconnect, resume, title updates, context usage and native errors | No live steering RPC; use the message queue |
 | Native history | Discover sessions in the selected project/account and import user/assistant/tool history without inference | Sparse native metadata; no external-history resynchronization after import |
 | Tools | Human action metadata, native arguments, normalized file/shell/search/MCP categories, incremental output, images, file changes and diffs | Raw events retained; resource descriptions are not action titles; edit excerpts remain marked partial |
-| Background work | Keep native running commands visible after a turn and consume later completion/output | No stop-background-task RPC or exposed subagent parent relationships |
+| Background work | Keep native running commands visible after a turn and consume later completion/output | No stop-background-task RPC; sub-agent calls are attached to their `invoke_subagent` from tool call ids and the parent's transcript, not from the wire |
 | Permissions/questions | Once/always/reject choices, native warnings, native question choices, cancellation and pending-decision replay | Single-choice native questions; planning uses commands/questions, not the structured plan-review sheet |
-| Composer | Account-scoped models/thinking, `default`/`auto_edit`/`yolo`, account, skills and MCP; persist effective native options | Model/thinking update live while idle; account/MCP/library changes restart/resume; extra workspace roots ignored upstream |
+| Composer | Account-scoped models/thinking, `default`/`auto_edit`/`yolo`, account, skills and MCP; persist effective native options | Model/thinking update live while idle; account/MCP/library changes restart/resume; extra workspace roots honoured since 1.5.2 (a notice says when an older binary ignores them) |
 | Attachments | Images/audio inline, documents/file mentions as resources, session-scoped copies of uploads | Native model capabilities still govern usable media |
-| Commands | Discover/invoke native commands with arguments, including draft discovery | 1.4.3 publishes `/plan`, `/usage`, `/logout`; no invented `/compact`, `/help` or terminal-only commands |
+| Commands | Discover/invoke native commands with arguments, including draft discovery | 1.4.3 and 1.5.2 publish `/plan`, `/usage`, `/logout`; no invented `/compact`, `/help` or terminal-only commands |
 | Skills | Sillage global/project library, all four native roots, explicit insertion, supporting files and native description-based discovery | No live reload RPC: restart/resume before next turn; copied files remain inside Google's allowed home |
 | MCP | Sillage MCP and configured stdio/HTTP/SSE servers/secrets, native configuration and tool metadata | Health is not published: configured initially, connected only after an observed successful call |
-| Instructions | SILLAGE.md, memory, overview, references and transferred history through the native system-prompt extension | Native project configuration and hooks remain in effect |
+| Instructions | SILLAGE.md, memory, overview, references and transferred history through the native system-prompt extension | Native project configuration and hooks remain in effect. 1.5.2 also loads the repository's `GEMINI.md` and `AGENTS.md` as user rules, with no switch: when Sillage holds the instructions, they still reach Antigravity |
 | Accounts | Personal/enterprise OAuth, Gemini API key, Agent Platform; private owned homes, model/usage isolation, rename/reconnect/logout/delete | Real Google OAuth/inference still need user validation; API-key authentication only records configuration |
 | Remote OAuth | Google authorization URL and callback relay checking owner, exact loopback origin/path and OAuth state | Requires user authorization; relay tested with a protocol fixture |
 | Forks | Fresh native session with portable history through the selected turn, visible notice, provenance and checkpoints | No native fork: reasoning, attachments and native internal state are not copied; omitted older content is referenced |
@@ -88,6 +88,25 @@ settings and instructions. Controls reflect Google's actual protocol capabilitie
 - API-key login does not validate the key. Its card says **Configured**; Google
   validates it on the first model request, whose errors appear in the thread.
 
+## Changes in 1.5.2
+
+Probed on marldev on 27 November 2026 (archive and sources kept under
+`/var/tmp/sillage-audit-antigravity/`):
+
+- Turn usage: `inputTokens` is net of the cache read and `outputTokens` already
+  includes `thoughtTokens` (1.4.3: raw input, reasoning apart). `antigravityTurnTokens`
+  tells the two forms apart from `totalTokens`, not from the version.
+- `view_file` closes with its summary as `rawOutput` (`View notes.txt`), never the
+  content: Sillage ignores it and mirrors the file from disk. Its input is
+  `{file_path, start_line, end_line}`, 1-based with 0 for the start.
+- `additionalDirectories` is honoured and advertised in
+  `sessionCapabilities`; it must be sent again on every resume or load, which the
+  runner does.
+- Sub-agents still relay no text and no parent id; their tool call ids carry their
+  own conversation id. Their commands need the AppArmor profile below: outside its
+  path every sub-agent command failed with `connecting to sandbox server`, while the
+  main agent's passed.
+
 ## Tool stream quirks observed in 1.4.3
 
 Verified on marldev on 30 October 2026 with a real Google account (see the probe
@@ -129,7 +148,8 @@ profile sillage-antigravity-harness /home/*/.local/share/sillage/agents/antigrav
 Load it with `sudo apparmor_parser -r /etc/apparmor.d/sillage-antigravity`. Running
 sessions keep their old harness process until their next restart. What makes the
 harness start its sandbox is not known: a single background command or subagent
-does not; the incident involved four subagents and a background task.
+does not; the incident involved four subagents and a background task. On 1.5.2,
+sub-agent commands need it while the main agent's do not (probed 27 November 2026).
 
 ## Verification
 

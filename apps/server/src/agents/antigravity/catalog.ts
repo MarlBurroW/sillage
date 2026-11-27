@@ -44,7 +44,7 @@ export function modelCatalog(state: unknown): AgentModelsDto {
 /**
  * Folder the probes open their sessions in. `session/new` writes the system skills into the
  * session's folder (see system-skills.ts), and a probe ran in the user's home or the project's
- * repository left them there. Models and commands do not depend on the project (1.4.3 lists
+ * repository left them there. Models and commands do not depend on the project (1.4.3 and 1.5.2 list
  * `plan`, `usage` and `logout` everywhere), so one folder of Sillage's own serves every probe.
  */
 export function antigravityProbeFolder(home: string): string {
@@ -131,7 +131,7 @@ export class AntigravityCatalog {
   }
 }
 
-/** The official /usage report is Markdown; no quota RPC is advertised in 1.4.3. */
+/** The official /usage report is Markdown; no quota RPC is advertised (1.4.3, 1.5.2). */
 export function parseUsage(report: string): Omit<AgentUsage, 'fetchedAt'> {
   const windows: AgentUsage['windows'] = []
   let group = ''

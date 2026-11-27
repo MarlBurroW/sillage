@@ -3583,7 +3583,7 @@ export const fr: Catalog = {
   'grok.effortUnavailable.notice': '{model} ne propose pas l’effort {requested} : la session continue sur {effort}, affiché dans le composer.',
   'copilot.modelAdjusted.notice': 'Le modèle ou l’effort enregistré n’est pas disponible pour ce compte GitHub Copilot. Copilot en a gardé un disponible, affiché dans le composer.',
   'antigravity.modelAdjusted.notice': 'Le modèle ou le niveau de réflexion enregistré n’est pas disponible pour ce compte. Antigravity a choisi une valeur disponible, affichée dans le composer.',
-  'antigravity.directories.notice': 'Antigravity 1.4.3 ignore les dossiers de travail supplémentaires. Ses outils de fichiers restent limités au projet.',
+  'antigravity.directories.notice': 'Cette version d’Antigravity ignore les dossiers de travail supplémentaires. Ses outils de fichiers restent limités au projet. Mets Antigravity à jour pour les utiliser.',
   'antigravity.sandbox.notice': 'Le bac à sable de commandes d’Antigravity n’a pas pu démarrer : commandes et lectures ont échoué avec « connecting to sandbox server ». Sous Ubuntu, les namespaces utilisateur non privilégiés sont restreints : accorde userns à localharness_external par un profil AppArmor, voir docs/antigravity-integration.md.',
   'plan.progress.title': 'Plan de travail',
   'plan.progress.pending': 'À faire',

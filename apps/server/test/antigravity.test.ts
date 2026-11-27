@@ -444,3 +444,32 @@ test('Antigravity sub-agent calls hang under the invoke_subagent that started th
   const progress = f.events.find((event) => event.type === 'task.progress')
   assert.deepEqual(progress?.type === 'task.progress' && [progress.taskId, progress.totalTokens, progress.toolUses], [`${session}:3`, 160, 1])
 })
+
+test('Antigravity 1.5.2: a view_file closed with its summary shows the file, and honoured extra roots raise no notice', async (t) => {
+  const f = await fixture(t)
+  await writeFile(join(f.root, 'notes.txt'), 'one\ntwo\nthree\n')
+  await f.turn([
+    // As probed: native input, 0 for the start, and the summary the model wrote as the only output.
+    { update: { sessionUpdate: 'tool_call', toolCallId: 's:1', title: 'Running view_file', kind: 'read', status: 'in_progress', locations: [{ path: join(f.root, 'notes.txt') }], rawInput: { file_path: join(f.root, 'notes.txt'), start_line: 0, end_line: 799 } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 's:1', status: 'completed', rawOutput: 'View notes.txt' } },
+    { update: { sessionUpdate: 'tool_call', toolCallId: 's:2', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { file_path: join(f.root, 'notes.txt'), start_line: 2, end_line: 3 } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 's:2', status: 'completed', rawOutput: 'Read ws notes.txt' } },
+    // A failure's output is the error.
+    { update: { sessionUpdate: 'tool_call', toolCallId: 's:3', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { file_path: join(f.root, 'missing.txt'), start_line: 0, end_line: 799 } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 's:3', status: 'failed', rawOutput: 'Cannot view file missing.txt which does not exist.' } },
+  ])
+  const outputs = f.events.filter((event) => event.type === 'tool.completed').map((event) => [event.isError, event.output])
+  assert.deepEqual(outputs, [[false, 'one\ntwo\nthree\n'], [false, 'two\nthree'], [true, 'Cannot view file missing.txt which does not exist.']])
+  const ranged = f.events.find((event) => event.type === 'tool.started' && event.toolCallId === 's:2')
+  assert.deepEqual(ranged?.type === 'tool.started' && ranged.input, { file_path: join(f.root, 'notes.txt'), offset: 2, end_line: 3 })
+
+  const extra = { ...DEFAULT_ANTIGRAVITY_CONFIG, additionalDirectories: [f.home] }
+  const notices = () => f.events.filter((event) => event.type === 'agent.notice' && event.code === 'additional_directories_unsupported').length
+  const older = new AntigravityRunner({ ...f.ctx, config: extra })
+  await older.start(); await older.stop()
+  assert.equal(notices(), 1)
+  await writeFile(join(f.root, 'version-1.5.2'), '')
+  const current = new AntigravityRunner({ ...f.ctx, config: extra })
+  await current.start(); await current.stop()
+  assert.equal(notices(), 1)
+})

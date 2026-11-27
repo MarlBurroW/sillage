@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { parseSkillMarkdown } from '../../skill-library/frontmatter.js'
 
 /**
- * Antigravity 1.4.3 materializes its system skills (`run-workflow`, frontmatter
+ * Antigravity (1.4.3, still 1.5.2) materializes its system skills (`run-workflow`, frontmatter
  * `metadata.namespace: system`) into `<session cwd>/skills/system/` at `session/new`: the ACP
  * session's directory, not the process's (probed 26 Nov 2026), so no launch option moves it. The
  * agent reads that file on demand during the session, so it stays until the last Antigravity
