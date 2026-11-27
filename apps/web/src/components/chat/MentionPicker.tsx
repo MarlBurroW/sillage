@@ -1,12 +1,18 @@
-import { ChevronRight, FileCode, Folder } from 'lucide-react'
+import { Bot, ChevronRight, FileCode, Folder } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import type { AgentInfoDto } from '@sillage/protocol'
 import { mentionPath, type FileMatchDto } from '../../lib/files'
 import { cx } from '../ui'
 import { TooltipButton } from '../ui/Tooltip'
 import { useTranslate } from '../../lib/i18n'
 
-/** Mention suggestions above the input because phone keyboards would hide lists beneath it. */
+/**
+ * Mention suggestions above the input because phone keyboards would hide lists beneath it.
+ * Sub-agents the CLI can delegate to come first, then files: `active` counts across both.
+ */
 export function MentionPicker({
+  agents = [],
+  onPickAgent,
   files,
   active,
   loading,
@@ -15,6 +21,9 @@ export function MentionPicker({
   onOpen,
   onHover,
 }: {
+  /** Sub-agents matching the query, for CLIs that take `@name` as a delegation hint. */
+  agents?: AgentInfoDto[]
+  onPickAgent?: (agent: AgentInfoDto) => void
   files: FileMatchDto[]
   active: number
   loading: boolean
@@ -33,7 +42,7 @@ export function MentionPicker({
     list.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active])
 
-  if (!loading && files.length === 0) {
+  if (!loading && files.length === 0 && agents.length === 0) {
     return (
       <div className="surface mb-1.5 rounded-lg border border-line p-2.5 text-xs text-ink-faint shadow-float">
         {t(failed ? 'mention.picker.error' : 'mention.picker.empty')}
@@ -45,10 +54,35 @@ export function MentionPicker({
     <ul
       ref={list}
       role="listbox"
-      aria-label={t('mention.picker.aria')}
+      aria-label={t(agents.length ? 'mention.picker.ariaAgents' : 'mention.picker.aria')}
       className="surface mb-1.5 max-h-56 overflow-y-auto rounded-lg border border-line p-1 shadow-float"
     >
-      {files.map((file, index) => {
+      {agents.map((agent, index) => (
+        <li
+          key={`agent:${agent.name}`}
+          className={cx('flex items-center rounded-md', index === active ? 'bg-accent-wash text-ink' : 'text-ink-soft')}
+        >
+          <button
+            type="button"
+            role="option"
+            aria-selected={index === active}
+            onMouseDown={(event) => {
+              event.preventDefault()
+              onPickAgent?.(agent)
+            }}
+            onMouseEnter={() => onHover(index)}
+            className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
+          >
+            <Bot size={13} className="shrink-0 text-ink-faint" />
+            <span className="shrink-0">@{agent.name}</span>
+            <span className="min-w-0 flex-1 truncate text-right text-[0.6875rem] text-ink-faint">
+              {agent.description || t('mention.picker.agent')}
+            </span>
+          </button>
+        </li>
+      ))}
+      {files.map((file, fileIndex) => {
+        const index = agents.length + fileIndex
         const Icon = file.isDirectory ? Folder : FileCode
         return (
           <li

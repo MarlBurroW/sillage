@@ -358,6 +358,25 @@ test('OpenCode 2 : appairage push ignoré, événement inconnu signalé une fois
   assert.deepEqual(f.of('agent.notice').map((event) => event.code), ['experimental.future.thing'])
 })
 
+test('OpenCode 2 : un sous-agent mentionné part avec le message', async (t) => {
+  const f = await runner2Fixture(t)
+  const prompts = async () => (await f.records()).filter((record) => record.path.endsWith('/prompt')).map((record) => record.body.agents)
+  // The fixture lists `build` (primary), `title` (hidden) and `general` (sub-agent).
+  await f.runner.send(`fixture:${JSON.stringify({ events: [started(), succeeded()] })}\n@general read note.txt, not @build or @title`, [], [], [])
+  await until(() => f.count('turn.completed') === 1)
+  await f.runner.send(`fixture:${JSON.stringify({ events: [started()] })}\nno agent here`, [], [], [])
+  await until(() => f.count('turn.started') === 2)
+  // While the turn runs, a steering message names one too.
+  assert.equal(await f.runner.steer('@general as well', [], [], []), true)
+  const sent = await prompts()
+  const at = sent[0][0].mention.start
+  assert.deepEqual(sent, [
+    [{ name: 'general', mention: { start: at, end: at + 8, text: '@general' } }],
+    undefined,
+    [{ name: 'general', mention: { start: 0, end: 8, text: '@general' } }],
+  ])
+})
+
 test('OpenCode 2 : interruption, échec et reprise', async (t) => {
   const f = await runner2Fixture(t, { resumeSessionId: 'ses_old' })
   assert.equal(f.of('session.started')[0]?.agentSessionId, 'ses_old')

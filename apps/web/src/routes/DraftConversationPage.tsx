@@ -29,6 +29,7 @@ import {
   useAgentAvailability,
   useAgentInstall,
   useHiddenAgents,
+  useMentionableAgents,
   unavailableReason,
   versionMismatch,
 } from '../lib/agents'
@@ -247,6 +248,7 @@ export function DraftConversationPage() {
     () => (config?.agent === agent ? config : defaults),
     [config, agent, defaults],
   )
+  const mentionable = useMentionableAgents(agent, usable)
 
   // Load only when the selected CLI persists readable local sessions.
   // A worktree hides the list: these sessions live in the project root.
@@ -507,6 +509,7 @@ export function DraftConversationPage() {
               // leaving an empty thread and a lost message.
               disabled={createConversation.isPending || blocked !== null}
               probeModels={usable}
+              agents={mentionable}
               onSend={send}
               onInterrupt={() => {}}
               onConfigChange={setConfig}

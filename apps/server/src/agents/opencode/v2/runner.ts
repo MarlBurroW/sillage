@@ -43,10 +43,11 @@ import { agentProcessEnv } from '../../process-env.js'
 import { journalDeath } from '../../session-close.js'
 import { opencodeErrorCode } from '../errors.js'
 import { parseModel } from '../model.js'
-import { readCommands2, readModels2, readSkills2, toAgentSkills, toSlashCommands2 } from './catalog.js'
+import { readAgents2, readCommands2, readModels2, readSkills2, toAgentSkills, toSlashCommands2 } from './catalog.js'
 import { OpencodeServer } from '../server.js'
 import { fromOpencode2McpStatus, toOpencode2Config, type Opencode2Config } from './config.js'
 import { historyEvents, historyPages } from './history.js'
+import { agentMentions, type AgentMention } from './mentions.js'
 import { SessionGrants } from './permissions.js'
 import { elicitationAnswer, formElicitation, formQuestions, isQuestionForm, questionAnswer } from './forms.js'
 import {
@@ -946,6 +947,23 @@ export class Opencode2Runner implements AgentRunner {
     ]
   }
 
+  /**
+   * Sub-agents the text @-mentions, read from this directory's agents so project agents count
+   * too. Only the text reaches the model; the attachment records which agent it names, as the
+   * TUI does (2.4.2). Nothing is added when the text names none.
+   */
+  private async agentsOf(text: string, mentions: OutgoingMention[]): Promise<{ agents?: AgentMention[] }> {
+    if (!this.server || !text.includes('@')) return {}
+    try {
+      const names = (await readAgents2(this.server, 0)).filter((agent) => agent.mode !== 'primary' && !agent.hidden).map((agent) => agent.id)
+      const agents = agentMentions(text, names, mentions.map((mention) => mention.relativePath))
+      return agents.length ? { agents } : {}
+    } catch {
+      // A hint only: the message leaves without it.
+      return {}
+    }
+  }
+
   /** Skills picked in the composer, by ID; unknown names are ignored like every runner does. */
   private skillsOf(names: string[]): { id: string }[] {
     return names.filter((name) => this.skillIds.has(name)).map((id) => ({ id }))
@@ -964,7 +982,7 @@ export class Opencode2Runner implements AgentRunner {
       if (command && this.commandNames.has(command.name)) {
         this.runCommand(command.name, command.args)
       } else {
-        await this.server.post(`/api/session/${this.sessionId}/prompt`, { text: promptText, files: this.files(attachments, mentions), skills: this.skillsOf(skills) })
+        await this.server.post(`/api/session/${this.sessionId}/prompt`, { text: promptText, files: this.files(attachments, mentions), skills: this.skillsOf(skills), ...await this.agentsOf(promptText, mentions) })
       }
     } catch (error) {
       if (!this.turn.open && this.server) this.ctx.setStatus('idle')
@@ -988,7 +1006,7 @@ export class Opencode2Runner implements AgentRunner {
   async steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[], skills: string[] = []): Promise<boolean> {
     if (!this.server || !this.sessionId || !this.turn.open) return false
     const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig), { mentions, skills: this.skillsOf(skills).map((skill) => skill.id) })
-    await this.server.post(`/api/session/${this.sessionId}/prompt`, { text: promptText, files: this.files(attachments, mentions), skills: this.skillsOf(skills), delivery: 'steer' })
+    await this.server.post(`/api/session/${this.sessionId}/prompt`, { text: promptText, files: this.files(attachments, mentions), skills: this.skillsOf(skills), ...await this.agentsOf(promptText, mentions), delivery: 'steer' })
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     return true
   }

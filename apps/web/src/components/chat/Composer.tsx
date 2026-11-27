@@ -23,6 +23,7 @@ import {
   NATIVE_SLASH_COMMANDS,
   parseSlashCommand,
   type AgentConfig,
+  type AgentInfoDto,
   type AttachmentDto,
   type AgentSkillDto,
   type CardLinkDto,
@@ -42,7 +43,7 @@ import { mentionPath, useFileSuggestions, type FileMatchDto } from '../../lib/fi
 import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
 import { useUpdateComposerLayout, useUserSettings } from '../../lib/user-settings'
-import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
+import { matchAgents, matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
 import { ConfirmDialog, cx } from '../ui'
 import { AttachmentTray } from './AttachmentTray'
 import { DictationStrip } from './DictationStrip'
@@ -167,6 +168,11 @@ interface ComposerProps {
    * includes skills among commands.
    */
   skills: AgentSkillDto[]
+  /**
+   * Sub-agents offered under `@`, for CLIs that read `@name` as a request to delegate (OpenCode).
+   * Absent elsewhere: the text would reach the CLI as a plain word.
+   */
+  agents?: AgentInfoDto[]
   onSend(
     text: string,
     attachmentIds: string[],
@@ -228,6 +234,7 @@ export function Composer({
   appliedConfig = null,
   commands,
   skills,
+  agents = [],
   onSend,
   onCommand,
   onInterrupt,
@@ -356,6 +363,7 @@ export function Composer({
     variant === 'thread' ? draftKey : undefined,
   )
   const suggestions = token ? (files ?? []) : []
+  const agentSuggestions = useMemo(() => (token ? matchAgents(agents, token.query) : []), [agents, token])
 
   const { data: cardMatches, isFetching: searchingCards } = useCardSuggestions(
     projectId ?? undefined,
@@ -386,6 +394,21 @@ export function Composer({
       setToken(null)
     }
     // After rendering: restoring the cursor before React writes the value would jump it to the end.
+    requestAnimationFrame(() => {
+      node.focus()
+      node.setSelectionRange(caret, caret)
+    })
+  }
+
+  /** Replace the current token with `@name`: the CLI reads the agent from the text. */
+  const pickAgent = (agent: AgentInfoDto) => {
+    const node = textarea.current
+    if (!token || !node) return
+    const inserted = `@${agent.name} `
+    const next = `${text.slice(0, token.start)}${inserted}${text.slice(token.end)}`
+    const caret = token.start + inserted.length
+    setText(next)
+    setToken(null)
     requestAnimationFrame(() => {
       node.focus()
       node.setSelectionRange(caret, caret)
@@ -505,8 +528,8 @@ export function Composer({
   // rule here rather than requiring every future composer caller to copy it.
   /** Resources that leave with the message, tinted in place (see ComposerHighlights). */
   const highlights = useMemo(
-    () => highlightRanges(text, { mentions: mentioned, skills: invoked, commands: commands.map((command) => command.name) }),
-    [text, mentioned, invoked, commands],
+    () => highlightRanges(text, { mentions: [...mentioned, ...agents.map((agent) => agent.name)], skills: invoked, commands: commands.map((command) => command.name) }),
+    [text, mentioned, invoked, commands, agents],
   )
   // These CLIs publish their skills among their slash commands: one prefix reaches both.
   const combinedCommands = config.agent === 'claude' || config.agent === 'grok' || config.agent === 'copilot'
@@ -742,7 +765,7 @@ export function Composer({
       ? entries.length
       : cardToken
         ? cardSuggestions.length
-        : suggestions.length
+        : agentSuggestions.length + suggestions.length
     if (listed > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
@@ -769,7 +792,13 @@ export function Composer({
           pickCard(card)
           return
         }
-        const file = sigil || cardToken ? undefined : suggestions[active]
+        const agent = sigil || cardToken ? undefined : agentSuggestions[active]
+        if (agent) {
+          event.preventDefault()
+          pickAgent(agent)
+          return
+        }
+        const file = sigil || cardToken ? undefined : suggestions[active - agentSuggestions.length]
         if (file) {
           event.preventDefault()
           pickMention(file, { open: event.key === 'Tab' && file.isDirectory === true })
@@ -916,6 +945,8 @@ export function Composer({
 
           {token ? (
             <MentionPicker
+              agents={agentSuggestions}
+              onPickAgent={pickAgent}
               files={suggestions}
               active={active}
               loading={searching}

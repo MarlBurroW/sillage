@@ -1,4 +1,4 @@
-import type { AgentSkillDto, SlashCommandDto } from '@sillage/protocol'
+import type { AgentInfoDto, AgentSkillDto, SlashCommandDto } from '@sillage/protocol'
 
 /**
  * Entry suggested for the currently typed prefix. Slash commands and dollar skills differ in source
@@ -61,4 +61,17 @@ export function matchSkills(skills: AgentSkillDto[], query: string): PickerEntry
     .filter((skill) => skill.name.toLowerCase().startsWith(needle))
     .map((skill) => ({ name: skill.name, hint: '', summary: summarize(skill.description) }))
     .sort(byName(() => true))
+}
+
+/**
+ * Sub-agents for an `@` being typed, by name prefix like commands. A path being typed (`@src/`)
+ * is a file, never an agent.
+ */
+export function matchAgents(agents: AgentInfoDto[], query: string): AgentInfoDto[] {
+  if (query.includes('/')) return []
+  const needle = query.toLowerCase()
+  return agents
+    .filter((agent) => agent.name.toLowerCase().startsWith(needle))
+    .map((agent) => ({ name: agent.name, description: summarize(agent.description) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }

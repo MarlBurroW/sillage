@@ -8,6 +8,7 @@ import {
   type AgentConfig,
   type AgentAvailabilityListDto,
   type AgentEffortDto,
+  type AgentInfoDto,
   type AgentKind,
   type AgentModelDto,
   type AgentModelsDto,
@@ -210,6 +211,17 @@ const modelsPath = (agent: AgentKind, account: string | null, refresh: boolean) 
 export function useAgentModels(agent: AgentKind, enabled = true, account: string | null = null) {
   return useQuery(agentModelsQuery(agent, enabled, account))
 }
+
+/**
+ * Sub-agents a message may @-mention: OpenCode reads `@explore` as a request to delegate, and
+ * Sillage records which agent the text names. Other CLIs get none, so `@` stays a file mention.
+ * Shares the model catalog's cache: no extra probe.
+ */
+export function useMentionableAgents(agent: AgentKind, enabled = true): AgentInfoDto[] {
+  const { data } = useAgentModels(agent, enabled && agent === 'opencode')
+  return agent === 'opencode' ? (data?.agents ?? NO_AGENTS) : NO_AGENTS
+}
+const NO_AGENTS: AgentInfoDto[] = []
 
 /**
  * The catalog query itself, for screens reading several catalogs at once (a benchmark lineup

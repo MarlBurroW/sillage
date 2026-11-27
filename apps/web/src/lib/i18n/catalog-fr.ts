@@ -3892,6 +3892,8 @@ export const fr: Catalog = {
   'common.failed': 'Échec',
   'markdown.table.downloadCsv': 'Télécharger en CSV',
   'mention.picker.aria': 'Fichiers et dossiers à mentionner',
+  'mention.picker.ariaAgents': 'Sous-agents, fichiers et dossiers à mentionner',
+  'mention.picker.agent': 'Sous-agent',
   'mention.picker.empty': 'Aucun fichier ni dossier ne correspond.',
   'mention.picker.error': 'Impossible de lister les fichiers de ce dossier.',
   'mention.picker.open': 'Ouvrir le dossier (Tab)',

@@ -3899,6 +3899,8 @@ export const en = {
   'common.failed': 'Failed',
   'markdown.table.downloadCsv': 'Download as CSV',
   'mention.picker.aria': 'Files and folders to mention',
+  'mention.picker.ariaAgents': 'Sub-agents, files and folders to mention',
+  'mention.picker.agent': 'Sub-agent',
   'mention.picker.empty': 'No file or folder matches.',
   'mention.picker.error': 'Could not list the files of this folder.',
   'mention.picker.open': 'Open folder (Tab)',

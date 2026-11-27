@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SlashCommandDto } from '@sillage/protocol'
-import { matchCommands, matchSkills } from '../src/lib/composer-tokens'
+import { matchAgents, matchCommands, matchSkills } from '../src/lib/composer-tokens'
 
 const command = (name: string, aliases: string[] = [], description = `${name} command`): SlashCommandDto => ({
   name,
@@ -39,4 +39,14 @@ test('skills match by prefix, alphabetically, without hints', () => {
     { name: 'debug', hint: '', summary: 'Find bugs' },
     { name: 'deploy-web', hint: '', summary: 'Ship the web' },
   ])
+})
+
+test('sub-agents: name prefix, first description line, never for a path', () => {
+  const agents = [
+    { name: 'general', description: 'General work' },
+    { name: 'explore', description: 'Fast search\nUse it for broad sweeps.' },
+  ]
+  assert.deepEqual(matchAgents(agents, ''), [{ name: 'explore', description: 'Fast search' }, { name: 'general', description: 'General work' }])
+  assert.deepEqual(matchAgents(agents, 'EX').map((agent) => agent.name), ['explore'])
+  assert.deepEqual(matchAgents(agents, 'src/'), [])
 })

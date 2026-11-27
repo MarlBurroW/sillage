@@ -184,6 +184,12 @@ Probed on 2.4.1, data directories isolated.
   session starts from the total `GET /api/session/{id}` gives.
 - **Skills added during a session**: `POST /api/location/reload`. It cancels
   pending permissions and forms, so Sillage waits for idle like on 1.x.
+- **Sub-agent mentions**: `@explore` in the text names a sub-agent, as in the TUI.
+  The composer offers the catalog's sub-agents under `@`, before files, for
+  OpenCode only; the 2.x runner reads the directory's agents (`GET /api/agent`,
+  project agents included) and records the mentions in `agents: [{name, mention}]`.
+  Only the text reaches the model, as a hint to delegate (2.4.2). A file mentioned
+  under the same name stays a file. 1.x receives the text alone.
 - **Images and mentioned files**, directories included: `files: [{uri, name}]` with
   `file://` URIs, read and inlined by opencode.
 

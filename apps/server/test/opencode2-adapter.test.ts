@@ -4,6 +4,7 @@ import { DEFAULT_OPENCODE_CONFIG, PREFERRED_CLI_RELEASES, isCompatibleCliVersion
 import type { Config } from '../src/config.js'
 import type { EventLog } from '../src/events/event-log.js'
 import { OpencodeAdapter } from '../src/agents/opencode/adapter.js'
+import { agentMentions } from '../src/agents/opencode/v2/mentions.js'
 import { SessionGrants, matchesPattern } from '../src/agents/opencode/v2/permissions.js'
 import { describeTool } from '../src/agents/opencode/v2/tools.js'
 import { fixture2 } from './opencode2-support.js'
@@ -166,4 +167,16 @@ test('OpenCode 2 : motifs de session lus comme opencode 2.4.2', () => {
   assert.equal(grants.covers('edit', ['src/b.ts']), false)
   assert.equal(grants.covers('edit', []), false)
   assert.equal(grants.covers('shell', ['src/a.ts']), false)
+})
+
+test('OpenCode 2 : sous-agents mentionnés repérés dans le texte, comme le TUI', () => {
+  const agents = ['explore', 'general', 'my.agent']
+  assert.deepEqual(agentMentions('@explore find the tokens. Then @general, and @my.agent.', agents), [
+    { name: 'explore', mention: { start: 0, end: 8, text: '@explore' } },
+    { name: 'general', mention: { start: 31, end: 39, text: '@general' } },
+    { name: 'my.agent', mention: { start: 45, end: 54, text: '@my.agent' } },
+  ])
+  // Mid-word, a longer name or a path is not an agent; a file mentioned under the name stays one.
+  assert.deepEqual(agentMentions('mail me@explore or @explorer or @src/explore', agents), [])
+  assert.deepEqual(agentMentions('@explore', agents, ['explore']), [])
 })

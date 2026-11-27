@@ -12,7 +12,7 @@ import { ConversationStatusBar } from '../components/chat/status-bar/Conversatio
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { ConversationWorktreeBar } from '../components/chat/ConversationWorktreeBar'
 import { ThreadSearch } from '../components/chat/ThreadSearch'
-import { useAgentModels } from '../lib/agents'
+import { useAgentModels, useMentionableAgents } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
 import { cx } from '../components/ui'
 import {
@@ -88,6 +88,7 @@ export function ConversationPage() {
   // Like all hooks, keep this before the first early return. Probing starts the CLI
   // server-side, so only probe the conversation's agent.
   const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
+  const mentionable = useMentionableAgents(conversation?.agent ?? 'claude', Boolean(conversation))
   const { data: worktrees } = useWorktrees(conversation?.projectId)
   // Already loaded for the sidebar: fork origin is available without an extra
   // request.
@@ -449,6 +450,7 @@ export function ConversationPage() {
             context={contextInBar ? null : stream.state.context}
             onSteer={canSteer ? actions.steer : undefined}
             onSend={actions.send}
+            agents={mentionable}
             onCommand={actions.runCommand}
             onInterrupt={() => void interruptConversation(conversationId)}
             onConfigChange={updateConfig}
