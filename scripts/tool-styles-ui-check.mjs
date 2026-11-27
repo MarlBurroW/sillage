@@ -269,10 +269,16 @@ try {
     assert.equal(await page.locator('#thread [data-folded="true"]').count(),0,'Reading delays fold')
     assert.ok(Math.abs(await page.locator('#thread').evaluate(n=>n.scrollTop)-before)<2,'Reading position unchanged')
     await page.evaluate(()=>window.follow());await settle()
-    assert.equal(await page.locator('#thread [data-folded="true"]').count(),1,'Return to bottom folds')
+    // Folding a group still on screen when the reader comes back would shrink the thread under a
+    // scroll that is still moving: it waits until the thread has moved past it.
+    assert.equal(await page.locator('#thread [data-folded="true"]').count(),0,'Return to bottom keeps a visible group open')
+    const later=[{kind:'message',id:'later-text',role:'assistant',ts:0,seq:200,blocks:[{type:'text',text:'Suite du travail. '.repeat(400)}],streamingText:'',streamingThinking:'',parentToolCallId:null}]
+    await page.evaluate((later)=>window.setItems([...window.makeItems('text'),...later]),later);await settle()
+    assert.equal(await page.locator('#thread [data-folded="true"]').count(),1,'Group folds once off screen')
     assert.ok(await page.locator('#thread').evaluate(n=>n.scrollHeight-n.clientHeight-n.scrollTop<2),'Remain at bottom')
+    await page.locator('#thread').evaluate(node=>node.querySelector('.sg-tool-group-heading').scrollIntoView())
     await page.locator('#thread .sg-tool-group-heading').click()
-    await page.evaluate(()=>window.setItems([...window.makeItems('text'),{kind:'notice',id:'later',text:'Suite'}]));await settle()
+    await page.evaluate((later)=>window.setItems([...window.makeItems('text'),...later,{kind:'notice',id:'later',text:'Suite'}]),later);await settle()
     assert.equal(await page.locator('#thread [data-folded="true"]').count(),0,'Manual group opening respected')
     await mount(page)
     await page.locator('#thread [data-tool-id="sillage"] .sg-tool-heading').click()

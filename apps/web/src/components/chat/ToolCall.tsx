@@ -23,7 +23,7 @@ import {
   SquareTerminal,
   Wrench,
 } from 'lucide-react'
-import { memo, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BROWSER_MCP_SERVER_NAME, isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
@@ -397,10 +397,25 @@ export const ToolCallGroup = memo(function ToolCallGroup({
       return next
     })
   }, [])
-  // Le lecteur garde la main : une ouverture manuelle ou une lecture plus haut bloque le repli.
+  // The reader stays in control: opening a call or reading further up holds the fold back.
+  // A group that completes while followed folds at once. One that completed while the reader was
+  // elsewhere folds only once off screen: folding every pending group when a fast scroll reaches
+  // the bottom shrank the thread under the reader mid-inertia, and the thread flickered.
+  const node = useRef<HTMLDivElement>(null)
+  const settled = useRef(eligible)
+  const [offscreen, setOffscreen] = useState(false)
+  useEffect(() => {
+    const element = node.current
+    if (!element || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(([entry]) => { if (entry) setOffscreen(!entry.isIntersecting) })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   useLayoutEffect(() => {
-    if (eligible && mayCollapse && !manual && !pinnedIntent && opened.size === 0) setCollapsed(true)
-  }, [eligible, mayCollapse, manual, pinnedIntent, opened.size])
+    const fresh = eligible && !settled.current
+    settled.current = eligible
+    if (eligible && mayCollapse && (fresh || offscreen) && !manual && !pinnedIntent && opened.size === 0) setCollapsed(true)
+  }, [eligible, mayCollapse, offscreen, manual, pinnedIntent, opened.size])
   const [quietExpanded, setQuietExpanded] = useState(false)
   const folded = quiet ? mayCollapse && !quietExpanded : eligible && collapsed
   const header = quiet || folded || manual
@@ -411,7 +426,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   const external = tools.filter((tool) => toolOrigin(tool.name, tool.presentation).kind === 'mcp').length
   const servers = [...new Set(tools.map((tool) => toolOrigin(tool.name, tool.presentation)).filter((origin) => origin.kind === 'mcp').map((origin) => origin.server))].join(', ')
 
-  return <div className={`sg-tool-sequence sg-tools-${style}`} data-thread-anchor={`tools-${tools[0]?.id}`} data-tool-sequence data-folded={folded}>
+  return <div ref={node} className={`sg-tool-sequence sg-tools-${style}`} data-thread-anchor={`tools-${tools[0]?.id}`} data-tool-sequence data-folded={folded}>
     {header ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}
       onClick={() => { if (quiet) setQuietExpanded(folded); else { setManual(true); setCollapsed(!folded) } }}>
       <ChevronRight size={14} className={cx('shrink-0 text-ink-faint', !folded && 'rotate-90')} />
