@@ -27,6 +27,7 @@ import {
   type SillageEvent,
 } from '@sillage/protocol'
 import { TurnLifecycle } from '../turn-lifecycle.js'
+import { TextLanes } from '../acp/text-lanes.js'
 import { AcpClient, AcpRpcError } from '../acp/client.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { PendingInteractions } from '../interactions.js'
@@ -90,13 +91,6 @@ const PLAN_FOLLOW_UP_OPTIONS: PlanFollowUpOption[] = [
   { id: 'auto', label: 'Valider et laisser décider', hint: "Grok n'interrompt que pour ce qui lui paraît risqué" },
 ]
 
-/** Text or reasoning block currently streaming. */
-interface OpenText {
-  kind: 'text' | 'thinking'
-  id: string
-  text: string
-}
-
 /** Already-journaled tool state, preventing unchanged updates. */
 interface ToolTrack {
   native: string
@@ -109,6 +103,18 @@ interface ToolTrack {
   input: string
   output: string
   diffs: AcpDiff[]
+  /** Spawning call of the sub-agent running it, null on the main thread. */
+  parent: string | null
+  /** What Grok announced about the sub-agent a spawning call started (type, model), kept over input refinements. */
+  extra?: Record<string, unknown>
+}
+
+/** A sub-agent Grok announced (`subagent_spawned`), under the call that spawned it. */
+interface SubAgentTrack {
+  call: string
+  /** `subagent_id`, which names its task. */
+  taskId: string
+  finished: boolean
 }
 
 /** Grok permission flags and session mode requested by Sillage modes. */
@@ -132,7 +138,13 @@ export class GrokRunner implements AgentRunner {
   private readonly interactions: PendingInteractions
   private readonly durations = new ToolDurations()
 
-  private open: OpenText | null = null
+  private readonly text = new TextLanes((event) => this.ctx.emit(event))
+  /** Sub-agent sessions (`child_session_id`): their updates join the thread of the call that spawned them. */
+  private readonly children = new Map<string, SubAgentTrack>()
+  /** Spawning calls already closed, by the `subagent_id` their result names: a background spawn returns before Grok announces the sub-agent. */
+  private readonly spawnResults = new Map<string, { call: string; input: unknown; presentation: ToolPresentation }>()
+  /** Thread of each spawning call, to tell what a background sub-agent still runs when a turn ends. */
+  private readonly spawnParents = new Map<string, string | null>()
   private readonly tools = new Map<string, ToolTrack>()
   private readonly closedTools = new Set<string>()
   /** Cardless calls (`ask_user_question`) whose later updates must remain hidden. */
@@ -425,18 +437,26 @@ export class GrokRunner implements AgentRunner {
     }
     if (method === 'session/update') {
       const notification = params as SessionNotification
-      // Subagents publish under their own session ID; only
-      // their `task` results return to the main conversation.
-      if (notification.sessionId !== this.sessionId) return
-      this.onUpdate(notification)
+      // Sub-agents publish under their own session ID: their thread goes under the spawning call.
+      if (notification.sessionId === this.sessionId) this.onUpdate(notification, null)
+      else {
+        const child = this.children.get(notification.sessionId)
+        if (child) this.onUpdate(notification, child.call)
+      }
       return
     }
     if (method === '_x.ai/session_notification') {
+      const sessionId = fields(params).sessionId
       const update = fields(fields(params).update)
-      const main = fields(params).sessionId === this.sessionId
+      const main = sessionId === this.sessionId
       if (update.sessionUpdate === 'turn_completed') {
         // Any session: background sub-agents complete under their own ID, after their prompt.
         if (!main || !this.onTurnCompleted(update)) this.settleOutsideTurn()
+        return
+      }
+      const child = typeof sessionId === 'string' ? this.children.get(sessionId) : undefined
+      if (typeof update.sessionUpdate === 'string' && update.sessionUpdate.startsWith('subagent_') && (main || child)) {
+        this.onSubAgent(update, main ? null : child!.call)
         return
       }
       if (!main) return
@@ -457,38 +477,42 @@ export class GrokRunner implements AgentRunner {
     this.noticeOnce(method, `Notification Grok : ${method}`, params)
   }
 
-  private onUpdate(notification: SessionNotification): void {
+  /** `parent` is the spawning call of the sub-agent publishing it, null for the main session. */
+  private onUpdate(notification: SessionNotification, parent: string | null): void {
     const { update } = notification
-    // Context sizes accompany every update's `_meta`.
+    // Context sizes accompany every update's `_meta`; a sub-agent's are its own context.
     const totalTokens = fields(notification._meta).totalTokens
-    if (typeof totalTokens === 'number' && totalTokens > 0) this.reportContext(totalTokens)
+    if (parent === null && typeof totalTokens === 'number' && totalTokens > 0) this.reportContext(totalTokens)
+    // Only their thread: a sub-agent's commands, plan, title, settings and context are not the conversation's.
+    const thread = ['agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk', 'tool_call', 'tool_call_update']
+    if (parent !== null && !thread.includes(update.sessionUpdate)) return
 
     switch (update.sessionUpdate) {
       case 'agent_message_chunk':
       case 'agent_thought_chunk': {
         const block = update.content as AcpContentBlock
         if (block.type !== 'text') return
-        this.wakeUp()
-        this.appendText(update.sessionUpdate === 'agent_message_chunk' ? 'text' : 'thinking', block.text)
+        if (parent === null) this.wakeUp()
+        this.text.append(update.sessionUpdate === 'agent_message_chunk' ? 'text' : 'thinking', block.text, parent)
         return
       }
       case 'user_message_chunk':
-        // Echo of input Sillage already journaled on send.
+        // Echo of input Sillage already journaled on send; a sub-agent's is its spawn prompt.
         return
       case 'tool_call':
         if (this.closedTools.has(update.toolCallId)) return
-        this.wakeUp()
-        this.closeText()
-        this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name)
+        if (parent === null) this.wakeUp()
+        this.text.close(parent)
+        this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name, parent)
         this.onToolUpdate(update.toolCallId, update, notification)
         return
       case 'tool_call_update':
         // Closed background tools keep updating once their work ends, without any turn following.
         if (this.closedTools.has(update.toolCallId)) return
-        this.wakeUp()
-        this.closeText()
+        if (parent === null) this.wakeUp()
+        this.text.close(parent)
         if (!this.tools.has(update.toolCallId) && !this.silentTools.has(update.toolCallId)) {
-          this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name)
+          this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name, parent)
         }
         this.onToolUpdate(update.toolCallId, update, notification)
         return
@@ -584,35 +608,7 @@ export class GrokRunner implements AgentRunner {
     })
   }
 
-  /** Text/reasoning chunks have no message IDs (probed): retain blocks until another content kind interrupts. */
-  private appendText(kind: OpenText['kind'], text: string): void {
-    if (!text) return
-    if (this.open && this.open.kind !== kind) this.closeText()
-    if (!this.open) this.open = { kind, id: randomUUID(), text: '' }
-    this.open.text += text
-    this.ctx.emit({
-      type: kind === 'text' ? 'message.delta' : 'thinking.delta',
-      messageId: this.open.id,
-      text,
-      parentToolCallId: null,
-    })
-  }
-
-  private closeText(): void {
-    const open = this.open
-    if (!open) return
-    this.open = null
-    if (!open.text.trim()) return
-    this.ctx.emit({
-      type: 'message.completed',
-      messageId: open.id,
-      role: 'assistant',
-      blocks: [{ type: open.kind, text: open.text }],
-      parentToolCallId: null,
-    })
-  }
-
-  private onToolCall(id: string, meta: unknown, title: unknown, rawInput: unknown, raw: unknown, name?: unknown): void {
+  private onToolCall(id: string, meta: unknown, title: unknown, rawInput: unknown, raw: unknown, name: unknown, parent: string | null): void {
     if (this.tools.has(id) || this.silentTools.has(id)) return
     const native = nativeToolName(meta, title, name)
     if (native === QUESTION_TOOL) {
@@ -621,9 +617,10 @@ export class GrokRunner implements AgentRunner {
     }
     const described = describeTool(native, rawInput)
     const presentation = toolPresentation(title, [native, described.name])
-    this.tools.set(id, { native, name: described.name, rawInput, normalizedInput: described.input, presentation, input: JSON.stringify(described.input), output: '', diffs: [] })
+    this.tools.set(id, { native, name: described.name, rawInput, normalizedInput: described.input, presentation, input: JSON.stringify(described.input), output: '', diffs: [], parent })
+    if (described.name === 'Agent') this.spawnParents.set(id, parent)
     this.durations.start(id)
-    this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, presentation, parentToolCallId: null }, raw)
+    this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, presentation, parentToolCallId: parent }, raw)
   }
 
   /** Tool updates refine input (Grok adds `variant`), accumulate command `rawOutput.output`, then complete calls. */
@@ -642,7 +639,8 @@ export class GrokRunner implements AgentRunner {
     const inputChanged = (update.rawInput !== undefined && update.rawInput !== null) || native !== track.native
     track.native = native
     if (update.rawInput !== undefined && update.rawInput !== null) track.rawInput = update.rawInput
-    const described = inputChanged ? describeTool(track.native, track.rawInput) : { name: track.name, input: track.normalizedInput }
+    const refined = inputChanged ? describeTool(track.native, track.rawInput) : { name: track.name, input: track.normalizedInput }
+    const described = track.extra ? { ...refined, input: { ...fields(refined.input), ...track.extra } } : refined
     const presentation = { ...track.presentation }
     if (update.title !== undefined && update.title !== null) {
       presentation.title = toolPresentation(update.title, [track.native, described.name]).title
@@ -669,6 +667,7 @@ export class GrokRunner implements AgentRunner {
 
     if (update.status !== 'completed' && update.status !== 'failed') return
     this.tools.delete(id)
+    if (track.name === 'Agent') this.spawnReturned(id, track)
     // A repeated terminal notification must not create an empty second call.
     this.closedTools.add(id)
     if (this.closedTools.size > 4096) this.closedTools.delete(this.closedTools.values().next().value!)
@@ -902,6 +901,79 @@ export class GrokRunner implements AgentRunner {
   }
 
   /**
+   * Sub-agents (probed on 1.0.62 and 1.0.94). `subagent_spawned` comes on the parent's session with
+   * `{subagent_id, child_session_id, subagent_type, description, model}`, `subagent_progress` while it
+   * works, `subagent_finished` with `{status, tool_calls, duration_ms, tokens_used, output}`; its
+   * thread streams under `child_session_id`. The announcement names no tool call: a background
+   * spawn has already returned `subagent_id: <id>`, a foreground one is the spawning call still
+   * open on that thread. The agents pane then reads the call (`subagent_type`, `model`), the task
+   * and the thread under it, as for the other CLIs. `thread` is the session's spawning call, null
+   * for the main session; sub-agents nest.
+   */
+  private onSubAgent(update: Record<string, unknown>, thread: string | null): void {
+    const text = (value: unknown) => (typeof value === 'string' ? value : '')
+    const session = text(update.child_session_id)
+    const taskId = text(update.subagent_id) || session
+    if (!session) return
+    if (update.sessionUpdate === 'subagent_spawned') {
+      if (this.children.has(session)) return
+      const returned = this.spawnResults.get(taskId)
+      const call = returned?.call ?? this.openSpawn(thread)
+      if (!call) return
+      this.spawnResults.delete(taskId)
+      this.children.set(session, { call, taskId, finished: false })
+      const subagentType = text(update.subagent_type)
+      this.ctx.emit({
+        type: 'task.started', taskId, toolCallId: call, kind: 'agent', description: text(update.description), workflowName: null,
+        ...(subagentType ? { subagentType } : {}),
+      }, update)
+      const extra = { ...(subagentType ? { subagent_type: subagentType } : {}), ...(text(update.model) ? { model: text(update.model) } : {}) }
+      const track = this.tools.get(call)
+      if (track) track.extra = extra
+      const input = { ...fields(track ? track.normalizedInput : returned?.input), ...extra }
+      if (track) { track.normalizedInput = input; track.input = JSON.stringify(input) }
+      this.ctx.emit({ type: 'tool.input_updated', toolCallId: call, name: 'Agent', input, presentation: track?.presentation ?? returned?.presentation }, update)
+      return
+    }
+    const child = this.children.get(session)
+    if (!child || child.finished) return
+    // `subagent_progress` says nothing the thread does not: the pane describes activity from it.
+    if (update.sessionUpdate !== 'subagent_finished') return
+    child.finished = true
+    this.text.close(child.call)
+    const count = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+    const durationMs = typeof update.duration_ms === 'number' ? update.duration_ms : null
+    // Tokens and tool count only come at the end: no activity is claimed, the agent is done.
+    this.ctx.emit({ type: 'task.progress', taskId: child.taskId, activity: '', lastTool: null, toolUses: count(update.tool_calls), totalTokens: count(update.tokens_used), durationMs: durationMs ?? 0, summary: null, workflow: null }, update)
+    const status = update.status === 'completed' ? 'completed' : ['cancelled', 'canceled', 'stopped', 'interrupted', 'killed'].includes(text(update.status)) ? 'stopped' : 'failed'
+    this.ctx.emit({ type: 'task.completed', taskId: child.taskId, status, summary: text(update.output), durationMs, ambient: false }, update)
+  }
+
+  /** The latest spawning call still open on a thread and not yet given its sub-agent: a foreground spawn waits for it. */
+  private openSpawn(thread: string | null): string | null {
+    const linked = new Set([...this.children.values()].map((child) => child.call))
+    const open = [...this.tools].filter(([id, track]) => track.name === 'Agent' && track.parent === thread && !linked.has(id))
+    return open.at(-1)?.[0] ?? null
+  }
+
+  /** A spawning call returned: a background one names the sub-agent Grok announces next. */
+  private spawnReturned(id: string, track: ToolTrack): void {
+    if ([...this.children.values()].some((child) => child.call === id)) return
+    const result = toolOutput({ content: track.content, rawOutput: track.rawOutput }, track)
+    const output = typeof result === 'string' ? result : JSON.stringify(result)
+    const named = /subagent_id:\s*([\w-]+)/.exec(output) ?? /<subagent_meta>[^<]*?\bid=([\w-]+)/.exec(output)
+    if (named) this.spawnResults.set(named[1]!, { call: id, input: track.normalizedInput, presentation: track.presentation })
+  }
+
+  /** Whether a thread belongs to a sub-agent working after its spawning call returned, or nested in one. */
+  private inBackground(thread: string | null): boolean {
+    for (let call = thread; call !== null; call = this.spawnParents.get(call) ?? null) {
+      if (!this.tools.has(call) && [...this.children.values()].some((child) => child.call === call && !child.finished)) return true
+    }
+    return false
+  }
+
+  /**
    * Background work reporting back while the session is idle (a sub-agent, a shell, a monitor, a
    * `/loop`) makes Grok run a turn without a prompt: `prompt_id` `subagent-completed-…` or
    * `task-completed-…`, ended by its `turn_completed`. It is a turn of its own: its text must not
@@ -993,11 +1065,14 @@ export class GrokRunner implements AgentRunner {
       usage: toTurnUsage(usage),
       raw,
       close: () => {
-        this.closeText()
-        for (const [id] of this.tools) {
+        // Background sub-agents outlive the turn that spawned them: their thread stays open.
+        const aborted = [...this.tools].filter(([, track]) => !this.inBackground(track.parent)).map(([id]) => id)
+        this.text.close(null)
+        for (const child of this.children.values()) if (!this.inBackground(child.call)) this.text.close(child.call)
+        for (const id of aborted) {
+          this.tools.delete(id)
           this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution aborted', isError: true, durationMs: this.durations.stop(id) })
         }
-        this.tools.clear()
       },
     }, token)
   }
@@ -1118,6 +1193,8 @@ function toolOutput(update: { rawOutput?: unknown; content?: unknown }, track: T
   if (text) return text
   const raw = fields(update.rawOutput)
   if (typeof raw.output_for_prompt === 'string') return raw.output_for_prompt
+  // `spawn_subagent` and other text results (probed on 1.0.62 and 1.0.94).
+  if (raw.type === 'Text' && typeof raw.text === 'string') return raw.text
   for (const value of Object.values(raw)) {
     const variant = fields(value)
     for (const key of ['tool_output_for_prompt', 'content', 'OkayOutput']) {

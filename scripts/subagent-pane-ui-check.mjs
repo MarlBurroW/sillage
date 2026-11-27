@@ -10,8 +10,9 @@ import { chromium } from 'playwright'
 // Mounts the Agents pane on a subagent thread folded from real-shaped events, with no daemon: a
 // background subagent (model status, activity at the bottom, stop button, report of a command it
 // launched) and a foreground one (no stop button), then Codex sub-agents as Codex 0.172.0 reports
-// them (model and effort on the Agent call, a grandchild under its parent), on a wide screen and a
-// phone.
+// them (model and effort on the Agent call, a grandchild under its parent), then Grok sub-agents
+// as the runner reports Grok Build 1.0.62's (type and model added to the call once Grok announces
+// the sub-agent, a background one still working), on a wide screen and a phone.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -82,8 +83,29 @@ async function mount(page, selected) {
       { type: 'task.started', taskId: 'pong', toolCallId: 'codex-pong', kind: 'agent', description: '/root/relay/pong' },
       tool('codex-read', 'codex-pong', 'Read', { file_path: '/srv/studio/pong.txt' }),
     ]
+    // Grok 1.0.62, shaped as the runner turned a real run: `subagent_spawned` adds type and model to
+    // the spawning call, the thread streams under it, the background one outlives its call.
+    const grokType = (id, model) => ({ type: 'tool.input_updated', toolCallId: id, name: 'Agent', input: { description: id === 'grok-fg' ? 'Lire les notes' : 'Dire pong', prompt: 'Lis notes.txt', subagent_type: 'general-purpose', model } })
+    const grok = [
+      tool('grok-fg', null, 'Agent', { description: 'Lire les notes', prompt: 'Lis notes.txt', run_in_background: false }),
+      { type: 'task.started', taskId: 'grok-a', toolCallId: 'grok-fg', kind: 'agent', description: 'Lire les notes', subagentType: 'general-purpose' },
+      grokType('grok-fg', 'grok-4.7'),
+      tool('grok-read', 'grok-fg', 'Read', { file_path: '/srv/studio/notes.txt' }),
+      done('grok-read', '1→alpha'),
+      { type: 'message.completed', messageId: 'grok-m1', role: 'assistant', blocks: [{ type: 'text', text: 'alpha' }], parentToolCallId: 'grok-fg' },
+      { type: 'task.progress', taskId: 'grok-a', activity: '', lastTool: null, toolUses: 2, totalTokens: 10881, durationMs: 1491 },
+      { type: 'task.completed', taskId: 'grok-a', status: 'completed', summary: 'alpha', durationMs: 1491 },
+      done('grok-fg', 'alpha'),
+      tool('grok-bg', null, 'Agent', { description: 'Dire pong', prompt: 'Réponds pong', run_in_background: true }),
+      done('grok-bg', 'Subagent started in background.\nsubagent_id: grok-b'),
+      { type: 'task.started', taskId: 'grok-b', toolCallId: 'grok-bg', kind: 'agent', description: 'Dire pong', subagentType: 'general-purpose' },
+      grokType('grok-bg', 'grok-4.7-build-fast'),
+      tool('grok-ls', 'grok-bg', 'LS', { path: '/srv/studio' }),
+    ]
     const isCodex = selected.startsWith('codex-')
+    const isGrok = selected.startsWith('grok-')
     if (isCodex) events.splice(0, events.length, ...codex)
+    if (isGrok) events.splice(0, events.length, ...grok)
     let state = emptyChatState()
     events.forEach((event, index) => { state = applyEvent(state, index + 1, 1795545600000 + index * 1000, sillageEventSchema.parse(event)) })
     window.mainThreadTasks = state.items.filter((item) => item.kind === 'task' && item.parentToolCallId === null).length
@@ -92,10 +114,10 @@ async function mount(page, selected) {
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client: new QueryClient() },
       React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null,
         React.createElement('aside', { id: 'pane', className: 'flex h-dvh min-h-0 flex-col border border-line', style: { width: wide ? 420 : '100%' } },
-          React.createElement(AgentsPane, { conversationId: 'fixture', agent: isCodex ? 'codex' : 'claude', agents, background: [],
-            workflows: new Map(), selectedId: selected === 'codex-list' ? null : selected }))))))
+          React.createElement(AgentsPane, { conversationId: 'fixture', agent: isCodex ? 'codex' : isGrok ? 'grok' : 'claude', agents, background: [],
+            workflows: new Map(), selectedId: selected === 'codex-list' || selected === 'grok-list' ? null : selected }))))))
   }, selected)
-  const heading = { 'call-bg': 'Construire le bibliothécaire', 'call-fg': 'Relire les tests' }[selected] ?? '/root/relay'
+  const heading = { 'call-bg': 'Construire le bibliothécaire', 'call-fg': 'Relire les tests', 'grok-list': 'Lire les notes', 'grok-fg': 'Lire les notes', 'grok-bg': 'Dire pong' }[selected] ?? '/root/relay'
   await page.locator('#pane').getByText(heading).first().waitFor()
 }
 
@@ -165,8 +187,28 @@ try {
     assert.match(await thread.page.locator('#pane').innerText(), /Agent · gpt-6\.2-sol · Effort : Faible/)
     await thread.page.screenshot({ path: `${output}/${name}-codex-thread.png`, fullPage: true })
     await thread.context.close()
+
+    // Grok: type and model on each row, the background one still working; no stop (Grok has none).
+    const grok = await context(width, height, [])
+    await mount(grok.page, 'grok-list')
+    const grokPane = grok.page.locator('#pane')
+    assert.match(await grokPane.getByRole('button', { name: /Lire les notes/ }).innerText(), /general-purpose · grok-4\.7(?!-)/)
+    assert.match(await grokPane.getByRole('button', { name: /Dire pong/ }).innerText(), /general-purpose · grok-4\.7-build-fast/)
+    assert.equal(await grokPane.getByRole('button', { name: 'Arrêter ce sous-agent' }).count(), 0)
+    const grokOverflow = await grokPane.evaluate((pane) => pane.scrollWidth - pane.clientWidth)
+    assert.ok(grokOverflow <= 0, `pane overflows by ${grokOverflow}px`)
+    await grok.page.screenshot({ path: `${output}/${name}-grok-list.png`, fullPage: true })
+    await grok.context.close()
+
+    // Its thread: what it read and answered, under the spawning call.
+    const grokThread = await context(width, height, [])
+    await mount(grokThread.page, 'grok-fg')
+    await grokThread.page.locator('#pane').getByText('alpha').first().waitFor()
+    assert.match(await grokThread.page.locator('#pane').innerText(), /notes\.txt/)
+    await grokThread.page.screenshot({ path: `${output}/${name}-grok-thread.png`, fullPage: true })
+    await grokThread.context.close()
   }
   assert.deepEqual(errors, [])
-  console.log(`OK: model status, bottom activity, stop of a background subagent only, report in the subagent thread, Codex model and effort with nesting, wide screen and phone. Screenshots in ${output}`)
+  console.log(`OK: model status, bottom activity, stop of a background subagent only, report in the subagent thread, Codex model and effort with nesting, Grok type and model, wide screen and phone. Screenshots in ${output}`)
 } catch (error) { console.error(diagnostics, errors); throw error }
 finally { await browser?.close(); vite.kill('SIGTERM'); await once(vite, 'exit').catch(() => {}) }

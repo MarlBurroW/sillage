@@ -2,7 +2,7 @@
 // Deterministic fake `grok agent stdio`: Grok Build 1.0.62 ACP without models or networking.
 //
 // Prompts `fixture:{"steps":[…]}` play scenarios: each step emits
-// an update (`update`), raw notification (`notify`), client request
+// an update (`update`, under `session` for a sub-agent's), raw notification (`notify`), client request
 // (`permission` for `session/request_permission`, `request` otherwise, with
 // journaled responses), consumption outside the prompt (`consume`, e.g. a background
 // sub-agent), a turn Grok runs by itself once idle (`wake`: `{promptId, steps, usage}`,
@@ -101,7 +101,7 @@ async function playSteps(steps) {
     if (step.wait) await sleep(step.wait)
     else if (step.consume) spend(step.consume)
     else if (step.wake) await wake(step.wake)
-    else if (step.update) notify('session/update', { sessionId, update: step.update, ...(step.meta ? { _meta: step.meta } : {}) })
+    else if (step.update) notify('session/update', { sessionId: step.session ?? sessionId, update: step.update, ...(step.meta ? { _meta: step.meta } : {}) })
     else if (step.notify) notify(step.notify, step.params)
     else if (step.permission || step.request) {
       const requestId = nextRequest++

@@ -539,3 +539,87 @@ test('models: started on a stale model cache, the session waits for the accountâ
   await f.turn({ steps: [update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }, { totalTokens: 500 })], usage: {} })
   assert.deepEqual(f.events.find((event) => event.type === 'usage.updated')?.context, { usedTokens: 500, maxTokens: 2000, ratio: 0.25 })
 })
+
+const spawned = (parentSession: string, child: string, extra: Record<string, unknown> = {}) => ({
+  notify: '_x.ai/session_notification',
+  params: { sessionId: parentSession, update: { sessionUpdate: 'subagent_spawned', subagent_id: child, child_session_id: child, parent_session_id: parentSession,
+    subagent_type: 'general-purpose', description: 'Reply pong only', model: 'grok-4.7', ...extra } },
+})
+const finished = (parentSession: string, child: string, output: string) => ({
+  notify: '_x.ai/session_notification',
+  params: { sessionId: parentSession, update: { sessionUpdate: 'subagent_finished', subagent_id: child, child_session_id: child, status: 'completed',
+    tool_calls: 1, turns: 1, duration_ms: 1491, tokens_used: 10_881, output, will_wake: true } },
+})
+const inChild = (session: string, value: Record<string, unknown>, meta?: Record<string, unknown>) => ({ ...update(value, meta), session })
+
+test('sub-agents: a background sub-agentâ€™s thread goes under its spawning call, with its type, model and task, past the turn', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({
+    steps: [
+      update({ sessionUpdate: 'tool_call', toolCallId: 'spawn', title: 'spawn_subagent', rawInput: { description: 'Reply pong only', prompt: 'Reply pong.', background: true }, _meta: tool('spawn_subagent', 'other') }),
+      // As probed: the background call returns first, naming the sub-agent Grok announces next.
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'spawn', status: 'completed', rawOutput: { type: 'Text', text: 'Subagent started in background.\nsubagent_id: child-1\ndescription: Reply pong only' } }),
+      spawned('ses_fixture', 'child-1'),
+      inChild('child-1', { sessionUpdate: 'tool_call', toolCallId: 'read', title: 'read_file', rawInput: { target_file: 'a.txt' }, _meta: tool('read_file', 'read') }, { totalTokens: 900 }),
+      update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'launched' } }),
+    ],
+    usage: {},
+    later: [
+      { wait: 20 },
+      inChild('child-1', { sessionUpdate: 'tool_call_update', toolCallId: 'read', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'a' } }] }),
+      inChild('child-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'pong' } }),
+      finished('ses_fixture', 'child-1', 'pong'),
+    ],
+  })
+  await until(() => f.count('task.completed') === 1, 'task.completed')
+
+  const started = f.events.find((event) => event.type === 'tool.started' && event.toolCallId === 'read')
+  assert.equal(started?.type === 'tool.started' && started.parentToolCallId, 'spawn')
+  const completed = f.events.filter((event) => event.type === 'tool.completed' && event.toolCallId === 'read')
+  assert.deepEqual(completed.map((event) => event.type === 'tool.completed' && [event.output, event.isError]), [['a', false]], 'not aborted when the turn ended')
+  const messages = f.events.filter((event) => event.type === 'message.completed' && event.role === 'assistant')
+    .map((event) => event.type === 'message.completed' && [event.parentToolCallId, event.blocks])
+  assert.deepEqual(messages, [[null, [{ type: 'text', text: 'launched' }]], ['spawn', [{ type: 'text', text: 'pong' }]]])
+  assert.deepEqual(f.events.find((event) => event.type === 'task.started'),
+    { type: 'task.started', taskId: 'child-1', toolCallId: 'spawn', kind: 'agent', description: 'Reply pong only', workflowName: null, subagentType: 'general-purpose' })
+  const input = f.events.filter((event) => event.type === 'tool.input_updated' && event.toolCallId === 'spawn').at(-1)
+  assert.deepEqual(input?.type === 'tool.input_updated' && input.input, { description: 'Reply pong only', prompt: 'Reply pong.', background: true, subagent_type: 'general-purpose', model: 'grok-4.7' })
+  const progress = f.events.find((event) => event.type === 'task.progress')
+  assert.equal(progress?.type === 'task.progress' && progress.totalTokens, 10_881)
+  const done = f.events.find((event) => event.type === 'task.completed')
+  assert.ok(done?.type === 'task.completed' && done.status === 'completed' && done.summary === 'pong' && done.durationMs === 1491)
+  // A sub-agent's context is not the conversation's, nor is its event a notice.
+  assert.equal(f.count('usage.updated'), 0)
+  assert.equal(f.events.filter((event) => event.type === 'agent.notice' && event.code.includes('subagent')).length, 0)
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+test('sub-agents: a foreground spawn takes the sub-agent Grok announces while it is open, and sub-agents nest', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({
+    steps: [
+      update({ sessionUpdate: 'tool_call', toolCallId: 'outer', title: 'spawn_subagent', rawInput: { description: 'Outer', prompt: 'Go.' }, _meta: tool('spawn_subagent', 'other') }),
+      spawned('ses_fixture', 'child-a', { description: 'Outer' }),
+      inChild('child-a', { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Delegating.' } }),
+      inChild('child-a', { sessionUpdate: 'tool_call', toolCallId: 'inner', title: 'spawn_subagent', rawInput: { description: 'Inner', prompt: 'Read.' }, _meta: tool('spawn_subagent', 'other') }),
+      spawned('child-a', 'child-b', { description: 'Inner', subagent_type: 'explore', model: 'grok-4.7-build-fast' }),
+      inChild('child-b', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'read it' } }),
+      finished('child-a', 'child-b', 'read it'),
+      inChild('child-a', { sessionUpdate: 'tool_call_update', toolCallId: 'inner', status: 'completed', rawOutput: { type: 'Text', text: '<subagent_meta>id=child-b</subagent_meta>\nread it' } }),
+      finished('ses_fixture', 'child-a', 'done'),
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'outer', status: 'completed', rawOutput: { type: 'Text', text: '<subagent_meta>id=child-a</subagent_meta>\ndone' } }),
+    ],
+    usage: {},
+  })
+  const parentOf = (id: string) => (f.events.find((event) => event.type === 'tool.started' && event.toolCallId === id) as { parentToolCallId: string | null }).parentToolCallId
+  assert.equal(parentOf('outer'), null)
+  assert.equal(parentOf('inner'), 'outer')
+  const messages = f.events.filter((event) => event.type === 'message.completed' && event.role === 'assistant')
+    .map((event) => event.type === 'message.completed' && [event.parentToolCallId, event.blocks[0]])
+  assert.deepEqual(messages, [['outer', { type: 'thinking', text: 'Delegating.' }], ['inner', { type: 'text', text: 'read it' }]])
+  assert.deepEqual(f.events.filter((event) => event.type === 'task.started').map((event) => event.type === 'task.started' && [event.taskId, event.toolCallId, event.subagentType]),
+    [['child-a', 'outer', 'general-purpose'], ['child-b', 'inner', 'explore']])
+  assert.deepEqual(f.events.filter((event) => event.type === 'tool.completed').map((event) => event.type === 'tool.completed' && [event.toolCallId, event.isError]),
+    [['inner', false], ['outer', false]])
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
