@@ -44,7 +44,9 @@ async function openPage(file = 'index.html', options = {}, { fallback = false, g
     if (message.type() === 'error' && !(fallback && message.text().includes('net::ERR_FAILED'))) diagnostics.push(`${file}: ${message.text()}`)
   })
   page.on('requestfailed', (request) => {
-    if (request.url() !== api) diagnostics.push(`Request failed: ${request.url()}`)
+    // A theme switch or a closing page cancels images still loading (net::ERR_ABORTED); every local
+    // asset is fetched again at the end and must answer 200, so a missing file is still caught.
+    if (request.url() !== api && request.failure()?.errorText !== 'net::ERR_ABORTED') diagnostics.push(`Request failed: ${request.url()}`)
   })
   await page.route(api, async (route) => {
     if (gate) await gate
@@ -226,8 +228,8 @@ async function checkDownloadPage(page) {
 }
 
 async function checkAgents(page) {
-  await checkTabs(page, 'agent-tab-claude', 'agent-tab-antigravity', 'agent-tab-codex')
-  for (const agent of ['claude', 'codex', 'opencode', 'grok', 'antigravity']) {
+  await checkTabs(page, 'agent-tab-claude', 'agent-tab-copilot', 'agent-tab-codex')
+  for (const agent of ['claude', 'codex', 'opencode', 'grok', 'antigravity', 'copilot']) {
     await page.locator(`#agent-tab-${agent}`).click()
     assert.ok(await page.locator(`#agent-${agent}`).isVisible())
     await checkTheme(page, `agents.html (${agent})`, await page.locator('html').getAttribute('data-theme'))

@@ -186,7 +186,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
   reset, once per limit, unless someone wrote or interrupted it in between, or
   the limit lifts later than your threshold. Scheduled runs are only reported.
 - **Shared instructions and memory.** One set of instructions and one project
-  memory for all five CLIs, stored by Sillage rather than in your repository,
+  memory for all six CLIs, stored by Sillage rather than in your repository,
   editable from the interface, which agents can read and rewrite.
   [How it works](#instructions-and-memory).
 - **Installable PWA with notifications.** In-app toasts for questions and decisions,
@@ -299,8 +299,8 @@ The periodic cleanup removes expired, revoked and orphaned files.
   project skills managed from the interface, with visible progress while searching,
   installing or updating. [Skill library](skill-library.md).
 - **Extra accounts.** Register other Claude subscriptions or API keys, other Codex
-  subscriptions or API keys, and other Grok subscriptions or xAI API keys from the
-  interface, then pick one when creating
+  subscriptions or API keys, other Grok subscriptions or xAI API keys, and other
+  GitHub Copilot accounts from the interface, then pick one when creating
   a conversation or from its composer. Compare subscription usage before choosing;
   extra Claude subscriptions need a separate guided sign-in to enable their gauge.
   Added accounts belong to the Sillage user who registered them.
@@ -313,7 +313,8 @@ The periodic cleanup removes expired, revoked and orphaned files.
 - **GitHub Copilot CLI.** Its models, with Auto and its routing profile, its modes
   (Agent, Plan, Autopilot) and permissions, native commands, questions, sub-agents,
   background commands, to-do list, skills, MCP and the adoption of sessions started
-  in a terminal. It works on the machine's own Copilot sign-in: no extra accounts.
+  in a terminal. It works on the machine's own Copilot sign-in, or on extra
+  accounts signed in by device code under **Settings › Copilot accounts**.
   Copilot has no native fork, so a fork starts a new session with portable context
   through the selected turn; a message sent during a turn waits in the queue.
   [Coverage and limitations](COPILOT.md).

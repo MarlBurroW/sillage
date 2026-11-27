@@ -5,7 +5,7 @@
 <h1 align="center">Your coding agents, in one workspace.</h1>
 
 <p align="center">
-  Run Claude Code, Codex, OpenCode, Grok Build and Antigravity with your own accounts.<br>
+  Run Claude Code, Codex, OpenCode, Grok Build, Antigravity and GitHub Copilot CLI with your own accounts.<br>
   Review their changes and pick up any session from your computer or your phone.
 </p>
 
@@ -50,7 +50,7 @@ plans, permissions, models and limits are the ones you know.
 | **OpenCode** | Open source | The providers you configured in OpenCode, local models included when the provider supports them |
 | **Grok Build** | xAI | A Grok subscription or an xAI API key |
 | **Antigravity** | Google | A Google account or a Gemini API key |
-| **GitHub Copilot CLI** | GitHub | A GitHub Copilot plan (`copilot login` or a token), Auto model routing included |
+| **GitHub Copilot CLI** | GitHub | A GitHub Copilot plan, through the machine’s sign-in or extra accounts, Auto model routing included |
 
 Start a task with one agent and continue it with another. The next agent receives
 the conversation's context, and the project's instructions, memory and skills are
@@ -75,6 +75,8 @@ history. You see what a turn changed without switching to a terminal.
 - Stage, commit and push from the same panel.
 - Turn on checkpoints to inspect or undo what a turn changed.
 - A file explorer, an editor and terminals sit next to the thread.
+- Attach related folders to a project, such as an experiment beside the
+  repository, and browse them in the same explorer.
 
 ### Run several tasks, each in its own worktree
 
@@ -90,6 +92,24 @@ side by side and brings forward the ones that are waiting for you.
 - Each worktree says whether its branch has been merged, and finished ones are
   cleaned up in one confirmation.
 - Type `@@` in a message to point an agent at an earlier conversation.
+- Sub-agents, workflow agents and background shells each have a thread in the
+  Agents pane, so you can see what they are doing and stop a background one.
+
+### See what the agent is building
+
+When an agent starts a dev server, the conversation shows a card for it and the
+panel's Preview tab opens the running app, with hot reload. Vite, Next or Django
+need no host setting: the app receives its requests as if they came from
+localhost.
+
+- On Server, each preview gets an address of its own, and you can pick an element
+  in the page to add its selector, text and HTML to your next message.
+- A demo link lets someone without a Sillage account try the app, for an hour up
+  to 30 days. It needs Server and a public address.
+- Turn on the agent browser and watch the page an agent drives, or take over to
+  sign in, then hand it back.
+
+[Setting up previews](docs/previews.md)
 
 ### Answer from your phone
 
@@ -142,21 +162,38 @@ them. Skills and MCP servers are installed once and shared too.
 Manage them in Sillage, or keep project instructions in your existing `AGENTS.md`
 or `CLAUDE.md`. [How shared context works](docs/features.md#instructions-and-memory)
 
+- Choose which of Sillage's own tools agents get, for the whole instance or one
+  project. A tool family you turn off leaves the session's context entirely.
+- Let a project's sessions search, read and start work in your other projects,
+  when its owner turns that on.
+
+### Keep track of tokens and cost
+
+A status line under the composer shows what you choose to watch: the account's
+quota, the context, the session's cost and the model that actually answered.
+Hover a session in the list for its cost, tool calls and context size.
+Consumption adds everything up by agent, model, project or account. Costs are
+estimates at public API list prices, so subscription work stays comparable.
+
+Benchmarks run one prompt across agents, models and effort levels. Compare the
+outputs side by side, send a run the correction you would give the agent, then
+share the results as a page or present them as a slideshow.
+
 ### And the rest
 
-The website lists 56 features, each one written down, with what works in Desktop,
+The website lists 69 features, each one written down, with what works in Desktop,
 in Server or in both.
 
 | Chapter | What it covers |
 |---|---|
-| [Conversations](https://marlburrow.github.io/sillage/features.html#conversations) | Queue and steer messages, search, references, dictation, tool display |
-| [Code and worktrees](https://marlburrow.github.io/sillage/features.html#code) | Explorer, editor, Git, checkpoints, terminals |
-| [Projects and planning](https://marlburrow.github.io/sillage/features.html#projects) | Boards, GitHub issues, linked cards and sessions |
-| [Context and tools](https://marlburrow.github.io/sillage/features.html#context) | Shared instructions, memory, skills, MCP servers |
+| [Conversations](https://marlburrow.github.io/sillage/features.html#conversations) | Queue and steer, references, command palette, status line, sub-agents |
+| [Code and worktrees](https://marlburrow.github.io/sillage/features.html#code) | Explorer, editor, Git, checkpoints, terminals, dev-server previews |
+| [Projects and planning](https://marlburrow.github.io/sillage/features.html#projects) | Boards, GitHub issues, linked cards and sessions, work across projects |
+| [Context and tools](https://marlburrow.github.io/sillage/features.html#context) | Shared instructions, memory, skills, MCP servers, agent tools and browser |
 | [Automation](https://marlburrow.github.io/sillage/features.html#automation) | Schedules, webhooks, decisions, an API for tasks |
-| [Activity and insights](https://marlburrow.github.io/sillage/features.html#insights) | Activity wall, token consumption, model benchmarks |
-| [Export and sharing](https://marlburrow.github.io/sillage/features.html#sharing) | Offline exports, masked secrets, public links |
-| [Editions and access](https://marlburrow.github.io/sillage/features.html#editions) | Desktop, Server, remote access, notifications |
+| [Activity and insights](https://marlburrow.github.io/sillage/features.html#insights) | Activity wall, token consumption, session cost, model benchmarks |
+| [Export and sharing](https://marlburrow.github.io/sillage/features.html#sharing) | Offline exports, masked secrets, public links, demo links, slideshows |
+| [Editions and access](https://marlburrow.github.io/sillage/features.html#editions) | Desktop, Server, remote access, notifications, tours, release notes |
 
 The [feature reference](docs/features.md) in this repository has the details.
 
@@ -223,7 +260,8 @@ updates, logs and running from source.
 1. Install the CLIs you want from Settings and sign in with your agent accounts.
    You can reuse existing sign-ins on the host.
 2. Open an existing repository or create a project in the folder you want to use,
-   then start a conversation with the agent of your choice.
+   then start a conversation with the agent of your choice. A short tour points out
+   the main parts of the interface.
 3. Try “Explain how this project is organized” or
    “Help me fix this bug.” Review the files and changes alongside the reply.
 
@@ -250,6 +288,7 @@ a boat leaves on the water.
 |---|---|
 | Explore all the features | [Feature catalog](https://marlburrow.github.io/sillage/features.html) · [Feature reference](docs/features.md) |
 | Use Sillage and agent preview links from my phone | [Remote access](docs/remote-access.md) |
+| Preview the apps my agents run | [Previews](docs/previews.md) |
 | Switch between agent accounts | [Accounts](docs/accounts.md) |
 | Continue a conversation with another agent | [CLI handoff](docs/cli-handoff.md) |
 | Share skills between agents | [Skill library](docs/skill-library.md) |

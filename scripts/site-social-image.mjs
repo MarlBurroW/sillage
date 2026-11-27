@@ -20,13 +20,13 @@ export async function renderSiteSocialImage(browser) {
       body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #f0f2f6; color: #0c1a2b; font-family: Archivo, sans-serif; }
       .brand { position: absolute; top: 52px; left: 64px; display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 680; font-stretch: 112%; letter-spacing: -0.9px; }
       .brand svg { width: 42px; height: 42px; color: #3b4bdb; }
-      h1 { position: absolute; left: 64px; top: 150px; width: 1010px; margin: 0; font-size: 67px; line-height: 1.03; letter-spacing: -1.9px; font-weight: 620; font-stretch: 114%; }
+      h1 { position: absolute; left: 64px; top: 150px; width: 1040px; margin: 0; font-size: 60px; line-height: 1.04; letter-spacing: -1.7px; font-weight: 620; font-stretch: 114%; }
       p { position: absolute; left: 64px; bottom: 54px; margin: 0; font-size: 24px; color: #47566b; }
       .product { position: absolute; top: 392px; left: 640px; width: 760px; background: #fff; border: 1px solid #d3d9e3; border-radius: 10px; box-shadow: 0 24px 60px -18px #0c1a2b40; overflow: hidden; }
       .product img { display: block; width: 100%; }
     </style></head><body>
       <div class="brand">${symbol}<span>Sillage</span></div>
-      <h1>One workspace for Claude Code, Codex, OpenCode, Grok Build and Antigravity.</h1>
+      <h1>One workspace for Claude Code, Codex, OpenCode, Grok Build, Antigravity and GitHub Copilot.</h1>
       <p>Self-hosted and open source</p>
       <div class="product"><img src="data:image/webp;base64,${screenshot.toString('base64')}" alt=""></div>
     </body></html>`)
