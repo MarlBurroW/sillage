@@ -176,6 +176,12 @@ Probed on 2.4.1, data directories isolated.
 - **Steering**: a prompt sent during an execution steers it by default.
 - **Compaction**: `POST /api/session/{id}/compact` answers at once; the stream
   reports `session.compaction.*`.
+- **Usage**: steps report their tokens (`session.step.ended`), and
+  `session.usage.updated` carries each session's running total, children excluded
+  (probed 2.4.2). Compactions and titles spend without a step: Sillage adds the part
+  of the total no step explains, to the turn while it is open, otherwise as
+  `usage.consumed` (a title generated just after the execution ends). A resumed
+  session starts from the total `GET /api/session/{id}` gives.
 - **Skills added during a session**: `POST /api/location/reload`. It cancels
   pending permissions and forms, so Sillage waits for idle like on 1.x.
 - **Images and mentioned files**, directories included: `files: [{uri, name}]` with

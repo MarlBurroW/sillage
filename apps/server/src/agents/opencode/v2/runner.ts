@@ -100,7 +100,7 @@ const NOISE = [
   'plugin.', 'project.', 'worktree.', 'config.', 'reference.', 'filesystem.', 'pty.', 'persistent-pty.',
   'shell.', 'websearch.', 'artifact.', 'tui.', 'installation.', 'vcs.', 'mcp.resources.', 'experimental.mcp.',
   'session.agent.', 'session.model.', 'session.moved', 'session.metadata.', 'session.permissions',
-  'session.viewed', 'session.archived', 'session.unarchived', 'session.usage.', 'session.deleted',
+  'session.viewed', 'session.archived', 'session.unarchived', 'session.deleted',
   'session.forked', 'session.inbox.delivered', 'session.inbox.cancelled', 'session.inbox.delivery.',
   'session.instructions.', 'session.synthetic', 'session.skill.', 'session.shell.', 'session.step.first-token',
   'session.step.streamed', 'session.tool.input.delta', 'session.compaction.delta', 'session.revert.',
@@ -138,6 +138,15 @@ interface ShellReader {
 
 type Usage = { cost: number; input: number; output: number; cacheRead: number; cacheWrite: number }
 const NO_USAGE: Usage = { cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+const USAGE_FIELDS = Object.keys(NO_USAGE) as (keyof Usage)[]
+
+/** Like the step counters: `output` includes reasoning, `input` excludes cache. */
+function usageOf(tokens: TokenUsage, cost: number): Usage {
+  return { cost, input: tokens.input, output: tokens.output + tokens.reasoning, cacheRead: tokens.cache.read, cacheWrite: tokens.cache.write }
+}
+
+/** Cumulative usage opencode last reported for a session, and step usage it did not include yet. */
+interface SessionTotals { reported: Usage; unreported: Usage }
 
 function boundedAdd(set: Set<string>, value: string, max = 4096): void {
   set.add(value)
@@ -189,6 +198,8 @@ export class Opencode2Runner implements AgentRunner {
   private readonly turn: TurnLifecycle
   /** Usage since the last `turn.completed`: background subagents spend between parent turns. */
   private usage: Usage = { ...NO_USAGE }
+  /** Per session of the tree, to find spending without steps (compaction, titles). */
+  private readonly sessionTotals = new Map<string, SessionTotals>()
   private turnAborted = false
   private turnFailed = false
   private compacting = false
@@ -296,6 +307,8 @@ export class Opencode2Runner implements AgentRunner {
     await this.loadCatalog(START_MODELS_FILL_MS)
 
     this.sessionId = session.id
+    // A resumed session's earlier spending was counted by the runs that made it.
+    this.sessionTotals.set(session.id, { reported: usageOf(session.tokens, session.cost), unreported: { ...NO_USAGE } })
     this.ctx.setAgentSessionId(session.id)
     this.ctx.emit(
       {
@@ -545,6 +558,10 @@ export class Opencode2Runner implements AgentRunner {
         this.rememberReport(event.data)
         return
 
+      case 'session.usage.updated':
+        if (this.inTree(event.data.sessionID)) this.onSessionUsage(event.data.sessionID, usageOf(event.data.tokens, event.data.cost))
+        return
+
       case 'session.compaction.started':
         if (!this.isRoot(event.data.sessionID) || this.compacting) return
         this.compacting = true
@@ -643,13 +660,21 @@ export class Opencode2Runner implements AgentRunner {
     if (this.assistantModels.size > 256) this.assistantModels.delete(this.assistantModels.keys().next().value!)
   }
 
+  private totalsOf(sessionId: string): SessionTotals {
+    let totals = this.sessionTotals.get(sessionId)
+    // Children are new sessions: they start from zero.
+    if (!totals) this.sessionTotals.set(sessionId, totals = { reported: { ...NO_USAGE }, unreported: { ...NO_USAGE } })
+    return totals
+  }
+
   /** Step usage. Like 1.x, `input` excludes cache: context occupancy sums all three. */
   private onStepUsage(sessionId: string, messageId: string, tokens: TokenUsage, cost: number): void {
-    this.usage.cost += cost
-    this.usage.input += tokens.input
-    this.usage.output += tokens.output + tokens.reasoning
-    this.usage.cacheRead += tokens.cache.read
-    this.usage.cacheWrite += tokens.cache.write
+    const step = usageOf(tokens, cost)
+    const { unreported } = this.totalsOf(sessionId)
+    for (const field of USAGE_FIELDS) {
+      this.usage[field] += step[field]
+      unreported[field] += step[field]
+    }
 
     const used = tokens.input + tokens.cache.read + tokens.cache.write
     const model = this.isRoot(sessionId) ? this.assistantModels.get(messageId) : undefined
@@ -662,6 +687,40 @@ export class Opencode2Runner implements AgentRunner {
       context: limit && used > 0 ? { usedTokens: used, maxTokens: limit, ratio: used / limit } : null,
       rateLimit: null,
     })
+  }
+
+  /**
+   * `session.usage.updated` carries a session's running total (probed 2.4.2). Steps stay the
+   * source of the counters: each one is reported right after its `step.ended`, so only the part
+   * of the increase no step explains is added. That is spending without steps: a compaction,
+   * counted in its turn, and the title, generated just after the execution ends and then
+   * reported on its own.
+   */
+  private onSessionUsage(sessionId: string, total: Usage): void {
+    const totals = this.totalsOf(sessionId)
+    const extra = { ...NO_USAGE }
+    for (const field of USAGE_FIELDS) {
+      // A total going down (a revert) adds nothing; float noise in costs is not spending.
+      const increase = Math.max(0, total[field] - totals.reported[field])
+      const explained = Math.min(increase, totals.unreported[field])
+      totals.unreported[field] -= explained
+      extra[field] = increase - explained < 1e-9 ? 0 : increase - explained
+    }
+    totals.reported = total
+    if (USAGE_FIELDS.every((field) => extra[field] === 0)) return
+    if (this.turn.open) {
+      for (const field of USAGE_FIELDS) this.usage[field] += extra[field]
+      return
+    }
+    this.ctx.emit({
+      type: 'usage.consumed',
+      model: null,
+      costUsd: extra.cost,
+      inputTokens: extra.input,
+      outputTokens: extra.output,
+      cacheReadTokens: extra.cacheRead,
+      cacheCreationTokens: extra.cacheWrite,
+    }, { sessionID: sessionId, tokens: total })
   }
 
   private openText(sessionId: string, key: string, kind: OpenText['kind']): OpenText | null {

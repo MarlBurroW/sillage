@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { DEFAULT_OPENCODE_CONFIG, sillageEventSchema, type McpServer } from '@sillage/protocol'
 import {
   CHILD, ROOT, childCreated, form, job, permission, report, runner2Fixture, started, step, stepEnded, succeeded, text,
-  toolCall, toolProgress, toolSuccess, until,
+  toolCall, toolProgress, toolSuccess, until, usage,
 } from './opencode2-support.js'
 
 test('OpenCode 2 : un tour, texte en deltas, outils normalisés, édition, consommation et format brut', async (t) => {
@@ -293,6 +293,57 @@ test('OpenCode 2 : « pour la session » reste dans la conversation, jamais une 
   await until(() => f.count('permission.requested') === 3)
   assert.deepEqual(await replies(3), [['per_1', 'once'], ['per_2', 'once'], ['per_3', 'once']])
   assert.deepEqual(f.of('permission.requested').slice(1).map((event) => event.input), [{ command: 'echo three && rm -rf build' }, { url: 'echo two' }])
+})
+
+test('OpenCode 2 : compaction et titre comptés, sans doubler les étapes', async (t) => {
+  const f = await runner2Fixture(t)
+  const totals = (event: { costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number }) =>
+    [Number(event.costUsd.toFixed(6)), event.inputTokens, event.outputTokens, event.cacheReadTokens]
+
+  // Each step is reported again in the running total: counted once. A title generated during
+  // the turn has no step: its share joins the turn.
+  await f.turn([
+    started(), step('msg_a'),
+    stepEnded('msg_a', { input: 100, output: 20, read: 400 }, 0.5), usage({ input: 100, output: 20, read: 400 }, 0.5),
+    usage({ input: 160, output: 30, read: 400 }, 0.6),
+    succeeded(),
+    // A title generated after the execution ended: reported on its own.
+    usage({ input: 200, output: 35, read: 400 }, 0.65),
+  ])
+  await until(() => f.count('usage.consumed') === 1)
+  assert.deepEqual(totals(f.of('turn.completed')[0]!), [0.6, 160, 30, 400])
+  assert.deepEqual(totals(f.of('usage.consumed')[0]!), [0.05, 40, 5, 0])
+
+  // A compaction has no step at all: its turn used to close at zero.
+  await f.turn([
+    started(),
+    { type: 'session.compaction.started', data: { sessionID: ROOT } },
+    usage({ input: 1200, output: 135, read: 900 }, 1.65),
+    { type: 'session.compaction.ended', data: { sessionID: ROOT, reason: 'manual' } },
+    succeeded(),
+  ])
+  assert.deepEqual(totals(f.of('turn.completed')[1]!), [1, 1000, 100, 500])
+
+  // A sub-agent's steps and its own running total are not counted twice either.
+  await f.turn([
+    started(), childCreated(),
+    stepEnded('msg_c', { input: 7, output: 3 }, 0, CHILD), usage({ input: 7, output: 3 }, 0, CHILD),
+    succeeded(),
+  ])
+  assert.deepEqual(totals(f.of('turn.completed')[2]!), [0, 7, 3, 0])
+  assert.equal(f.count('usage.consumed'), 1)
+})
+
+test('OpenCode 2 : une session reprise ne recompte pas ce qu’elle avait dépensé', async (t) => {
+  const f = await runner2Fixture(t, { resumeSessionId: 'ses_spent' })
+  await f.turn([
+    started('ses_spent'), step('msg_a', 'ses_spent'),
+    stepEnded('msg_a', { input: 100, output: 20 }, 0.5, 'ses_spent'), usage({ input: 5100, output: 320 }, 2.5, 'ses_spent'),
+    succeeded('ses_spent'),
+  ])
+  assert.equal(f.of('turn.completed')[0]?.inputTokens, 100)
+  assert.equal(f.of('turn.completed')[0]?.outputTokens, 20)
+  assert.equal(f.count('usage.consumed'), 0)
 })
 
 test('OpenCode 2 : interruption, échec et reprise', async (t) => {

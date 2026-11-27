@@ -68,6 +68,9 @@ export const step = (assistantMessageID: string, sessionID = ROOT) =>
 export const stepEnded = (assistantMessageID: string, tokens: { input: number; output: number; read?: number }, cost = 0, sessionID = ROOT) =>
   ev('session.step.ended', { sessionID, assistantMessageID, finish: 'stop', cost,
     tokens: { input: tokens.input, output: tokens.output, reasoning: 0, cache: { read: tokens.read ?? 0, write: 0 } } })
+/** A session's running total, as 2.x reports it after each step and for spending without one. */
+export const usage = (tokens: { input: number; output: number; read?: number }, cost = 0, sessionID = ROOT) =>
+  ev('session.usage.updated', { sessionID, cost, tokens: { input: tokens.input, output: tokens.output, reasoning: 0, cache: { read: tokens.read ?? 0, write: 0 } } })
 export const text = (kind: 'text' | 'reasoning', assistantMessageID: string, parts: string[], final?: string, sessionID = ROOT) => [
   ev(`session.${kind}.started`, { sessionID, assistantMessageID, ordinal: 0 }),
   ...parts.map((delta) => ev(`session.${kind}.delta`, { sessionID, assistantMessageID, ordinal: 0, delta })),

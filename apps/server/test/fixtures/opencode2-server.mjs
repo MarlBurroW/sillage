@@ -27,9 +27,10 @@ const emit = (event) => {
   for (const stream of streams) stream.write(frame)
 }
 
+// `ses_spent` was used before Sillage resumes it: its running total is not this run's spending.
 const session = (id) => ({
-  id, projectID: 'global', model: { id: 'small', providerID: 'fixture', variant: 'default' }, cost: 0,
-  tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: 1, updated: 1 },
+  id, projectID: 'global', model: { id: 'small', providerID: 'fixture', variant: 'default' }, cost: id === 'ses_spent' ? 2 : 0,
+  tokens: { input: id === 'ses_spent' ? 5000 : 0, output: id === 'ses_spent' ? 300 : 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: 1, updated: 1 },
   location: { directory: process.cwd() },
 })
 
