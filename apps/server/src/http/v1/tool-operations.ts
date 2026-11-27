@@ -16,7 +16,7 @@ interface Operation {
 const string = { type: 'string' }
 const task = { ...string, description: 'Task/session ID.' }
 const project = { ...string, description: 'Project ID from list_task_projects.' }
-const config = { type: 'object', description: 'Optional model and effort overrides; see list_agents and inspect_access. Native fields: model, effort (Claude), reasoningEffort (Codex/Grok/Antigravity), variant (OpenCode). Safeguards cannot be overridden.' }
+const config = { type: 'object', description: 'Optional model and effort overrides; see list_agents and inspect_access. Native fields: model, effort (Claude), reasoningEffort (Codex/Grok/Antigravity/Copilot), variant (OpenCode). Safeguards cannot be overridden.' }
 const listQuery = { projectId: project, status: string, scope: { type: 'string', enum: ['token', 'user'], description: 'token by default; user includes your other sessions within allowed projects.' } }
 export const TOOL_OPERATIONS: Operation[] = [
   { name: 'inspect_access', description: 'Inspect this key: scopes, permitted projects, CLI/model/effort restrictions and defaults. Defaults are used only when omitted; callers may choose any authorized value.', method: 'GET', route: '/api/v1/access' },

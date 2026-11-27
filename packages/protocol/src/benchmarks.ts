@@ -381,6 +381,7 @@ export function variantEffort(config: AgentConfig): string | null {
     case 'codex':
     case 'grok':
     case 'antigravity':
+    case 'copilot':
       return config.reasoningEffort || null
   }
 }

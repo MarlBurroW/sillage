@@ -14,16 +14,19 @@ import {
   opencodeConfigSchema,
   grokConfigSchema,
   antigravityConfigSchema,
+  copilotConfigSchema,
   DEFAULT_CLAUDE_CONFIG,
   DEFAULT_CODEX_CONFIG,
   DEFAULT_OPENCODE_CONFIG,
   DEFAULT_GROK_CONFIG,
   DEFAULT_ANTIGRAVITY_CONFIG,
+  DEFAULT_COPILOT_CONFIG,
   type ClaudeConfig,
   type CodexConfig,
   type OpencodeConfig,
   type GrokConfig,
   type AntigravityConfig,
+  type CopilotConfig,
 } from './agent-config.js'
 
 /**
@@ -220,6 +223,7 @@ export interface ComposerLayout {
   opencode: string[]
   grok: string[]
   antigravity: string[]
+  copilot: string[]
 }
 
 /** Nothing pinned: only the model/effort chip. */
@@ -229,6 +233,7 @@ export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = {
   opencode: [],
   grok: [],
   antigravity: [],
+  copilot: [],
 }
 
 /** A category key as named by `agent-settings`, with no longer values allowed. */
@@ -240,6 +245,7 @@ export const composerLayoutSchema = z.object({
   opencode: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.opencode).catch(DEFAULT_COMPOSER_LAYOUT.opencode),
   grok: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.grok).catch(DEFAULT_COMPOSER_LAYOUT.grok),
   antigravity: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.antigravity).catch(DEFAULT_COMPOSER_LAYOUT.antigravity),
+  copilot: pinnedKeysSchema.default(DEFAULT_COMPOSER_LAYOUT.copilot).catch(DEFAULT_COMPOSER_LAYOUT.copilot),
 })
 
 /**
@@ -268,6 +274,7 @@ export interface AgentDefaults {
   opencode: OpencodeConfig
   grok: GrokConfig
   antigravity: AntigravityConfig
+  copilot: CopilotConfig
 }
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
@@ -276,6 +283,7 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   opencode: DEFAULT_OPENCODE_CONFIG,
   grok: DEFAULT_GROK_CONFIG,
   antigravity: DEFAULT_ANTIGRAVITY_CONFIG,
+  copilot: DEFAULT_COPILOT_CONFIG,
 }
 
 /**
@@ -292,6 +300,7 @@ export const agentDefaultsSchema = z.object({
   opencode: opencodeConfigSchema.default(DEFAULT_OPENCODE_CONFIG).catch(DEFAULT_OPENCODE_CONFIG),
   grok: grokConfigSchema.default(DEFAULT_GROK_CONFIG).catch(DEFAULT_GROK_CONFIG),
   antigravity: antigravityConfigSchema.default(DEFAULT_ANTIGRAVITY_CONFIG).catch(DEFAULT_ANTIGRAVITY_CONFIG),
+  copilot: copilotConfigSchema.default(DEFAULT_COPILOT_CONFIG).catch(DEFAULT_COPILOT_CONFIG),
 })
 
 export const appearancePrefsSchema = z.object({

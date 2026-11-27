@@ -147,7 +147,7 @@ export class CliBinary {
   /** Only default executable names resolve to the package Sillage installs. */
   get installable(): boolean {
     const names: Record<AgentKind, string> = {
-      claude: 'claude', codex: 'codex', opencode: 'opencode', grok: 'grok',
+      claude: 'claude', codex: 'codex', opencode: 'opencode', grok: 'grok', copilot: 'copilot',
       antigravity: process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par',
     }
     return this.enabled && names[this.kind] === this.configured

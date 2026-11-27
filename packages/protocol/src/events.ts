@@ -14,7 +14,7 @@ import { toolPresentationSchema } from './tools.js'
  * `events.raw` for specialized renderers.
  */
 
-export const agentKindSchema = z.enum(['claude', 'codex', 'opencode', 'grok', 'antigravity'])
+export const agentKindSchema = z.enum(['claude', 'codex', 'opencode', 'grok', 'antigravity', 'copilot'])
 export type AgentKind = z.infer<typeof agentKindSchema>
 
 export const planStatusSchema = z.enum(['pending', 'in_progress', 'completed'])

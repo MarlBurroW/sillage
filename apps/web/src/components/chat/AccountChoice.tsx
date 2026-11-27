@@ -1,6 +1,6 @@
 import { useAntigravityAccounts } from '../../lib/antigravity-accounts'
 import { IdCard } from 'lucide-react'
-import type { AgentConfig, AgentUsage } from '@sillage/protocol'
+import { configAccount, type AgentConfig, type AgentUsage } from '@sillage/protocol'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
@@ -76,7 +76,7 @@ export function AccountChoice({
             }))
         : isAntigravity ? (antigravityList?.accounts ?? []).filter((account) => account.status === 'ready').map((account) => ({ id: account.id, label: account.label, kind: account.authMode?.startsWith('oauth-') ? ('gauged' as const) : ('apiKey' as const) })) : []
 
-  const chosen = config.agent === 'opencode' ? null : config.account
+  const chosen = configAccount(config)
   // CLI login then accounts. API keys have no plan: probing returns nothing, so use prose previews.
   const probed: (string | null)[] = [
     null,
@@ -85,7 +85,7 @@ export function AccountChoice({
   const usages = useAccountsUsage(config.agent, probed, enabled && accounts.length > 0)
   const usageOf = (account: string | null) => usages[probed.indexOf(account)]
 
-  if (config.agent === 'opencode' || accounts.length === 0) return null
+  if (config.agent === 'opencode' || config.agent === 'copilot' || accounts.length === 0) return null
 
   const hintFor = (account: Account | null): string | undefined => {
     if (account?.kind === 'apiKey') return t('draft.account.apiKey')

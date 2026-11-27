@@ -101,4 +101,17 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     readBackgroundOutput: false,
     draftCommands: true,
   },
+  // GitHub Copilot CLI 1.0.116 speaks plain ACP: no steer or compact RPC (`/compact` stays a
+  // slash command), no plan review request. Its slash commands need a session, which a probe
+  // can open without persisting a turn. Native session import is not wired yet.
+  copilot: {
+    steer: false,
+    compact: false,
+    resyncSessions: false,
+    planReview: false,
+    cliSessions: false,
+    stopBackgroundTask: false,
+    readBackgroundOutput: false,
+    draftCommands: true,
+  },
 }

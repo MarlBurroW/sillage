@@ -1,4 +1,4 @@
-import { conversationPath } from '@sillage/protocol'
+import { configAccount, conversationPath } from '@sillage/protocol'
 import { EyeOff, History, SquareKanban, X } from 'lucide-react'
 import { Suspense, useMemo, useState } from 'react'
 import { lazyWithReload } from '../lib/lazy-reload'
@@ -254,10 +254,10 @@ export function DraftConversationPage() {
     projectId,
     AGENT_CAPABILITIES[agent].cliSessions && !effectiveWorktreeId && Boolean(project && userSettings) && availability !== undefined && blocked === null,
     agent,
-    effective.agent !== 'opencode' ? effective.account : null,
+    configAccount(effective),
   )
   const cliSessionList = effectiveWorktreeId ? [] : (cliSessions?.sessions ?? [])
-  const importSession = useImportCliSession(projectId ?? '', agent, effective.agent !== 'opencode' ? effective.account : null)
+  const importSession = useImportCliSession(projectId ?? '', agent, configAccount(effective))
 
   // Selected CLI's slash commands, read in the target directory: otherwise typing
   // `/` here showed nothing until after the first turn.

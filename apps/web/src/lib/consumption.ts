@@ -18,7 +18,7 @@ export const PERIOD_LABELS: Record<ConsumptionPeriod, MessageKey> = {
  * Stacking and color order of the CLIs. Fixed: a CLI keeps its color whichever others consumed
  * during the period (`styles/consumption.css` holds the colors, validated in this order).
  */
-export const SERIES_AGENTS: AgentKind[] = ['codex', 'claude', 'opencode', 'grok', 'antigravity']
+export const SERIES_AGENTS: AgentKind[] = ['codex', 'claude', 'opencode', 'grok', 'antigravity', 'copilot']
 
 /** Start of the period on the reader's calendar: whole days, today included; null for everything. */
 export function periodStart(period: ConsumptionPeriod, now = new Date()): number | null {

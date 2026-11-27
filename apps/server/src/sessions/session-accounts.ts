@@ -27,7 +27,7 @@ export class SessionAccounts {
       const home = this.antigravityHome(conversation.userId, config.account)
       return { ...(home ? { GEMINI_HOME: home } : {}), SILLAGE_ANTIGRAVITY_SESSION_ROOT: this.antigravityAccounts.homes.sessions(conversation.userId) }
     }
-    if (config.agent === 'opencode' || !config.account) return {}
+    if (config.agent === 'opencode' || config.agent === 'copilot' || !config.account) return {}
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}

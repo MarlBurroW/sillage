@@ -111,6 +111,7 @@ export function noticeText(item: NoticeItem): string {
     return translate(item.code === 'project_moved' ? 'conversation.move.done' : 'conversation.move.pending', { project: details?.project ?? '' })
   }
   if (item.code === 'antigravity_model_adjusted') return translate('antigravity.modelAdjusted.notice')
+  if (item.code === 'copilot_model_adjusted') return translate('copilot.modelAdjusted.notice')
   if (item.code === 'antigravity_account_signed_out') return translate('antigravity.logout.notice')
   if (item.code === 'portable_fork') return translate('antigravity.fork.notice')
   if (item.code === 'additional_directories_unsupported') return translate('antigravity.directories.notice')

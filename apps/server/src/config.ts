@@ -66,6 +66,9 @@ const configSchema = z.object({
       grok: z
         .object({ binary: z.string().default('grok'), enabled: z.boolean().default(true) })
         .default({}),
+      copilot: z
+        .object({ binary: z.string().default('copilot'), enabled: z.boolean().default(true) })
+        .default({}),
     })
     .default({}),
 })

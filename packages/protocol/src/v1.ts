@@ -269,6 +269,7 @@ export const EFFORT_FIELD: Record<AgentKind, string> = {
   opencode: 'variant',
   grok: 'reasoningEffort',
   antigravity: 'reasoningEffort',
+  copilot: 'reasoningEffort',
 }
 
 /**
@@ -292,6 +293,7 @@ export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
   opencode: ['model', 'variant', 'primaryAgent'],
   grok: ['model', 'reasoningEffort'],
   antigravity: ['model', 'reasoningEffort'],
+  copilot: ['model', 'reasoningEffort', 'autoTier'],
 }
 
 /**
@@ -310,6 +312,8 @@ export function isPermissiveConfig(config: AgentConfig): boolean {
   // `auto` lets a classifier decide without asking, equivalent for unattended callers:
   // only `default` and `plan` retain human involvement.
   if (config.agent === 'antigravity') return config.permissionMode === 'yolo'
+  // Autopilot turns `allow_all` on by itself; `auto` is a model judge, not a person.
+  if (config.agent === 'copilot') return config.allowAll !== 'off' || config.mode === 'autopilot'
   if (config.agent === 'grok') return config.permissionMode === 'bypassPermissions' || config.permissionMode === 'auto'
   return config.askForApproval === 'never' || config.sandbox === 'danger-full-access'
 }
