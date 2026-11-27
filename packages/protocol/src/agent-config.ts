@@ -207,6 +207,12 @@ export const codexConfigSchema = z.object({
   askForApproval: codexApprovalConfigSchema,
   sandbox: codexSandboxSchema,
   networkAccess: codexNetworkAccessSchema.default(''),
+  /**
+   * Speed tier id from the model's catalog entry (`priority`, `ultrafast`), `default` for standard
+   * speed, or `CLI_DEFAULT` for config.toml's `service_tier` (standard without one). Faster tiers
+   * use more quota. Sent on every turn, so a change applies to the next one.
+   */
+  serviceTier: z.string().default(''),
   additionalDirectories: z.array(z.string()).default([]),
   /** MCP registry server IDs enabled for this conversation. */
   mcpServers: z.array(z.string()).default([]),
@@ -402,6 +408,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   collaborationMode: 'default',
   sandbox: 'workspace-write',
   networkAccess: CLI_DEFAULT,
+  serviceTier: CLI_DEFAULT,
   additionalDirectories: [],
   mcpServers: [],
   sillageMcp: true,

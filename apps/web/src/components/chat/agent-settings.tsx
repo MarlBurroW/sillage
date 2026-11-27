@@ -8,6 +8,7 @@ import {
   DEFAULT_CLAUDE_CONFIG,
   type AgentConfig,
   type AgentModelDto,
+  type AgentServiceTierDto,
   type ClaudeConfig,
   type CodexApprovalName,
   type CodexConfig,
@@ -271,6 +272,24 @@ function codexNetworkOptions(t: Translate): SettingChoice<NetworkChoice>[] {
     { value: 'on', label: t('composer.network.on'), hint: t('composer.network.on.hint') },
     { value: 'off', label: t('composer.network.off'), hint: t('composer.network.off.hint') },
   ]
+}
+
+/**
+ * Codex speed tiers of one model. The tiers themselves are named and described by the CLI, the
+ * description saying what they cost in quota; Sillage only names standard speed and the CLI
+ * default (config.toml's `service_tier`).
+ */
+function codexSpeedOptions(t: Translate, tiers: AgentServiceTierDto[]): SettingChoice<string>[] {
+  return [
+    { value: CLI_DEFAULT_CHOICE, label: t('composer.codexSpeed.default'), hint: t('composer.codexSpeed.default.hint') },
+    { value: 'default', label: t('composer.speed.standard'), hint: t('composer.codexSpeed.standard.hint') },
+    ...tiers.map((tier) => ({ value: tier.id, label: tier.name, hint: tier.description })),
+  ]
+}
+
+/** A speed tier the model does not offer falls back to the CLI default rather than failing the turn. */
+function clampServiceTier(tier: string, tiers: AgentServiceTierDto[]): string {
+  return tier === CLI_DEFAULT || tier === 'default' || tiers.some((offered) => offered.id === tier) ? tier : CLI_DEFAULT
 }
 
 /**
@@ -931,6 +950,10 @@ export function useAgentSettings({
       />
     )
   } else if (codex) {
+    // Hidden for models without tiers, like effort for models without levels.
+    const tiers = catalogModel(catalog?.models, resolvedModel)?.serviceTiers ?? []
+    const codexSpeedList = codexSpeedOptions(t, tiers)
+    const codexSpeed = codex.serviceTier || CLI_DEFAULT_CHOICE
     groups = [
       setting({
         key: 'model',
@@ -943,6 +966,7 @@ export function useAgentSettings({
             ...codex,
             model,
             reasoningEffort: clampEffort(model, codex.reasoningEffort),
+            serviceTier: clampServiceTier(codex.serviceTier, catalogModel(catalog?.models, model)?.serviceTiers ?? []),
           }),
       }),
       ...(codexModeOptions.length > 0
@@ -1014,6 +1038,19 @@ export function useAgentSettings({
         value: codex.sandbox,
         onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
       }),
+      ...(tiers.length > 0
+        ? [
+            setting({
+              key: 'speed',
+              label: t('composer.setting.speed'),
+              icon: <Zap size={15} />,
+              options: codexSpeedList,
+              value: codexSpeed,
+              // Sent on every turn: applied live.
+              onChange: (choice) => onConfigChange({ ...codex, serviceTier: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice }),
+            }),
+          ]
+        : []),
       // Full access has no sandbox, hence no network switch. Sent on every turn: applied live.
       ...(codex.sandbox !== 'danger-full-access'
         ? [
@@ -1050,6 +1087,8 @@ export function useAgentSettings({
       segment('model', modelOptions, resolvedModel),
       ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
       ...(codex.account ? [segment('account', accountOptions, codex.account)] : []),
+      // A faster tier spends more quota: keep it in sight, like Claude's fast mode.
+      ...(tiers.some((tier) => tier.id === codex.serviceTier) ? [segment('speed', codexSpeedList, codexSpeed)] : []),
       ...(approvalOff ? [segment('approval', approvalOptions, approvalValue)] : []),
       ...(approvalOff && codex.sandbox !== 'danger-full-access'
         ? []

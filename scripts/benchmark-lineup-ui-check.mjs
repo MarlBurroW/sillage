@@ -61,7 +61,7 @@ const claude = (model, extra = {}) => ({
 })
 const codex = (model, extra = {}) => ({
   agent: 'codex', model, reasoningEffort: 'medium', collaborationMode: 'default', askForApproval: 'never', sandbox: 'danger-full-access',
-  networkAccess: '', additionalDirectories: [], mcpServers: [], sillageMcp: true, skillLibrary: true, account: null, ...extra,
+  networkAccess: '', serviceTier: '', additionalDirectories: [], mcpServers: [], sillageMcp: true, skillLibrary: true, account: null, ...extra,
 })
 
 /** Ten variants across two CLIs, written worst-unknown order on purpose: sorting has work to do. */

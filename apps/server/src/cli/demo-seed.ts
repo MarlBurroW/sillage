@@ -674,6 +674,7 @@ async function main(): Promise<void> {
     collaborationMode: 'default',
     sandbox: 'workspace-write',
     networkAccess: '',
+    serviceTier: '',
     additionalDirectories: [],
     mcpServers: [],
     sillageMcp: true,

@@ -120,6 +120,14 @@ interface SubAgentInput {
   effort?: string
 }
 
+/** config.toml values Sillage applies for settings left to the CLI. */
+interface CliDefaults {
+  networkAccess: boolean
+  serviceTier: string | null
+}
+
+const NO_CLI_DEFAULTS: CliDefaults = { networkAccess: false, serviceTier: null }
+
 interface ChildThread {
   toolId: string
   parent: string | null
@@ -270,11 +278,11 @@ export class CodexRunner implements AgentRunner {
   /** Sign-in and plan from the last account/updated, to report only real changes. */
   private account: string | null = null
   /**
-   * `[sandbox_workspace_write] network_access` as the CLI resolves it for this cwd and home, read
-   * once per process: what `networkAccess: CLI_DEFAULT` applies. A promise so the read overlaps
-   * thread startup instead of delaying it; settled long before the first turn/start needs it.
+   * config.toml values as the CLI resolves them for this cwd and home, read once per process: what
+   * the `CLI_DEFAULT` network access and service tier apply. A promise so the read overlaps thread
+   * startup instead of delaying it; settled long before the first turn/start needs it.
    */
-  private cliNetworkAccess: Promise<boolean> = Promise.resolve(false)
+  private cliDefaults: Promise<CliDefaults> = Promise.resolve(NO_CLI_DEFAULTS)
 
   /** See AgentRunner: update this.config only after successful application. */
   get appliedConfig(): AgentConfig {
@@ -310,7 +318,7 @@ export class CodexRunner implements AgentRunner {
           type: 'workspaceWrite',
           // Reread each turn so worktrees created mid-session appear on the next.
           writableRoots: [...this.config.additionalDirectories, ...(this.ctx.workTrees?.() ?? [])],
-          networkAccess: setting === CLI_DEFAULT ? await this.cliNetworkAccess : setting === 'on',
+          networkAccess: setting === CLI_DEFAULT ? (await this.cliDefaults).networkAccess : setting === 'on',
           excludeTmpdirEnvVar: false,
           excludeSlashTmp: false,
         }
@@ -318,15 +326,28 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * Off when the read fails or the key is absent, which is Codex's own default. Passing cwd
-   * includes project layers, as the CLI would see them for this conversation.
+   * Speed tier for this turn, always explicit. Probed on codex-cli 0.172.0: `serviceTier` applies
+   * to this turn and the next ones, an omitted field keeps the thread's tier, and `"default"` (or
+   * null) is standard speed. Omitting it for the CLI default would leave a tier chosen earlier in
+   * the session in force, so the sentinel sends config.toml's `service_tier`, else standard.
    */
-  private async readCliNetworkAccess(client: CodexAppServerClient): Promise<boolean> {
+  private async serviceTier(): Promise<string> {
+    return this.config.serviceTier || (await this.cliDefaults).serviceTier || 'default'
+  }
+
+  /**
+   * Codex's own defaults when the read fails or a key is absent: no network, standard speed.
+   * Passing cwd includes project layers, as the CLI would see them for this conversation.
+   */
+  private async readCliDefaults(client: CodexAppServerClient): Promise<CliDefaults> {
     try {
-      const read = await client.call<ConfigReadResponse, 'config/read'>('config/read', { cwd: this.ctx.cwd })
-      return read.config?.sandbox_workspace_write?.network_access === true
+      const { config } = await client.call<ConfigReadResponse, 'config/read'>('config/read', { cwd: this.ctx.cwd })
+      return {
+        networkAccess: config?.sandbox_workspace_write?.network_access === true,
+        serviceTier: config?.service_tier || null,
+      }
     } catch {
-      return false
+      return NO_CLI_DEFAULTS
     }
   }
 
@@ -364,7 +385,7 @@ export class CodexRunner implements AgentRunner {
     })
 
     await this.client.initialize(CLIENT_INFO)
-    this.cliNetworkAccess = this.readCliNetworkAccess(this.client)
+    this.cliDefaults = this.readCliDefaults(this.client)
 
     // Before both thread/start and thread/resume. Probing established roots belong to
     // the process rather than thread, disappear with app-server, and must be restored
@@ -1406,6 +1427,7 @@ export class CodexRunner implements AgentRunner {
       approvalPolicy: this.approvalPolicy(),
       sandboxPolicy: await this.sandboxPolicy(),
       model: this.config.model,
+      serviceTier: await this.serviceTier(),
       effort: this.config.reasoningEffort || null,
       // app-server sends no reasoning summary unless asked (probed on 0.163.0: empty
       // `summary` without this field), unlike `codex exec`, so the thread showed no thinking.

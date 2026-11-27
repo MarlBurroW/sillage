@@ -10,7 +10,7 @@ import {
   type EditDiffDto,
   type ProjectCommandsDto,
 } from '@sillage/protocol'
-import type { CollaborationModeMask, ThreadForkResponse } from '@sillage/codex-bindings/v2'
+import type { CollaborationModeMask, Model, ThreadForkResponse } from '@sillage/codex-bindings/v2'
 import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
@@ -22,6 +22,30 @@ import { describeEdit } from './file-edits.js'
 import { CodexModelCatalog } from './model-catalog.js'
 import { CodexRunner } from './runner.js'
 import { CodexUsageReader } from './usage.js'
+
+/** A `model/list` entry in the shared shape. */
+export function codexModel(model: Model): AgentModelDto {
+  return {
+    value: model.model,
+    displayName: model.displayName,
+    description: model.description,
+    hint: null,
+    isDefault: model.isDefault,
+    // Protocol strings have no display labels: use the value as
+    // label and CLI description as tooltip.
+    efforts: model.supportedReasoningEfforts.map((effort) => ({
+      value: effort.reasoningEffort,
+      label: effort.reasoningEffort,
+      hint: effort.description,
+    })),
+    defaultEffort: model.defaultReasoningEffort,
+    supportsFastMode: false,
+    // Per model and per account (the plan decides what is offered); name and description come
+    // from the CLI, the description saying what the tier costs in quota. Absent before the CLI
+    // listed tiers: read as none.
+    serviceTiers: (model.serviceTiers ?? []).map(({ id, name, description }) => ({ id, name, description })),
+  }
+}
 
 /**
  * Fork boundary: native ID of the last retained turn. Codex cuts only at complete-turn ends
@@ -119,22 +143,7 @@ export class CodexAdapter implements AgentAdapter {
   async models(home?: string, force = false): Promise<AgentModelsDto> {
     const listing = await this.catalog.list(home, force)
 
-    const models: AgentModelDto[] = listing.models.map((model) => ({
-      value: model.model,
-      displayName: model.displayName,
-      description: model.description,
-      hint: null,
-      isDefault: model.isDefault,
-      // Protocol strings have no display labels: use the value as
-      // label and CLI description as tooltip.
-      efforts: model.supportedReasoningEfforts.map((effort) => ({
-        value: effort.reasoningEffort,
-        label: effort.reasoningEffort,
-        hint: effort.description,
-      })),
-      defaultEffort: model.defaultReasoningEffort,
-      supportsFastMode: false,
-    }))
+    const models = listing.models.map(codexModel)
 
     // Protocol mode is nullable: presets identifying no mode cannot be offered,
     // so omit them instead of rendering inert choices.
@@ -143,7 +152,8 @@ export class CodexAdapter implements AgentAdapter {
       .map((mask) => ({ mode: mask.mode, label: mask.name }))
 
     // No output styles, fast mode, or named subagents: these are Claude Code
-    // concepts. Empty values hide their corresponding controls.
+    // concepts. Empty values hide their corresponding controls. Codex's speed tiers are per model,
+    // in `serviceTiers`.
     return {
       models,
       modes,

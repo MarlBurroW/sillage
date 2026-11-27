@@ -43,11 +43,12 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         } } : {}),
       } })
       break
-    // `FIXTURE_CLI_NETWORK` stands for `[sandbox_workspace_write] network_access` in config.toml;
+    // `FIXTURE_CLI_NETWORK` stands for `[sandbox_workspace_write] network_access` in config.toml,
+    // `FIXTURE_CLI_TIER` for its `service_tier`;
     // without it the table is null, as on a fresh install (probed on codex-cli 0.172.0).
     case 'config/read': send({ id, result: { config: { sandbox_workspace_write: process.env.FIXTURE_CLI_NETWORK ? {
       writable_roots: [], network_access: process.env.FIXTURE_CLI_NETWORK === 'true', exclude_tmpdir_env_var: false, exclude_slash_tmp: false,
-    } : null }, origins: {}, layers: null } }); break
+    } : null, service_tier: process.env.FIXTURE_CLI_TIER ?? null }, origins: {}, layers: null } }); break
     case 'skills/list': send({ id, result: { data: [] } }); break
     case 'mcpServerStatus/list': send({ id, result: { data: [], nextCursor: null } }); break
     case 'turn/start': {

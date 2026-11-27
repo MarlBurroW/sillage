@@ -43,6 +43,20 @@ replaces the old `webSearch` field, which drove this flag under a misleading nam
 stored values were all `false` and now read as the CLI default. Codex's real web
 search (`web_search` in `config.toml`) is not exposed.
 
+## Speed tiers
+
+`model/list` gives each model its `serviceTiers` for the signed-in plan
+(`priority`, named Fast, on every model; `ultrafast` on some), with a description
+of the extra quota they use. The composer offers a **Speed** setting when the
+chosen model has tiers: CLI default, Standard, then the CLI's tiers by name.
+Switching to a model without the chosen tier returns to the CLI default.
+
+Every `turn/start` carries `serviceTier`. Probed on 0.172.0: the value applies to
+that turn and the following ones, an omitted field keeps the thread's tier, and
+`"default"` (like `null`) is standard speed. The CLI default therefore sends
+`service_tier` from `config.toml` (read with `config/read`), else `"default"`:
+omitting it would leave a tier chosen earlier in the session in force.
+
 ## Activities
 
 Messages, proposed plans, work steps, commands, file changes, MCP and dynamic tools,

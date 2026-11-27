@@ -26,7 +26,9 @@ const efforts = [
   { value: 'xhigh', label: 'Maximal', hint: 'Réflexion la plus longue' },
 ]
 const models = [
-  { value: 'alpha', displayName: 'Modèle Alpha', description: 'Premier modèle', hint: 'alpha-v1', isDefault: true, efforts, defaultEffort: 'medium' },
+  // Codex speed tiers as model/list names them; Beta has none.
+  { value: 'alpha', displayName: 'Modèle Alpha', description: 'Premier modèle', hint: 'alpha-v1', isDefault: true, efforts, defaultEffort: 'medium',
+    serviceTiers: [{ id: 'priority', name: 'Fast', description: '2x speed, increased usage' }] },
   { value: 'beta', displayName: 'Modèle Beta', description: 'Second modèle', hint: null, isDefault: false, efforts: efforts.slice(0, 2), defaultEffort: 'medium' },
   { value: 'none', displayName: 'Sans réflexion', description: 'Sans niveau configurable', hint: null, isDefault: false, efforts: [], defaultEffort: null },
 ]
@@ -264,7 +266,15 @@ try {
     if (!narrow) assert.equal(await dialog.locator('.overflow-y-auto').evaluate((node) => node.scrollHeight <= node.clientHeight + 1), viewport.height >= 600, 'The settings list fits without scrolling')
     // Phone: no pinning or sorting.
     if (narrow) assert.equal(await dialog.getByRole('button', { name: /^Épingler/ }).count(), 0)
+    // Codex speed tiers: offered by the model, dropped with a model that lacks them.
     await pick('Modèle', /^Modèle Alpha/)
+    assert.match(await row('Vitesse').textContent(), /Défaut du CLI/)
+    await pick('Vitesse', /^Fast/)
+    await pick('Modèle', /^Modèle Beta/)
+    assert.equal(await row('Vitesse').count(), 0)
+    await pick('Modèle', /^Modèle Alpha/)
+    assert.match(await row('Vitesse').textContent(), /Défaut du CLI/)
+    await pick('Vitesse', /^Fast/)
     await pick('Effort de réflexion', 'Élevé')
     await pick('Mode', 'Plan')
     // Network access sits beside the sandbox and follows the CLI until chosen.
@@ -287,6 +297,7 @@ try {
     assert.equal(stored.codex.collaborationMode, 'plan')
     assert.equal(stored.codex.askForApproval, 'never')
     assert.equal(stored.codex.networkAccess, 'on')
+    assert.equal(stored.codex.serviceTier, 'priority')
     assert.deepEqual(stored.codex.mcpServers, ['docs'])
     assert.match(await status().getAttribute('aria-label'), /Accès total/)
     if (viewport.width >= 700) {

@@ -845,6 +845,11 @@ export interface AgentModelDto {
   /** The model supports Claude Code fast mode. Always false for Codex. */
   supportsFastMode: boolean
   /**
+   * Codex speed tiers this model offers to the account (`priority`, `ultrafast`), named and
+   * described by the CLI. Absent for other CLIs; empty when the model has none.
+   */
+  serviceTiers?: AgentServiceTierDto[]
+  /**
    * Public list rates of the model behind this entry (an alias is priced as the model it resolves
    * to), for sorting choices by price; null when the reference lists do not have it. Absent from
    * sources that do not price models.
@@ -857,6 +862,14 @@ export interface AgentModelDto {
    * opencode ("GitHub Copilot", "Anthropic"). Absent when the CLI lists one family.
    */
   group?: string
+}
+
+/** A Codex speed tier, as `model/list` reports it. */
+export interface AgentServiceTierDto {
+  /** Value for `turn/start`'s `serviceTier`. */
+  id: string
+  name: string
+  description: string
 }
 
 /**

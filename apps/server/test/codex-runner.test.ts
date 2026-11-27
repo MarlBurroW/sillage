@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_CODEX_CONFIG, parseAgentConfig, sillageEventSchema } from '@sillage/protocol'
 import { CodexRunner } from '../src/agents/codex/runner.js'
+import { codexModel } from '../src/agents/codex/adapter.js'
 import { CodexAppServerClient } from '../src/agents/codex/app-server-client.js'
 import { runnerFixture, asyncMessage, context, done, fixture, itemEvent } from './codex-support.js'
 
@@ -512,4 +513,47 @@ test('a sub-agent problem shows its own text: retries as information, usage limi
   ])
   // The parent turn is not failed by its sub-agent.
   assert.equal(f.events.some(event => event.type === 'error'), false)
+})
+
+// Probed on codex-cli 0.172.0: serviceTier applies to this turn and the next ones, an omitted
+// field keeps the thread's tier and "default" is standard speed. Every turn must say which.
+for (const [setting, cli, expected] of [
+  ['', undefined, 'default'],
+  ['', 'priority', 'priority'],
+  ['ultrafast', 'priority', 'ultrafast'],
+  ['default', 'priority', 'default'],
+] as const) {
+  test(`speed tier ${setting || 'CLI default'} with config.toml ${cli ?? 'unset'} → ${expected}`, async t => {
+    const transport = await fixture(t)
+    const state = context({
+      ...transport, processEnv: cli ? { FIXTURE_CLI_TIER: cli } : {},
+      config: { ...DEFAULT_CODEX_CONFIG, serviceTier: setting },
+    })
+    const runner = new CodexRunner(state.ctx)
+    transport.onClose(() => runner.stop())
+    await runner.start()
+    await runner.send(`fixture:${JSON.stringify({ notifications: [done()] })}`, [], [], [])
+    const turn = (await transport.records()).find(record => record.method === 'turn/start')
+    assert.equal(turn.params.serviceTier, expected)
+  })
+}
+
+test('going back to the CLI default speed after a fast turn returns to standard', async t => {
+  const f = await runnerFixture(t)
+  assert.equal(await f.runner.applyConfig({ ...DEFAULT_CODEX_CONFIG, serviceTier: 'priority' }), true)
+  await f.emit([done()])
+  assert.equal(await f.runner.applyConfig({ ...DEFAULT_CODEX_CONFIG, serviceTier: '' }), true)
+  await f.emit([done('turn-2')])
+  const turns = (await f.records()).filter(record => record.method === 'turn/start')
+  assert.deepEqual(turns.map(turn => turn.params.serviceTier), ['priority', 'default'])
+})
+
+test('the catalog carries the speed tiers of each model as the CLI names and describes them', () => {
+  const base = { id: 'm', model: 'gpt-6.2-sol', displayName: 'GPT-6.2 Sol', description: '', isDefault: true,
+    supportedReasoningEfforts: [], defaultReasoningEffort: 'medium', defaultServiceTier: null }
+  const tiers = [{ id: 'priority', name: 'Fast', description: '2x speed, increased usage' },
+    { id: 'ultrafast', name: 'Ultrafast', description: 'The fastest available responses for latency-sensitive work.' }]
+  assert.deepEqual(codexModel({ ...base, serviceTiers: tiers } as never).serviceTiers, tiers)
+  // A CLI that predates tiers lists none rather than breaking the catalog.
+  assert.deepEqual(codexModel(base as never).serviceTiers, [])
 })
