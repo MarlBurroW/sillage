@@ -13,6 +13,8 @@ export interface Presence {
   toast(userId: string, notification: InAppNotification): void
   /** This account's decisions changed: its tabs reload the list. */
   decisionsChanged(userId: string): void
+  /** Every tab of this account, visible or not: each device decides whether to play a sound. */
+  chime?(userId: string, kind: NotificationKind, conversationId: string | null): void
 }
 
 export interface OutgoingNotification {
@@ -42,9 +44,11 @@ export class Notifications {
   }
 
   async dispatch(userId: string, notification: OutgoingNotification): Promise<void> {
-    if (!readUserSettings(this.db, userId).notifications[notification.kind]) return
     const presence = this.presence
     if (notification.conversationId && presence?.watchesVisibly(notification.conversationId, userId)) return
+    // Before the account's notification switches: sounds have their own, per device.
+    presence?.chime?.(userId, notification.kind, notification.conversationId ?? null)
+    if (!readUserSettings(this.db, userId).notifications[notification.kind]) return
     if (notification.toast) presence?.toast(userId, notification.toast)
     await this.push.notify(userId, notification.push, { except: presence?.visibleEndpoints(userId) })
   }

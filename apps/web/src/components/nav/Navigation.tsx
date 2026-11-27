@@ -2,6 +2,7 @@ import { claudeLoginExpiry, conversationPath } from '@sillage/protocol'
 import { X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useMatch, useNavigate } from 'react-router-dom'
+import { useTabTitle } from '../../lib/tab-title'
 import { useFollowedActivity, type ActivityCounts } from '../../lib/activity'
 import { useCliUpdateNotice } from '../../lib/agents'
 import { benchmarkState, useBenchmarks, useWaitingRuns } from '../../lib/benchmarks'
@@ -100,6 +101,8 @@ export function Navigation({ wide, onNavigate, onClose, onSearch }: {
   // A run that asked something stalls its measurement: it waits on the user like any session.
   const waitingRuns = useWaitingRuns(benchmarks)
   const total: ActivityCounts = { awaiting: activity.awaiting.length + pending.length + waitingRuns.length + (hostExpiry ? 1 : 0), running: activity.running.length + runningBenchmarks.length, unread: activity.unread.length }
+  const openId = openProjectThread ?? openDiscussion
+  useTabTitle({ awaiting: total.awaiting, title: conversations?.find((entry) => entry.id === openId)?.title ?? null, openId })
   const unseen = (projects ?? []).filter((project) => !rail.isKept(project.id) && project.id !== rail.visiting?.id).map((project) => countsOf(project.id))
   // Running work elsewhere is not a reason to look: only waits and unread reach the entry that lists them.
   const hidden: ActivityCounts = { awaiting: unseen.reduce((sum, counts) => sum + counts.awaiting, 0), running: 0, unread: unseen.reduce((sum, counts) => sum + counts.unread, 0) }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { conversationStatusSchema, type ConversationMetrics } from './api.js'
 import type { AgentConfig } from './agent-config.js'
 import type { SillageEvent } from './events.js'
-import type { InAppNotification } from './notifications.js'
+import type { InAppNotification, NotificationKind } from './notifications.js'
 
 /**
  * One WebSocket connection per tab, multiplexed across conversations: the sidebar follows
@@ -130,6 +130,12 @@ export type ServerMessage =
   | { t: 'title'; conversationId: string; title: string }
   /** Toast for this visible tab: a decision or a CLI awaiting input elsewhere. */
   | { t: 'notify'; notification: InAppNotification }
+  /**
+   * Something this account would be notified about happened away from what it is watching. Sent to
+   * every tab of the account, hidden ones included, so each device can play its own sound: sound
+   * preferences live per device, and the notification preferences do not gate it.
+   */
+  | { t: 'chime'; kind: NotificationKind; conversationId: string | null }
   /** This account's decisions changed: the client rereads the list. */
   | { t: 'decisions-changed' }
   /**

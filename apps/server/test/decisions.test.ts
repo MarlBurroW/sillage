@@ -211,6 +211,7 @@ test('notifications: toast where the app is visible, push elsewhere, nothing whe
   const pushed: Array<{ payload: PushPayload; except: Set<string> | undefined }> = []
   const push = { notify: async (_userId: string, payload: PushPayload, options: { except?: Set<string> } = {}) => { pushed.push({ payload, except: options.except }); return [] } } as unknown as PushService
   const toasts: InAppNotification[] = []
+  const chimes: Array<{ kind: string; conversationId: string | null }> = []
   let watching = false
   const notifications = new Notifications(db, push)
   notifications.setPresence({
@@ -218,6 +219,7 @@ test('notifications: toast where the app is visible, push elsewhere, nothing whe
     watchesVisibly: () => watching,
     toast: (_userId, notification) => { toasts.push(notification) },
     decisionsChanged: () => {},
+    chime: (_userId, kind, conversationId) => { chimes.push({ kind, conversationId }) },
   })
   const request = {
     kind: 'cliRequest' as const,
@@ -239,6 +241,10 @@ test('notifications: toast where the app is visible, push elsewhere, nothing whe
   db.insert(await import('@sillage/db').then((module) => module.userSettings)).values({ userId: 'owner', data: JSON.stringify({ notifications: { decision: true, cliRequest: false, turnCompleted: true } }) }).run()
   await notifications.dispatch('owner', request)
   assert.equal(pushed.length, 1, 'Turned off in the preferences')
+  assert.deepEqual(chimes, [
+    { kind: 'cliRequest', conversationId: 'c1' },
+    { kind: 'cliRequest', conversationId: 'c1' },
+  ], 'Sounds skip the watched conversation but not a kind turned off for notifications: devices decide')
 })
 
 

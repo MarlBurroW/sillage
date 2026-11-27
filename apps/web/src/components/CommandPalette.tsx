@@ -1,7 +1,8 @@
 import { toggleConcentration, useConcentration } from '../lib/concentration'
 import { toggleRadio, useRadio, useRadioStation } from '../lib/radio'
+import { toggleSounds, useSoundPrefs } from '../lib/sounds'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Loader, Maximize2, Radio, Search, Ticket, X } from 'lucide-react'
+import { Loader, Maximize2, Radio, Search, Ticket, Volume2, VolumeX, X } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useMatch, useNavigate } from 'react-router-dom'
 import { SEARCH_MIN_QUERY, sessionReference } from '@sillage/protocol'
@@ -173,6 +174,7 @@ export function CommandPalette({
   const concentration = useConcentration()
   const radioPlaying = useRadio() !== 'off'
   const radioName = useRadioStation().data?.title ?? ''
+  const soundsOn = useSoundPrefs().enabled
   const canConcentrate = Boolean(conversationRoute || discussionRoute)
   const boardRoute = useMatch('/p/:projectId/board')
   const projectRoute = useMatch('/p/:projectId/*')
@@ -330,6 +332,13 @@ export function CommandPalette({
       fields: [field(radioTitle, 'title', WEIGHT.title), field(`radio lo-fi lofi music musique ${radioName}`, 'context', WEIGHT.context, { browse: true })],
       target: { type: 'run', run: toggleRadio },
     }
+    const soundsTitle = t(soundsOn ? 'sounds.palette.mute' : 'sounds.palette.unmute')
+    const sounds: PaletteItem = {
+      key: 'command:sounds', kind: 'command', projectId: null,
+      title: soundsTitle, icon: soundsOn ? <VolumeX size={15} /> : <Volume2 size={15} />,
+      fields: [field(soundsTitle, 'title', WEIGHT.title), field(t('sounds.palette.keywords'), 'context', WEIGHT.context, { browse: true })],
+      target: { type: 'run', run: toggleSounds },
+    }
     const focus: PaletteItem[] = canConcentrate ? [{
       key: 'command:concentration', kind: 'command', projectId: null, group: SESSION_GROUP,
       title: t(concentration ? 'concentration.exit' : 'concentration.enter'),
@@ -337,7 +346,7 @@ export function CommandPalette({
       fields: [field(t(concentration ? 'concentration.exit' : 'concentration.enter'), 'title', WEIGHT.title)],
       target: { type: 'run', run: toggleConcentration },
     }] : []
-    if (!currentConversation) return [...focus, radio]
+    if (!currentConversation) return [...focus, radio, sounds]
     const { id, favorite, archivedAt } = currentConversation
     return [...focus, ...buildSessionItems({
       t,
@@ -356,8 +365,8 @@ export function CommandPalette({
         setPanelTab(tab)
         setPanelOpen(true)
       },
-    }), radio]
-  }, [open, canConcentrate, concentration, radioPlaying, radioName, t, currentConversation, sessionCommands, catalog, renameConversation, favoriteConversation, archiveConversation, linkCard])
+    }), radio, sounds]
+  }, [open, canConcentrate, concentration, radioPlaying, radioName, soundsOn, t, currentConversation, sessionCommands, catalog, renameConversation, favoriteConversation, archiveConversation, linkCard])
   const items = useMemo(
     () =>
       !open ? [] : [...sessionItems, ...buildPaletteItems({

@@ -1,7 +1,7 @@
 import { conversationPath } from '@sillage/protocol'
 import { useConcentration } from '../lib/concentration'
 import { Loader } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES } from '@sillage/protocol'
@@ -31,6 +31,7 @@ import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
 import { describeActivity } from '../lib/chat-fold'
+import { messageHistory } from '../lib/turns'
 import { SignalRow } from '../components/chat/Signals'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useWorktrees } from '../lib/worktrees'
@@ -73,6 +74,8 @@ export function ConversationPage() {
     }
   }, [conversation, location.pathname, location.search, location.hash, navigate, queryClient])
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
+  // ↑ in the composer: the user's own messages, sent or still queued.
+  const history = useMemo(() => messageHistory(stream.state.items, stream.state.queued), [stream.state.items, stream.state.queued])
   // Viewing the page counts as reading: the sidebar need not flag what is already visible.
   //
   // The row's `seq` takes precedence over the folded thread: opening a conversation
@@ -457,6 +460,7 @@ export function ConversationPage() {
             appliedConfig={stream.appliedConfig}
             projectId={conversation.projectId}
             worktreeId={conversation.worktreeId}
+            history={history}
             footer={
               <ConversationStatusBar
                 conversation={conversation}

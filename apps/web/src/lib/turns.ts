@@ -54,3 +54,26 @@ export function buildTurns(items: ChatItem[]): TurnMarker[] {
 
   return turns
 }
+
+/** How far back ↑ in the composer reaches. */
+const HISTORY_LIMIT = 50
+
+/**
+ * What the user wrote in this conversation, oldest first, for ↑ in the composer: sent messages,
+ * then those still queued. Messages from other sessions and sub-agent prompts are not the user's
+ * words; consecutive repeats collapse so ↑ never seems stuck.
+ */
+export function messageHistory(items: ChatItem[], queued: { text: string }[]): string[] {
+  const texts: string[] = []
+  for (const item of items) {
+    if (item.kind !== 'message' || item.role !== 'user' || item.parentToolCallId) continue
+    const text = item.blocks.filter((block) => block.type === 'text').map((block) => block.text).join('\n').trim()
+    if (text && !parseSessionMessage(text)) texts.push(text)
+  }
+  for (const entry of queued) {
+    const text = entry.text.trim()
+    if (text && !parseSessionMessage(text)) texts.push(text)
+  }
+  const unique = texts.filter((text, index) => text !== texts[index - 1])
+  return unique.slice(-HISTORY_LIMIT)
+}

@@ -59,6 +59,7 @@ import { matchSessions, useSessionReferences } from '../../lib/session-reference
 import { tourAnchor } from '../tour/steps'
 import { ComposerHighlights } from './ComposerHighlights'
 import { highlightRanges, mentionsIn } from '../../lib/composer-highlights'
+import { recallStep, type Recall } from '../../lib/composer-history'
 
 /** The `@...` mention around the cursor. */
 /** Below this toolbar width, use the phone composer layout. */
@@ -129,6 +130,13 @@ function defaultPastedName(mimeType: string): string {
   const extension = mimeType.split('/')[1]?.split('+')[0] ?? 'bin'
   return `collage.${extension}`
 }
+
+/**
+ * Pastes beyond either bound become a text attachment: three hundred lines of logs in the field
+ * bury what the user writes around them. The agent still receives every line, as a file it reads.
+ */
+const PASTE_AS_FILE_LINES = 40
+const PASTE_AS_FILE_CHARS = 4000
 
 /** Beyond this height scroll the field instead of consuming the conversation. */
 const MAX_TEXTAREA_PX = 200
@@ -207,6 +215,8 @@ interface ComposerProps {
    * component owns consistent bottom spacing instead of leaving text against the edge.
    */
   footer?: ReactNode
+  /** What the user wrote here before, oldest first: ↑ in an empty field recalls it. */
+  history?: string[]
 }
 
 export function Composer({
@@ -232,6 +242,7 @@ export function Composer({
   projectId,
   worktreeId = null,
   footer,
+  history = [],
 }: ComposerProps) {
   const t = useTranslate()
   // Follow language to recalculate memoized translated options. Read initial draft once at mount;
@@ -263,6 +274,9 @@ export function Composer({
    */
   const [invoked, setInvoked] = useState<Set<string>>(() => new Set(restored.skills))
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const recall = useRef<Recall>(null)
+  /** Attachments made from a long paste: they alone offer to go back into the field as text. */
+  const [pasted, setPasted] = useState<Set<string>>(() => new Set())
   const dismissedSessionToken = useRef<{ value: string; caret: number } | null>(null)
   const filePicker = useRef<HTMLInputElement>(null)
 
@@ -448,10 +462,10 @@ export function Composer({
   })
 
   /**
-   * Insert dictated text at the cursor with typing-style spacing. The field may have changed while
-   * dictating, so current state is authoritative.
+   * Insert text at the cursor with typing-style spacing: dictation, or a paste put back from its
+   * attachment. The field may have changed meanwhile, so current state is authoritative.
    */
-  const insertDictation = useCallback((spoken: string) => {
+  const insertAtCaret = useCallback((spoken: string) => {
     const node = textarea.current
     setText((current) => {
       const caret = node && document.activeElement === node ? node.selectionStart : current.length
@@ -471,7 +485,7 @@ export function Composer({
   const sttEnabled = useSttEnabled()
   const dictation = useDictation({
     projectId: projectId ?? undefined,
-    onText: insertDictation,
+    onText: insertAtCaret,
     onError: setError,
   })
   // Keep the microphone visible when unconfigured: absence hides the feature; a dialog explains and
@@ -593,6 +607,7 @@ export function Composer({
 
     setSending(true)
     setError(null)
+    recall.current = null
     setText('')
     setAttachments([])
     setMentioned(new Set())
@@ -637,14 +652,15 @@ export function Composer({
     return submit(onSend)
   }
 
-  const addFiles = async (chosen: File[]) => {
-    if (chosen.length === 0) return
+  const addFiles = async (chosen: File[]): Promise<AttachmentDto[]> => {
+    const added: AttachmentDto[] = []
+    if (chosen.length === 0) return added
     setError(null)
 
     const room = MAX_ATTACHMENTS_PER_MESSAGE - attachments.length
     if (room <= 0) {
       setError(t('composer.attachments.max', { max: MAX_ATTACHMENTS_PER_MESSAGE }))
-      return
+      return added
     }
 
     const selected = chosen.slice(0, room)
@@ -656,6 +672,7 @@ export function Composer({
     for (const file of selected) {
       try {
         const uploaded = await uploadAttachment(file)
+        added.push(uploaded)
         setAttachments((current) => [...current, uploaded])
       } catch (err) {
         setError(err instanceof Error ? err.message : t('composer.attachments.uploadFailed', { name: file.name }))
@@ -663,6 +680,7 @@ export function Composer({
         setUploading((count) => count - 1)
       }
     }
+    return added
   }
 
   const removeAttachment = (id: string) => {
@@ -671,13 +689,35 @@ export function Composer({
     void discardAttachment(id).catch(() => {})
   }
 
+  /** Put a long paste back into the field, for when it was short enough to edit after all. */
+  const inlineAttachment = async (id: string) => {
+    try {
+      const response = await fetch(`/api/attachments/${id}`, { credentials: 'same-origin' })
+      if (!response.ok) throw new Error(String(response.status))
+      insertAtCaret(await response.text())
+      removeAttachment(id)
+    } catch {
+      setError(t('composer.paste.inlineFailed'))
+    }
+  }
+
   /**
-   * Paste files, typically screenshots. Clipboards can contain both text and files: intercept only
-   * when files actually exist or ordinary text pasting would break.
+   * Paste files, typically screenshots, or a long text as a file. Clipboards can contain both text
+   * and files: intercept only files or long text, or ordinary pasting would break.
    */
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = Array.from(event.clipboardData.files)
-    if (files.length === 0) return
+    if (files.length === 0) {
+      const pastedText = event.clipboardData.getData('text/plain')
+      const lines = pastedText.split('\n').length
+      if (lines < PASTE_AS_FILE_LINES && pastedText.length < PASTE_AS_FILE_CHARS) return
+      event.preventDefault()
+      const name = t('composer.paste.filename', { lines })
+      void addFiles([new File([pastedText], name, { type: 'text/plain' })]).then((added) => {
+        if (added.length > 0) setPasted((current) => new Set([...current, ...added.map((entry) => entry.id)]))
+      })
+      return
+    }
 
     event.preventDefault()
     void addFiles(
@@ -741,6 +781,19 @@ export function Composer({
         setToken(null)
         setCardToken(null)
         setSigil(null)
+        return
+      }
+    }
+
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+      const node = event.currentTarget
+      const move = recallStep(event.key, { history, recall: recall.current, text, caretStart: node.selectionStart, caretEnd: node.selectionEnd })
+      if (move) {
+        event.preventDefault()
+        recall.current = move.recall
+        setText(move.text)
+        // Caret at the end, as a shell does; the next ↑ first walks up a multi-line message.
+        requestAnimationFrame(() => node.setSelectionRange(move.text.length, move.text.length))
         return
       }
     }
@@ -827,6 +880,8 @@ export function Composer({
             attachments={attachments}
             uploading={uploading}
             onRemove={removeAttachment}
+            inlineable={pasted}
+            onInline={(id) => void inlineAttachment(id)}
           />
 
           {sessionToken && <SessionPicker sessions={sessionSuggestions} projectId={projectId} anyProject={referencesAnyProject} active={active} loading={searchingSessions} onPick={pickSession} onHover={setActive} />}

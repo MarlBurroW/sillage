@@ -98,6 +98,7 @@ export function ComposerInsert({ inputRef, disabled, project, commands, skills, 
             </button>
           ))}
           <p className="mt-2 border-t border-line px-2 pt-3 pb-2 text-xs leading-relaxed text-ink-faint">{t('composer.insert.catalogHint')}</p>
+          <p className="px-2 pb-2 text-xs leading-relaxed text-ink-faint">{t('composer.insert.historyHint')}</p>
         </div>
       </>}
     </SettingsSurface>
