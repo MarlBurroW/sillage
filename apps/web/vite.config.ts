@@ -19,10 +19,30 @@ function resolveVersion(): string {
   }
 }
 
+const APP_VERSION = resolveVersion()
+const BUILD_TIME = new Date().toISOString()
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    {
+      /*
+       * Lets a page still running the previous build name the version it is about to load: the
+       * update prompt reads it once a new service worker is waiting. Left out of the precache
+       * (json is not in `globPatterns`) and served `no-cache`, so it always reflects the deployed
+       * build.
+       */
+      name: 'sillage-version-file',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'version.json',
+          source: JSON.stringify({ version: APP_VERSION, builtAt: BUILD_TIME }),
+        })
+      },
+    },
     VitePWA({
       /*
        * Use `prompt` rather than `autoUpdate`. Automatic updates give the new service worker
@@ -101,8 +121,8 @@ export default defineConfig({
    * because the screen gives no evidence of the running version.
    */
   define: {
-    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-    __APP_VERSION__: JSON.stringify(resolveVersion()),
+    __BUILD_TIME__: JSON.stringify(BUILD_TIME),
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
   build: {
     outDir: 'dist',

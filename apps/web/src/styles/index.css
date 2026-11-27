@@ -704,3 +704,24 @@
 
 :root[data-desktop-chrome] .h-dvh { height: calc(100dvh - var(--sg-window-bar)); }
 :root[data-desktop-chrome] .min-h-dvh { min-height: calc(100dvh - var(--sg-window-bar)); }
+
+/*
+ * Update prompt: drops in once so a new version is noticed, then the folded pill's dot keeps
+ * pulsing gently, since the page runs old code until it reloads.
+ */
+@keyframes sg-update-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+.sg-update-prompt { animation: sg-update-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+@keyframes sg-update-dot {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sg-accent) 60%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 6px transparent; }
+}
+.sg-update-dot { animation: sg-update-dot 2s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .sg-update-prompt,
+  .sg-update-dot { animation: none; }
+}

@@ -20,6 +20,26 @@ const EMPTY: ComposerDraft = { text: '', attachments: [], mentions: [], skills: 
 
 const drafts = new Map<string, ComposerDraft>()
 
+/** Listeners for `hasUnsentDrafts`, told only when the answer may have changed. */
+const listeners = new Set<() => void>()
+
+/**
+ * Whether some conversation holds unsent text or attachments. Drafts live in memory only, so a
+ * reload loses them: the update prompt warns before offering one.
+ */
+export function hasUnsentDrafts(): boolean {
+  return drafts.size > 0
+}
+
+export function subscribeDrafts(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+function notify(before: boolean): void {
+  if (before !== hasUnsentDrafts()) for (const listener of listeners) listener()
+}
+
 export function readDraft(key: string): ComposerDraft {
   return drafts.get(key) ?? EMPTY
 }
@@ -27,9 +47,11 @@ export function readDraft(key: string): ComposerDraft {
 export function saveDraft(key: string, draft: ComposerDraft): void {
   // An empty draft is not a draft: retaining it grows the table with every visited conversation and
   // masks fork `initialText`.
+  const before = hasUnsentDrafts()
   if (draft.text.length === 0 && draft.attachments.length === 0) {
     drafts.delete(key)
-    return
+  } else {
+    drafts.set(key, draft)
   }
-  drafts.set(key, draft)
+  notify(before)
 }
