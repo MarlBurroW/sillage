@@ -5,7 +5,9 @@
 // an update (`update`), raw notification (`notify`), client request
 // (`permission` for `session/request_permission`, `request` otherwise, with
 // journaled responses), consumption outside the prompt (`consume`, e.g. a background
-// sub-agent), or pause (`wait`). `later` steps play after the prompt answered.
+// sub-agent), a turn Grok runs by itself once idle (`wake`: `{promptId, steps, usage}`,
+// ended by `turn_completed`, cancelled by `session/cancel`), or pause (`wait`). `later`
+// steps play after the prompt answered.
 // `session/prompt` responses carry scenario `stopReason` and `usage`; the session totals
 // of `_x.ai/session/usage` take in `spent` (default `usage`) and every `consume`, like
 // Grok's own. `FIXTURE_NO_SESSION_USAGE=1` plays a CLI without those totals,
@@ -86,6 +88,7 @@ async function playSteps(steps) {
     if (cancelled) break
     if (step.wait) await sleep(step.wait)
     else if (step.consume) spend(step.consume)
+    else if (step.wake) await wake(step.wake)
     else if (step.update) notify('session/update', { sessionId, update: step.update, ...(step.meta ? { _meta: step.meta } : {}) })
     else if (step.notify) notify(step.notify, step.params)
     else if (step.permission || step.request) {
@@ -96,6 +99,15 @@ async function playSteps(steps) {
       record({ answer: { method, result: await answer } })
     }
   }
+}
+
+async function wake({ promptId, steps = [], usage = {} }) {
+  cancelled = null
+  await playSteps(steps)
+  const stopReason = cancelled ? 'cancelled' : 'end_turn'
+  cancelled = null
+  spend(usage)
+  notify('_x.ai/session_notification', { sessionId, update: { sessionUpdate: 'turn_completed', prompt_id: promptId, stop_reason: stopReason, usage } })
 }
 
 async function play(id, scenario) {

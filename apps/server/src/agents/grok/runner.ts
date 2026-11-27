@@ -164,6 +164,10 @@ export class GrokRunner implements AgentRunner {
   private usageReads: Promise<unknown> = Promise.resolve()
   /** `session/prompt` requests not answered yet: what Grok consumes meanwhile belongs to their turn. */
   private promptsInFlight = 0
+  /** Token of a turn Grok started by itself, when background work reported back. */
+  private wake: number | null = null
+  /** A prompt answered and its turn closing, once its usage is read. */
+  private closing: Promise<void> | null = null
 
   get appliedConfig(): AgentConfig {
     return this.config
@@ -331,6 +335,7 @@ export class GrokRunner implements AgentRunner {
     this.client = null
     const wasStarted = this.sessionId !== null
     this.turn.abandon()
+    this.wake = null
     // Death during startup makes `start()` fail; managers report it.
     if (!wasStarted) return
 
@@ -362,9 +367,13 @@ export class GrokRunner implements AgentRunner {
     }
     if (method === '_x.ai/session_notification') {
       const update = fields(fields(params).update)
-      // Any session: background sub-agents complete under their own ID, after their prompt.
-      if (update.sessionUpdate === 'turn_completed') this.settleOutsideTurn()
-      if (fields(params).sessionId !== this.sessionId) return
+      const main = fields(params).sessionId === this.sessionId
+      if (update.sessionUpdate === 'turn_completed') {
+        // Any session: background sub-agents complete under their own ID, after their prompt.
+        if (!main || !this.onTurnCompleted(update)) this.settleOutsideTurn()
+        return
+      }
+      if (!main) return
       this.onExtensionUpdate(update)
       return
     }
@@ -393,6 +402,7 @@ export class GrokRunner implements AgentRunner {
       case 'agent_thought_chunk': {
         const block = update.content as AcpContentBlock
         if (block.type !== 'text') return
+        this.wakeUp()
         this.appendText(update.sessionUpdate === 'agent_message_chunk' ? 'text' : 'thinking', block.text)
         return
       }
@@ -401,12 +411,15 @@ export class GrokRunner implements AgentRunner {
         return
       case 'tool_call':
         if (this.closedTools.has(update.toolCallId)) return
+        this.wakeUp()
         this.closeText()
         this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name)
         this.onToolUpdate(update.toolCallId, update, notification)
         return
       case 'tool_call_update':
+        // Closed background tools keep updating once their work ends, without any turn following.
         if (this.closedTools.has(update.toolCallId)) return
+        this.wakeUp()
         this.closeText()
         if (!this.tools.has(update.toolCallId) && !this.silentTools.has(update.toolCallId)) {
           this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification, update.name)
@@ -414,6 +427,7 @@ export class GrokRunner implements AgentRunner {
         this.onToolUpdate(update.toolCallId, update, notification)
         return
       case 'plan':
+        this.wakeUp()
         this.ctx.emit({
           type: 'plan.updated',
           items: update.entries.map((entry) => ({ text: entry.content, status: entry.status })),
@@ -634,6 +648,7 @@ export class GrokRunner implements AgentRunner {
   // ─── Agent requests ─────────────────────────────────────────────────────────
 
   private onRequest(method: string, params: unknown): Promise<unknown> {
+    if (fields(params).sessionId === this.sessionId) this.wakeUp()
     switch (method) {
       case 'session/request_permission':
         return this.onPermission(params as RequestPermissionRequest)
@@ -781,6 +796,8 @@ export class GrokRunner implements AgentRunner {
     const prompt = command && this.commandNames.has(command.name)
       ? [{ type: 'text' as const, text }]
       : this.promptBlocks(text, attachments, mentions)
+    // Sent during a wake-up turn, the prompt waits in Grok's queue and its response closes the turn.
+    this.wake = null
     detach(this.runPrompt(prompt, this.turn.begin()), 'Grok prompt')
   }
 
@@ -811,8 +828,43 @@ export class GrokRunner implements AgentRunner {
     const stopReason = meta.cancellationCategory === 'PermissionRejected' ? 'permission_denied' : response.stopReason
     // The session totals rather than the prompt's own usage, which lacks its cost while a
     // background sub-agent runs (`usageIsIncomplete`) and leaves out what ran between prompts.
-    const spent = await this.consumedSinceLastReading()
-    this.closeTurn(stopReason, spent, meta.usage as Partial<SessionUsage> | undefined, response, token)
+    const closing = this.consumedSinceLastReading().then((spent) => {
+      this.closeTurn(stopReason, spent, meta.usage as Partial<SessionUsage> | undefined, response, token)
+    })
+    this.closing = closing
+    await closing.finally(() => { if (this.closing === closing) this.closing = null })
+  }
+
+  /**
+   * Background work reporting back while the session is idle (a sub-agent, a shell, a monitor, a
+   * `/loop`) makes Grok run a turn without a prompt: `prompt_id` `subagent-completed-…` or
+   * `task-completed-…`, ended by its `turn_completed`. It is a turn of its own: its text must not
+   * join the next one, the conversation works meanwhile and can be interrupted (`session/cancel`
+   * ends it, probed), and it takes a prompt index that fork cuts count as a `turn.completed`.
+   * Probed on 1.0.62 and 1.0.94.
+   */
+  private wakeUp(): void {
+    if (this.turn.open || this.promptsInFlight > 0 || this.compacting || this.early) return
+    this.wake = this.turn.begin()
+  }
+
+  /** `turn_completed` of the main session. Returns whether it closed a wake-up turn; prompt turns end with their response. */
+  private onTurnCompleted(update: Record<string, unknown>): boolean {
+    if (this.promptsInFlight > 0 || this.compacting) return false
+    // Answered prompts have sent their own `turn_completed`: this one is a wake-up, read once that turn is closed.
+    if (this.closing) {
+      detach(this.closing.then(() => { if (!this.onTurnCompleted(update)) this.settleOutsideTurn() }), 'Grok wake-up turn')
+      return true
+    }
+    // A wake-up that published nothing still took a prompt index.
+    this.wakeUp()
+    const token = this.wake
+    if (token === null || this.turn.token !== token) return false
+    this.wake = null
+    const stopReason = typeof update.stop_reason === 'string' ? update.stop_reason : 'end_turn'
+    const own = fields(update.usage) as Partial<SessionUsage>
+    detach(this.consumedSinceLastReading().then((spent) => this.closeTurn(stopReason, spent, own, update, token)), 'Grok wake-up turn')
+    return true
   }
 
   /** Session totals, or null when this CLI does not give them. */
@@ -848,7 +900,8 @@ export class GrokRunner implements AgentRunner {
    * prompt starting during this reading may see part of its usage counted here, never twice.
    */
   private settleOutsideTurn(): void {
-    if (this.promptsInFlight > 0 || !this.usageBase) return
+    // An open wake-up turn takes it in when it ends.
+    if (this.promptsInFlight > 0 || this.wake !== null || !this.usageBase) return
     detach(this.consumedSinceLastReading().then((spent) => {
       if (spent && consumedAnything(spent)) this.emitConsumed(spent)
     }), 'Grok usage reading')
@@ -867,6 +920,8 @@ export class GrokRunner implements AgentRunner {
   }
 
   private endTurn(stopReason: string, usage: Partial<SessionUsage> | undefined, raw: unknown, token: number): boolean {
+    // Including a wake-up turn closed by the interruption watchdog.
+    if (this.wake === token) this.wake = null
     return this.turn.end({
       stopReason: stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : stopReason,
       usage: toTurnUsage(usage),

@@ -363,13 +363,17 @@ test('usage: an incomplete prompt, the background sub-agent and the wake-up turn
   assert.ok(done && done.type === 'turn.completed')
   assert.ok(Math.abs(done.costUsd - 0.01259428) < 1e-9, 'the prompt costs what the totals say, not 0')
   assert.equal(done.inputTokens, 30_917 - 29_312)
-  await until(() => consumed(f.events).length === 2, 'two usage.consumed')
-  const [child, wake] = consumed(f.events)
+  // The sub-agent ran between turns; the wake-up is a turn of its own (card #137).
+  await until(() => f.count('turn.completed') === 2, 'wake-up turn')
+  const [child] = consumed(f.events)
+  assert.equal(consumed(f.events).length, 1)
   assert.deepEqual({ ...child!, costUsd: Math.round(child!.costUsd * 1e10) }, {
     type: 'usage.consumed', model: null, costUsd: 86_230_800, inputTokens: 21_579, outputTokens: 40, cacheReadTokens: 0, cacheCreationTokens: 0,
   })
-  assert.equal(wake!.inputTokens, 15_839 - 15_104)
-  assert.equal(wake!.cacheReadTokens, 15_104)
+  const wake = f.events.filter((event) => event.type === 'turn.completed')[1]
+  assert.ok(wake && wake.type === 'turn.completed')
+  assert.equal(wake.inputTokens, 15_839 - 15_104)
+  assert.equal(wake.cacheReadTokens, 15_104)
   const total = done.costUsd + child!.costUsd + wake!.costUsd
   assert.ok(Math.abs(total - 0.0315513200) < 1e-9, 'the journal adds up to the session total')
   for (const event of f.events) sillageEventSchema.parse(event)
@@ -434,4 +438,68 @@ test('usage: after a failed reading, prompts keep their own usage and nothing is
   assert.deepEqual(costs, [100_000_000, 200_000_000, 300_000_000])
   await new Promise((resolve) => setTimeout(resolve, 50))
   assert.equal(consumed(f.events).length, 0)
+})
+
+const assistantTexts = (events: SillageEvent[]) => events
+  .filter((event) => event.type === 'message.completed' && event.role === 'assistant')
+  .flatMap((event) => event.type === 'message.completed' ? event.blocks.filter((block) => block.type === 'text').map((block) => (block as { text: string }).text) : [])
+
+test('wake-up: background work reporting back opens a turn of its own, with its text, status and usage', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({
+    steps: [update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'launched' } })],
+    usage: { inputTokens: 100, outputTokens: 5, costUsdTicks: 10_000_000 },
+    later: [
+      { wait: 20 },
+      // A background tool closed in the prompt keeps updating: that alone opens nothing.
+      { wake: { promptId: 'subagent-completed-01a21e94', usage: { inputTokens: 15_444, cachedReadTokens: 15_104, outputTokens: 168, costUsdTicks: 31_416_000 }, steps: [
+        update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'The background subagent has completed.' } }),
+        update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'pong received.' } }),
+      ] } },
+    ],
+  })
+  await until(() => f.count('turn.completed') === 2, 'wake-up turn')
+  await f.turn({ steps: [update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'D' } })], usage: { inputTokens: 10 } })
+
+  assert.deepEqual(assistantTexts(f.events), ['launched', 'pong received.', 'D'], 'the wake-up text stays out of the next turn')
+  assert.equal(f.count('turn.started'), 3)
+  const turns = f.events.filter((event) => event.type === 'turn.completed')
+  assert.deepEqual(turns.map((event) => event.type === 'turn.completed' && event.stopReason), ['completed', 'completed', 'completed'])
+  const wake = turns[1]!
+  assert.ok(wake.type === 'turn.completed' && Math.abs(wake.costUsd - 0.0031416) < 1e-9)
+  // Fork cuts count `turn.completed`: the wake-up's prompt index now has its own.
+  const wakeStart = f.events.findIndex((event, index) => event.type === 'turn.started' && index > f.events.indexOf(turns[0]!))
+  assert.ok(wakeStart > f.events.indexOf(turns[0]!) && wakeStart < f.events.indexOf(wake))
+  assert.equal(consumed(f.events).length, 0)
+  assert.deepEqual(f.statuses.filter((status) => status !== 'idle').length, 3, 'the conversation works during the wake-up')
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+test('wake-up: interrupting it cancels Grok’s turn, and an empty wake-up still counts as a turn', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({
+    usage: {},
+    later: [
+      { wait: 20 },
+      { wake: { promptId: 'task-completed-01a21ebe', steps: [
+        update({ sessionUpdate: 'tool_call', toolCallId: 'w1', title: 'run_terminal_command', rawInput: { command: 'sleep 30' }, _meta: tool('run_terminal_command', 'execute') }),
+        { wait: 3000 },
+      ] } },
+    ],
+  })
+  await until(() => f.count('tool.started') > 0 && f.count('turn.started') === 2)
+  assert.equal(f.statuses.at(-1), 'running')
+  await f.runner.interrupt()
+  await until(() => f.count('turn.completed') === 2)
+  assert.ok((await f.rpc()).some((entry) => entry.method === 'session/cancel'))
+  const done = f.events.filter((event) => event.type === 'turn.completed')[1]
+  assert.equal(done?.type === 'turn.completed' && done.stopReason, 'interrupted')
+  assert.equal(f.statuses.at(-1), 'idle')
+
+  // A `/loop` tick that published nothing before completing, and a sub-agent's own completion.
+  // Apart from the response: read in one chunk, the notification would come before the prompt's continuation.
+  await f.play({ steps: [], usage: {}, later: [{ wait: 20 }, { wake: { promptId: 'task-completed-loop' } }, turnCompleted('ses_child', 'child')] })
+  await until(() => f.count('turn.completed') === 4, 'empty wake-up turn')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(f.count('turn.completed'), 4, 'a sub-agent completing under its own session opens no turn')
 })
