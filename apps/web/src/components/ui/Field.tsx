@@ -1,14 +1,17 @@
-import { useId, type InputHTMLAttributes, type ReactNode } from 'react'
+import { useId, type ComponentPropsWithRef, type ReactNode } from 'react'
 import { cx } from './cx'
 
-interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
+// With the ref: a form can return focus to its field, as sign-in does after a refused password.
+export interface FieldProps extends Omit<ComponentPropsWithRef<'input'>, 'id'> {
   label: string
   hint?: string
   error?: string
   icon?: ReactNode
+  /** Control at the end of the box, such as the button that reveals a password. */
+  trailing?: ReactNode
 }
 
-export function Field({ label, hint, error, icon, className, ...props }: FieldProps) {
+export function Field({ label, hint, error, icon, trailing, className, ...props }: FieldProps) {
   const id = useId()
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
 
@@ -37,6 +40,7 @@ export function Field({ label, hint, error, icon, className, ...props }: FieldPr
             className,
           )}
         />
+        {trailing}
       </div>
 
       {error ? (

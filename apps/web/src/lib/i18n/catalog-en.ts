@@ -3178,11 +3178,11 @@ export const en = {
 
   // Login
   'login.error.unreachable': 'The server is unreachable.',
-  'login.subtitle': 'Agentic development platform',
   'login.username.label': 'Username',
   'login.password.label': 'Password',
-  'login.submit.pending': 'Signing in...',
+  'login.submit.pending': 'Signing in…',
   'login.submit.action': 'Sign in',
+  'login.help': 'No account, or forgot your password? An administrator handles both in Settings\u00a0›\u00a0Accounts.',
 
   // Accounts
   'users.adminOnly.title': 'Administrators only',
@@ -3950,6 +3950,9 @@ export const en = {
 
   // Common
   'common.select.placeholder': 'Choose...',
+  'common.password.show': 'Show password',
+  'common.password.hide': 'Hide password',
+  'common.password.capsLock': 'Caps Lock is on.',
 
   // Remaining extracted text: miscellaneous
   'common.copy': 'Copy',

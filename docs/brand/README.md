@@ -65,7 +65,9 @@ The public site consists of four static pages: `index.html`, `features.html`,
 built from ruled rows rather than cards. `wake.js` draws the home page's hero:
 rows of water bent by a point that crosses them, which is what "sillage" means.
 It is decoration only, follows the pointer, and draws a single still frame when
-reduced motion is requested.
+reduced motion is requested. The app's sign-in page draws the same wake, with the
+same physics and tuning, on a lake seen in perspective under the form, with a swell
+and a glittering reflection (`apps/web/src/components/login/LoginWater.tsx`).
 `main.js` owns shared navigation, theme, release links and accessible dialogs.
 Show the product only with real application screenshots or recordings. Do not
 reconstruct conversations, tool runs, diffs or other application controls for
