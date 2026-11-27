@@ -12,6 +12,7 @@ import {
   type SillageEvent,
 } from '@sillage/protocol'
 import { GrokRunner } from '../src/agents/grok/runner.js'
+import { parseSessionUsage, usageSince } from '../src/agents/grok/session-usage.js'
 import type { RunnerContext } from '../src/agents/types.js'
 
 async function runnerFixture(t: TestContext, overrides: Partial<RunnerContext> = {}) {
@@ -333,4 +334,104 @@ test('ACP title, location, late MCP identity and pre-completion output survive i
   assert.equal(updates.find(event => event.toolCallId === 'text')?.name, 'Read')
   assert.deepEqual(f.events.filter(event => event.type === 'tool.completed').map(event => event.output), ['Card body', 'Source content'])
   for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+const turnCompleted = (sessionId: string, promptId: string) => ({
+  notify: '_x.ai/session_notification',
+  params: { sessionId, update: { sessionUpdate: 'turn_completed', prompt_id: promptId, stop_reason: 'end_turn', usage: {} } },
+})
+const consumed = (events: SillageEvent[]) =>
+  events.filter((event): event is Extract<SillageEvent, { type: 'usage.consumed' }> => event.type === 'usage.consumed')
+
+test('usage: an incomplete prompt, the background sub-agent and the wake-up turn are all counted from the session totals', async (t) => {
+  const f = await runnerFixture(t)
+  // As probed on 1.0.62: the prompt answers without its cost while the sub-agent runs; the
+  // sub-agent then completes under its own session, and Grok wakes the main session up.
+  await f.turn({
+    usage: { inputTokens: 30_917, cachedReadTokens: 29_312, outputTokens: 134, usageIsIncomplete: true },
+    spent: { inputTokens: 30_917, cachedReadTokens: 29_312, outputTokens: 134, costUsdTicks: 125_942_800 },
+    later: [
+      { wait: 20 },
+      { consume: { inputTokens: 21_579, outputTokens: 40, costUsdTicks: 86_230_800 } },
+      turnCompleted('ses_child', '01a21ea6-0b6a'),
+      { wait: 20 },
+      { consume: { inputTokens: 15_839, cachedReadTokens: 15_104, outputTokens: 168, costUsdTicks: 103_339_600 } },
+      turnCompleted('ses_fixture', 'subagent-completed-01a21ea6'),
+    ],
+  })
+  const done = f.events.find((event) => event.type === 'turn.completed')
+  assert.ok(done && done.type === 'turn.completed')
+  assert.ok(Math.abs(done.costUsd - 0.01259428) < 1e-9, 'the prompt costs what the totals say, not 0')
+  assert.equal(done.inputTokens, 30_917 - 29_312)
+  await until(() => consumed(f.events).length === 2, 'two usage.consumed')
+  const [child, wake] = consumed(f.events)
+  assert.deepEqual({ ...child!, costUsd: Math.round(child!.costUsd * 1e10) }, {
+    type: 'usage.consumed', model: null, costUsd: 86_230_800, inputTokens: 21_579, outputTokens: 40, cacheReadTokens: 0, cacheCreationTokens: 0,
+  })
+  assert.equal(wake!.inputTokens, 15_839 - 15_104)
+  assert.equal(wake!.cacheReadTokens, 15_104)
+  const total = done.costUsd + child!.costUsd + wake!.costUsd
+  assert.ok(Math.abs(total - 0.0315513200) < 1e-9, 'the journal adds up to the session total')
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+test('usage: a sub-agent finishing during a prompt belongs to that prompt, counted once', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({
+    steps: [
+      { consume: { inputTokens: 10_748, outputTokens: 19, costUsdTicks: 64_457_200 } },
+      turnCompleted('ses_child', 'child-prompt'),
+      { wait: 30 },
+    ],
+    usage: { inputTokens: 30_907, outputTokens: 120, costUsdTicks: 126_140_000 },
+  })
+  const done = f.events.find((event) => event.type === 'turn.completed')
+  assert.ok(done && done.type === 'turn.completed')
+  assert.ok(Math.abs(done.costUsd - 0.01905972) < 1e-9)
+  assert.equal(done.inputTokens, 41_655)
+  // A later wake-up with nothing new consumed records nothing.
+  await f.play({ steps: [], usage: {} })
+  await until(() => f.count('turn.completed') === 2)
+  assert.equal(consumed(f.events).length, 0)
+})
+
+test('usage: without session totals, the prompt response remains the source', async (t) => {
+  const f = await runnerFixture(t, { processEnv: { FIXTURE_NO_SESSION_USAGE: '1' } })
+  await f.turn({
+    usage: { inputTokens: 1000, cachedReadTokens: 800, outputTokens: 50, costUsdTicks: 330_000_000 },
+    later: [{ consume: { inputTokens: 500, costUsdTicks: 1_000_000 } }, turnCompleted('ses_child', 'child')],
+  })
+  const done = f.events.find((event) => event.type === 'turn.completed')
+  assert.ok(done && done.type === 'turn.completed')
+  assert.ok(Math.abs(done.costUsd - 0.033) < 1e-9)
+  assert.equal(done.inputTokens, 200)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(consumed(f.events).length, 0)
+})
+
+test('usage: totals read at start make a resumed process count from its own baseline', () => {
+  const before = { inputTokens: 100, cachedReadTokens: 50, cacheCreationTokens: 0, outputTokens: 10, costUsdTicks: 1000 }
+  assert.deepEqual(usageSince(before, { ...before, inputTokens: 160, costUsdTicks: 1600 }),
+    { inputTokens: 60, cachedReadTokens: 0, cacheCreationTokens: 0, outputTokens: 0, costUsdTicks: 600 })
+  // Counters going backwards: another process, whose totals are all new.
+  const restarted = { inputTokens: 20, cachedReadTokens: 0, cacheCreationTokens: 0, outputTokens: 2, costUsdTicks: 90 }
+  assert.deepEqual(usageSince(before, restarted), restarted)
+  assert.equal(parseSessionUsage({}), null)
+  assert.deepEqual(parseSessionUsage({ usage: { inputTokens: 0, outputTokens: 0, numTurns: 0 } }),
+    { inputTokens: 0, cachedReadTokens: 0, cacheCreationTokens: 0, outputTokens: 0, costUsdTicks: 0 })
+})
+
+test('usage: after a failed reading, prompts keep their own usage and nothing is counted twice', async (t) => {
+  // Readings: at start, after the first prompt, then the second prompt's fails once.
+  const f = await runnerFixture(t, { processEnv: { FIXTURE_SESSION_USAGE_FAILS: '3' } })
+  const first = { inputTokens: 1000, outputTokens: 10, costUsdTicks: 100_000_000 }
+  const second = { inputTokens: 2000, outputTokens: 20, costUsdTicks: 200_000_000 }
+  const third = { inputTokens: 3000, outputTokens: 30, costUsdTicks: 300_000_000 }
+  await f.turn({ usage: first })
+  await f.turn({ usage: second })
+  await f.turn({ usage: third, later: [{ consume: { inputTokens: 9, costUsdTicks: 9 } }, turnCompleted('ses_child', 'child')] })
+  const costs = f.events.filter((event) => event.type === 'turn.completed').map((event) => Math.round(event.costUsd * 1e10))
+  assert.deepEqual(costs, [100_000_000, 200_000_000, 300_000_000])
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(consumed(f.events).length, 0)
 })

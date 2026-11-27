@@ -46,6 +46,7 @@ import type {
   RunnerContext,
 } from '../types.js'
 import { toSlashCommands } from './catalog.js'
+import { consumedAnything, parseSessionUsage, toTurnUsage, usageSince, type SessionUsage } from './session-usage.js'
 import { grokLaunch, sameLaunch, toAcpMcpServer, type GrokLaunch } from './launch.js'
 import {
   commandOutput,
@@ -76,8 +77,8 @@ const NOTIFICATION_NOISE = new Set([
   'image_compressed', 'auto_continue_completed',
 ])
 
-/** `costUsdTicks` are ten-billionths of dollars (probed: $0.033 for 330,643,200). */
-const USD_PER_TICK = 1e-10
+/** `_x.ai/session/usage` answers at once; a CLI ignoring it must not hold a turn's end for long. */
+const USAGE_READ_TIMEOUT_MS = 5_000
 
 /** Grace period for Grok to close canceled turns before forced completion. */
 const CANCEL_GRACE_MS = 15_000
@@ -107,14 +108,6 @@ interface ToolTrack {
   input: string
   output: string
   diffs: AcpDiff[]
-}
-
-interface PromptUsage {
-  inputTokens?: number
-  outputTokens?: number
-  cachedReadTokens?: number
-  cacheCreationTokens?: number
-  costUsdTicks?: number
 }
 
 /** Grok permission flags and session mode requested by Sillage modes. */
@@ -165,6 +158,12 @@ export class GrokRunner implements AgentRunner {
   private suggested: string | null = null
   /** Notifications arriving before session IDs are known. Grok publishes commands and MCP states before `session/new` responds (probed); replay after responses rather than lose them. */
   private early: [string, unknown][] | null = []
+  /** Last `_x.ai/session/usage` totals of this process; null when the CLI gives none, leaving prompt responses as the only source. */
+  private usageBase: SessionUsage | null = null
+  /** Readings run one after another, so that no consumption is counted twice. */
+  private usageReads: Promise<unknown> = Promise.resolve()
+  /** `session/prompt` requests not answered yet: what Grok consumes meanwhile belongs to their turn. */
+  private promptsInFlight = 0
 
   get appliedConfig(): AgentConfig {
     return this.config
@@ -260,6 +259,9 @@ export class GrokRunner implements AgentRunner {
     this.readOptions(session.configOptions ?? [])
     await this.applySessionOptions(this.config)
     await this.applyPermissionMode(this.config.permissionMode, true)
+    // Totals count from this process's start, resumed sessions included (probed: zero after
+    // `session/resume`); read rather than assumed so that a CLI keeping them stays right.
+    this.usageBase = await this.readSessionUsage()
 
     this.ctx.emit(
       {
@@ -360,6 +362,8 @@ export class GrokRunner implements AgentRunner {
     }
     if (method === '_x.ai/session_notification') {
       const update = fields(fields(params).update)
+      // Any session: background sub-agents complete under their own ID, after their prompt.
+      if (update.sessionUpdate === 'turn_completed') this.settleOutsideTurn()
       if (fields(params).sessionId !== this.sessionId) return
       this.onExtensionUpdate(update)
       return
@@ -784,13 +788,12 @@ export class GrokRunner implements AgentRunner {
   private async runPrompt(prompt: AcpContentBlock[], token: number): Promise<void> {
     const client = this.client
     if (!client) return
+    let response: PromptResponse
+    this.promptsInFlight++
     try {
-      const response = await client.request<PromptResponse>('session/prompt', { sessionId: this.sessionId, prompt }, null)
-      const meta = fields(response._meta)
-      // Permission rejections end turns as `cancelled`: rejection, not interruption.
-      const stopReason = meta.cancellationCategory === 'PermissionRejected' ? 'permission_denied' : response.stopReason
-      this.endTurn(stopReason, meta.usage as PromptUsage | undefined, response, token)
+      response = await client.request<PromptResponse>('session/prompt', { sessionId: this.sessionId, prompt }, null)
     } catch (error) {
+      this.promptsInFlight--
       // Process death is reported through onProcessExit.
       if (!this.client) return
       this.ctx.emit({
@@ -799,22 +802,74 @@ export class GrokRunner implements AgentRunner {
         message: error instanceof Error ? error.message : String(error),
         recoverable: true,
       })
-      this.endTurn('failed', undefined, null, token)
+      this.closeTurn('failed', await this.consumedSinceLastReading(), undefined, null, token)
+      return
+    }
+    this.promptsInFlight--
+    const meta = fields(response._meta)
+    // Permission rejections end turns as `cancelled`: rejection, not interruption.
+    const stopReason = meta.cancellationCategory === 'PermissionRejected' ? 'permission_denied' : response.stopReason
+    // The session totals rather than the prompt's own usage, which lacks its cost while a
+    // background sub-agent runs (`usageIsIncomplete`) and leaves out what ran between prompts.
+    const spent = await this.consumedSinceLastReading()
+    this.closeTurn(stopReason, spent, meta.usage as Partial<SessionUsage> | undefined, response, token)
+  }
+
+  /** Session totals, or null when this CLI does not give them. */
+  private async readSessionUsage(): Promise<SessionUsage | null> {
+    const client = this.client
+    if (!client || !this.sessionId) return null
+    try {
+      return parseSessionUsage(await client.request('_x.ai/session/usage', { sessionId: this.sessionId }, USAGE_READ_TIMEOUT_MS))
+    } catch {
+      return null
     }
   }
 
-  private endTurn(stopReason: string, usage: PromptUsage | undefined, raw: unknown, token: number): void {
-    this.turn.end({
+  /** What Grok consumed since the previous reading; null without session totals. */
+  private consumedSinceLastReading(): Promise<SessionUsage | null> {
+    const reading = this.usageReads.then(async () => {
+      const base = this.usageBase
+      if (!base) return null
+      const totals = await this.readSessionUsage()
+      // A failed reading ends the totals for this process: the turn falls back on its prompt's
+      // usage, which a later reading would count again.
+      this.usageBase = totals
+      if (!totals) return null
+      return usageSince(base, totals)
+    })
+    this.usageReads = reading.catch(() => {})
+    return reading
+  }
+
+  /**
+   * Consumption no prompt response will carry: a background sub-agent finishing after its prompt,
+   * a wake-up turn. Only between prompts, whose own reading takes in whatever ran meanwhile; a
+   * prompt starting during this reading may see part of its usage counted here, never twice.
+   */
+  private settleOutsideTurn(): void {
+    if (this.promptsInFlight > 0 || !this.usageBase) return
+    detach(this.consumedSinceLastReading().then((spent) => {
+      if (spent && consumedAnything(spent)) this.emitConsumed(spent)
+    }), 'Grok usage reading')
+  }
+
+  private emitConsumed(spent: SessionUsage): void {
+    // The session model: Grok names models apart in `modelUsage` (`grok-4.6-build` for `grok-4.6`).
+    this.ctx.emit({ type: 'usage.consumed', model: null, ...toTurnUsage(spent) })
+  }
+
+  /** Ends a prompt's turn with what the session totals say it consumed, or with the prompt's own usage when the CLI gives no totals. */
+  private closeTurn(stopReason: string, spent: SessionUsage | null, promptUsage: Partial<SessionUsage> | undefined, raw: unknown, token: number): void {
+    const closed = this.endTurn(stopReason, spent ?? promptUsage, raw, token)
+    // A prompt answering after the interruption watchdog closed its turn still consumed.
+    if (!closed && spent && consumedAnything(spent)) this.emitConsumed(spent)
+  }
+
+  private endTurn(stopReason: string, usage: Partial<SessionUsage> | undefined, raw: unknown, token: number): boolean {
+    return this.turn.end({
       stopReason: stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : stopReason,
-      usage: {
-        costUsd: (usage?.costUsdTicks ?? 0) * USD_PER_TICK,
-        // Grok `inputTokens` includes cache usage reported separately;
-        // journals separate both like other CLIs.
-        inputTokens: Math.max(0, (usage?.inputTokens ?? 0) - (usage?.cachedReadTokens ?? 0)),
-        outputTokens: usage?.outputTokens ?? 0,
-        cacheReadTokens: usage?.cachedReadTokens ?? 0,
-        cacheCreationTokens: usage?.cacheCreationTokens ?? 0,
-      },
+      usage: toTurnUsage(usage),
       raw,
       close: () => {
         this.closeText()

@@ -4,8 +4,12 @@
 // Prompts `fixture:{"steps":[…]}` play scenarios: each step emits
 // an update (`update`), raw notification (`notify`), client request
 // (`permission` for `session/request_permission`, `request` otherwise, with
-// journaled responses), or pause (`wait`).
-// `session/prompt` responses carry scenario `stopReason` and `usage`.
+// journaled responses), consumption outside the prompt (`consume`, e.g. a background
+// sub-agent), or pause (`wait`). `later` steps play after the prompt answered.
+// `session/prompt` responses carry scenario `stopReason` and `usage`; the session totals
+// of `_x.ai/session/usage` take in `spent` (default `usage`) and every `consume`, like
+// Grok's own. `FIXTURE_NO_SESSION_USAGE=1` plays a CLI without those totals,
+// `FIXTURE_SESSION_USAGE_FAILS=n` one whose nth reading fails.
 import { appendFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -70,13 +74,18 @@ let effort = 'high'
 let nextRequest = 0
 const pendingRequests = new Map()
 let cancelled = null
+const USAGE_KEYS = ['inputTokens', 'cachedReadTokens', 'cacheCreationTokens', 'outputTokens', 'costUsdTicks']
+let usageReads = 0
+const totals = Object.fromEntries(USAGE_KEYS.map((key) => [key, 0]))
+const spend = (usage) => { for (const key of USAGE_KEYS) totals[key] += usage?.[key] ?? 0 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function play(id, scenario) {
-  for (const step of scenario.steps ?? []) {
+async function playSteps(steps) {
+  for (const step of steps) {
     if (cancelled) break
     if (step.wait) await sleep(step.wait)
+    else if (step.consume) spend(step.consume)
     else if (step.update) notify('session/update', { sessionId, update: step.update, ...(step.meta ? { _meta: step.meta } : {}) })
     else if (step.notify) notify(step.notify, step.params)
     else if (step.permission || step.request) {
@@ -87,9 +96,15 @@ async function play(id, scenario) {
       record({ answer: { method, result: await answer } })
     }
   }
+}
+
+async function play(id, scenario) {
+  await playSteps(scenario.steps ?? [])
   const stopReason = cancelled ? 'cancelled' : (scenario.stopReason ?? 'end_turn')
   cancelled = null
+  spend(scenario.spent ?? scenario.usage)
   send({ jsonrpc: '2.0', id, result: { stopReason, _meta: { usage: scenario.usage ?? {} } } })
+  await playSteps(scenario.later ?? [])
 }
 
 createInterface({ input: process.stdin }).on('line', (line) => {
@@ -151,6 +166,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
           onDemandCap: { val: 2000 }, onDemandUsed: { val: 500 }, prepaidBalance: {} },
         subscription_tier: 'X Premium',
       })
+    case '_x.ai/session/usage':
+      usageReads++
+      if (process.env.FIXTURE_NO_SESSION_USAGE || usageReads === Number(process.env.FIXTURE_SESSION_USAGE_FAILS)) return send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } })
+      return reply({ usage: { ...totals, totalTokens: totals.inputTokens + totals.outputTokens, modelUsage: {} } })
     case '_x.ai/session/fork':
       return reply({ newSessionId: 'ses_forked', parentSessionId: message.params.sourceSessionId })
     default:
