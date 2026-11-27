@@ -795,6 +795,8 @@ export class ClaudeRunner implements AgentRunner {
               // CLI `resetsAt` uses seconds, Sillage milliseconds: conversion prevents UI dates in
               // 1970.
               utilization: info.utilization ?? null,
+              // Says whether reaching the limit will cut the session or bill extra usage.
+              overageEnabled: info.overageEnabled ?? null,
               resetsAt: info.resetsAt === undefined ? null : info.resetsAt * 1000,
             },
           },

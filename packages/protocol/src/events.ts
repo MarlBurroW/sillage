@@ -798,6 +798,12 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
         /** Consumed quota fraction, from 0 to 1. Absent if not reported by the CLI. */
         utilization: z.number().nullish().default(null),
         /**
+         * Whether the account has extra usage enabled, i.e. whether going over the window bills
+         * the session or stops it. Claude only; absent when the CLI does not say. No default, so
+         * CLIs without the notion need not state it.
+         */
+        overageEnabled: z.boolean().nullish(),
+        /**
          * Window reset time in milliseconds. Older events store seconds: any timestamp below
          * 1e12 predates 2001, so must be seconds. Conversion is idempotent.
          */

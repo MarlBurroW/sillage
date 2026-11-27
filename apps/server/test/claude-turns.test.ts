@@ -80,3 +80,17 @@ test('session.started carries the version of the CLI process holding the session
   const started = f.events.filter((event) => event.type === 'session.started')
   assert.deepEqual(started.map((event) => event.type === 'session.started' && event.cliVersion), ['2.1.320', null])
 })
+
+test('quota warnings relay whether the account has extra usage enabled', () => {
+  const f = runner()
+  const warning = (extra: Record<string, unknown>) => f.translate({
+    type: 'rate_limit_event',
+    rate_limit_info: { status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.9, resetsAt: 1_800_000_000, ...extra },
+  })
+  warning({ overageEnabled: false })
+  warning({ overageEnabled: true })
+  // Older CLIs do not say: null, which the interface leaves unstated.
+  warning({})
+  const relayed = f.events.map((event) => event.type === 'usage.updated' ? event.rateLimit?.overageEnabled : 'other')
+  assert.deepEqual(relayed, [false, true, null])
+})

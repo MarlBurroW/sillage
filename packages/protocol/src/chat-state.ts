@@ -290,6 +290,8 @@ export interface RateLimitState {
   status: 'allowed' | 'allowed_warning' | 'rejected'
   utilization: number | null
   resetsAt: number | null
+  /** Extra usage enabled on the account (Claude); null or absent when not reported. */
+  overageEnabled?: boolean | null
 }
 
 /** Context window usage reported by the CLI. */

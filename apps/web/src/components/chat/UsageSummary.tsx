@@ -109,6 +109,23 @@ export function UsageSummary({
         </span>
       ) : null}
 
+      {/*
+       * What reaching the limit means: billed extra usage, or a session cut short. `false` is
+       * stated as plainly as `true`, since a stop is the outcome worth knowing in advance; null
+       * (not reported) says nothing rather than guessing.
+       */}
+      {rateLimit?.overageEnabled === true ? (
+        <span title={t('usage.overage.enabledHint')}>{t('usage.overage.enabled')}</span>
+      ) : null}
+      {rateLimit?.overageEnabled === false ? (
+        <span
+          className={cx(rateLimit.status !== 'allowed' && 'text-caution')}
+          title={t('usage.overage.disabledHint')}
+        >
+          {t('usage.overage.disabled')}
+        </span>
+      ) : null}
+
       {showCost ? <span title={t('usage.billed.perUse')}>{t('usage.cost.amount', { amount: costUsd.toFixed(3) })}</span> : null}
     </>
   )
