@@ -137,6 +137,8 @@ test('agents are told where to put the images they show', async (t) => {
   const appendix = instructionsAppendix(h.db, { projectId: 'private', mode: 'repo', sillageMcp: false, mediaDir: dir }) ?? ''
   assert.ok(appendix.includes(`\`${dir}\``), appendix)
   assert.match(appendix, /\$SILLAGE_MEDIA_DIR/)
+  // Angle brackets every time, on the real folder: a bare path ends at its first space.
+  assert.ok(appendix.includes(`![description](<${join(dir, 'screenshot.png')}>)`), appendix)
   assert.doesNotMatch(appendix, /copy it into the working directory/)
   // Without a folder (probes), the former advice stands.
   assert.match(instructionsAppendix(h.db, { projectId: 'private', mode: 'repo', sillageMcp: false }) ?? '', /copy it into the working directory/)

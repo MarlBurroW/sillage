@@ -112,14 +112,17 @@ export function instructionsAuthor(
 /**
  * Without a media folder, the only displayable files were the workspace's, so agents copied
  * screenshots into the repository (to be committed by mistake, or lost with the worktree) or
- * into the attachments folder, where they never displayed.
+ * into the attachments folder, where they never displayed. Paths always go between angle
+ * brackets, shown on the real folder: Markdown ends a bare target at its first space, and on
+ * macOS Desktop every media path has one (`Application Support`). A rule kept for "paths with
+ * spaces" left the model to notice the space first.
  */
 function showImages(mediaDir: string | undefined): string {
   const intro = "Sillage renders Markdown images in your replies. When the user needs to see an image, such as a photo, screenshot, diagram or picture you looked at, fetched or generated, show it with `![description](target)` instead of only describing it."
   if (!mediaDir) {
     return `${intro} Use an https URL the user's browser can load, or a path inside your working directory. A file elsewhere (a temporary or download directory) does not display: copy it into the working directory first.`
   }
-  return `${intro} Use an https URL the user's browser can load, a file already in your working directory, or a file in this conversation's media folder \`${mediaDir}\` (also \`$SILLAGE_MEDIA_DIR\`). Save the images you make for the user there (screenshots, renders, charts) and copy any other file there before showing it, then cite its absolute path, in angle brackets if it contains spaces. The folder lives outside the repository and lasts as long as the conversation, so do not copy images into the project for this. A file anywhere else (a temporary or download directory, the attachments folder) does not display.`
+  return `${intro} Use an https URL the user's browser can load, a file already in your working directory, or a file in this conversation's media folder \`${mediaDir}\` (also \`$SILLAGE_MEDIA_DIR\`). Save the images you make for the user there (screenshots, renders, charts) and copy any other file there before showing it. Always write a file path between angle brackets, as in \`![description](<${join(mediaDir, 'screenshot.png')}>)\`: a bare path stops at its first space. The folder lives outside the repository and lasts as long as the conversation, so do not copy images into the project for this. A file anywhere else (a temporary or download directory, the attachments folder) does not display.`
 }
 
 interface AppendixInput {
