@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
-import { conversationHandoffs, conversations, permissionRequests, projects, type ConversationRow, type Db } from '@sillage/db'
+import { conversationHandoffs, conversations, permissionRequests, projects, scheduledTasks, type ConversationRow, type Db } from '@sillage/db'
 import {
   disabledSillageTools,
   parseAgentConfig,
@@ -14,6 +14,7 @@ import { personalMemoryDir, readPersonalMemory } from '../memory/personal.js'
 import { processOrigins } from '../services/origins.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
+import { unattendedRetryEnv } from '../agents/claude/unattended-retries.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { publicUrlOf } from '../settings/app-settings.js'
@@ -75,6 +76,15 @@ export class RunnerContextFactory {
     private readonly usage: TurnUsageRecorder | null,
     private readonly hooks: RunnerContextHooks,
   ) {}
+
+  /** Maximum duration of a scheduled task, or null once the task is gone. */
+  private scheduleDuration(scheduleId: string): number | null {
+    return this.db
+      .select({ minutes: scheduledTasks.maxDurationMinutes })
+      .from(scheduledTasks)
+      .where(eq(scheduledTasks.id, scheduleId))
+      .get()?.minutes ?? null
+  }
 
   build(conversation: ConversationRow, lease?: RunnerLease): RunnerContext {
     const memoryDirOrNull = (agent: ConversationRow['agent'], dir: string | null, sillageMcp: boolean) =>
@@ -147,6 +157,12 @@ export class RunnerContextFactory {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
+        // Nobody resends an unattended run that an API overload failed: let Claude wait it out.
+        ...(conversation.agent === 'claude' ? unattendedRetryEnv({
+          scheduleId: conversation.scheduleId,
+          createdByTokenId: conversation.createdByTokenId,
+          maxDurationMinutes: conversation.scheduleId ? this.scheduleDuration(conversation.scheduleId) : null,
+        }) : {}),
         ...this.accounts.accountEnv(conversation, config),
       },
       // Sillage's server goes last: order resolves duplicate tool names,
