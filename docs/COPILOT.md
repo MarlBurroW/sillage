@@ -37,7 +37,7 @@ requests) is listed under [Not yet verified](#not-yet-verified).
 | Tools | Named after the native tool and mapped to canonical names and arguments; see [Tools](#tools). A command that exits non-zero shows as failed, a failed call shows its reason. | Scripted, every tool of the table. `apply_patch` (GPT models) signed in. |
 | MCP tools | Named `server/tool` from the call's own metadata. | Scripted with a stdio server. |
 | Sub-agents | `task` is an `Agent` row; its calls, thoughts and replies nest under it, in the foreground and in the background. | Scripted. On the signed-in plan the call itself failed (`400 The requested model is not supported.`), shown as a failed row with that reason. `/fleet` and `/delegate` not tried. |
-| Background work | A shell left running (`mode: async`) is listed as background work until Copilot reads its exit. When it finishes after the turn, Copilot reads it by itself: that is journaled as a turn of its own. | Scripted, attached and detached shells. Copilot has no client call to stop a shell: only the model can (`stop_bash`). |
+| Background work | A shell left running (`mode: async`) is listed as background work until Copilot reads its exit. When it finishes after the turn, Copilot reads it by itself: that is journaled as a turn of its own. | Scripted, attached and detached shells; an attached `sleep 12` through the runner on 1.0.116 and 1.0.117 (turn closed at 0.8 s, Copilot's own turn at 12.8 s). Copilot has no client call to stop a shell: only the model can (`stop_bash`). |
 | To-do list | Copilot keeps it in a session database; changes arrive as an ACP `plan` and show as the plan card. | Scripted. |
 | Permissions | Allow once, allow for the session, deny, from `session/request_permission`: tools, paths outside the allowed folders, URLs. A refusal ends Copilot's whole turn, which closes as `permission_denied`. | Scripted. |
 | Questions | `ask_user` arrives as an `elicitation/create` form. A form made only of choices is a question card (a free answer is allowed); anything else is a form. The call itself is not shown as a tool row. | Scripted and signed in. Copilot only offers `ask_user` to a client that announces forms, which Sillage does. |
@@ -111,6 +111,7 @@ say what plain ACP leaves out:
 | `assistant.turn_start` | With an `agentId`: `parentToolCallId`, the only link between a sub-agent and the call that spawned it. |
 | `assistant.usage` | Tokens of each model call, the account's quota, the model Auto routed to (`isAuto`, `modelDisplayName`). |
 | `assistant.turn_retry` | A retry notice. |
+| `assistant.idle` | The end of the reply while an attached shell keeps the prompt pending: the turn closes there. |
 | `session.idle` | The end of a turn Copilot started by itself. |
 | `session.info`, `session.warning`, `session.error` | Notices and errors as data. |
 | `session.compaction_start`, `session.compaction_complete` | Compaction, with tokens before and after. |
@@ -166,9 +167,14 @@ Quirks of 1.0.116 the next maintainer must know.
 - **A refused permission ends the whole turn**, with `stopReason: "end_turn"`.
 - **A model error ends the turn with `end_turn` and no usage**, after an "Error: …"
   line.
-- **The prompt response waits for attached background work.** A detached shell
-  outlives it; when it finishes, Copilot reads its output and answers without a
-  prompt, and nothing but `session.idle` says that turn is over.
+- **The prompt response waits for attached background work.** A shell started with
+  `mode: "async"` and no `detach` keeps the request pending until it ends, long after
+  the reply has streamed. Sillage closes the turn on `assistant.idle` instead, as
+  long as a shell is listed in the background; the late response is ignored. A
+  message sent meanwhile goes straight in: Copilot answers the pending request
+  `cancelled` without stopping the shell (1.0.117). A detached shell outlives the
+  request anyway. Either way, when the shell finishes, Copilot reads its output and
+  answers without a prompt, and nothing but `session.idle` says that turn is over.
 - **Entering Autopilot turns `allow_all` on, leaving it turns it back to Manual**,
   whatever it was before. The mode is therefore applied after the permissions.
 - **`config_option_update` follows every model change, a sub-agent's included.**

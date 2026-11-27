@@ -482,6 +482,49 @@ test('Copilot shells: exit codes, background work and the turn Copilot opens whe
   assert.deepEqual([next.inputTokens, next.outputTokens], [60, 6])
 })
 
+test('Copilot hands the conversation back when its reply is over, while an attached shell keeps the prompt pending', async (t) => {
+  const f = await fixture(t)
+  const attachedShell = (shellId: string) => [
+    announce({ toolCallId: shellId, name: 'bash', arguments: {} }),
+    { update: { sessionUpdate: 'tool_call', toolCallId: shellId, title: 'npm test', kind: 'execute', status: 'pending', rawInput: { command: 'sleep 12; npm test', description: 'Slow tests', mode: 'async', shellId } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: shellId, status: 'completed', rawOutput: { content: `<command started in background with shellId: ${shellId}>`, structuredContent: { shellId } } } },
+    { event: { type: 'assistant.usage', data: { model: 'gpt-test', inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
+    chunk('Started the tests.', `r-${shellId}`),
+  ]
+  // The shell ends, Copilot reads it and answers, then the prompt response comes.
+  const reportBack = (shellId: string) => [
+    { wait: 150 },
+    announce({ toolCallId: `read-${shellId}`, name: 'read_bash', arguments: { shellId } }),
+    { update: { sessionUpdate: 'tool_call', toolCallId: `read-${shellId}`, title: 'Reading shell output', kind: 'read', status: 'pending', rawInput: { shellId } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: `read-${shellId}`, status: 'completed', rawOutput: { content: 'Output:\nok\n', contents: [{ type: 'shell_exit', shellId, exitCode: 0 }] } } },
+    { event: { type: 'assistant.usage', data: { model: 'gpt-test', inputTokens: 40, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
+    chunk('The tests pass.', `r2-${shellId}`),
+  ]
+  const first = await f.turn(attachedShell('att'), { attached: reportBack('att'), usage: { inputTokens: 140, outputTokens: 14 } })
+  // Closed by `assistant.idle`, before the shell reported back.
+  assert.deepEqual([first.stopReason, first.inputTokens, first.outputTokens], ['completed', 100, 10])
+  assert.equal(f.of('tool.started').some((event) => event.name === 'read_bash'), false)
+  assert.equal(f.statuses.at(-1), 'idle')
+  assert.deepEqual(f.of('background.updated').at(-1)!.tasks, [{ id: 'att', kind: 'shell', description: 'Slow tests' }])
+  // What Copilot does when the shell ends is a turn of its own, closed by `session.idle`.
+  await until(() => f.of('turn.completed').length === 2)
+  const wake = f.of('turn.completed')[1]!
+  assert.deepEqual([wake.stopReason, wake.inputTokens, wake.outputTokens], ['completed', 40, 4])
+  assert.deepEqual(f.of('background.updated').at(-1)!.tasks, [])
+  await until(() => f.statuses.at(-1) === 'idle')
+  // The late response is not a turn, and the next prompt counts its own tokens only.
+  const next = await f.turn([chunk('Next', 'r3')], { usage: { inputTokens: 60, outputTokens: 6 } })
+  assert.deepEqual([next.inputTokens, next.outputTokens], [60, 6])
+  assert.equal(f.of('turn.completed').length, 3)
+
+  // A message sent while the shell runs goes straight in: Copilot cancels the pending request, not the shell.
+  await f.turn(attachedShell('second'), { attached: [{ wait: 5000 }] })
+  const followUp = await f.turn([chunk('Still here.', 'r4')], { usage: { inputTokens: 20, outputTokens: 2 } })
+  assert.equal(followUp.stopReason, 'completed')
+  assert.deepEqual(f.of('turn.completed').map((event) => event.stopReason), ['completed', 'completed', 'completed', 'completed', 'completed'])
+  assert.ok(f.of('message.completed').some((event) => event.blocks.some((block) => block.type === 'text' && block.text === 'Still here.')))
+})
+
 test('Copilot compacts through its slash command, outside any turn', async (t) => {
   const f = await fixture(t)
   await until(() => f.of('commands.updated').length > 0)

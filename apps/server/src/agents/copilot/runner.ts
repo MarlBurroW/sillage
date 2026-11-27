@@ -408,6 +408,14 @@ export class CopilotRunner implements AgentRunner {
       case 'assistant.turn_retry':
         if (!agentId) this.ctx.emit({ type: 'agent.notice', id: 'api-retry', code: 'copilot_retry', message: 'GitHub Copilot is retrying the request after a transient error.', level: 'info', details: { reason: data.reason ?? null, model: data.model ?? null } }, event)
         return
+      case 'assistant.idle':
+        // The prompt response waits for attached background work, a shell started in async mode
+        // without `detach`: the reply is over, the conversation is free. When the shell reports
+        // back, Copilot answers it in a turn of its own (`wakeUp`); a new prompt meanwhile cancels
+        // the pending request without stopping the shell (1.0.117). Without such work the
+        // response follows at once, with its own stop reason.
+        if (!agentId && data.aborted !== true && this.background.size && this.turn.open && !this.replaying) this.endTurn({ stopReason: 'end_turn' }, event, this.turn.token ?? undefined)
+        return
       case 'session.idle':
         // A turn Sillage opened ends with its prompt response; one Copilot opened only says so here.
         if (this.wake !== null && this.turn.token === this.wake) this.endTurn({ stopReason: data.aborted === true ? 'cancelled' : 'end_turn' }, event, this.wake)
@@ -777,8 +785,9 @@ export class CopilotRunner implements AgentRunner {
         this.natives.clear()
       },
     }, token)
-    if (!closed) return
+    // Also from a response arriving after its turn closed on `assistant.idle`.
     if (total) this.counted = total
+    if (!closed) return
     this.spent = null
     this.wake = null
   }

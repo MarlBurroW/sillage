@@ -72,12 +72,13 @@ export const COPILOT_EVENT_METHOD = `${COPILOT_META}/sessionEvent`
  * what they carry: the native tool name and the MCP identity of a call (`assistant.message`),
  * which tool call spawned a sub-agent (`assistant.turn_start`), per-call usage and quota, errors
  * and retries as data rather than as "Error: …" text, compaction, MCP server health, and the end
- * of a turn Copilot started by itself when background work finished (`session.idle`).
+ * of a turn Copilot started by itself when background work finished (`session.idle`), and the
+ * end of the reply while attached background work keeps the prompt pending (`assistant.idle`).
  * `tool.execution_*` and `subagent.*` are not relayed even when asked for (1.0.116).
  */
 export const COPILOT_SESSION_EVENTS = [
   'assistant.turn_start', 'assistant.message', 'assistant.usage', 'assistant.turn_retry',
-  'session.idle', 'session.info', 'session.warning', 'session.error',
+  'assistant.idle', 'session.idle', 'session.info', 'session.warning', 'session.error',
   'session.compaction_start', 'session.compaction_complete',
   'session.mcp_server_status_changed', 'session.mcp_servers_loaded', 'session.mcp_server_tools_loaded',
 ] as const

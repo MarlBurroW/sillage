@@ -10,7 +10,9 @@
 //   {wait}              milliseconds
 // then answers with `stop` (default `end_turn`) and, as Copilot does, the tokens of the whole
 // process so far, to which `usage` adds this turn's. `after` steps play once the prompt is
-// answered: what Copilot does by itself when background work reports back.
+// answered: what Copilot does by itself when background work reports back. `attached` steps
+// play after `assistant.idle` but before the answer, as for a shell started in async mode
+// without `detach`; a new prompt meanwhile answers this one `cancelled` and stops them.
 // Any other prompt gets a plain reply; `/compact` compacts.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -121,13 +123,21 @@ async function prompt(id, params) {
   }
   const scripted = text.startsWith('fixture:')
   const scenario = scripted ? JSON.parse(text.slice(8).split('\n')[0]) : { steps: [{ update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Fixture reply.' }, messageId: `reply-${id}` } }], usage: { inputTokens: 100, outputTokens: 10 } }
+  // Copilot cancels the pending request, without stopping the shell it waits for (1.0.117).
+  if (active !== null) write({ id: active, result: { stopReason: 'cancelled', usage: { ...spent } } })
   active = id
   event('assistant.turn_start', { turnId: '0', agentMode: 'interactive' })
   await play(scenario.steps, () => active === id)
   if (active !== id) return
+  if (scenario.attached) {
+    event('assistant.idle', {})
+    await play(scenario.attached, () => active === id)
+    if (active !== id) return
+  }
   active = null
   for (const [key, value] of Object.entries(scenario.usage ?? {})) spent[key] = (spent[key] ?? 0) + value
   spent.totalTokens = spent.inputTokens + spent.outputTokens
+  event('assistant.idle', {})
   event('session.idle', { mode: 'interactive' })
   // A failed request is answered without usage.
   write({ id, result: scenario.failed ? { stopReason: scenario.stop ?? 'end_turn' } : { stopReason: scenario.stop ?? 'end_turn', usage: { ...spent } } })
