@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { conversations, openDatabase, projectActions, projects, runMigrations, users } from '@sillage/db'
-import { actionUrlSchema, resolveActionUrl } from '@sillage/protocol'
-import { ActionRunner, createAction, loadAction, updateAction } from '../src/actions/actions.js'
+import { actionUrlSchema, resolveActionUrl, resolveAgentTools } from '@sillage/protocol'
+import { ActionRunner, createAction, loadAction, updateAction, worktreeOf } from '../src/actions/actions.js'
+import { liveSessionContext } from '../src/agents/overview.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
@@ -120,6 +121,60 @@ test('a task runs in its own terminal, keeps its exit code, and is not doubled w
   const third = await runner.run(row, dir, null)
   assert.notEqual(third.terminal?.id, first.terminal?.id)
   assert.equal(terminals.list('project').length, 1)
+})
+
+test('an agent reads the output of the latest run, waiting for it to finish', async (t) => {
+  const { db, dir, terminals, mcp } = await harness(t)
+  const previousShell = process.env.SHELL
+  process.env.SHELL = '/bin/sh'
+  t.after(() => { process.env.SHELL = previousShell })
+
+  const row = createAction(db, 'project', { label: 'Tests', kind: 'task', command: "printf '\\033[31mboom\\033[0m\\n'; sleep 0.5; exit 2" }, null)
+  const never = await mcp('read_action_output', { id: row.id })
+  assert.equal(never.isError, undefined, never.content[0]?.text)
+  assert.match(never.content[0]!.text, /no run to read/)
+
+  // A user click: the agent did not start it.
+  const runner = new ActionRunner(db, { paths: { data: join(dir, 'data') } } as unknown as Config, terminals)
+  await runner.run(row, dir, null)
+  const waited = await mcp('read_action_output', { id: row.id, wait: 5 })
+  const text = waited.content[0]!.text
+  assert.match(text, /“Tests” \(task\): failed \(exit 2\)/)
+  assert.match(text, /\nboom\n/)
+  assert.doesNotMatch(text, /\x1b/)
+  assert.match(text, /\[exit 2\]/)
+
+  const refused = await mcp('read_action_output', { id: row.id, wait: 600 })
+  assert.equal(refused.isError, true)
+  assert.match(refused.content[0]!.text, /`wait` must be an integer from 0 to 45/)
+})
+
+test('a restart without systemd runs in the previous worktree, not in its subdirectory twice', () => {
+  assert.equal(worktreeOf('/w/tree/apps/web', 'apps/web'), '/w/tree')
+  assert.equal(worktreeOf('/w/tree/apps/web', './apps/web/'), '/w/tree')
+  assert.equal(worktreeOf('/w/tree', null), '/w/tree')
+})
+
+test('the launch context asks agents to propose actions, then lists them', async (t) => {
+  const { db } = await harness(t)
+  const context = (families: ReturnType<typeof resolveAgentTools> | null = null) =>
+    liveSessionContext(db, { projectId: 'project', conversationId: 'agent', sillageMcp: true, activity: true, families }) ?? ''
+
+  assert.match(context(), /This project has no actions yet/)
+  assert.match(context(), /propose it with `register_action` without waiting to be asked/)
+
+  const tests = createAction(db, 'project', { label: 'Tests', kind: 'task', command: 'pnpm test' }, null)
+  const dev = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, 'agent')
+  const listed = context()
+  assert.doesNotMatch(listed, /no actions yet/)
+  assert.match(listed, new RegExp(`“Tests” \\(task, id ${tests.id}\\)`))
+  assert.match(listed, new RegExp(`“Dev” \\(service, id ${dev.id}, awaiting the user's review\\)`))
+  assert.match(listed, /`read_action_output`/)
+
+  // A project that turned the family off is not asked to propose or use them.
+  const off = context({ ...resolveAgentTools({}, null), actions: false })
+  assert.match(off, /turned off: Project actions/)
+  assert.doesNotMatch(off, /Project actions, one-click buttons|no actions yet/)
 })
 
 test('an action whose directory is gone says so instead of running elsewhere', async (t) => {

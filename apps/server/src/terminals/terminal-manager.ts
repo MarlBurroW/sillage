@@ -9,6 +9,7 @@ import type { Config } from '../config.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
 import { isUnder, samePath } from '../agents/paths.js'
+import { screenText } from './screen-text.js'
 
 /** Project-attached terminals. A pty lives in a directory rather than a conversation; conversation indexing hid servers launched from archived sessions. Sessions only supply default directories (worktrees) at opening. Deliberately outside journals: shell output is large, not conversation content, and database persistence would add unused weight. Retain just enough buffer to restore screens on return. Processes intentionally do not survive daemon restarts, which would require external hosts such as tmux. Persist metadata and final screens so entries return as interrupted, readable and restartable. */
 
@@ -259,6 +260,35 @@ export class TerminalManager {
       // commands. Inactivity eventually releases them.
       detach: () => managed.subscribers.delete(subscriber),
     }
+  }
+
+  /** Recent output as plain text, for readers that are not terminals. `truncated` says the buffer dropped earlier output. */
+  output(projectId: string, terminalId: string): { text: string; truncated: boolean } {
+    const managed = this.require(projectId, terminalId)
+    const truncated = managed.replay.length >= REPLAY_BYTES
+    let text = screenText(managed.replay)
+    // The buffer was cut at an arbitrary byte: its first line may be the tail of an escape sequence.
+    if (truncated) text = text.slice(text.indexOf('\n') + 1)
+    return { text, truncated }
+  }
+
+  /** Resolves true once the process has exited, false if `ms` passes first. */
+  waitForExit(projectId: string, terminalId: string, ms: number): Promise<boolean> {
+    const managed = this.require(projectId, terminalId)
+    if (managed.exited) return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const subscriber: TerminalSubscriber = {
+        onOutput: () => undefined,
+        onExit: () => finish(true),
+      }
+      const timer = setTimeout(() => finish(false), ms)
+      const finish = (exited: boolean) => {
+        clearTimeout(timer)
+        managed.subscribers.delete(subscriber)
+        resolve(exited)
+      }
+      managed.subscribers.add(subscriber)
+    })
   }
 
   write(projectId: string, terminalId: string, data: string): void {

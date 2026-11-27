@@ -11,7 +11,8 @@ import { chromium } from 'playwright'
 
 // Project actions end to end: real API, MCP server, terminals, and on Linux a real
 // systemd user unit (`sillage-app-action-*`), stopped/removed at completion.
-// Screenshots go to ACTIONS_SHOTS or a temporary directory.
+// ACTIONS_NO_SYSTEMD=1 hides the user manager from the server, as on Windows and macOS,
+// so services run in terminals. Screenshots go to ACTIONS_SHOTS or a temporary directory.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -65,7 +66,8 @@ async function mcp(env, conversationId, projectId, name, args) {
   return JSON.parse(stdout).result
 }
 
-const linuxServices = process.platform === 'linux' &&
+const noSystemd = process.env.ACTIONS_NO_SYSTEMD === '1'
+const linuxServices = !noSystemd && process.platform === 'linux' &&
   (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true } catch { return false } })()
 
 try {
@@ -81,6 +83,11 @@ try {
     SILLAGE_CONFIG: config,
     SILLAGE_DATA_DIR: join(data, 'data'),
     SILLAGE_WEB_ROOT: join(data, 'web'),
+  }
+  // Without these, `systemctl --user` cannot reach the user manager.
+  if (noSystemd) {
+    delete env.XDG_RUNTIME_DIR
+    delete env.DBUS_SESSION_BUS_ADDRESS
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -109,6 +116,10 @@ try {
   assert.equal(created.status(), 201)
   const task = await created.json()
   assert.equal(task.status, 'approved')
+  const quick = await (await context.request.post(`${base}/api/projects/${project.id}/actions`, {
+    data: { label: 'Vérifier', kind: 'task', command: 'echo tout-va-bien' },
+  })).json()
+  assert.equal(quick.status, 'approved')
 
   // Agent-proposed service through the real MCP server.
   const registered = await mcp(env, conversation.id, project.id, 'register_action', {
@@ -139,14 +150,43 @@ try {
   await panel.getByText('À relire').waitFor()
   await page.screenshot({ path: join(shots, 'actions-desktop.png') })
 
-  // Task: play button launches it, terminal comes forward with output and exit code.
+  // Task: launching keeps the Actions tab in place. A notice reports the failure, and its
+  // button brings the terminal forward with output and exit code.
   await page.getByRole('button', { name: 'Lancer : Dire bonjour' }).first().click()
+  const failure = page.getByRole('status').filter({ hasText: 'Dire bonjour' })
+  await failure.getByText('Sortie en code 2').waitFor({ timeout: 15000 })
+  await panel.getByText(/Sortie en code 2/).waitFor()
+  assert.equal(await page.locator('.xterm-rows').count(), 0, 'launching does not open the terminal')
+  await page.screenshot({ path: join(shots, 'actions-task-notice.png') })
+  await failure.getByRole('button', { name: 'Voir la sortie' }).click()
   await page.locator('.xterm-rows', { hasText: 'hello-from-action' }).waitFor({ timeout: 10000 })
   await page.locator('.xterm-rows', { hasText: '[exit 2]' }).waitFor({ timeout: 10000 })
   assert.equal(await page.getByText('Connexion au terminal impossible.').count(), 0)
+  assert.equal(await failure.count(), 0, 'opening the output dismisses the notice')
   await page.screenshot({ path: join(shots, 'actions-task-terminal.png') })
+
+  // The agent reads the run the user launched.
+  const read = await mcp(env, conversation.id, project.id, 'read_action_output', { id: task.id })
+  assert.ok(!read.isError, read.content[0].text)
+  assert.match(read.content[0].text, /failed \(exit 2\)/)
+  assert.match(read.content[0].text, /\nhello-from-action\n/)
   await actionsTab.click()
-  await panel.getByText(/Sortie en code 2/).waitFor({ timeout: 15000 })
+
+  // Header launcher: two launches in a row, the popover staying open. Success leaves by itself,
+  // failure stays until dismissed.
+  await page.locator('button:not([aria-pressed])[aria-label="Actions"]').click()
+  const launcherList = page.getByRole('dialog', { name: 'Actions' })
+  await launcherList.getByRole('button', { name: 'Lancer : Vérifier' }).click()
+  await launcherList.getByRole('button', { name: 'Lancer : Dire bonjour' }).click()
+  const success = page.getByRole('status').filter({ hasText: 'Vérifier' })
+  await success.getByText('Réussie').waitFor({ timeout: 15000 })
+  await failure.getByText('Sortie en code 2').waitFor({ timeout: 15000 })
+  assert.ok(await launcherList.isVisible(), 'the launcher stays open while launching')
+  await page.screenshot({ path: join(shots, 'actions-launcher-notices.png') })
+  await page.keyboard.press('Escape')
+  await success.waitFor({ state: 'detached', timeout: 10000 })
+  assert.equal(await failure.count(), 1)
+  await failure.getByRole('button', { name: 'Fermer' }).click()
 
   // Proposed service: reviewed (plain command), approved, launched in one action.
   await page.getByRole('button', { name: 'Relire : Serveur statique' }).first().click()
@@ -161,6 +201,14 @@ try {
     assert.equal(await open.getAttribute('href'), `http://127.0.0.1:${httpPort}/`)
     const served = await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status)
     assert.equal(served, 200)
+    // The agent reads the unit's journal, where http.server logs that request.
+    let journal = ''
+    for (let i = 0; i < 50 && !/GET \/ HTTP/.test(journal); i++) {
+      journal = (await mcp(env, conversation.id, project.id, 'read_action_output', { id: service.id })).content[0].text
+      await delay(100)
+    }
+    assert.match(journal, /unit active/)
+    assert.match(journal, /GET \/ HTTP/)
     await page.screenshot({ path: join(shots, 'actions-service-running.png') })
 
     // Header launcher counts running services and shows the same list.
@@ -192,9 +240,53 @@ try {
     await page.getByRole('button', { name: 'Arrêter : Serveur statique' }).first().click()
     await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
   } else {
-    // Without user systemd, service falls back to a terminal.
-    await page.locator('.xterm-rows', { hasText: 'python3 -m http.server' }).waitFor({ timeout: 10000 })
+    // Without user systemd (Windows, macOS), the service runs in a terminal: launching opens
+    // nothing, the row offers Stop, and the agent reads it like a task.
+    const row = panel.locator('li', { hasText: 'Serveur statique' })
+    await row.getByRole('button', { name: 'Arrêter : Serveur statique' }).waitFor({ timeout: 20000 })
+    await row.getByText('En marche').waitFor()
+    let output = ''
+    for (let i = 0; i < 50 && !/still running/.test(output); i++) {
+      output = (await mcp(env, conversation.id, project.id, 'read_action_output', { id: service.id })).content[0].text
+      await delay(100)
+    }
+    assert.match(output, /“Serveur statique” \(service\): still running/)
+    assert.match(output, /python3 -m http\.server/)
+    await page.screenshot({ path: join(shots, 'actions-service-terminal.png') })
+    await row.getByRole('button', { name: 'Arrêter : Serveur statique' }).click()
+    await row.getByRole('button', { name: 'Lancer : Serveur statique' }).waitFor({ timeout: 20000 })
+    await delay(3000)
+    assert.equal(await page.getByRole('status').filter({ hasText: 'Serveur statique' }).count(), 0, 'a requested stop is not reported')
   }
+
+  // An agent's proposal shows beneath its call in the thread, reviewed and launched there.
+  const lint = await mcp(env, conversation.id, project.id, 'register_action', { label: 'Lint', kind: 'task', command: 'echo lint-ok' })
+  assert.ok(!lint.isError, lint.content[0].text)
+  const { default: Database } = await import(join(serverDir, 'node_modules/better-sqlite3/lib/index.js'))
+  const db = new Database(join(env.SILLAGE_DATA_DIR, 'sillage.db'))
+  const owner = db.prepare('SELECT owner_id AS id FROM projects WHERE id = ?').get(project.id).id
+  const now = Date.now()
+  const threadEvents = [
+    { type: 'message.completed', messageId: 'u1', role: 'user', blocks: [{ type: 'text', text: 'Corrige les avertissements du linter.' }], parentToolCallId: null },
+    { type: 'tool.started', toolCallId: 'call-1', name: 'mcp__sillage__register_action', input: { label: 'Lint', kind: 'task', command: 'echo lint-ok' }, parentToolCallId: null },
+    { type: 'tool.completed', toolCallId: 'call-1', output: [{ type: 'text', text: lint.content[0].text }], isError: false, durationMs: 300 },
+    { type: 'message.completed', messageId: 'a1', role: 'assistant', blocks: [{ type: 'text', text: 'C’est corrigé. Je t’ai proposé un bouton « Lint » pour relancer le linter.' }], parentToolCallId: null },
+  ]
+  db.prepare(`INSERT INTO conversations (id, project_id, user_id, title, agent, config, status, last_seq, last_notable_seq, position, created_at, updated_at)
+              VALUES ('agent-thread', ?, ?, 'Avertissements du linter', 'claude', ?, 'idle', ?, ?, -100, ?, ?)`)
+    .run(project.id, owner, JSON.stringify({ agent: 'claude', model: 'default', effort: 'medium', permissionMode: 'bypassPermissions' }), threadEvents.length, threadEvents.length, now, now)
+  const insertEvent = db.prepare('INSERT INTO events (conversation_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)')
+  threadEvents.forEach((event, index) => insertEvent.run('agent-thread', index + 1, now + index, event.type, JSON.stringify(event)))
+  db.close()
+  await page.goto(`${base}/p/${project.id}/c/agent-thread`)
+  const proposal = page.locator('[data-action-proposal]')
+  await proposal.getByText('Action « Lint » proposée').waitFor()
+  await page.screenshot({ path: join(shots, 'actions-proposal-inline.png') })
+  await proposal.getByRole('button', { name: 'Relire', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Valider et lancer' }).click()
+  await page.getByRole('status').filter({ hasText: 'Lint' }).getByText('Réussie').waitFor({ timeout: 15000 })
+  await proposal.getByText('Action « Lint » dans le menu Actions').waitFor()
+  await page.screenshot({ path: join(shots, 'actions-proposal-approved.png') })
 
   // On a phone.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
@@ -208,6 +300,9 @@ try {
   await mobile.getByRole('button', { name: 'Actions', exact: true }).click()
   await mobile.getByRole('dialog', { name: 'Actions' }).getByText('Dire bonjour').waitFor()
   await mobile.screenshot({ path: join(shots, 'actions-phone-launcher.png') })
+  await mobile.getByRole('dialog', { name: 'Actions' }).getByRole('button', { name: 'Lancer : Vérifier' }).click()
+  await mobile.getByRole('status').filter({ hasText: 'Vérifier' }).getByText('Réussie').waitFor({ timeout: 15000 })
+  await mobile.screenshot({ path: join(shots, 'actions-phone-notice.png') })
   await mobile.keyboard.press('Escape')
   await mobile.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
   await mobile.locator('button[aria-pressed][aria-label^="Actions"]').click()
@@ -222,6 +317,13 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(`actions-ui-check: ok — captures dans ${shots}`)
+} catch (error) {
+  // The page as it was when a step failed: most failures read at a glance there.
+  for (const [index, open] of (browser?.contexts() ?? []).flatMap((context) => context.pages()).entries()) {
+    await open.screenshot({ path: join(shots, `failure-${index}.png`) }).catch(() => undefined)
+  }
+  console.error(`actions-ui-check: captures in ${shots}`)
+  throw error
 } finally {
   await browser?.close()
   for (const child of processes) child.kill()

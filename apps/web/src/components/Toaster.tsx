@@ -2,13 +2,14 @@ import { conversationPath } from '@sillage/protocol'
 import { CalendarX2, CircleHelp, Hourglass, KeyRound, ShieldQuestion, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { CliRequestKind } from '@sillage/protocol'
+import type { CliRequestKind, InAppNotification } from '@sillage/protocol'
 import { openDecision, useDecisions } from '../lib/decisions'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
-import { dismissDecisionToasts, dismissToast, pushToast, useToasts, type Toast } from '../lib/toasts'
+import { dismissDecisionToasts, dismissToast, pushToast, useToasts } from '../lib/toasts'
 import { describeUsageLimitStop } from '../lib/usage-limit'
 import { wsClient } from '../lib/ws-client'
 import { Button, IconButton } from './ui'
+import { ActionRunToast } from './actions/ActionRunNotices'
 import { toastQuestion } from './decisions/decision-text'
 
 /** Summarize beyond this count: screen-covering stacks are unreadable. */
@@ -23,16 +24,16 @@ const REQUEST_TITLES: Record<CliRequestKind, MessageKey> = {
 }
 
 /**
- * App toasts bottom-right on desktop, top on phones. Only actionable decisions and CLIs waiting
- * elsewhere belong here. Servers target visible tabs and send system notifications to other
- * devices.
+ * App toasts bottom-right on desktop, top on phones. Only actionable decisions, CLIs waiting
+ * elsewhere and the end of action runs this tab launched belong here. Servers target visible tabs
+ * and send system notifications to other devices.
  */
 export function Toaster() {
   const t = useTranslate()
   const toasts = useToasts()
   const { data: pending } = useDecisions('pending')
 
-  useEffect(() => wsClient.onNotify(pushToast), [])
+  useEffect(() => wsClient.onNotify((notification) => pushToast(notification)), [])
   // Remove decisions resolved elsewhere through tabs, phones, or deadlines.
   useEffect(() => {
     if (pending) dismissDecisionToasts(new Set(pending.map((decision) => decision.id)))
@@ -47,7 +48,13 @@ export function Toaster() {
       aria-label={t('toast.region')}
       className="pointer-events-none fixed inset-x-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50 flex flex-col gap-2 md:inset-x-auto md:top-auto md:right-4 md:bottom-4 md:w-[24rem]"
     >
-      {shown.map((toast) => <ToastCard key={toast.id} toast={toast} />)}
+      {shown.map((toast) =>
+        toast.notification.kind === 'actionRun' ? (
+          <ActionRunToast key={toast.id} id={toast.id} notice={toast.notification} />
+        ) : (
+          <ToastCard key={toast.id} id={toast.id} notification={toast.notification} />
+        ),
+      )}
       {hidden > 0 ? (
         <p className="surface pointer-events-auto rounded-lg border border-line px-3 py-2 text-xs text-ink-faint shadow-pop">
           {t('toast.more', { count: hidden })}
@@ -57,10 +64,9 @@ export function Toaster() {
   )
 }
 
-function ToastCard({ toast }: { toast: Toast }) {
+function ToastCard({ id, notification }: { id: string; notification: InAppNotification }) {
   const t = useTranslate()
   const navigate = useNavigate()
-  const { notification } = toast
   const decision = notification.kind === 'decision'
   const limit = notification.kind === 'usageLimit'
   const expiry = notification.kind === 'credentialExpiry'
@@ -93,7 +99,7 @@ function ToastCard({ toast }: { toast: Toast }) {
           <Button
             size="sm"
             onClick={() => {
-              dismissToast(toast.id)
+              dismissToast(id)
               if (notification.kind === 'decision') openDecision(notification.decisionId)
               else if (notification.kind === 'credentialExpiry') navigate('/settings/comptes-claude')
               else if (notification.kind === 'scheduleFailed') navigate(`/p/${notification.projectId}/schedules/${notification.taskId}`)
@@ -102,12 +108,12 @@ function ToastCard({ toast }: { toast: Toast }) {
           >
             {t(decision ? 'toast.decision.answer' : expiry ? 'claudeAccounts.host.open' : schedule ? 'toast.scheduleFailed.open' : 'toast.cli.open')}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => dismissToast(toast.id)}>
+          <Button size="sm" variant="ghost" onClick={() => dismissToast(id)}>
             {t('toast.later')}
           </Button>
         </div>
       </div>
-      <IconButton size="sm" label={t('common.close')} onClick={() => dismissToast(toast.id)}>
+      <IconButton size="sm" label={t('common.close')} onClick={() => dismissToast(id)}>
         <X size={14} />
       </IconButton>
     </div>

@@ -2,7 +2,7 @@ import { AGENT_TOOL_DEFAULTS, type AgentToolFamily } from '@sillage/protocol'
 import { disabledFamiliesNotice, type Families } from './agent-tools.js'
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { crossProjectsEnabled } from '../projects/cross-projects.js'
-import { automationWebhooks, cards, conversations, projectImages, projects, scheduledTasks, worktrees, type Db } from '@sillage/db'
+import { automationWebhooks, cards, conversations, projectActions, projectImages, projects, scheduledTasks, worktrees, type Db } from '@sillage/db'
 import { MAX_SESSION_TITLE_CHARS, sessionReference, sessionMarker, sessionTrailer } from '@sillage/protocol'
 
 /** Project context injected at session startup (stable part as system prompt, moving part with the first message: see `projectOverview`). CLIs lack others' history and may not think to query MCP; this unsolicited overview justifies its token cost. Compute rather than store notes that grow stale with undeserved authority: one fresh query per start. Durable user-managed instructions belong separately in SILLAGE.md (`instructions/store.ts`). Cover the whole project rather than `find_file_edits`' worktree scope because other branches are active work too; identify worktrees per row for agents to distinguish. */
@@ -38,7 +38,7 @@ interface Row {
 }
 
 /** Readable ages avoid model subtraction of absolute timestamps. */
-function ago(ts: number, now: number): string {
+export function ago(ts: number, now: number): string {
   const minutes = Math.max(0, Math.round((now - ts) / 60_000))
   if (minutes < 1) return 'just now'
   if (minutes < 60) return `${minutes} min ago`
@@ -140,6 +140,39 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
   return null
 }
 
+/** Beyond this, the list costs more context than it guides; `list_actions` has the rest. */
+const MAX_LISTED_ACTIONS = 10
+
+/**
+ * Project actions, so agents use and propose them. Users rarely write one by hand: unless an agent
+ * offers the button, the feature goes unseen. Without actions, the agent is asked to propose the
+ * commands it sees the user will rerun; with some, it learns their names and IDs, so it reads a run
+ * the user mentions instead of starting it again, and does not propose a duplicate.
+ */
+function actionsBriefing(db: Db, input: OverviewInput): string | null {
+  if (!input.sillageMcp) return null
+  const rows = db
+    .select({ id: projectActions.id, label: projectActions.label, kind: projectActions.kind, approvedAt: projectActions.approvedAt })
+    .from(projectActions)
+    .where(eq(projectActions.projectId, input.projectId))
+    .orderBy(projectActions.createdAt)
+    .all()
+
+  if (rows.length === 0) {
+    return "This project has no actions yet. Actions are one-click buttons in Sillage (the Actions menu, ⚡, in the conversation header) that run a project command in the user's current worktree, so they can rerun it without asking an agent. Users rarely create them by hand: proposing them is up to you. When your work shows a command the user will want to rerun (the dev server, the test suite, a type check or lint, a seed or build script), propose it with `register_action` without waiting to be asked, after the requested work or as soon as you start such a server or run such a suite. Use the commands the project really has (package scripts, Makefile, README), propose at most two per session, and never a one-off command. Then tell the user in one sentence what the button does; they review its command in the conversation before its first run."
+  }
+
+  const listed = rows.slice(0, MAX_LISTED_ACTIONS).map((row) =>
+    `- “${row.label}” (${row.kind}, id ${row.id}${row.approvedAt ? '' : ", awaiting the user's review"})`,
+  )
+  if (rows.length > MAX_LISTED_ACTIONS) listed.push(`- and ${rows.length - MAX_LISTED_ACTIONS} more: see \`list_actions\``)
+  return [
+    "Project actions, one-click buttons the user runs from Sillage's Actions menu (⚡) in the conversation header:",
+    listed.join('\n'),
+    "When the user says they ran one, read its latest run with `read_action_output` instead of running it again. When your work shows another command the user will want to rerun, propose it with `register_action` without waiting to be asked, at most once per session; if an action's command no longer matches the project, update it rather than adding a duplicate.",
+  ].join('\n')
+}
+
 /** Forge markers for webhook-enabled projects identify session-originated issues/PRs and bound launch chains. Omit instructions without webhooks to avoid needless context cost. */
 function forgeMarkerReminder(db: Db, input: OverviewInput): string | null {
   const hooks = db
@@ -186,7 +219,7 @@ const TOOL_CLAUSES: [AgentToolFamily | null, string][] = [
   ['worktrees', '`list_worktrees`, `create_worktree` and `remove_worktree` to work separately from others and clean up after a merge instead of using `git worktree add` or `remove`, which Sillage would not track'],
   ['automations', '`schedule_task` to schedule recurring or deferred work that survives this session'],
   ['automations', '`create_automation` to start a session on webhook calls (a labeled issue or failed CI)'],
-  ['actions', '`list_actions` and `register_action` for project buttons that launch a server, tests or a script'],
+  ['actions', '`list_actions` and `register_action` for one-click project buttons that launch a server, tests or a script, and `read_action_output` to read a run, including one the user started'],
   [null, '`describe_preview` each time you start a dev server, to title it and name the page to open when it is for the user, or keep an API or worker out of the thread'],
   ['project', '`list_mcp_servers` and `install_mcp_server` to propose an MCP server the user confirms, typing any secret themselves'],
 ]
@@ -261,6 +294,7 @@ export function liveSessionContext(
     input.sillageMcp ? disabledFamiliesNotice(input.families ?? null) : null,
     project ? cardBriefing(db, project) : null,
     project && on(input, 'project') ? imageReminder(db, project) : null,
+    project && on(input, 'actions') ? actionsBriefing(db, project) : null,
     project ? sessionActivity(db, project) : null,
   ].filter((part) => part !== null)
   if (parts.length === 0) return null

@@ -159,6 +159,17 @@ export async function controlServiceApp(unit: string, action: ServiceAppAction):
   await systemctl(action === 'reset' ? ['reset-failed', unit] : ['--no-block', action, unit])
 }
 
+/** Last journal lines of an app unit, message text only. Earlier runs of the unit are included, separated by systemd's own start and stop lines. */
+export async function serviceAppJournal(unit: string, lines: number): Promise<string> {
+  if (!APP_UNIT.test(unit)) throw new Error(`Not a Sillage app unit: ${unit}`)
+  const { stdout } = await promisify(execFile)(
+    'journalctl',
+    ['--user', '--no-pager', '--quiet', '-u', unit, '-n', String(lines), '-o', 'cat'],
+    { timeout: 5000, maxBuffer: 4 * 1024 * 1024 },
+  )
+  return stdout
+}
+
 let userManager: Promise<boolean> | null = null
 
 /** Checks whether a user systemd manager responds. On macOS and containers without systemd, `service` actions fall back to terminals. Query once per process because the answer cannot change without a machine restart. */

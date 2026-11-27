@@ -78,7 +78,7 @@ with their own project, memory and instructions by default, but the work tools
 take an optional `project` naming another project the session's account can see
 (owned or shared): `search_history`, `read_conversation`, `list_sessions`,
 `find_file_edits`, `work_log`, the card tools, `list_actions`, `run_action`,
-`start_session`, `list_worktrees`, `schedule_task`, `list_models`,
+`read_action_output`, `start_session`, `list_worktrees`, `schedule_task`, `list_models`,
 `send_session_message`, `notify_when_done`, `read_instructions` and
 `read_memory`. Configuration edits and tools bound to the session itself
 (rename, move, its own card, decisions, MCP proposals) stay in the home project.

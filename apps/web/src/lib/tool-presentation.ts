@@ -76,6 +76,7 @@ const SILLAGE_LABELS: Record<string, MessageKey> = {
   register_action: 'sillageTool.register_action',
   remove_action: 'sillageTool.remove_action',
   run_action: 'sillageTool.run_action',
+  read_action_output: 'sillageTool.read_action_output',
   create_automation: 'sillageTool.create_automation',
   start_session: 'sillageTool.start_session',
   create_worktree: 'sillageTool.create_worktree',

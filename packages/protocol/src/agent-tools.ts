@@ -53,7 +53,7 @@ export const SILLAGE_TOOL_FAMILIES: Record<Exclude<AgentToolFamily, 'browser'>, 
     'read_session', 'wait_for_session', 'message_session', 'steer_session', 'interrupt_session', 'reply_session'],
   automations: ['schedule_task', 'create_automation'],
   worktrees: ['create_worktree', 'list_worktrees', 'remove_worktree'],
-  actions: ['list_actions', 'register_action', 'remove_action', 'run_action'],
+  actions: ['list_actions', 'register_action', 'remove_action', 'run_action', 'read_action_output'],
   instructions: ['read_instructions', 'edit_instructions', 'write_instructions'],
   project: ['set_project_image', 'attach_project_folder', 'list_project_folders', 'list_mcp_servers', 'install_mcp_server'],
 }

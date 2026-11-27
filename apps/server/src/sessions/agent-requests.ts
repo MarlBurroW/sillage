@@ -337,6 +337,8 @@ export class AgentRequests {
         this.settle(request.id, await this.schedules.createAutomation(requester, project, payload), false)
       } else if (request.kind === 'run_action') {
         this.settle(request.id, await this.actionRequests.run(requester, payload), false)
+      } else if (request.kind === 'read_action_output') {
+        this.settle(request.id, await this.actionRequests.output(requester, payload), false)
       } else if (request.kind === 'create_worktree') {
         this.settle(request.id, await this.worktreeRequests.create(requester, project, payload), false)
       } else if (request.kind === 'list_worktrees') {

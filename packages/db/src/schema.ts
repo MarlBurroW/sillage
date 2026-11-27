@@ -634,6 +634,8 @@ export const agentRequests = sqliteTable(
         'register_action',
         'remove_action',
         'run_action',
+        // Reads the latest run from the daemon's terminal buffers or the unit's journal.
+        'read_action_output',
         // An automation launched by a call bearing this session's marker:
         // the row preserves lineage so chain limits apply.
         'webhook_launch',
