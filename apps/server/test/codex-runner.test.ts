@@ -18,6 +18,8 @@ test('session references reach CLI sends and steering without changing the journ
   assert.equal(turns.length, 2)
   assert.deepEqual(seen, ['Read this session', 'Also compare this one'])
   for (const turn of turns) assert.match(turn.params.input[0].text, /Referenced session metadata/)
+  // Without it app-server returns empty reasoning items and the thread shows no thinking.
+  assert.equal(turns[0].params.summary, 'auto')
   const messages = state.events.filter(event => event.type === 'message.completed' && event.role === 'user')
   // The manager echoes sent messages; the runner only echoes steered ones.
   assert.deepEqual(messages.map(event => event.type === 'message.completed' && event.blocks), [

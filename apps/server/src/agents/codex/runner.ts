@@ -1265,6 +1265,9 @@ export class CodexRunner implements AgentRunner {
       sandboxPolicy: this.sandboxPolicy(),
       model: this.config.model,
       effort: this.config.reasoningEffort || null,
+      // app-server sends no reasoning summary unless asked (probed on 0.163.0: empty
+      // `summary` without this field), unlike `codex exec`, so the thread showed no thinking.
+      summary: 'auto',
       collaborationMode: this.collaborationMode(),
     } satisfies ExperimentalTurnStartParams)
     // Notifications can precede RPC responses, including completion.
