@@ -13,6 +13,8 @@ const HISTORY_KEY = 'turnUsageHistory'
 const SUB_AGENT_HISTORY_KEY = 'codexSubAgentUsageHistory'
 /** Antigravity turns journaled with the cache read inside their input, corrected once. */
 const ANTIGRAVITY_REPAIR_KEY = 'antigravityUsageRepair'
+/** Claude token totals rebuilt from `turn_usage`, once: they used to leave sub-agents and the advisor out. */
+const CLAUDE_TOKENS_KEY = 'claudeTokenTotalsRepair'
 
 interface Owner { userId: string; projectId: string | null; agent: AgentKind; model: string | null }
 interface Running { model: string | null; claude: ClaudeModelUsage | null }
@@ -59,7 +61,8 @@ export class TurnUsageRecorder {
   }
 
   historyReady(): boolean {
-    return this.readHistoryVersion() >= HISTORY_VERSION && this.setting(SUB_AGENT_HISTORY_KEY) >= 1 && this.setting(ANTIGRAVITY_REPAIR_KEY) >= 1
+    return this.readHistoryVersion() >= HISTORY_VERSION && this.setting(SUB_AGENT_HISTORY_KEY) >= 1
+      && this.setting(ANTIGRAVITY_REPAIR_KEY) >= 1 && this.setting(CLAUDE_TOKENS_KEY) >= 1
   }
 
   /** Reads the journals once, in the background. Safe to call at every start. */
@@ -81,6 +84,17 @@ export class TurnUsageRecorder {
     if (this.setting(SUB_AGENT_HISTORY_KEY) < 1) {
       await importCodexSubAgentUsage(this.db, this.codexHome, cutoff)
       this.saveSetting(SUB_AGENT_HISTORY_KEY, 1)
+    }
+    if (this.setting(CLAUDE_TOKENS_KEY) < 1) {
+      // Before card #130, Claude turns added only the main loop's tokens, while `turn_usage`
+      // holds every model of the turn. The larger total wins: a journal shortened since keeps
+      // what was counted when it was whole.
+      this.db.run(sql`
+        update conversations set
+          input_tokens = max(input_tokens, coalesce((select sum(input_tokens) from turn_usage where turn_usage.conversation_id = conversations.id), 0)),
+          output_tokens = max(output_tokens, coalesce((select sum(output_tokens) from turn_usage where turn_usage.conversation_id = conversations.id), 0))
+        where agent = 'claude'`)
+      this.saveSetting(CLAUDE_TOKENS_KEY, 1)
     }
   }
 

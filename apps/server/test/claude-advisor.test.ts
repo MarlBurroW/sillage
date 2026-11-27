@@ -125,3 +125,36 @@ test('the advisor model is billed in the turn consumption, apart from the main m
   assert.equal(opus?.inputTokens, 24831)
   assert.equal(opus?.reportedCostUsd, 0.112604)
 })
+
+test('a turn\'s tokens include its sub-agents and advisor, like its cost (card #130)', async (t) => {
+  const f = runner()
+  t.after(() => f.instance.stop())
+  const model = (input: number, output: number, read: number, written: number, cost: number) => ({
+    inputTokens: input, outputTokens: output, cacheReadInputTokens: read, cacheCreationInputTokens: written, cacheCreationEphemeral1hInputTokens: 0, costUSD: cost,
+  })
+  // Recorded from Claude Code 2.1.332, Haiku consulting a Sonnet advisor: `usage` is Haiku's main loop alone.
+  f.translate({
+    type: 'result', subtype: 'success', is_error: false, result: '4', total_cost_usd: 0.0552, num_turns: 1,
+    usage: { input_tokens: 4, output_tokens: 76, cache_creation_input_tokens: 10009, cache_read_input_tokens: 32324 },
+    model_usage_since_last_result: { 'claude-haiku-5-5': model(1205, 95, 32324, 10009, 0.002463565), 'claude-sonnet-5-5': model(22585, 759, 0, 0, 0.05276) },
+  })
+  const completed = f.events.find((event) => event.type === 'turn.completed')
+  assert.ok(completed?.type === 'turn.completed')
+  assert.deepEqual(
+    { input: completed.inputTokens, output: completed.outputTokens, read: completed.cacheReadTokens, written: completed.cacheCreationTokens },
+    { input: 23790, output: 854, read: 32324, written: 10009 },
+  )
+  assert.ok(Math.abs(completed.costUsd - 0.055223565) < 1e-9)
+})
+
+test('without per-turn model counters, a turn keeps the main loop\'s usage', async (t) => {
+  const f = runner()
+  t.after(() => f.instance.stop())
+  f.translate({
+    type: 'result', subtype: 'success', is_error: false, result: '', total_cost_usd: 0.01, num_turns: 1,
+    usage: { input_tokens: 4, output_tokens: 76, cache_creation_input_tokens: 10, cache_read_input_tokens: 20 },
+  })
+  const completed = f.events.find((event) => event.type === 'turn.completed')
+  assert.ok(completed?.type === 'turn.completed')
+  assert.deepEqual([completed.inputTokens, completed.outputTokens, completed.cacheCreationTokens, completed.cacheReadTokens], [4, 76, 10, 20])
+})

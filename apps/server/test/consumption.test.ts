@@ -261,6 +261,29 @@ test('Antigravity turns journaled with the cache inside their input are repaired
   assert.equal(JSON.parse(db.select({ metrics: benchmarkRuns.metrics }).from(benchmarkRuns).get()!.metrics!).version, 0)
 })
 
+test('Claude token totals are rebuilt once from every model of their turns, never lowered', async (t) => {
+  const db = database(t)
+  const log = new EventLog(db)
+  // Stored totals counted the main loop only; `delegating` also ran a sub-agent model.
+  conversation(db, 'delegating', 'claude', { createdAt: 1, inputTokens: 4, outputTokens: 76 })
+  // A journal shortened since its turns were counted keeps the larger stored total.
+  conversation(db, 'trimmed', 'claude', { createdAt: 2, inputTokens: 500, outputTokens: 50 })
+  conversation(db, 'codex', 'codex', { createdAt: 3, inputTokens: 1, outputTokens: 1 })
+  log.appendBatch('delegating', [{ ts: 10, event: completed(4, 76), raw: { type: 'result', total_cost_usd: 0.05, model_usage_since_last_result: { main: counters(4, 76, 0.01), sub: counters(1200, 300, 0.04) } } }])
+  log.appendBatch('trimmed', [{ ts: 20, event: completed(5, 5), raw: { type: 'result', model_usage_since_last_result: { main: counters(5, 5, 0.01) } } }])
+  log.appendBatch('codex', [{ ts: 30, event: completed(8, 9) }])
+
+  await new TurnUsageRecorder(db).importHistory()
+  const totals = Object.fromEntries(db.select({ id: conversations.id, input: conversations.inputTokens, output: conversations.outputTokens }).from(conversations).all()
+    .map((row) => [row.id, [row.input, row.output]]))
+  assert.deepEqual(totals, { delegating: [1204, 376], trimmed: [500, 50], codex: [1, 1] })
+
+  // Once: later turns are counted whole as they complete, a second pass would find nothing to add.
+  db.update(conversations).set({ inputTokens: 0 }).where(eq(conversations.id, 'delegating')).run()
+  await new TurnUsageRecorder(db).importHistory()
+  assert.equal(db.select({ input: conversations.inputTokens }).from(conversations).where(eq(conversations.id, 'delegating')).get()?.input, 0)
+})
+
 test('Codex sub-agents are read back once from their rollouts, before live recording took over', async (t) => {
   const db = database(t)
   const log = new EventLog(db)

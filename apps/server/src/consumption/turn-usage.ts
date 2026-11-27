@@ -93,6 +93,37 @@ export function claudeTurnCost(result: { total_cost_usd?: unknown; model_usage_s
   return total >= previousTotal ? total - previousTotal : total
 }
 
+/** Token counters of a `turn.completed`. */
+export interface TurnTokens { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }
+
+/**
+ * Tokens of one Claude turn, from the same per-model counters as its cost. `usage` covers the
+ * main loop only: sub-agents and the advisor appear nowhere else, and the thread showed a
+ * fraction of what the turn consumed next to a cost that included it all. CLIs without the
+ * per-turn split keep `usage`.
+ */
+export function claudeTurnTokens(result: {
+  usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number }
+  model_usage_since_last_result?: unknown
+}): TurnTokens {
+  const turn = claudeModelUsage(result.model_usage_since_last_result)
+  if (!turn) {
+    return {
+      inputTokens: result.usage.input_tokens,
+      outputTokens: result.usage.output_tokens,
+      cacheCreationTokens: result.usage.cache_creation_input_tokens,
+      cacheReadTokens: result.usage.cache_read_input_tokens,
+    }
+  }
+  const sum = (key: typeof USAGE_KEYS[number]) => Object.values(turn).reduce((total, counters) => total + counters[key], 0)
+  return {
+    inputTokens: sum('inputTokens'),
+    outputTokens: sum('outputTokens'),
+    cacheCreationTokens: sum('cacheCreationInputTokens'),
+    cacheReadTokens: sum('cacheReadInputTokens'),
+  }
+}
+
 const consumed = (row: TokenCounts): boolean => row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens + row.cacheWrite1hTokens > 0
 
 /**

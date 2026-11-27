@@ -71,7 +71,7 @@ import {
   UNANSWERED_CAPABILITY,
 } from './prompts.js'
 import { describeFastMode, describePluginErrors, translateSignal } from './signals.js'
-import { claudeTurnCost } from '../../consumption/turn-usage.js'
+import { claudeTurnCost, claudeTurnTokens } from '../../consumption/turn-usage.js'
 import { detach } from '../../detach.js'
 
 /**
@@ -844,12 +844,9 @@ export class ClaudeRunner implements AgentRunner {
             type: 'turn.completed',
             stopReason: message.subtype,
             costUsd: turnCost,
-            inputTokens: message.usage.input_tokens,
-            outputTokens: message.usage.output_tokens,
-            // CLI context mostly uses cache: without both fields displayed totals do not reflect
-            // usage.
-            cacheCreationTokens: message.usage.cache_creation_input_tokens,
-            cacheReadTokens: message.usage.cache_read_input_tokens,
+            // Sub-agents and advisor included, like the cost. Cache fields too: CLI context mostly
+            // uses cache, and totals without them do not reflect usage.
+            ...claudeTurnTokens(message),
           },
           message,
         )
