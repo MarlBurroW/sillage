@@ -453,6 +453,17 @@ for (const [setting, cli, sandbox, expected] of [
   })
 }
 
+test('the conversation media folder is a writable root of the workspace-write sandbox', async t => {
+  const transport = await fixture(t)
+  const state = context({ ...transport, mediaDir: '/data/conversation-media/session', config: { ...DEFAULT_CODEX_CONFIG, sandbox: 'workspace-write' } })
+  const runner = new CodexRunner(state.ctx)
+  transport.onClose(() => runner.stop())
+  await runner.start()
+  await runner.send(`fixture:${JSON.stringify({ notifications: [done()] })}`, [], [], [])
+  const turn = (await transport.records()).find(record => record.method === 'turn/start')
+  assert.ok(turn.params.sandboxPolicy.writableRoots.includes('/data/conversation-media/session'))
+})
+
 test('a network access change applies on the next turn without restarting Codex', async t => {
   const f = await runnerFixture(t)
   await f.emit([done()])

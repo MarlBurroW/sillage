@@ -4,6 +4,7 @@ import { extname, join } from 'node:path'
 import { and, eq, inArray, isNull, lt } from 'drizzle-orm'
 import { attachments, type Db } from '@sillage/db'
 import { INLINE_IMAGE_TYPES, type AttachmentDto } from '@sillage/protocol'
+import { purgeOrphanMedia, removeConversationMedia } from '../conversations/media.js'
 
 /** Unsent attachments are garbage collected after one day. */
 const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000
@@ -65,6 +66,12 @@ export class AttachmentStore {
   constructor(
     private readonly db: Db,
     readonly root: string,
+    /**
+     * Conversation media folders (`conversations/media.ts`). Held here because every deletion
+     * path already hands this store the conversations it removes: their media goes with their
+     * uploads. Optional for tests that never touch it.
+     */
+    readonly mediaRoot?: string,
   ) {}
 
   /** Writes files then records metadata. Contents never enter the database: SQLite is not blob storage, and journals must remain cheap to replay. */
@@ -150,6 +157,7 @@ export class AttachmentStore {
       .all()
 
     for (const row of rows) await rm(row.storagePath, { force: true })
+    if (this.mediaRoot) await removeConversationMedia(this.mediaRoot, conversationIds)
     return rows.length
   }
 
@@ -179,5 +187,10 @@ export class AttachmentStore {
       await rm(row.storagePath, { force: true })
     }
     return stale.length
+  }
+
+  /** Media folders whose conversation is gone; see `purgeOrphanMedia`. */
+  async purgeOrphanMedia(): Promise<number> {
+    return this.mediaRoot ? purgeOrphanMedia(this.db, this.mediaRoot) : 0
   }
 }

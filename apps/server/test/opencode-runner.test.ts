@@ -60,14 +60,14 @@ test('lancement : session, modèle par défaut, inventaire MCP, commandes et cor
     config: { ...DEFAULT_OPENCODE_CONFIG, model: 'fixture/small', variant: 'high', primaryAgent: 'plan', additionalDirectories: ['/extra'] },
     resolveMcpServers: () => ({ servers: [declared], failures: [{ name: 'secretless', error: 'Missing secret: X' }] }),
     skillRoots: () => ['/lib/global'], memoryDir: () => '/memory', projectOverview: () => 'OVERVIEW',
-    maskedInstructionRoots: () => ['/repo'],
+    maskedInstructionRoots: () => ['/repo'], mediaDir: '/media',
   })
 
   const launch = await f.launch()
   assert.equal(launch.disableProjectConfig, '1', 'les consignes du dépôt sont masquées')
   assert.deepEqual(launch.config.permission, {
     edit: 'ask', bash: 'ask',
-    external_directory: { '/extra/**': 'allow', '/lib/global/**': 'allow', '/attachments/**': 'allow', '/memory/**': 'allow' },
+    external_directory: { '/extra/**': 'allow', '/lib/global/**': 'allow', '/attachments/**': 'allow', '/memory/**': 'allow', '/media/**': 'allow' },
   })
   assert.deepEqual(launch.config.mcp, { declared: { type: 'local', command: ['node', 'server.mjs'], environment: { KEY: 'v' }, enabled: true } })
   assert.deepEqual(launch.config.skills, { paths: ['/lib/global/skills'] })

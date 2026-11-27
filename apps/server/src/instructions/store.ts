@@ -109,6 +109,19 @@ export function instructionsAuthor(
   return null
 }
 
+/**
+ * Without a media folder, the only displayable files were the workspace's, so agents copied
+ * screenshots into the repository (to be committed by mistake, or lost with the worktree) or
+ * into the attachments folder, where they never displayed.
+ */
+function showImages(mediaDir: string | undefined): string {
+  const intro = "Sillage renders Markdown images in your replies. When the user needs to see an image, such as a photo, screenshot, diagram or picture you looked at, fetched or generated, show it with `![description](target)` instead of only describing it."
+  if (!mediaDir) {
+    return `${intro} Use an https URL the user's browser can load, or a path inside your working directory. A file elsewhere (a temporary or download directory) does not display: copy it into the working directory first.`
+  }
+  return `${intro} Use an https URL the user's browser can load, a file already in your working directory, or a file in this conversation's media folder \`${mediaDir}\` (also \`$SILLAGE_MEDIA_DIR\`). Save the images you make for the user there (screenshots, renders, charts) and copy any other file there before showing it, then cite its absolute path, in angle brackets if it contains spaces. The folder lives outside the repository and lasts as long as the conversation, so do not copy images into the project for this. A file anywhere else (a temporary or download directory, the attachments folder) does not display.`
+}
+
 interface AppendixInput {
   projectId: string | null
   mode: InstructionsMode
@@ -116,6 +129,8 @@ interface AppendixInput {
   sillageMcp: boolean
   /** False when the project turned the Instructions tool family off: the tools are not named. */
   instructionsTools?: boolean
+  /** The conversation's media folder (`conversations/media.ts`), named so images made for the user go there. */
+  mediaDir?: string
 }
 
 /** User instructions and response-language guidance added to system prompts. Include tool reminders even when both instruction sections are empty: agents need to learn they can maintain instructions, and MCP tools may not load immediately. */
@@ -128,8 +143,8 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
   const parts: string[] = [
     "Reply in the user's language, following any explicit language preference they give. Otherwise, use the language of their current request; for unattended tasks, use the task request's language. Sillage's internal instructions and tool messages are in English for consistency, but their language does not determine your reply language. Do not switch languages because of tool results, quoted history, or messages from other agents.",
     // Terminal CLIs never render images, so models describe them in words unless told otherwise.
-    // Files outside the workspace stay alt text: the file read route refuses them.
-    "Sillage renders Markdown images in your replies. When the user needs to see an image, such as a photo, screenshot, diagram or picture you looked at, fetched or generated, show it with `![description](target)` instead of only describing it. Use an https URL the user's browser can load, or a path inside your working directory. A file elsewhere (a temporary or download directory) does not display: copy it into the working directory first.",
+    // Files outside the workspace and the media folder stay alt text: the file read route refuses them.
+    showImages(input.mediaDir),
   ]
   if (global || project) {
     parts.push(

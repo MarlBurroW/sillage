@@ -356,7 +356,7 @@ export class CodexRunner implements AgentRunner {
         return {
           type: 'workspaceWrite',
           // Reread each turn so worktrees created mid-session appear on the next.
-          writableRoots: [...this.config.additionalDirectories, ...(this.ctx.workTrees?.() ?? [])],
+          writableRoots: [...this.config.additionalDirectories, ...(this.ctx.workTrees?.() ?? []), ...(this.ctx.mediaDir ? [this.ctx.mediaDir] : [])],
           networkAccess: setting === CLI_DEFAULT ? (await this.cliDefaults).networkAccess : setting === 'on',
           excludeTmpdirEnvVar: false,
           excludeSlashTmp: false,

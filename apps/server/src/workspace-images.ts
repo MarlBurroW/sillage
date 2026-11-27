@@ -5,9 +5,19 @@ import { readableConversation } from './conversations/access.js'
 import { linkedWorktreePaths } from './worktrees/linked.js'
 import { notFound } from './http/errors.js'
 import { previousProjectRoots } from './conversations/project-transfer.js'
+import { conversationMediaFile, isConversationMediaPath } from './conversations/media.js'
 
-/** Shared by conversation previews and exports; linked worktrees retain their real-path boundary. */
-export async function workspaceImagePath(db: Db, root: string, conversationId: string | null, userId: string, path: string): Promise<string> {
+/**
+ * Shared by conversation previews and exports; linked worktrees retain their real-path boundary.
+ * A path into a conversation media folder (`mediaRoot`) is answered by that folder's own access
+ * rule and nothing else, even when a workspace happens to contain the data directory.
+ */
+export async function workspaceImagePath(db: Db, root: string, conversationId: string | null, userId: string, path: string, mediaRoot: string): Promise<string> {
+  if (isConversationMediaPath(mediaRoot, path)) {
+    const media = await conversationMediaFile(db, mediaRoot, userId, path)
+    if (media) return media
+    throw notFound('file_not_found', 'File not found.')
+  }
   const existing = async (directory: string): Promise<string | null> => {
     try {
       const absolute = await resolveRealInside(directory, path)

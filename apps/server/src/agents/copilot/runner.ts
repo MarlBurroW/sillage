@@ -210,8 +210,8 @@ export class CopilotRunner implements AgentRunner {
     const memory = this.ctx.memoryDir()
     return copilotLaunch(config, {
       skillRoots: this.ctx.skillRoots(config),
-      // Without these, Copilot asks for every path outside cwd, memory and attachments included.
-      directories: [...config.additionalDirectories, ...(this.ctx.workTrees?.() ?? []), ...(memory ? [memory] : []), this.ctx.attachmentsRoot].filter((dir) => existsSync(dir)),
+      // Without these, Copilot asks for every path outside cwd, memory, attachments and media included.
+      directories: [...config.additionalDirectories, ...(this.ctx.workTrees?.() ?? []), ...(memory ? [memory] : []), this.ctx.attachmentsRoot, ...(this.ctx.mediaDir ? [this.ctx.mediaDir] : [])].filter((dir) => existsSync(dir)),
       instructionsDir,
       mcpConfigFile,
     })

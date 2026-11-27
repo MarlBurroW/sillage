@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -118,6 +119,11 @@ test('moves preserve the same journal and resume every CLI with the destination 
     const next = h.contexts.at(-1)!
     assert.equal(next.cwd, join(h.root, 'target'))
     assert.equal(next.resumeSessionId, null)
+    // The media folder belongs to the conversation, not its project: the move keeps it, created.
+    assert.equal(next.mediaDir, join(h.root, 'conversation-media', id))
+    assert.equal(next.mediaDir, previous.mediaDir)
+    assert.equal(next.processEnv?.SILLAGE_MEDIA_DIR, next.mediaDir)
+    assert.ok(existsSync(next.mediaDir!))
     assert.match(next.projectOverview(next.config)!, /warm beige office/)
     assert.match(next.projectOverview(next.config)!, /now belongs to “target”/)
     await until(() => h.sent.length === h.contexts.length)
@@ -194,13 +200,13 @@ test('old screenshots stay readable, old checkpoints cannot restore into the new
   const opened = (await h.app.inject('/api/conversations/session/file?path=same.txt')).json()
   h.log.append('session', { type: 'checkpoint.started', key: 'before-move' })
   await h.sessions.moveToProject('session', 'owner', 'target')
-  assert.equal(await workspaceImagePath(h.db, join(h.root, 'target'), 'session', 'owner', image), image)
+  assert.equal(await workspaceImagePath(h.db, join(h.root, 'target'), 'session', 'owner', image, join(h.root, 'media')), image)
   await assert.rejects(h.sessions.restoreCheckpoint('session', 'before-move'), { code: 'checkpoint_previous_project' })
   const save = await h.app.inject({ method: 'PUT', url: '/api/conversations/session/file', payload: { path: 'same.txt', content: 'old draft', fingerprint: opened.fingerprint } })
   assert.equal(save.statusCode, 409, save.body)
   assert.equal(await readFile(join(h.root, 'target', 'same.txt'), 'utf8'), 'same')
   h.db.update(projects).set({ visibility: 'private', ownerId: 'admin' }).where(eq(projects.id, 'source')).run()
-  await assert.rejects(workspaceImagePath(h.db, join(h.root, 'target'), 'session', 'owner', image), { code: 'file_not_found' })
+  await assert.rejects(workspaceImagePath(h.db, join(h.root, 'target'), 'session', 'owner', image, join(h.root, 'media')), { code: 'file_not_found' })
 })
 
 test('forking a moved session respects the cut point without leaking later context', async t => {

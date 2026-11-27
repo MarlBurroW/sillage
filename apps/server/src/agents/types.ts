@@ -56,6 +56,11 @@ export interface RunnerContext {
   binary: string
   /** Attachment storage root requiring agent read access. */
   attachmentsRoot: string
+  /**
+   * This conversation's media folder (`conversations/media.ts`), existing before launch: where the
+   * agent puts images it shows, so each CLI must be let in to write there. Absent in probes.
+   */
+  mediaDir?: string
   /** Origin inherited by services launched from this conversation. */
   processEnv?: Record<string, string>
   /** Resolves whole conversation configurations into active known registry servers plus Sillage's built-in server. Whole configurations are necessary because built-ins have no registry ID and depend on live `sillageMcp`/`strictMcp`. Functions rather than frozen lists support Codex thread resumes and Claude live replacement. */

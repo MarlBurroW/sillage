@@ -61,6 +61,7 @@ import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
 import { WorktreeRemoteStatus } from './worktrees/remote-status.js'
 import { detach } from './detach.js'
+import { conversationMediaRoot } from './conversations/media.js'
 
 /** Below the Desktop launcher's 15 s grace and systemd's TimeoutStopSec, so the process ends on its own terms. */
 const SHUTDOWN_DEADLINE_MS = 12_000
@@ -73,7 +74,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig()
   if (INSTANCE_PROFILE === 'desktop') scrubLauncherEnv()
-  for (const dir of [config.paths.attachments, config.paths.worktrees, config.paths.logs]) {
+  for (const dir of [config.paths.attachments, conversationMediaRoot(config.paths.data), config.paths.worktrees, config.paths.logs]) {
     mkdirSync(dir, { recursive: true })
   }
 
@@ -121,7 +122,7 @@ async function main(): Promise<void> {
   // Dev-server previews on their own loopback listener (Server only; Desktop opens ports directly).
   const previews = INSTANCE_PROFILE === 'desktop' ? null : new PreviewService(db, config)
   const antigravityLogin = new AntigravityLoginService(antigravityAccounts.homes, antigravityAccounts.store, () => registry.adapter('antigravity').cli.executable(), (id) => sessions.stopAntigravityAccount(id))
-  const attachments = new AttachmentStore(db, config.paths.attachments)
+  const attachments = new AttachmentStore(db, config.paths.attachments, conversationMediaRoot(config.paths.data))
   const terminals = new TerminalManager(config)
   // Project buttons execute commands in terminals or systemd units.
   const actions = new ActionRunner(db, config, terminals)
@@ -156,6 +157,7 @@ async function main(): Promise<void> {
 
   // Otherwise uploads never sent would accumulate indefinitely.
   const orphans = await attachments.purgeOrphans()
+  const orphanMedia = await attachments.purgeOrphanMedia()
 
   // Automation webhooks decide whether to run; the scheduler executes.
   const automations = new AutomationReceiver({ db, config }, encryptionKey, tasks, push)
@@ -202,6 +204,7 @@ async function main(): Promise<void> {
   push.setLogger(app.log)
   automations.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
+  if (orphanMedia > 0) app.log.info({ media: orphanMedia }, 'orphan conversation media folders removed')
   if (recovered.length > 0) {
     app.log.info({ recovered: recovered.length }, 'conversations marquees interrompues apres redemarrage')
   }

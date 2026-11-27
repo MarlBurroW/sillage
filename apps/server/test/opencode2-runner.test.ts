@@ -61,7 +61,7 @@ test('OpenCode 2 : lancement en configuration native, état de session synchroni
     config: { ...DEFAULT_OPENCODE_CONFIG, model: 'fixture/small', variant: 'high', primaryAgent: 'plan', additionalDirectories: ['/extra'] },
     resolveMcpServers: () => ({ servers: [declared], failures: [{ name: 'secretless', error: 'Missing secret: X' }] }),
     skillRoots: () => ['/lib/global'], memoryDir: () => '/memory', projectOverview: () => overview,
-    maskedInstructionRoots: () => ['/repo'],
+    maskedInstructionRoots: () => ['/repo'], mediaDir: '/media',
   })
 
   const launch = await f.launch()
@@ -71,7 +71,7 @@ test('OpenCode 2 : lancement en configuration native, état de session synchroni
     permissions: [
       { action: 'edit', resource: '*', effect: 'ask' },
       { action: 'shell', resource: '*', effect: 'ask' },
-      ...['/extra', '/lib/global', '/attachments', '/memory'].map((dir) => ({ action: 'external_directory', resource: `${dir}/**`, effect: 'allow' })),
+      ...['/extra', '/lib/global', '/attachments', '/memory', '/media'].map((dir) => ({ action: 'external_directory', resource: `${dir}/**`, effect: 'allow' })),
     ],
     // Direct MCP calls rather than Code Mode's `execute`.
     mcp: { servers: { declared: { type: 'local', command: ['node', 'server.mjs'], environment: { KEY: 'v' }, disabled: false, codemode: false } } },

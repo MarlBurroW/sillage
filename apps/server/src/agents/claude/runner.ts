@@ -301,6 +301,9 @@ export class ClaudeRunner implements AgentRunner {
         additionalDirectories: [
           ...config.additionalDirectories,
           this.ctx.attachmentsRoot,
+          // Writable like a workspace, Bash sandbox included: Claude Code counts additional
+          // directories as sandbox write roots (2.1.332).
+          ...(this.ctx.mediaDir ? [this.ctx.mediaDir] : []),
           ...library.additionalDirectories,
           ...(this.ctx.workTrees?.() ?? []),
         ],

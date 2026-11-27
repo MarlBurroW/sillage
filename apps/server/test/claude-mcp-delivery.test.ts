@@ -29,13 +29,14 @@ const server: McpServer = {
 }
 const init = { type: 'system', subtype: 'init', uuid: 'u-init', session_id: 'fixture-session', permissionMode: 'default', cwd: '/', tools: [], model: 'x', mcp_servers: [], slash_commands: [] }
 
-async function setup(t: TestContext, options: { cliVersion?: string | null; env?: Record<string, string>; idle?: unknown[]; config?: Partial<ClaudeConfig> } = {}) {
+async function setup(t: TestContext, options: { cliVersion?: string | null; env?: Record<string, string>; idle?: unknown[]; config?: Partial<ClaudeConfig>; mediaDir?: string } = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'sillage-claude-delivery-'))
   const traceFile = join(cwd, 'trace.jsonl')
   const events: SillageEvent[] = []
   const config: ClaudeConfig = { ...DEFAULT_CLAUDE_CONFIG, permissionMode: 'manual', ...options.config }
   const ctx: RunnerContext = {
     conversationId: 'test', cwd, config, resumeSessionId: null, attachmentsRoot: cwd,
+    ...(options.mediaDir ? { mediaDir: options.mediaDir } : {}),
     binary: fileURLToPath(new URL('./fixtures/claude-agent.mjs', import.meta.url)),
     processEnv: { CLAUDE_FIXTURE_TRACE: traceFile, CLAUDE_FIXTURE_IDLE_EVENTS: JSON.stringify(options.idle ?? []), ...options.env },
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
@@ -148,4 +149,11 @@ test('the Bash sandbox is asked for only when chosen, required, and toggling it 
 
   const on = await setup(t, { config: { bashSandbox: true } })
   assert.deepEqual(await sandboxOf(on), { enabled: true, autoAllowBashIfSandboxed: true, failIfUnavailable: true })
+})
+
+test('the conversation media folder is an additional directory, so Write and the Bash sandbox can reach it', async (t) => {
+  const f = await setup(t, { mediaDir: '/data/conversation-media/test' })
+  const launch = (await f.trace()).find((message) => message.type === 'launch')
+  const args: string[] = launch?.args ?? []
+  assert.ok(args.includes('--add-dir=/data/conversation-media/test'), JSON.stringify(args))
 })

@@ -41,7 +41,7 @@ async function harness(t: TestContext) {
   registerErrorHandler(app)
   registerFsRoutes(app, { db } as AppContext)
   registerTreeRoutes(app, { db } as unknown as AppContext)
-  registerFileRoutes(app, { db } as unknown as AppContext)
+  registerFileRoutes(app, { db, config: { paths: { data } } } as unknown as AppContext)
   t.after(() => app.close())
   return { app, root, data }
 }

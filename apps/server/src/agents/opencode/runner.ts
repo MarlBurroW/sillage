@@ -162,8 +162,8 @@ export class OpencodeRunner implements AgentRunner {
         mcpServers: resolved.servers,
         skillRoots: this.ctx.skillRoots(config),
         // Attachments/project memory outside cwd need explicit read rules to avoid permission
-        // prompts.
-        readableDirs: [this.ctx.attachmentsRoot, ...(memoryDir ? [memoryDir] : [])],
+        // prompts; the media folder too, which edits then reach under the usual `edit` rule.
+        readableDirs: [this.ctx.attachmentsRoot, ...(memoryDir ? [memoryDir] : []), ...(this.ctx.mediaDir ? [this.ctx.mediaDir] : [])],
       }),
       servers: resolved.servers,
       failures: failedStatuses(resolved.failures),

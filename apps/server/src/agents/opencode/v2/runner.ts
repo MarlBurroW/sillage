@@ -245,7 +245,7 @@ export class Opencode2Runner implements AgentRunner {
         config,
         mcpServers: resolved.servers,
         skillRoots: this.ctx.skillRoots(config),
-        readableDirs: [this.ctx.attachmentsRoot, ...(memoryDir ? [memoryDir] : [])],
+        readableDirs: [this.ctx.attachmentsRoot, ...(memoryDir ? [memoryDir] : []), ...(this.ctx.mediaDir ? [this.ctx.mediaDir] : [])],
       }),
       servers: resolved.servers,
       failures: failedStatuses(resolved.failures),

@@ -187,7 +187,7 @@ its own, listed in the [desktop guide](desktop.md). Back these up together:
 | `sillage.db` | conversations, journals, projects, cards, settings |
 | `secret.key` | the key encrypting stored secrets and git credentials: without it they are unreadable, even with the database |
 | `vapid.json` | the push notification keys: losing it unsubscribes every device |
-| `attachments/`, `memory/`, `skill-library/`, `worktrees/` | files the database refers to |
+| `attachments/`, `conversation-media/`, `memory/`, `skill-library/`, `worktrees/` | files the database refers to |
 | `*-accounts/` | sign-ins of additional Claude, Codex, Grok and Antigravity accounts |
 
 Do not copy `sillage.db` while the server writes to it: the copy can be torn.

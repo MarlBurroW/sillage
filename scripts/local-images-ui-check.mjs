@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -8,7 +10,11 @@ import { chromium } from 'playwright'
 
 // Real Markdown, file routes, SQLite and linked worktrees; no production state.
 import { localImages } from '../apps/server/test/fixtures/local-images.ts'
+import { conversationMediaRoot, ensureConversationMediaDir } from '../apps/server/src/conversations/media.ts'
 const fixture = await localImages()
+// The conversation's media folder, outside every workspace: where agents put what they show.
+const media = join(ensureConversationMediaDir(conversationMediaRoot(fixture.directory), 'session'), 'shot.png')
+await writeFile(media, fixture.png)
 const backend = await fixture.app.listen({ port: 0, host: '127.0.0.1' })
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
@@ -25,7 +31,7 @@ const file = '.preview/image.png'
 
 async function mount(page) {
   await page.goto(origin)
-  await page.evaluate(async (absolute) => {
+  await page.evaluate(async ({ absolute, media }) => {
     const refresh = (await import('/@react-refresh')).default
     refresh.injectIntoGlobalHook(window)
     window.$RefreshReg$ = () => {}
@@ -49,14 +55,14 @@ async function mount(page) {
     const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
     const client = new QueryClient()
     client.setQueryData(['auth', 'me'], { id: 'test-user' })
-    const text = `![Relative](.preview/image.png)\n\n![Absolute](${absolute})\n\n![Outside](/var/tmp/private.png)`
+    const text = `![Relative](.preview/image.png)\n\n![Absolute](${absolute})\n\n![Media](${media})\n\n![Outside](/var/tmp/private.png)`
     createRoot(document.getElementById('check')).render(
       React.createElement(QueryClientProvider, { client },
         React.createElement(MemoryRouter, null,
           React.createElement(TooltipProvider, null,
             React.createElement(FileLinkContext.Provider, { value: 'session' },
               React.createElement(Markdown, { text }))))))
-  }, fixture.linked + '/' + file)
+  }, { absolute: fixture.linked + '/' + file, media })
 }
 
 try {
@@ -84,7 +90,7 @@ try {
       return route.fulfill({ json: [] })
     })
     await mount(page)
-    for (const name of ['Relative', 'Absolute']) {
+    for (const name of ['Relative', 'Absolute', 'Media']) {
       const image = page.getByRole('img', { name, exact: true })
       await image.waitFor()
       await image.evaluate(img => img.decode())
@@ -100,7 +106,7 @@ try {
     assert.equal(await page.getByText('Outside', { exact: true }).count(), 1)
     await page.screenshot({ path: `/var/tmp/local-images-${width}.png` })
     assert.deepEqual(errors, [])
-    console.log(`Linked worktree Markdown images: ${width}px OK`)
+    console.log(`Linked worktree and media folder Markdown images: ${width}px OK`)
     await context.close()
   }
 } finally {

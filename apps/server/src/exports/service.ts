@@ -16,6 +16,7 @@ import { publicShareRoot } from './public-root.js'
 import { instanceCapabilities, INSTANCE_PROFILE } from '../instance/profile.js'
 import { captureEntries, entryDto, selectDocument, describeSelection, type ExportDocument, type ExportEntry } from './source.js'
 import { freezeImage } from './images.js'
+import { conversationMediaRoot } from '../conversations/media.js'
 import { scanFields, maskFields } from './redaction.js'
 import { exportText } from './labels.js'
 import { renderExport } from './render.js'
@@ -118,7 +119,7 @@ export class ConversationExports {
     const draft = this.draft(id, userId)
     const image = draft.entries.flatMap(entry => entry.images).find(image => image.id === imageId)
     if (!image) throw notFound('export_image_missing', 'Image unavailable.')
-    const data = await freezeImage(this.ctx.db, this.log, draft.conversationId, userId, image)
+    const data = await freezeImage(this.ctx.db, this.log, draft.conversationId, userId, image, conversationMediaRoot(this.ctx.config.paths.data))
     const total = draft.entries.reduce((bytes, entry) => bytes + entry.images.reduce((size, image) => size + (image.data?.length ?? 0), 0), 0)
     if (total > EXPORT_MAX_BYTES) { delete image.data; throw badRequest('export_too_large', 'Export is too large.') }
     return data

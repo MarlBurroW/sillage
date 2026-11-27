@@ -199,7 +199,8 @@ export class AntigravityRunner implements AgentRunner {
     const session = await client.request<{ sessionId?: string }>(this.sessionId ? this.replaying ? 'session/load' : 'session/resume' : 'session/new', {
       ...(this.sessionId ? { sessionId: this.sessionId } : {}), cwd: this.ctx.cwd,
       mcpServers: resolved.servers.map(toAcpMcpServer),
-      additionalDirectories: this.config.additionalDirectories,
+      // The media folder rides along: its file tools stay scoped to the roots it is given.
+      additionalDirectories: [...this.config.additionalDirectories, ...(this.ctx.mediaDir ? [this.ctx.mediaDir] : [])],
       _meta: { antigravity: {
         ...(overview ? { systemPrompt: { append: overview } } : {}),
         // Without it Antigravity declares MCP tools lazily: the model first reads each tool's schema

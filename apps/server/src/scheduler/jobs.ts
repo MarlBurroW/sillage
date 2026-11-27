@@ -34,6 +34,8 @@ export function registerMaintenanceJobs(
     run: async () => {
       const orphans = await deps.attachments.purgeOrphans()
       if (orphans > 0) deps.log.info({ orphans }, 'pieces jointes orphelines supprimees')
+      const media = await deps.attachments.purgeOrphanMedia()
+      if (media > 0) deps.log.info({ media }, 'orphan conversation media folders removed')
     },
   })
 

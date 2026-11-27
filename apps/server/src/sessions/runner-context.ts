@@ -17,6 +17,7 @@ import { resolveBinary } from '../agents/cli-binary.js'
 import { unattendedRetryEnv } from '../agents/claude/unattended-retries.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { sessionReferenceContext } from '../conversations/references.js'
+import { MEDIA_DIR_ENV, conversationMediaRoot, ensureConversationMediaDir } from '../conversations/media.js'
 import { publicUrlOf } from '../settings/app-settings.js'
 import { liveSessionContext, projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
@@ -93,6 +94,8 @@ export class RunnerContextFactory {
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
     const cwd = resolveConversationCwd(this.db, conversation)
+    // At every launch, before the CLI starts: each one is let into it from the outset.
+    const mediaDir = ensureConversationMediaDir(conversationMediaRoot(this.config.paths.data), conversationId)
     // One context per launch: the moving overview goes with its first message only.
     let liveSent = false
     // History imports run without a lease: nothing to be superseded by.
@@ -143,6 +146,7 @@ export class RunnerContextFactory {
       // interface-installed CLIs.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
+      mediaDir,
       accountSignedOut: async () => {
         if (config.agent !== 'antigravity') return
         if (config.account) await this.hooks.stopAntigravityAccount(config.account, conversationId)
@@ -152,6 +156,7 @@ export class RunnerContextFactory {
       },
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId, conversation.projectId === null ? conversation.userId : undefined),
+        [MEDIA_DIR_ENV]: mediaDir,
         // Tells Claude Code a local host scheduled it rather than a person opening it
         // (probed 2.1.291). Other CLIs ignore this.
         ...(conversation.scheduleId && conversation.agent === 'claude'
@@ -239,6 +244,7 @@ export class RunnerContextFactory {
             mode: instructions()?.mode ?? 'repo',
             sillageMcp,
             instructionsTools: families?.instructions !== false,
+            mediaDir,
           }),
           // Claude loads its memory index itself; Codex and opencode have only
           // the information supplied explicitly. Nothing in native mode.

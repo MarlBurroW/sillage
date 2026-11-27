@@ -75,7 +75,11 @@ The periodic cleanup removes expired, revoked and orphaned files.
   what agents write to disk and compare an unsaved draft with the disk version.
   Images that agents read or produce open in a viewer with zoom, rotation, copy and
   download. Markdown images also resolve in worktrees linked after the conversation
-  started. Audio and video attachments play in the conversation and on the board.
+  started. Each conversation has a media folder outside every repository
+  (`conversation-media/<id>` in the data directory, `$SILLAGE_MEDIA_DIR` for its agent):
+  screenshots and renders the agent shows go there instead of into the project, and
+  stay as long as the conversation. Audio and video attachments play in the
+  conversation and on the board.
 - **What each turn changed, and a way back.** With turn checkpoints enabled on a
   project, Sillage captures the workspace before and after every turn in hidden git
   refs. Each turn lists the files it changed, opens them as a diff, and can be

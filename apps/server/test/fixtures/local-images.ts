@@ -30,6 +30,6 @@ export async function localImages() {
     if (request.headers['x-test-user'] !== 'stranger') request.user = db.select().from(users).get()
   })
   registerErrorHandler(app)
-  registerFileRoutes(app, { db } as AppContext)
+  registerFileRoutes(app, { db, config: { paths: { data: directory } } } as unknown as AppContext)
   return { app, db, root, linked, other, directory, png, close: async () => { await app.close(); sqlite.close(); await rm(directory, { recursive: true, force: true }) } }
 }

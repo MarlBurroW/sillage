@@ -15,6 +15,7 @@ import {
   filesExistBodySchema,
   type FileContentDto,
 } from '@sillage/protocol'
+import { conversationMediaFile, conversationMediaRoot, isConversationMediaPath } from '../../conversations/media.js'
 import { resolveRealInside, resolveWritableInside } from '../../workspace.js'
 import { workspaceImagePath } from '../../workspace-images.js'
 import { attachmentHeader } from '../attachment-header.js'
@@ -29,6 +30,14 @@ const SNIFF_BYTES = 8192
 
 function extensionOf(path: string): string {
   return extname(path).replace('.', '').toLowerCase()
+}
+
+/** Types the raw route serves, hence the only ones a media folder offers. */
+function viewableType(extension: string): string | undefined {
+  return VIEWABLE_IMAGE_TYPES[extension]
+    ?? VIEWABLE_DOCUMENT_TYPES[extension]
+    ?? VIEWABLE_MEDIA_TYPES[extension]
+    ?? VIEWABLE_MODEL_TYPES[extension]
 }
 
 /**
@@ -54,7 +63,19 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     // A worktree created during a turn is linked without changing the CLI's resume cwd.
     // Only image reads use this fallback; editor writes retain their workspace boundary.
     const imagePath = (id: string, userId: string, path: string): Promise<string> =>
-      workspaceImagePath(ctx.db, workspaceOf(id, userId), base === '/api/conversations/:id' ? id : null, userId, path)
+      workspaceImagePath(ctx.db, workspaceOf(id, userId), base === '/api/conversations/:id' ? id : null, userId, path, conversationMediaRoot(ctx.config.paths.data))
+
+    /**
+     * A conversation media folder answers for itself, whatever this scope's workspace: the real
+     * file, null when the reader may not see it, undefined for a path that is not in one. Read
+     * only, and only the viewable types: the text editor never opens these files.
+     */
+    const mediaFile = async (userId: string, path: string): Promise<string | null | undefined> => {
+      const root = conversationMediaRoot(ctx.config.paths.data)
+      if (!isConversationMediaPath(root, path)) return undefined
+      if (!viewableType(extensionOf(path))) return null
+      return conversationMediaFile(ctx.db, root, userId, path)
+    }
 
     app.get(`${base}/file`, async (request): Promise<FileContentDto> => {
       const user = requireUser(request)
@@ -120,6 +141,8 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         paths.map(async (path) => {
           // Paths outside the workspace are rejected, through `../` or a symlink: messages must
           // not reveal whether external files exist.
+          const media = await mediaFile(user.id, path)
+          if (media !== undefined) return media ? path : null
           let absolute
           try {
             absolute = VIEWABLE_IMAGE_TYPES[extensionOf(path)]
@@ -144,15 +167,14 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       const extension = extensionOf(path)
       const imageType = VIEWABLE_IMAGE_TYPES[extension]
-      const type = imageType
-        ?? VIEWABLE_DOCUMENT_TYPES[extension]
-        ?? VIEWABLE_MEDIA_TYPES[extension]
-        ?? VIEWABLE_MODEL_TYPES[extension]
+      const type = viewableType(extension)
       if (!type) throw new HttpError(415, 'not_viewable', 'This file type cannot be displayed.')
 
-      const absolute = imageType
+      const media = await mediaFile(user.id, path)
+      if (media === null) throw notFound('file_not_found', 'File not found.')
+      const absolute = media ?? (imageType
         ? await imagePath(id, user.id, path)
-        : await resolveRealInside(workspaceOf(id, user.id), path)
+        : await resolveRealInside(workspaceOf(id, user.id), path))
       const info = await stat(absolute).catch(() => null)
       if (!info?.isFile()) throw notFound('file_not_found', 'File not found.')
 
@@ -194,7 +216,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { path } = filePathQuerySchema.parse(request.query)
       // Check real targets too: symlinks must not grant access outside the workspace. Then open
       // the real path, so the file read is the one checked.
-      const checked = await resolveRealInside(workspaceOf(id, user.id), path)
+      const media = await mediaFile(user.id, path)
+      if (media === null) throw notFound('file_not_found', 'File not found.')
+      const checked = media ?? await resolveRealInside(workspaceOf(id, user.id), path)
       const absolute = await realpath(checked).catch(() => {
         throw notFound('file_not_found', 'File not found.')
       })

@@ -18,7 +18,7 @@ function rasterType(buffer: Buffer): string | null {
   return null
 }
 
-export async function freezeImage(db: Db, log: EventLog, conversationId: string, userId: string, image: ExportImage): Promise<string> {
+export async function freezeImage(db: Db, log: EventLog, conversationId: string, userId: string, image: ExportImage, mediaRoot: string): Promise<string> {
   if (image.data) return image.data
   if (!image.available) throw badRequest('export_image_missing', 'Image unavailable.')
   let source = image.source, buffer: Buffer
@@ -48,7 +48,7 @@ export async function freezeImage(db: Db, log: EventLog, conversationId: string,
         source = url.searchParams.get('path') ?? ''
       }
       try {
-        file = await workspaceImagePath(db, conversationWorkspace(db, conversationId, userId), conversationId, userId, decodeURI(source))
+        file = await workspaceImagePath(db, conversationWorkspace(db, conversationId, userId), conversationId, userId, decodeURI(source), mediaRoot)
       } catch { throw badRequest('export_image_missing', 'Image unavailable.') }
     }
     const info = file && await stat(file).catch(() => null)
