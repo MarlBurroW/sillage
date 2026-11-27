@@ -158,6 +158,11 @@ interface TaskOutputReader {
   getTaskOutput(taskId: string): Promise<{ output?: unknown; total_bytes?: unknown; truncated?: unknown } | undefined>
 }
 
+/** `terminal_reason` values of a turn cut short by an interrupt. */
+function isAbortReason(reason: string | undefined): boolean {
+  return reason === 'aborted_streaming' || reason === 'aborted_tools'
+}
+
 export class ClaudeRunner implements AgentRunner {
   /** Time allowed for CLI to close turns suspected of producing no `result`; tests shorten it. See `armTurnWatchdog`. */
   static turnCloseGraceMs = 15_000
@@ -209,6 +214,8 @@ export class ClaudeRunner implements AgentRunner {
   private stopped = false
   /** True from turn opening until closing `result`. */
   private turnOpen = false
+  /** Sillage asked the CLI to interrupt the open turn; cleared when that turn closes. */
+  private interruptRequested = false
   /** Last `total_cost_usd` the CLI process reported. */
   private processCostUsd = 0
   /** Forced-closure deadline armed when no `result` is expected. */
@@ -454,6 +461,7 @@ export class ClaudeRunner implements AgentRunner {
       if (!this.turnOpen) return
 
       this.turnOpen = false
+      this.interruptRequested = false
       this.ctx.emit({
         type: 'turn.completed',
         stopReason,
@@ -815,10 +823,19 @@ export class ClaudeRunner implements AgentRunner {
       }
 
       case 'result': {
+        // An interrupt closes the turn as an execution error whose only cause is an internal
+        // `[ede_diagnostic] …` line (2.1.332): shown as a red error after a plain Stop, and counted
+        // in error filters. `terminal_reason` names the abort; Sillage's own request covers CLIs
+        // that do not send it.
+        const interrupted = message.subtype === 'error_during_execution'
+          && (isAbortReason(message.terminal_reason) || this.interruptRequested)
+        this.interruptRequested = false
         // Failed turns explain before closing. CLI emits either error subtype with causes or
         // `is_error` “success” containing error text, such as exhausted quota. Without forwarding
         // both ended silently.
-        if (message.subtype !== 'success') {
+        if (interrupted) {
+          // Nothing to explain: the user stopped it.
+        } else if (message.subtype !== 'success') {
           this.ctx.emit(
             {
               type: 'error',
@@ -847,7 +864,7 @@ export class ClaudeRunner implements AgentRunner {
         this.ctx.emit(
           {
             type: 'turn.completed',
-            stopReason: message.subtype,
+            stopReason: interrupted ? 'interrupted' : message.subtype,
             costUsd: turnCost,
             // Sub-agents and advisor included, like the cost. Cache fields too: CLI context mostly
             // uses cache, and totals without them do not reflect usage.
@@ -1547,6 +1564,8 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   async interrupt(): Promise<void> {
+    // Before the request: the closing `result` can arrive before `interrupt()` resolves.
+    if (this.turnOpen) this.interruptRequested = true
     await this.session?.interrupt()
     this.ctx.setStatus('idle')
 

@@ -94,3 +94,43 @@ test('quota warnings relay whether the account has extra usage enabled', () => {
   const relayed = f.events.map((event) => event.type === 'usage.updated' ? event.rateLimit?.overageEnabled : 'other')
   assert.deepEqual(relayed, [false, true, null])
 })
+
+// Shape recorded from Claude Code 2.1.332, 13 ms after `interrupt()` (card #133).
+const aborted = (extra: Record<string, unknown> = {}) => ({
+  type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 1, total_cost_usd: 0.01,
+  errors: ['[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use'],
+  usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+  ...extra,
+})
+const closing = (events: SillageEvent[]) => events.find((event) => event.type === 'turn.completed')
+
+test('a turn the user interrupted closes as interrupted, without the CLI\'s internal diagnostic as an error', async (t) => {
+  for (const reason of ['aborted_tools', 'aborted_streaming']) {
+    const f = runner()
+    t.after(() => f.instance.stop())
+    f.translate(ping(null))
+    f.translate(aborted({ terminal_reason: reason }))
+    assert.equal(count(f.events, 'error'), 0, reason)
+    const completed = closing(f.events)
+    assert.ok(completed?.type === 'turn.completed')
+    assert.equal(completed.stopReason, 'interrupted')
+  }
+})
+
+test('without terminal_reason, Sillage\'s own interrupt request tells the abort apart', async (t) => {
+  const f = runner()
+  t.after(() => f.instance.stop())
+  f.translate(ping(null))
+  await f.instance.interrupt()
+  f.translate(aborted())
+  assert.equal(count(f.events, 'error'), 0)
+  assert.equal((closing(f.events) as { stopReason?: string } | undefined)?.stopReason, 'interrupted')
+
+  // The request ends with its turn: the next one failing is an error again.
+  f.translate(ping(null))
+  f.translate(aborted({ errors: ['API overloaded'] }))
+  const failure = f.events.find((event) => event.type === 'error')
+  assert.ok(failure?.type === 'error')
+  assert.equal(failure.code, 'error_during_execution')
+  assert.equal(failure.message, 'API overloaded')
+})
