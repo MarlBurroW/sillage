@@ -295,6 +295,43 @@ test('Copilot nests a sub-agent under the call that spawned it', async (t) => {
   assert.deepEqual(f.of('message.completed').at(-1)!.parentToolCallId, 'bg')
 })
 
+test('Copilot sub-agents, skills and hooks come from the session events that name them', async (t) => {
+  const f = await fixture(t)
+  const repoSkill = join(f.root, 'repo-demo.md')
+  await writeFile(repoSkill, '---\nname: repo-demo\ndescription: Repo skill\n---\nRepo skill body\n')
+  await f.turn([
+    // As 1.0.117 reports what it loaded: the repository's skill, a built-in one nobody can invoke.
+    { event: { type: 'session.skills_loaded', data: { skills: [
+      { name: 'repo-demo', description: 'Repo skill', source: 'project', userInvocable: true, enabled: true, path: repoSkill },
+      { name: 'pr-stack', description: 'Stacks', source: 'builtin', userInvocable: false, enabled: true, path: '/builtin/pr-stack/SKILL.md' },
+    ], warnings: [], errors: [] } } },
+    { event: { type: 'hook.end', data: { hookInvocationId: 'h1', hookType: 'sessionStart', success: true } } },
+    { event: { type: 'hook.end', data: { hookInvocationId: 'h2', hookType: 'sessionStart', success: true } } },
+    { event: { type: 'hook.end', data: { hookInvocationId: 'h3', hookType: 'preToolUse', success: false, error: 'exit 2' } } },
+    announce({ toolCallId: 'task', name: 'task', arguments: {} }),
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'task', title: 'Read the note', kind: 'other', status: 'pending', rawInput: { name: 'scout', description: 'Read the note', agent_type: 'explore', mode: 'sync', prompt: 'Read it.' } } },
+    // Another call is open too: without this event, the parent would be a guess.
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'other', title: 'Another look', kind: 'other', status: 'pending', rawInput: { name: 'other', description: 'Another look', agent_type: 'explore', mode: 'sync', prompt: 'Look.' } } },
+    { event: { type: 'subagent.started', data: { toolCallId: 'task', agentName: 'explore', agentDisplayName: 'scout', model: 'gpt-6-luna', agentType: 'explore', executionMode: 'sync' } }, agentId: 'agent-7' },
+    chunk('Scout words.', 's1', 'agent-7'),
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'task', status: 'completed', rawOutput: { content: 'Scout words.' } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'other', status: 'completed', rawOutput: { content: 'Nothing.' } } },
+  ])
+  assert.deepEqual(f.of('skills.updated').at(-1)!.skills, [{ name: 'repo-demo', description: 'Repo skill' }])
+  assert.deepEqual(f.of('agent.notice').filter((event) => event.code.startsWith('copilot_hook')).map((event) => [event.code, event.level, event.details]), [
+    ['copilot_hook_ran', 'info', { hookType: 'sessionStart' }],
+    ['copilot_hook_failed', 'warning', { hookType: 'preToolUse', error: 'exit 2' }],
+  ])
+  const updated = f.of('tool.input_updated').find((event) => event.toolCallId === 'task')!
+  assert.equal((updated.input as { model?: string }).model, 'gpt-6-luna')
+  assert.equal(f.of('message.completed').find((event) => event.blocks.some((block) => block.type === 'text' && block.text === 'Scout words.'))!.parentToolCallId, 'task')
+  // A skill Copilot found is sent like a library one.
+  await f.runner.send('Use it.', [], [], ['repo-demo'])
+  await until(() => f.of('turn.completed').length === 2)
+  const sent = (await f.rpc()).filter((entry) => entry.method === 'session/prompt').at(-1)
+  assert.ok(sent.params.prompt.some((block: { type: string; resource?: { text: string } }) => block.type === 'resource' && block.resource?.text.includes('Repo skill body')))
+})
+
 test('Copilot asks through a question card, and hides the ask_user call', async (t) => {
   const f = await fixture(t)
   const schema = { type: 'object', properties: { flavor: { type: 'string', title: 'Flavor', enum: ['vanilla', 'mint'], enumNames: ['Vanilla', 'Fresh mint'] } } }

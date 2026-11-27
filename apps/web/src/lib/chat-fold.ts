@@ -175,6 +175,12 @@ export function noticeText(item: NoticeItem): string {
     }
   }
   if (item.code === 'copilot_retry') return translate('copilot.retry.notice')
+  if (item.code === 'copilot_hook_ran' || item.code === 'copilot_hook_failed') {
+    const details = item.details as { hookType?: string; error?: string | null } | null
+    const hook = details?.hookType ?? ''
+    if (item.code === 'copilot_hook_ran') return translate('copilot.hookRan.notice', { hook })
+    return details?.error ? translate('copilot.hookFailed.notice', { hook, error: details.error }) : translate('copilot.hookFailedBare.notice', { hook })
+  }
   if (item.code === 'copilot_auto_model') {
     const details = item.details as { model?: string } | null
     return translate('copilot.autoModel.notice', { model: details?.model ?? '' })

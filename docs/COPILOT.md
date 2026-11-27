@@ -46,7 +46,7 @@ requests) is listed under [Not yet verified](#not-yet-verified).
 | Attachments | Images inline, other files and `@` mentions as resource links, picked skills as embedded Markdown. | Scripted: the image reaches the model, the linked file is named in the prompt, the embedded resource is attached. |
 | Commands | Published live and for drafts. `/model` and `/clear` are hidden like for the other CLIs; `/cwd`, `/add-dir` and `/session` too, which would move the session out of what Sillage tracks. | Scripted: `/usage`, `/context`, `/env`, `/compact` and a skill's own command answer as replies. |
 | Compaction | The compact action sends `/compact`; Copilot's events say when it starts and what it saved. Automatic compaction is reported the same way. | Scripted (manual). |
-| Skills | One `--plugin-dir` per library skill; each is also a slash command. Reload is a restart before the next turn. | Scripted: listed in the model's skills, command expands the skill. |
+| Skills | One `--plugin-dir` per library skill; each is also a slash command. The skills Copilot finds by itself (the repository's, the user's) are offered too, from `session.skills_loaded`. Reload is a restart before the next turn. | Scripted: listed in the model's skills, command expands the skill. |
 | MCP | Servers go in a private `--additional-mcp-config` file (stdio, HTTP, SSE), so a server of the same name in Copilot's own files cannot replace them. Health follows Copilot's events: pending, connected, failed with its reason. Servers from Copilot's own files and its built-in GitHub server show as external. | Scripted with one working and one broken stdio server, and with a same-named broken server in `mcp-config.json` (1.0.116, 1.0.117). No per-server reconnect call. |
 | Instructions | SILLAGE.md and the overview go to an instruction file in a private folder named by `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, reread on every launch. | Scripted (the text reaches the system prompt) and signed in. Repository `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` are **not masked**. |
 | Memory | Reachable through Copilot's file tools (`--add-dir`). | Not tried on a real turn. |
@@ -119,8 +119,17 @@ say what plain ACP leaves out:
 | `session.compaction_start`, `session.compaction_complete` | Compaction, with tokens before and after. |
 | `session.mcp_server_status_changed`, `session.mcp_servers_loaded` | MCP server health. |
 
-`tool.execution_*`, `subagent.*`, `session.skills_loaded` and
-`session.todos_changed` are not relayed even when asked for.
+`tool.execution_*`, `subagent.*`, `session.skills_loaded` and `hook.*` are relayed
+when asked for (1.0.116 and 1.0.117; an earlier note here said otherwise). Sillage uses
+`subagent.started` (the spawning call outright, and the model the sub-agent runs, shown
+on the Agent row), `session.skills_loaded` (the repository's and the user's skills,
+offered and sent like the library's; built-in ones are not user-invocable) and
+`hook.end`. `tool.execution_*` adds nothing `assistant.message` does not say.
+
+Hooks from `$COPILOT_HOME/hooks/` and a repository's `.github/hooks/` run under ACP
+without any trust prompt. The thread says once per process which hook types ran, and
+reports each failure; a `preToolUse` refusal closes the call as failed with Copilot's
+"Denied by preToolUse hook: …" as its output.
 `session.auto_mode_resolved` is relayed and says why Auto chose a model; the notice
 only needs the name, which every model call carries.
 

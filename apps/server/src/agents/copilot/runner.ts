@@ -98,6 +98,10 @@ export class CopilotRunner implements AgentRunner {
   private readonly natives = new Map<string, NativeToolRequest>()
   /** Sub-agent ID to the `task` call that spawned it. */
   private readonly agents = new Map<string, string>()
+  /** Model a sub-agent runs, by the `task` call that spawned it (`subagent.started`). */
+  private readonly agentModels = new Map<string, string>()
+  /** Hook types already announced: once per process is enough to say they run. */
+  private readonly hooksSeen = new Set<string>()
   private lastSpawn: string | null = null
   /** Text being streamed, per thread: the main one (`''`) and one per spawning call. */
   private readonly streams = new Map<string, OpenText>()
@@ -278,7 +282,7 @@ export class CopilotRunner implements AgentRunner {
     // Health arrives as session events; until one does, a server is only known to be configured.
     this.mcp = [...failedStatuses(resolved.failures), ...resolved.servers.map((server) => ({ name: server.name, state: 'configured' as const, tools: [], error: null, external: false }))]
     this.ctx.emit({ type: 'mcp.updated', servers: structuredClone(this.mcp) })
-    this.ctx.emit({ type: 'skills.updated', skills: [...this.skills].map(([name, skill]) => ({ name, description: skill.description })) })
+    this.publishSkills()
     const early = this.early
     this.early = null
     for (const [method, params] of early) this.notification(method, params)
@@ -416,6 +420,41 @@ export class CopilotRunner implements AgentRunner {
       case 'assistant.turn_retry':
         if (!agentId) this.ctx.emit({ type: 'agent.notice', id: 'api-retry', code: 'copilot_retry', message: 'GitHub Copilot is retrying the request after a transient error.', level: 'info', details: { reason: data.reason ?? null, model: data.model ?? null } }, event)
         return
+      case 'subagent.started': {
+        const call = text(data.toolCallId)
+        if (!call) return
+        // The spawning call, named outright rather than inferred from the calls still open.
+        if (agentId) this.agents.set(agentId, call)
+        const model = text(data.model)
+        if (model) { this.agentModels.set(call, model); this.agentModel(call) }
+        return
+      }
+      case 'session.skills_loaded': {
+        // Skills Copilot found by itself (the repository's, the user's): offered like the
+        // library's, which come back here as `plugin`. Built-in ones are not user-invocable.
+        let added = false
+        for (const item of Array.isArray(data.skills) ? data.skills : []) {
+          const skill = fields(item)
+          const name = text(skill.name), path = text(skill.path)
+          if (!name || !path || skill.enabled === false || skill.userInvocable === false || this.skills.has(name)) continue
+          this.skills.set(name, { path, description: text(skill.description) ?? '' })
+          added = true
+        }
+        if (added) this.publishSkills()
+        return
+      }
+      case 'hook.end': {
+        const hookType = text(data.hookType) ?? 'unknown'
+        if (data.success === false) {
+          const error = text(data.error) ?? text(fields(data.error).message)
+          this.ctx.emit({ type: 'agent.notice', code: 'copilot_hook_failed', message: `A GitHub Copilot ${hookType} hook failed${error ? `: ${error}` : '.'}`, level: 'warning', details: { hookType, error } }, event)
+        } else if (!this.hooksSeen.has(hookType)) {
+          // Hooks come from Copilot's own files, which Sillage does not show: say they run.
+          this.hooksSeen.add(hookType)
+          this.ctx.emit({ type: 'agent.notice', code: 'copilot_hook_ran', message: `GitHub Copilot ran a ${hookType} hook from its own configuration.`, level: 'info', details: { hookType } }, event)
+        }
+        return
+      }
       case 'session.schedule_created':
       case 'session.schedule_rearmed': {
         const id = String(data.id ?? '')
@@ -650,6 +689,8 @@ export class CopilotRunner implements AgentRunner {
     const merged = { ...track?.update, ...update }
     const native = this.natives.get(id) ?? null
     const described = describeCopilotTool(merged, native)
+    const model = described.name === 'Agent' && !described.input.model ? this.agentModels.get(id) : undefined
+    if (model) described.input = { ...described.input, model }
     // The question is answered in its own card (`elicitation/create`), not shown as a tool row.
     if (described.name === 'ask_user') { if (closing) this.natives.delete(id); return }
     const input = JSON.stringify([described.input, described.title])
@@ -696,6 +737,23 @@ export class CopilotRunner implements AgentRunner {
     if (!isError) for (const diff of track.diffs) this.ctx.emit({ type: 'file.edited', toolCallId: id, path: toWorkspacePath(this.ctx.cwd, diff.path), action: diff.oldText === null || diff.oldText === '' ? 'created' : 'modified' })
     this.tools.delete(id)
     this.natives.delete(id)
+    this.agentModels.delete(id)
+  }
+
+  private publishSkills(): void {
+    this.ctx.emit({ type: 'skills.updated', skills: [...this.skills].map(([name, skill]) => ({ name, description: skill.description })) })
+  }
+
+  /** Puts the model `subagent.started` named on the Agent row, unless the spawning call chose one. */
+  private agentModel(call: string): void {
+    const track = this.tools.get(call)
+    const model = this.agentModels.get(call)
+    if (!track || track.name !== 'Agent' || !model) return
+    const [input, title] = JSON.parse(track.input) as [Record<string, unknown>, string | null]
+    if (input.model) return
+    const updated = { ...input, model }
+    track.input = JSON.stringify([updated, title])
+    this.ctx.emit({ type: 'tool.input_updated', toolCallId: call, input: updated, title })
   }
 
   private publishLoops(): void {

@@ -12,7 +12,7 @@ import { chromium } from 'playwright'
 
 // GitHub Copilot journeys on both editions, against the fixture agent: defaults, adoption of a
 // native session, a scripted conversation (tools, sub-agent, question, permission, schedules,
-// compaction), fork, transfers both ways, the consumption color and the phone layout.
+// hooks, compaction), fork, transfers both ways, the consumption color and the phone layout.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -222,6 +222,19 @@ try {
     await page.getByText('[Scheduled prompt #2]', { exact: false }).first().waitFor()
     await page.locator('[title*="Check the build"]').filter({ hasText: '1 boucle' }).first().waitFor()
 
+    // 5c. The user's own Copilot hooks run under ACP: the thread says so, and says when one fails.
+    await send(fixture({ steps: [
+      { event: { type: 'hook.end', data: { hookInvocationId: 'h1', hookType: 'sessionStart', success: true } } },
+      { event: { type: 'hook.end', data: { hookInvocationId: 'h2', hookType: 'preToolUse', success: false, error: 'exit 2' } } },
+      chunk('Hooks noted.', 'reply-hooks'),
+    ] }))
+    await page.getByText('Hooks noted.', { exact: true }).first().waitFor()
+    // Folded with the other agent notices, information apart from warnings; opened on demand.
+    await page.locator('details[data-agent-notices="warning"]', { hasText: 'Un hook preToolUse de GitHub Copilot a échoué : exit 2' }).last().locator(':scope > summary').click()
+    await page.getByText('Un hook preToolUse de GitHub Copilot a échoué : exit 2').first().waitFor()
+    await page.locator('details[data-agent-notices="info"]', { hasText: 'GitHub Copilot a exécuté un hook sessionStart de sa propre configuration.' }).last().locator(':scope > summary').click()
+    await page.getByText('GitHub Copilot a exécuté un hook sessionStart de sa propre configuration.').first().waitFor()
+
     // 6. Manual compaction goes through Copilot's slash command.
     await page.getByRole('button', { name: 'Compacter le contexte' }).click()
     for (let attempt = 0; attempt < 100 && !(await rpc()).some((entry) => entry.method === 'session/prompt' && entry.params.prompt[0].text === '/compact'); attempt++) await delay(100)
@@ -277,7 +290,7 @@ try {
     await page.screenshot({ path: `/var/tmp/sillage-copilot-${profile}-phone-defaults.png` })
     await context.close()
     await rm(join(data, 'rpc.jsonl'), { force: true })
-    console.log(`OK: Copilot ${profile}: defaults, import, tools and sub-agent, question, permission, schedules, compaction, fork, transfers, phone layout`)
+    console.log(`OK: Copilot ${profile}: defaults, import, tools and sub-agent, question, permission, schedules, hooks, compaction, fork, transfers, phone layout`)
   }
   assert.deepEqual(errors, [])
 } finally {

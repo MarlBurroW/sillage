@@ -70,13 +70,15 @@ export const COPILOT_EVENT_METHOD = `${COPILOT_META}/sessionEvent`
 /**
  * Session events Sillage subscribes to at `initialize` (`copilot help acp`). Plain ACP leaves out
  * what they carry: the native tool name and the MCP identity of a call (`assistant.message`),
- * which tool call spawned a sub-agent (`assistant.turn_start`), per-call usage and quota, errors
- * and retries as data rather than as "Error: …" text, compaction, MCP server health, and the end
- * of a turn Copilot started by itself when background work finished (`session.idle`), and the
- * end of the reply while attached background work keeps the prompt pending (`assistant.idle`),
- * prompts scheduled with `/every` and `/after` (`session.schedule_*`) and the message a schedule
- * sends when it fires (`user.message`).
- * `tool.execution_*` and `subagent.*` are not relayed even when asked for (1.0.116).
+ * which tool call spawned a sub-agent and the model it runs (`assistant.turn_start`,
+ * `subagent.started`), per-call usage and quota, errors and retries as data rather than as
+ * "Error: …" text, compaction, MCP server health, the end of a turn Copilot started by itself
+ * when background work finished (`session.idle`), the end of the reply while attached background
+ * work keeps the prompt pending (`assistant.idle`), prompts scheduled with `/every` and `/after`
+ * (`session.schedule_*`) and the message a schedule sends when it fires (`user.message`), the
+ * skills Copilot actually loaded (`session.skills_loaded`), and the user's own hooks, which run
+ * under ACP without asking (`hook.end`). All relayed on 1.0.116 and 1.0.117; `tool.execution_*`
+ * is too, but `assistant.message` already names every call.
  */
 export const COPILOT_SESSION_EVENTS = [
   'assistant.turn_start', 'assistant.message', 'assistant.usage', 'assistant.turn_retry',
@@ -84,6 +86,7 @@ export const COPILOT_SESSION_EVENTS = [
   'session.compaction_start', 'session.compaction_complete',
   'session.mcp_server_status_changed', 'session.mcp_servers_loaded', 'session.mcp_server_tools_loaded',
   'session.schedule_created', 'session.schedule_cancelled', 'session.schedule_rearmed', 'user.message',
+  'subagent.started', 'session.skills_loaded', 'hook.end',
 ] as const
 
 /** Cadence of a schedule as `/every` writes it (`90s`, `1h30m`): Copilot gives milliseconds, not a cron expression. */
