@@ -1522,7 +1522,6 @@ export const fr: Catalog = {
   'preview.activity.open': "Ouvrir l'aperçu",
   'preview.activity.openTab': 'Ouvrir dans un nouvel onglet',
   'preview.activity.stopped': 'arrêté',
-  'preview.activity.stoppedUntitled': 'Serveur de dev',
   'preview.activity.dismiss': 'Masquer',
   'preview.reload': 'Recharger',
   'preview.openTab': 'Ouvrir dans un nouvel onglet',

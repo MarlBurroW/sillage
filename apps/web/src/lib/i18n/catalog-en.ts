@@ -1531,7 +1531,6 @@ export const en = {
   'preview.activity.open': 'Open the preview',
   'preview.activity.openTab': 'Open in a new tab',
   'preview.activity.stopped': 'stopped',
-  'preview.activity.stoppedUntitled': 'Dev server',
   'preview.activity.dismiss': 'Dismiss',
   'preview.reload': 'Reload',
   'preview.openTab': 'Open in a new tab',

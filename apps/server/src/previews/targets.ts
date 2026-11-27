@@ -54,9 +54,14 @@ export function recordSeen(ctx: Pick<AppContext, 'db'>, targets: PreviewTargetDt
   }
 }
 
-/** Servers the conversation ran and did not hide, listening or not: the thread tells them apart. */
+/**
+ * Servers the conversation ran and titled with describe_preview, listening or not: the thread tells
+ * them apart. Untitled ones are left out: agents start many throwaway servers (renderers, test
+ * fixtures, helpers on ephemeral ports), and a line for each buried the one the user cared about.
+ */
 export function seenPreviews(ctx: Pick<AppContext, 'db'>, conversationId: string): StoppedPreviewDto[] {
-  return ctx.db.select({ port: previewLabels.port, title: previewLabels.title }).from(previewLabels)
-    .where(and(eq(previewLabels.conversationId, conversationId), isNotNull(previewLabels.seenAt), eq(previewLabels.hidden, false)))
+  const rows = ctx.db.select({ port: previewLabels.port, title: previewLabels.title }).from(previewLabels)
+    .where(and(eq(previewLabels.conversationId, conversationId), isNotNull(previewLabels.seenAt), isNotNull(previewLabels.title), eq(previewLabels.hidden, false)))
     .orderBy(previewLabels.port).all()
+  return rows.flatMap((row) => (row.title ? [{ port: row.port, title: row.title }] : []))
 }

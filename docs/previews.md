@@ -31,10 +31,11 @@ or a mock, so the user does not have to find the right button among several. Hid
 the Preview tab's list. The choice belongs to the conversation and the port, so it survives the
 agent restarting its server; it is deleted with the conversation.
 
-When a server stops, its card becomes a line saying so, which stays until it is dismissed or the
+When a server the agent titled stops, its card becomes a line saying so, which stays until it is dismissed or the
 server listens again. Sillage learns a server ran when someone lists previews (the thread does every
 few seconds) or when the agent describes it while it listens; it never sends the app requests of its
-own to find out.
+own to find out. An untitled server simply disappears when it stops: agents start many throwaway
+servers, and a line for each would bury the ones that matter.
 
 ## Why previews need a domain of their own
 

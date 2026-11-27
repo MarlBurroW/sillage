@@ -37,14 +37,14 @@ export interface PreviewTargetDto {
   address: string | null
 }
 
-/** A dev server the conversation ran and that stopped: the thread keeps a line until it is dismissed. */
+/** A titled dev server the conversation ran and that stopped: the thread keeps a line until it is dismissed. */
 export interface StoppedPreviewDto {
   port: number
-  title: string | null
+  title: string
 }
 
 export interface StoppedPreviewListDto {
-  /** Every server the conversation ran and did not hide; the thread leaves out those listening again. */
+  /** Every server the conversation ran, titled and did not hide; the thread leaves out those listening again. */
   previews: StoppedPreviewDto[]
 }
 

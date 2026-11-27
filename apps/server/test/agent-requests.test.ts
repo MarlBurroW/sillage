@@ -32,6 +32,7 @@ import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
 import { adoptSessionTitle } from '../src/conversations/title.js'
 import { liveSessionContext, projectOverview } from '../src/agents/overview.js'
+import { recordSeen, seenPreviews } from '../src/previews/targets.js'
 
 const model = (value: string, displayName: string, efforts: string[], isDefault = false): AgentModelDto => ({
   value,
@@ -286,6 +287,21 @@ test('an agent titles or hides its own dev servers, keeping what it does not res
   // A sessionless client has no thread to present a server in.
   assert.equal((await mcp('', 'describe_preview', { project: 'project', port: 5173 })).isError, true)
   assert.equal(label().length, 1)
+})
+
+test('only titled servers leave a "stopped" line once seen', async (t) => {
+  const { db, conversation, mcp } = await harness(t)
+  conversation('self')
+  const target = (port: number) => ({ port, label: 'node', command: null, projectId: 'project', conversationId: 'self', conversationTitle: null, title: null, path: null, hidden: false, address: null })
+  await mcp('self', 'describe_preview', { port: 5173, title: 'Maquette' })
+  await mcp('self', 'describe_preview', { port: 8080, title: 'API', show: false })
+  // Seen listening: the titled app, a hidden API, and throwaway helpers the agent never described.
+  recordSeen({ db }, [target(5173), target(8080), target(3001), target(45_421)])
+  assert.equal(db.select().from(previewLabels).all().filter((row) => row.seenAt !== null).length, 4)
+  assert.deepEqual(seenPreviews({ db }, 'self'), [{ port: 5173, title: 'Maquette' }])
+  // Titling a helper later brings its line back.
+  await mcp('self', 'describe_preview', { port: 3001, title: 'Rendu du film' })
+  assert.deepEqual(seenPreviews({ db }, 'self'), [{ port: 3001, title: 'Rendu du film' }, { port: 5173, title: 'Maquette' }])
 })
 
 test('human titles win over both explicit agent titles and delayed native CLI suggestions', async (t) => {

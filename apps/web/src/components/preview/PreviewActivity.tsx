@@ -13,7 +13,8 @@ import { PreviewShareDialog } from './PreviewShareDialog'
  * Preview tab on their own: as soon as one of the conversation's servers listens, this line says so
  * and opens it. The agent titles its servers, points at a page and leaves out those nobody opens
  * (APIs, workers) with `describe_preview`, so the card that matters is not lost among others. A
- * server that stops leaves a line saying so, until dismissed or started again.
+ * titled server that stops leaves a line saying so, until dismissed or started again; untitled ones
+ * (often throwaway helpers) just disappear.
  */
 export function PreviewActivity({ conversationId }: { conversationId: string }) {
   const { data } = usePreviews()
@@ -75,14 +76,14 @@ function RunningCard({ target, proxy }: { target: PreviewTargetDto; proxy: boole
   )
 }
 
-function StoppedLine({ conversationId, port, title }: { conversationId: string; port: number; title: string | null }) {
+function StoppedLine({ conversationId, port, title }: { conversationId: string; port: number; title: string }) {
   const t = useTranslate()
   const dismiss = useDismissStoppedPreview(conversationId)
   return (
     <div data-preview-stopped className="flex max-w-xl items-center gap-2 rounded-lg border border-dashed border-line px-3 py-1.5 text-xs text-ink-faint">
       <MonitorOff size={14} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate">
-        <span className="text-ink-soft">{title ?? t('preview.activity.stoppedUntitled')}</span> · {t('preview.activity.stopped')} · :{port}
+        <span className="text-ink-soft">{title}</span> · {t('preview.activity.stopped')} · :{port}
       </span>
       <IconButton label={t('preview.activity.dismiss')} size="sm" className="shrink-0" disabled={dismiss.isPending} onClick={() => dismiss.mutate(port)}><X size={12} /></IconButton>
     </div>
