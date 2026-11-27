@@ -147,6 +147,20 @@ Answer these questions for each area.
 - **Avoid billing.** A deliberately invalid API key still exercises `initialize`, session
   creation, configuration, commands and `/usage` without running inference. Before a real,
   paid turn on the user's account, tell the user.
+- **Script the model when the CLI accepts a provider of your own.** Copilot
+  (`COPILOT_PROVIDER_BASE_URL`), OpenCode and others can talk to any OpenAI-compatible
+  endpoint, without their vendor sign-in. A local server of fifty lines that answers each
+  request with the tool calls a script names drives the real binary through every tool,
+  permission, question, sub-agent and error, deterministically and for free. The request
+  it receives also shows the tool list, their schemas and the whole system prompt: the
+  direct way to check that instructions arrive and which repository files leak in. It
+  cannot show what the vendor's plan decides (catalog, quota, routing): list those as
+  not verified. `/var/tmp/sillage-copilot-probe/scripts` holds such a server
+  (`mock-llm.mjs`), a raw ACP driver (`acp-probe.mjs`) and a harness that runs
+  Sillage's runner against the real binary (`runner-probe.mts`).
+- **Look for a schema inside the package.** A native binary may unpack its package into
+  a cache (`~/.cache/copilot/pkg/<platform>/<version>/schemas`): event and API schemas
+  there list every message the CLI can send, including ones no document mentions.
 - **Write probes as `.mts` scripts run with `tsx` from `apps/server`**, so they reuse the
   repository's clients. Keep them out of the repository, and save their path in project
   memory. `/var/tmp/sillage-antigravity-probe-tools/probe-tools.mts` follows this pattern.

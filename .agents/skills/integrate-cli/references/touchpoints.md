@@ -28,7 +28,7 @@ First add the kind to `agentKindSchema` in `packages/protocol/src/events.ts`. Th
 
 | File | Symbol | What to decide |
 |---|---|---|
-| `packages/protocol/src/capabilities.ts` | `AGENT_CAPABILITIES` | Seven flags: `steer`, `compact`, `resyncSessions`, `planReview`, `cliSessions`, `stopBackgroundTask`, `draftCommands`. Each flag says what was probed, and the existing rows comment on why. |
+| `packages/protocol/src/capabilities.ts` | `AGENT_CAPABILITIES` | Nine flags: `steer`, `compact`, `resyncSessions`, `planReview`, `cliSessions`, `stopBackgroundTask`, `readBackgroundOutput`, `draftCommands`, `nativeFork`. Each flag says what was probed, and the existing rows comment on why. |
 | `packages/protocol/src/cli-versions.ts` | `PREFERRED_CLI_RELEASES` | `{package, version}`. Compatibility uses caret rules, and a newer install is never downgraded. |
 | `packages/protocol/src/agent-config.ts` | `DEFAULT_CONFIGS` | Default config (see §2). |
 | `packages/protocol/src/user-settings.ts` | `ComposerLayout`, `AgentDefaults` interfaces | Composer layout and the user's defaults. |
@@ -68,9 +68,10 @@ Server:
     wiring.
 - `http/routes/agents.ts`, `accountCredential`. Without a branch the route returns
   `404 agent_account_not_found`.
-- `http/routes/conversations.ts`: the portable fork is chosen by
-  `source.agent === 'antigravity'`. Add your kind if the CLI has no native fork, then fix
-  this properly with a capability.
+- `http/routes/conversations.ts`: the portable fork follows the `nativeFork` capability.
+- `http/routes/<kind>-sessions.ts` when `cliSessions` is true: the web calls
+  `/api/projects/:id/<kind>-sessions` by kind (`lib/claude-sessions.ts`), so the route
+  name is part of the contract. Register it in `http/app.ts`.
 - `sessions/agent-requests.ts`:
   - `withEffort`, which falls back to `variant`;
   - `describePermissions`, which has no Antigravity case yet.
@@ -108,13 +109,21 @@ Web:
   `tasks:autonomous` auto-scope.
 - `routes/SettingsPage.tsx` sections and `App.tsx` routes, for the accounts page.
 - `lib/chat-fold.ts` `noticeText`: notice codes that need a translation.
+- `lib/consumption.ts` `SERIES_AGENTS` **and** `styles/consumption.css`: one
+  `--series-<kind>` variable per CLI, light and dark, taken in order from the reference
+  palette. A kind in the list without its variable draws a transparent share
+  (Copilot's first version did).
+- `components/chat/Composer.tsx` `combinedCommands`: the CLIs whose slash commands
+  include their skills.
 - `lib/use-chat-stream.ts`: query invalidation on notices, for example
   `antigravity_account_signed_out`.
 
 Tests and scripts that count CLIs:
 - `scripts/windows-feedback-ui-check.mjs` counts the `draft-agent` options.
-- `scripts/onboarding-ui-check.mjs`.
+- `scripts/onboarding-ui-check.mjs` reads the sentence that names the offered CLIs.
 - `scripts/disabled-cli-ui-check.mjs`.
+- Checks that switch every CLI off list the kinds by hand, and a new kind is enabled
+  by default: `git grep -n "'grok', 'antigravity'" -- scripts`.
 
 ## 2. Configuration schema
 

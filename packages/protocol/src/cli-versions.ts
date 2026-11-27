@@ -40,6 +40,7 @@ export const PREFERRED_CLI_RELEASES: Record<AgentKind, PreferredCliRelease> = {
   opencode: { package: '@opencode/cli', version: '2.4.1', alsoSupported: ['1.19.5'], replaces: ['opencode-ai'] },
   antigravity: { package: 'antigravity-acp', version: '1.4.3' },
   grok: { package: '@xai-official/grok', version: '1.0.62' },
+  copilot: { package: '@github/copilot', version: '1.0.116' },
 }
 
 interface Parsed {

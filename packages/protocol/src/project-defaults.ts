@@ -6,11 +6,13 @@ import {
   opencodeConfigSchema,
   grokConfigSchema,
   antigravityConfigSchema,
+  copilotConfigSchema,
   type ClaudeConfig,
   type CodexConfig,
   type OpencodeConfig,
   type GrokConfig,
   type AntigravityConfig,
+  type CopilotConfig,
 } from './agent-config.js'
 
 /**
@@ -31,6 +33,7 @@ export interface ProjectAgentDefaults {
   opencode: OpencodeConfig | null
   grok: GrokConfig | null
   antigravity: AntigravityConfig | null
+  copilot: CopilotConfig | null
 }
 
 export const NO_PROJECT_DEFAULTS: ProjectAgentDefaults = {
@@ -39,6 +42,7 @@ export const NO_PROJECT_DEFAULTS: ProjectAgentDefaults = {
   opencode: null,
   grok: null,
   antigravity: null,
+  copilot: null,
 }
 
 /**
@@ -52,6 +56,7 @@ export const projectAgentDefaultsSchema = z
     opencode: opencodeConfigSchema.nullable().default(null).catch(null),
     grok: grokConfigSchema.nullable().default(null).catch(null),
     antigravity: antigravityConfigSchema.nullable().default(null).catch(null),
+    copilot: copilotConfigSchema.nullable().default(null).catch(null),
   })
   .catch(NO_PROJECT_DEFAULTS)
 
@@ -84,6 +89,6 @@ export function readProjectDefaults(raw: string | null | undefined): ProjectAgen
  * “cleared” and “never configured”.
  */
 export function serializeProjectDefaults(defaults: ProjectAgentDefaults): string | null {
-  if (!defaults.claude && !defaults.codex && !defaults.opencode && !defaults.grok && !defaults.antigravity) return null
+  if (!defaults.claude && !defaults.codex && !defaults.opencode && !defaults.grok && !defaults.antigravity && !defaults.copilot) return null
   return JSON.stringify(defaults)
 }

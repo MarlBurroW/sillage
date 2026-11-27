@@ -28,6 +28,7 @@ import {
   planDecisionBodySchema,
   questionAnswerBodySchema,
   parseAgentConfig,
+  AGENT_CAPABILITIES,
   reorderConversationsBodySchema,
   sendMessageBodySchema,
   steerBodySchema,
@@ -421,7 +422,7 @@ export function registerConversationRoutes(
     const moves = ctx.db.select().from(conversationProjectMoves).where(and(eq(conversationProjectMoves.conversationId, id), isNotNull(conversationProjectMoves.throughSeq))).all()
     try {
       // A moved session has several native histories. Its normalized journal alone covers every cut point.
-      portable = source.agent === 'antigravity' || moves.length > 0
+      portable = !AGENT_CAPABILITIES[source.agent].nativeFork || moves.length > 0
         ? buildHandoff(readHandoffItems(log, id, body.throughSeq), { id, title: source.title, agent: source.agent }, source.agent, clampHandoffTokens(undefined), handoff?.fromConversationId === id ? undefined : handoff)
         : null
       agentSessionId = portable ? null : await sessions.forkSession(id, body.throughSeq)

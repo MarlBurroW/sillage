@@ -45,3 +45,7 @@ enabled = true
 # On Windows the executable is agy_acp_server.exe.
 binary = "agy_acp_server.par"
 enabled = true
+
+[agents.copilot]
+binary = "copilot"
+enabled = true

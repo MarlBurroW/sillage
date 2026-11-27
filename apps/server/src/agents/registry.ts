@@ -1,4 +1,5 @@
 import { AntigravityAdapter } from './antigravity/adapter.js'
+import { CopilotAdapter } from './copilot/adapter.js'
 import type {
   AgentCapabilities,
   AgentConfig,
@@ -100,5 +101,6 @@ export function createAgentRegistry(config: Config): AgentRegistry {
     new OpencodeAdapter(config),
     new GrokAdapter(config),
     new AntigravityAdapter(config),
+    new CopilotAdapter(config),
   ])
 }

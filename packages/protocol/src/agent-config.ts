@@ -296,12 +296,47 @@ export const antigravityConfigSchema = z.object({
 })
 export type AntigravityConfig = z.infer<typeof antigravityConfigSchema>
 
+/**
+ * GitHub Copilot CLI agent modes, the suffixes of its ACP `mode` option values
+ * (`https://agentclientprotocol.com/protocol/session-modes#agent`…), probed on 1.0.116.
+ * `autopilot` runs until done and turns `allow_all` on by itself.
+ */
+export const copilotModeSchema = z.enum(['agent', 'plan', 'autopilot'])
+export type CopilotMode = z.infer<typeof copilotModeSchema>
+/**
+ * Copilot's ACP `allow_all` option: `off` asks for every tool, path and URL, `auto` lets its
+ * assisted-approval judge approve what it deems safe, `on` approves everything.
+ */
+export const copilotAllowAllSchema = z.enum(['off', 'auto', 'on'])
+export type CopilotAllowAll = z.infer<typeof copilotAllowAllSchema>
+
+export const copilotConfigSchema = z.object({
+  agent: z.literal('copilot'),
+  /** Copilot catalog ID; `auto` lets Copilot route each request. Empty uses the CLI default. */
+  model: z.string(),
+  reasoningEffort: z.string().default(''),
+  /**
+   * Routing profile used when the model is `auto` (`efficiency`, `balance`, `intelligence`, or one
+   * the server advertises). Empty keeps the CLI's own setting. Launch-only (`--auto-tier`): ACP
+   * has no option for it, so a change restarts the process.
+   */
+  autoTier: z.string().default(''),
+  mode: copilotModeSchema.default('agent'),
+  allowAll: copilotAllowAllSchema.default('off'),
+  additionalDirectories: z.array(z.string()).default([]),
+  mcpServers: z.array(z.string()).default([]),
+  sillageMcp: sillageMcpSchema,
+  skillLibrary: skillLibrarySchema,
+})
+export type CopilotConfig = z.infer<typeof copilotConfigSchema>
+
 export const agentConfigSchema = z.discriminatedUnion('agent', [
   claudeConfigSchema,
   codexConfigSchema,
   opencodeConfigSchema,
   grokConfigSchema,
   antigravityConfigSchema,
+  copilotConfigSchema,
 ])
 export type AgentConfig = z.infer<typeof agentConfigSchema>
 
@@ -419,12 +454,25 @@ export const DEFAULT_ANTIGRAVITY_CONFIG: AntigravityConfig = {
   sillageMcp: true, skillLibrary: true, account: null,
 }
 
+export const DEFAULT_COPILOT_CONFIG: CopilotConfig = {
+  agent: 'copilot', model: CLI_DEFAULT, reasoningEffort: CLI_DEFAULT, autoTier: CLI_DEFAULT,
+  // Asks before tools, matching the other CLIs' defaults.
+  mode: 'agent', allowAll: 'off', additionalDirectories: [], mcpServers: [],
+  sillageMcp: true, skillLibrary: true,
+}
+
 export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
   claude: DEFAULT_CLAUDE_CONFIG,
   codex: DEFAULT_CODEX_CONFIG,
   opencode: DEFAULT_OPENCODE_CONFIG,
   grok: DEFAULT_GROK_CONFIG,
   antigravity: DEFAULT_ANTIGRAVITY_CONFIG,
+  copilot: DEFAULT_COPILOT_CONFIG,
+}
+
+/** Sillage account chosen for the conversation; null for the CLI login and for CLIs without extra accounts (opencode, Copilot). */
+export function configAccount(config: AgentConfig): string | null {
+  return 'account' in config ? config.account : null
 }
 
 export function defaultConfigFor(agent: AgentConfig['agent']): AgentConfig {

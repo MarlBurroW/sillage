@@ -80,6 +80,7 @@ import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerAntigravitySessionRoutes } from './routes/antigravity-sessions.js'
 import { registerOpencodeSessionRoutes } from './routes/opencode-sessions.js'
+import { registerCopilotSessionRoutes } from './routes/copilot-sessions.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
 import { registerBoardLinkRoutes } from './routes/board-link.js'
@@ -243,6 +244,7 @@ export async function buildApp(
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)
   registerAntigravitySessionRoutes(app, ctx, sessions, registry)
   registerOpencodeSessionRoutes(app, ctx, sessions, registry)
+  registerCopilotSessionRoutes(app, ctx, sessions, registry)
   registerFsRoutes(app, ctx)
   const cliInstaller = new CliInstaller(ctx.config.paths.agents, {
     acquire: async (kind) => {

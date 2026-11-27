@@ -178,11 +178,14 @@ export class AcpClient {
     this.write({ jsonrpc: '2.0', method, params })
   }
 
-  /** Handshake advertises neither filesystem nor terminals: agents retain native tools on the same server disk Sillage would access, avoiding redundant delegation round trips. */
-  initialize(clientInfo: { name: string; title?: string; version: string }): Promise<InitializeResponse> {
+  /**
+   * Handshake advertises neither filesystem nor terminals: agents retain native tools on the same server disk Sillage would access, avoiding redundant delegation round trips.
+   * `capabilities` adds what one agent needs announced (forms it may send, vendor `_meta`).
+   */
+  initialize(clientInfo: { name: string; title?: string; version: string }, capabilities: Record<string, unknown> = {}): Promise<InitializeResponse> {
     const params: InitializeRequest = {
       protocolVersion: 1,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, ...capabilities },
       clientInfo,
     }
     return this.request<InitializeResponse>('initialize', params)

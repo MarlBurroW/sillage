@@ -50,13 +50,15 @@ plans, permissions, models and limits are the ones you know.
 | **OpenCode** | Open source | The providers you configured in OpenCode, local models included when the provider supports them |
 | **Grok Build** | xAI | A Grok subscription or an xAI API key |
 | **Antigravity** | Google | A Google account or a Gemini API key |
+| **GitHub Copilot CLI** | GitHub | A GitHub Copilot plan (`copilot login` or a token), Auto model routing included |
 
 Start a task with one agent and continue it with another. The next agent receives
 the conversation's context, and the project's instructions, memory and skills are
 there for all of them.
 
 [What each integration supports](https://marlburrow.github.io/sillage/agents.html) ·
-[Antigravity's native limitations](docs/antigravity-integration.md)
+[Antigravity's native limitations](docs/antigravity-integration.md) ·
+[GitHub Copilot CLI](docs/COPILOT.md)
 
 ## What you can do
 

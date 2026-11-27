@@ -22,6 +22,7 @@ const CLI_LOGIN: Record<AgentKind, string> = {
   opencode: 'opencode auth login',
   grok: 'grok login',
   antigravity: 'Google Antigravity',
+  copilot: 'copilot login',
 }
 
 /** Name assigned to accounts created for onboarding login. */
@@ -195,7 +196,7 @@ function AgentRow({ entry }: { entry: AgentAvailabilityDto }) {
           </Section>
 
           {/* Then optional accounts for those needing them. */}
-          {entry.agent !== 'opencode' ? <ExtraAccounts agent={entry.agent} cliConnected={plan !== null} /> : null}
+          {entry.agent !== 'opencode' && entry.agent !== 'copilot' ? <ExtraAccounts agent={entry.agent} cliConnected={plan !== null} /> : null}
         </div>
       ) : null}
     </Card>

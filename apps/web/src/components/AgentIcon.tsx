@@ -53,6 +53,7 @@ export const AGENT_META: Record<AgentKind, AgentMeta> = {
     Mark: markOf('opencode'),
   },
   antigravity: { label: 'Google Antigravity', vendor: 'Google', blurb: translate('agent.blurb.antigravity'), Mark: markOf('antigravity') },
+  copilot: { label: 'GitHub Copilot', vendor: 'GitHub', blurb: translate('agent.blurb.copilot'), Mark: markOf('copilot') },
   grok: {
     label: 'Grok Build',
     vendor: 'xAI',

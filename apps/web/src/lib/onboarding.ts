@@ -61,6 +61,9 @@ export function withPermissionChoice(config: AgentConfig, choice: PermissionChoi
         ...config,
         permissionMode: ({ manual: 'default', auto: 'auto', acceptEdits: 'auto', bypass: 'bypassPermissions' } as const)[choice],
       }
+    case 'copilot':
+      // Copilot has no edits-only approval: accepting edits keeps asking, the safer neighbour.
+      return { ...config, allowAll: ({ manual: 'off', auto: 'auto', acceptEdits: 'off', bypass: 'on' } as const)[choice] }
   }
 }
 

@@ -189,7 +189,7 @@ export type MeasuredRows = Map<string, { durationMs: number | null; costUsd: num
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-const AGENT_ORDER: AgentKind[] = ['claude', 'codex', 'opencode', 'grok', 'antigravity']
+const AGENT_ORDER: AgentKind[] = ['claude', 'codex', 'opencode', 'grok', 'antigravity', 'copilot']
 
 function effortRank(effort: string | null): number {
   if (effort === null || effort === '') return Number.POSITIVE_INFINITY

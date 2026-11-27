@@ -14,6 +14,7 @@ import {
   type CodexMode,
   type GrokConfig,
   type AntigravityConfig,
+  type CopilotConfig,
   type McpServerStatus,
   type OpencodePermission,
   type OpencodePermissions,
@@ -92,6 +93,36 @@ function permissionOptions(t: Translate): SettingChoice<ClaudeConfig['permission
  * Grok Build modes mirror Claude Code except manual, called default. Reuse Claude labels except
  * automatic, whose hint names the deciding agent. All change live.
  */
+/** Copilot's own names: its `mode` option and its `allow_all` permissions. */
+function copilotModeOptions(t: Translate): SettingChoice<CopilotConfig['mode']>[] {
+  return [
+    { value: 'agent', label: t('composer.copilotMode.agent'), hint: t('composer.copilotMode.agent.hint') },
+    { value: 'plan', label: t('composer.copilotMode.plan'), hint: t('composer.copilotMode.plan.hint') },
+    { value: 'autopilot', label: t('composer.copilotMode.autopilot'), hint: t('composer.copilotMode.autopilot.hint'), tone: 'caution' },
+  ]
+}
+
+function copilotPermissionOptions(t: Translate): SettingChoice<CopilotConfig['allowAll']>[] {
+  return [
+    { value: 'off', label: t('composer.copilotPermission.off'), hint: t('composer.copilotPermission.off.hint') },
+    { value: 'auto', label: t('composer.copilotPermission.auto'), hint: t('composer.copilotPermission.auto.hint') },
+    { value: 'on', label: t('composer.copilotPermission.on'), hint: t('composer.copilotPermission.on.hint'), tone: 'caution' },
+  ]
+}
+
+/** Routing profiles of Copilot's Auto model, after the CLI's own setting. */
+function copilotAutoTierOptions(t: Translate, saved: string): SettingChoice<string>[] {
+  const known: SettingChoice<string>[] = [
+    { value: CLI_DEFAULT_CHOICE, label: t('composer.autoTier.default'), hint: t('composer.autoTier.default.hint') },
+    { value: 'efficiency', label: t('composer.autoTier.efficiency'), hint: t('composer.autoTier.efficiency.hint') },
+    { value: 'balance', label: t('composer.autoTier.balance'), hint: t('composer.autoTier.balance.hint') },
+    { value: 'intelligence', label: t('composer.autoTier.intelligence'), hint: t('composer.autoTier.intelligence.hint') },
+  ]
+  // A profile the server advertised and the user saved stays readable.
+  if (saved && !known.some((option) => option.value === saved)) known.push({ value: saved, label: saved, hint: t('composer.select.saved') })
+  return known
+}
+
 function grokPermissionOptions(t: Translate): SettingChoice<GrokConfig['permissionMode']>[] {
   return [
     { value: 'default', label: t('composer.permission.manual'), hint: t('composer.permission.manual.hint') },
@@ -358,6 +389,7 @@ export function useAgentSettings({
   const opencode = config.agent === 'opencode' ? config : null
   const grok = config.agent === 'grok' ? config : null
   const antigravity = config.agent === 'antigravity' ? config : null
+  const copilot = config.agent === 'copilot' ? config : null
 
   /**
    * Actually effective model. `CLI_DEFAULT` matches no catalog entry: displaying it directly left
@@ -489,7 +521,7 @@ export function useAgentSettings({
   }, [catalog, claude, t])
 
   /** Same effort sentinel, which only Codex leaves empty: display the selected model's advertised default. */
-  const effortSetting = codex ?? grok ?? antigravity
+  const effortSetting = codex ?? grok ?? antigravity ?? copilot
   const resolvedEffort = effortSetting
     ? effortSetting.reasoningEffort ||
       catalogModel(catalog?.models, resolvedModel)?.defaultEffort ||
@@ -1288,6 +1320,108 @@ export function useAgentSettings({
         onSelectedChange={(ids) => onConfigChange({ ...antigravity, mcpServers: ids })}
         sillage={sillageAvailable ? antigravity.sillageMcp : null}
         onSillageChange={(sillageMcp) => onConfigChange({ ...antigravity, sillageMcp })}
+        strict={null}
+        onStrictChange={() => {}}
+        disabled={disabled}
+      />
+    )
+  } else if (copilot) {
+    const applied = appliedConfig?.agent === 'copilot' ? appliedConfig : null
+    const modeList = copilotModeOptions(t)
+    const permissionList = copilotPermissionOptions(t)
+    const tierList = copilotAutoTierOptions(t, copilot.autoTier)
+    const tierChoice = (tier: string) => tier || CLI_DEFAULT_CHOICE
+    // The profile only steers Copilot's router: with a fixed model it would do nothing.
+    const routed = resolvedModel === 'auto'
+
+    groups = [
+      setting({
+        key: 'model',
+        label: t('composer.setting.model'),
+        icon: <Sparkles size={15} />,
+        options: modelOptions,
+        value: resolvedModel,
+        onChange: (model) =>
+          onConfigChange({ ...copilot, model, reasoningEffort: clampEffort(model, copilot.reasoningEffort) }),
+      }),
+      ...(effortOptions.length > 0
+        ? [
+            setting({
+              key: 'effort',
+              label: t('composer.setting.effort'),
+              icon: <Brain size={15} />,
+              options: effortOptions,
+              value: resolvedEffort,
+              onChange: (reasoningEffort) => onConfigChange({ ...copilot, reasoningEffort }),
+            }),
+          ]
+        : []),
+      ...(routed
+        ? [
+            setting({
+              key: 'autoTier',
+              label: t('composer.setting.autoTier'),
+              icon: <Zap size={15} />,
+              options: tierList,
+              value: tierChoice(copilot.autoTier),
+              onChange: (choice) => onConfigChange({ ...copilot, autoTier: choice === CLI_DEFAULT_CHOICE ? '' : choice }),
+              // ACP has no option for it: Copilot reads it at launch.
+              notice: notice(appliedLabel(applied ? tierChoice(applied.autoTier) : undefined, tierChoice(copilot.autoTier), tierList), t),
+            }),
+          ]
+        : []),
+      setting({
+        key: 'mode',
+        label: t('composer.setting.mode'),
+        icon: <Compass size={15} />,
+        options: modeList,
+        value: copilot.mode,
+        onChange: (mode) => onConfigChange({ ...copilot, mode }),
+      }),
+      setting({
+        key: 'permission',
+        label: t('composer.setting.permission'),
+        icon: <ShieldCheck size={15} />,
+        options: permissionList,
+        value: copilot.allowAll,
+        onChange: (allowAll) => onConfigChange({ ...copilot, allowAll }),
+      }),
+      ...(libraryAvailable
+        ? [
+            setting({
+              key: 'skillLibrary',
+              label: t('composer.setting.skillLibrary'),
+              icon: <BookOpen size={15} />,
+              options: libraryOptionList,
+              active: 'on',
+              value: libraryChoice(copilot.skillLibrary),
+              onChange: (choice) => onConfigChange({ ...copilot, skillLibrary: choice === 'on' }),
+              // Skills arrive as `--plugin-dir` at process launch.
+              notice: notice(
+                appliedLabel(applied ? libraryChoice(applied.skillLibrary) : undefined, libraryChoice(copilot.skillLibrary), libraryOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
+    ]
+
+    summary = [
+      segment('model', modelOptions, resolvedModel),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      ...(routed && copilot.autoTier ? [segment('autoTier', tierList, copilot.autoTier)] : []),
+      ...(copilot.mode !== 'agent' ? [segment('mode', modeList, copilot.mode)] : []),
+      segment('permission', permissionList, copilot.allowAll),
+    ]
+
+    mcp = (
+      <McpControl
+        servers={mcpServers}
+        inventory={mcpInventory}
+        selected={copilot.mcpServers}
+        onSelectedChange={(ids) => onConfigChange({ ...copilot, mcpServers: ids })}
+        sillage={sillageAvailable ? copilot.sillageMcp : null}
+        onSillageChange={(sillageMcp) => onConfigChange({ ...copilot, sillageMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}

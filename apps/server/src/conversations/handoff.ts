@@ -233,6 +233,7 @@ const AGENT_NAMES: Record<AgentKind, string> = {
   opencode: 'opencode',
   grok: 'Grok Build',
   antigravity: 'Google Antigravity',
+  copilot: 'GitHub Copilot CLI',
 }
 
 function renderItem(item: HandoffItem): string {

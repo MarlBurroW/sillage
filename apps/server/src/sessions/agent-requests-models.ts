@@ -195,7 +195,7 @@ function withEffort(config: AgentConfig, effort: string): AgentConfig {
   // Schemas reject unsupported Claude levels later; the cast merely passes
   // the string through to validation.
   if (config.agent === 'claude') return { ...config, effort: effort as typeof config.effort }
-  if (config.agent === 'codex' || config.agent === 'grok' || config.agent === 'antigravity') return { ...config, reasoningEffort: effort }
+  if (config.agent === 'codex' || config.agent === 'grok' || config.agent === 'antigravity' || config.agent === 'copilot') return { ...config, reasoningEffort: effort }
   return { ...config, variant: effort }
 }
 
@@ -226,6 +226,9 @@ export function describePermissions(config: AgentConfig): string | null {
   }
   if (config.agent === 'grok' && (config.permissionMode === 'default' || config.permissionMode === 'plan')) {
     return 'It will ask for user permission before writing or executing, following project defaults.'
+  }
+  if (config.agent === 'copilot' && config.allowAll === 'off' && config.mode !== 'autopilot') {
+    return 'It will ask for user permission before using tools, paths or URLs, following project defaults.'
   }
   return null
 }

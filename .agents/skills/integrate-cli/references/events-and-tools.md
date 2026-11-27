@@ -225,6 +225,21 @@ Rules for the label:
 - Images in tool results go through the shared image handling.
 - Durations come from `ToolDurations` (`agents/tool-durations.ts`).
 
+**What a CLI says that is not what happened.** Check each of these on the real binary:
+
+- **Per-turn usage may be cumulative.** Copilot's prompt response counts the tokens of
+  the whole process, sub-agents included, and restarts at zero on a resume: two turns in
+  one process show it, two runs of one turn each never do.
+- **The CLI may write its own lines into the reply stream** ("Info: …", "Error: …",
+  a compaction's confirmation). Find what tells them apart from the model's text
+  (Copilot's model chunks carry a `messageId`) and journal them as notices and errors.
+  Not every unsigned line is noise: a slash command's output is the reply.
+- **A failed command may close as `completed`.** Read the exit code.
+- **A refusal or a model error may end the turn as a normal completion.** Normalize the
+  stop reason (`permission_denied`, `failed`), which the handoff reads.
+- **The CLI may act with no prompt**, when background work reports back after the turn.
+  Open a turn for it and find the signal that closes it; without one, do not open it.
+
 **Lifecycle pitfalls**
 1. `tool.started` always appends a row, so a repeated id means a duplicate row.
    - Track the ids you have already closed (Grok `closedTools`).
