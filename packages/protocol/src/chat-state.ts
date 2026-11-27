@@ -1401,6 +1401,15 @@ export function applyEvent(
       const known = state.tasks.get(event.taskId)
       // The end of an earlier run says nothing about the one now running.
       if (known && lateRun(known, event.runId)) break
+      // A run reports its end once. After a daemon restart, Sillage journals the stop itself, then
+      // the resumed CLI announces the same lost agents again ("didn't finish before the previous
+      // session ended", Claude Code 2.1.332): a second card per agent. Keyed on the card, not on
+      // `done`: a run closed silently at session end has no card yet and keeps its one report.
+      const reportId = event.runId ? `task-${event.taskId}-${event.runId}` : `task-${event.taskId}`
+      if (known?.done && state.items.some((item) => item.kind === 'task' && item.id === reportId)) {
+        state.background = state.background.filter((live) => live.id !== event.taskId)
+        break
+      }
       if (known) {
         putTask(state, {
           ...known,
@@ -1419,7 +1428,7 @@ export function applyEvent(
         appendItem(state, {
           kind: 'task',
           // Each run of a resumed task reports once: one id per run keeps the reports apart.
-          id: event.runId ? `task-${event.taskId}-${event.runId}` : `task-${event.taskId}`,
+          id: reportId,
           description: known.description,
           status: event.status,
           summary: event.summary,

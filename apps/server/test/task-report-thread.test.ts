@@ -40,3 +40,28 @@ test('a subagent keeps its latest model status until it ends', () => {
   const ended = fold([...started, progress('Wiring the feedback page'), { type: 'task.completed', taskId: 'agent-task', status: 'completed', summary: 'Done' }])
   assert.equal(ended.tasks.get('agent-task')?.summary, null)
 })
+
+test('a lost agent announced again by the resumed CLI keeps a single report', () => {
+  const stopped = (summary: string) => ({ type: 'task.completed', taskId: 'agent-task', status: 'stopped', summary })
+  const state = fold([
+    { type: 'tool.started', parentToolCallId: null, toolCallId: 'agent', name: 'Agent', input: { description: 'Translator', run_in_background: true } },
+    { type: 'task.started', taskId: 'agent-task', toolCallId: 'agent', kind: 'local_agent', description: 'Translator' },
+    { type: 'tool.completed', toolCallId: 'agent', output: 'Async agent launched', isError: false, durationMs: 5 },
+    { type: 'background.updated', tasks: [{ id: 'agent-task', kind: 'local_agent', description: 'Translator' }] },
+    // Sillage closes the work when the daemon restarts…
+    stopped('Stopped with the session'),
+    { type: 'session.ended', reason: 'interrupted' },
+    // …then the resumed CLI reports the same agent as lost.
+    stopped("Background agent \"Translator\" didn't finish before the previous session ended"),
+  ])
+  assert.deepEqual(state.items.filter((item) => item.kind === 'task').map((item) => item.id), ['task-agent-task'])
+})
+
+test('a task closed silently at session end still gets its report from the CLI', () => {
+  const state = fold([
+    ...backgroundBash(null, 'lost').slice(0, 4),
+    { type: 'session.ended', reason: 'interrupted' },
+    { type: 'task.completed', taskId: 'lost', status: 'stopped', summary: 'Lost with the previous session' },
+  ])
+  assert.deepEqual(state.items.filter((item) => item.kind === 'task').map((item) => item.id), ['task-lost'])
+})
