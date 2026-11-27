@@ -39,7 +39,7 @@ export const PREFERRED_CLI_RELEASES: Record<AgentKind, PreferredCliRelease> = {
   // database in place (sessions keep their IDs, 1.x still reads it), see docs/OPENCODE.md.
   opencode: { package: '@opencode/cli', version: '2.4.2', alsoSupported: ['1.19.5'], replaces: ['opencode-ai'] },
   antigravity: { package: 'antigravity-acp', version: '1.5.2' },
-  grok: { package: '@xai-official/grok', version: '1.0.62' },
+  grok: { package: '@xai-official/grok', version: '1.0.94' },
   copilot: { package: '@github/copilot', version: '1.0.116' },
 }
 

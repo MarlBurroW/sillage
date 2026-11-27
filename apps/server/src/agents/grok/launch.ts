@@ -28,6 +28,11 @@ export const GROK_ISOLATION_ENV: Record<string, string> = {
   GROK_CLAUDE_SESSIONS_ENABLED: '0',
   GROK_CURSOR_SESSIONS_ENABLED: '0',
   GROK_DISABLE_AUTOUPDATER: '1',
+  // Remote experiments can change the update channel or default model, and their ids go out in
+  // an `x-grok-experiments` header whatever the telemetry mode (documented in 1.0.94; read from
+  // 1.0.70). Cursor's newer switches (hook entries, marketplace) are off by default and its relay
+  // login only serves daemon leaders, which `--no-leader` never starts.
+  GROK_DISABLE_EXPERIMENTS: '1',
 }
 
 /** Launch-time choices requiring process restarts when changed. */

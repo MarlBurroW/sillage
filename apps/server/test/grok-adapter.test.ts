@@ -41,7 +41,7 @@ test('catalogue : modèles, efforts du plus bas au plus haut, défauts et comman
   assert.deepEqual(await adapter.resolveDefaults(DEFAULT_GROK_CONFIG), { ...DEFAULT_GROK_CONFIG, model: 'grok-test', reasoningEffort: 'high' })
   assert.deepEqual((await adapter.commands(cwd, false)).commands.map((command) => [command.name, command.argumentHint]), [['compact', ''], ['goal', '<objective>']])
   assert.ok(!(await rpc()).some((entry) => entry.method === 'session/new'), 'le catalogue n’ouvre pas de session')
-  assert.equal((await adapter.cli.describe()).version, '1.0.62')
+  assert.equal((await adapter.cli.describe()).version, '1.0.94')
   const usage = await adapter.usage(false)
   assert.equal(usage.plan, 'X Premium', 'la formule vient de `_x.ai/billing`')
   assert.deepEqual(usage.windows.map((window) => [window.id, window.utilization]), [['credits', 0.08]])

@@ -152,6 +152,7 @@ test('lancement : isolation, MCP, modèle et effort posés à la création, comm
   assert.equal(launch.env.GROK_CLAUDE_MCPS_ENABLED, '0', 'les serveurs MCP de Claude ne sont pas relus')
   assert.equal(launch.env.GROK_CLAUDE_RULES_ENABLED, '0')
   assert.equal(launch.env.GROK_DISABLE_AUTOUPDATER, '1')
+  assert.equal(launch.env.GROK_DISABLE_EXPERIMENTS, '1', 'no remote experiment changes the channel or the default model')
   assert.equal(launch.env.GROK_TELEMETRY_TRACE_UPLOAD, 'false')
   assert.equal(launch.env.GROK_FOLDER_TRUST, '0')
 
@@ -663,4 +664,12 @@ test('background work: Grok’s task list becomes background.updated, its output
   // A file outside the session's GROK_HOME sessions is not read, nor an unknown task.
   assert.equal(await f.runner.readBackgroundTaskOutput!('bg-2'), null)
   assert.equal(await f.runner.readBackgroundTaskOutput!('nope'), null)
+})
+
+test('a turn a Grok hook ends says so in the thread', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({ steps: [], usage: {}, stopReason: 'hook_blocked' })
+  await f.turn({ steps: [], usage: {}, stopReason: 'hook_stopped' })
+  assert.deepEqual(f.events.filter((event) => event.type === 'agent.notice').map((event) => event.type === 'agent.notice' && event.code), ['grok_hook_blocked', 'grok_hook_stopped'])
+  assert.deepEqual(f.events.filter((event) => event.type === 'turn.completed').map((event) => event.type === 'turn.completed' && event.stopReason), ['hook_blocked', 'hook_stopped'])
 })

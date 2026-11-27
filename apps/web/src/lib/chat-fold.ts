@@ -164,6 +164,8 @@ export function noticeText(item: NoticeItem): string {
   }
   if (item.code === 'antigravity_model_adjusted') return translate('antigravity.modelAdjusted.notice')
   if (item.code === 'copilot_model_adjusted') return translate('copilot.modelAdjusted.notice')
+  if (item.code === 'grok_hook_blocked') return translate('grok.hookBlocked.notice')
+  if (item.code === 'grok_hook_stopped') return translate('grok.hookStopped.notice')
   if (item.code === 'grok_model_unavailable' || item.code === 'grok_effort_unavailable') {
     const details = item.details as { requested?: string; model?: string | null; effort?: string | null } | null
     if (details?.requested && details.model && (item.code === 'grok_model_unavailable' || details.effort)) {

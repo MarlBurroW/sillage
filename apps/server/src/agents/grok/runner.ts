@@ -854,7 +854,7 @@ export class GrokRunner implements AgentRunner {
 
   // ─── Turns ───────────────────────────────────────────────────────────────────
 
-  /** Turn body. Grok announces `image: false` but reads image blocks its TUI sends. Mentioned files become `file://` links expanded like `@path`; other attachments remain textual paths. */
+  /** Turn body. Image blocks go inline: 1.0.94 announces `image: true` (1.0.62 announced false yet read them, as its TUI sends them). Mentioned files become `file://` links expanded like `@path`; other attachments remain textual paths. */
   private promptBlocks(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): AcpContentBlock[] {
     const { promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     const blocks: AcpContentBlock[] = []
@@ -1091,6 +1091,11 @@ export class GrokRunner implements AgentRunner {
   private endTurn(stopReason: string, usage: Partial<SessionUsage> | undefined, raw: unknown, token: number): boolean {
     // Including a wake-up turn closed by the interruption watchdog.
     if (this.wake === token) this.wake = null
+    // A Grok hook of the user's (Sillage turns off Claude's and Cursor's) blocked the prompt or
+    // stopped the turn (documented in 1.0.94): nothing in the thread would say why it ended.
+    if ((stopReason === 'hook_blocked' || stopReason === 'hook_stopped') && this.turn.token === token) {
+      this.notice(`grok_${stopReason}`, stopReason === 'hook_blocked' ? 'A Grok hook blocked this message.' : 'A Grok hook stopped this turn.', 'warning', raw)
+    }
     return this.turn.end({
       stopReason: stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : stopReason,
       usage: toTurnUsage(usage),

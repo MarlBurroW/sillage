@@ -3,9 +3,10 @@
 Sillage starts one `grok agent --no-leader stdio` per conversation and speaks **ACP**
 (Agent Client Protocol): JSON-RPC over stdio, one line per message, like the Zed
 editor. Grok Build adds `_x.ai/…` extensions to standard ACP in both directions.
-Everything below was probed on **Grok Build 1.0.62** and read in its public source
-(`xai-org/grok-build`, Apache-2.0, whose public repository contained 1.0.45 at
-integration time).
+Sillage installs **Grok Build 1.0.94**. Everything below was probed on 1.0.62, checked
+again on 1.0.94 (same ACP methods, variants and errors; `image: true` is the only
+difference in `initialize`), and read in its public source (`xai-org/grok-build`,
+Apache-2.0, whose public repository contained 1.0.45 at integration time).
 
 The ACP client (`apps/server/src/agents/acp/client.ts`) is handwritten; only the
 types come from the official `@agentclientprotocol/sdk` SDK. The SDK's
@@ -23,6 +24,16 @@ outside Sillage (`apps/server/src/agents/grok/launch.ts`):
 | `GROK_TELEMETRY_ENABLED`, `GROK_TELEMETRY_TRACE_UPLOAD`, `GROK_ERROR_REPORTING` = `false`, `GROK_STORAGE_MODE=local` | Disabled by default, but xAI remote settings can enable them, including uploading session traces (prompts, images). |
 | `GROK_FOLDER_TRUST=0` | In ACP, instruction files, MCP servers, and skills in an untrusted folder are silently ignored because no prompt is available. |
 | `GROK_DISABLE_AUTOUPDATER=1` | Sillage chooses the version, as with other CLIs. |
+| `GROK_DISABLE_EXPERIMENTS=1` | Remote experiments can change the update channel or the default model, and their ids travel in an `x-grok-experiments` header whatever the telemetry mode (read from 1.0.70). |
+
+Session writeback to code.grok.com follows `GROK_STORAGE_MODE`, but xAI remote settings
+can override it; only a requirements file (`features.writeback = false`) pins it off.
+
+**npm launcher.** The package's `bin/grok` is a node launcher that runs
+`$GROK_HOME/bin/grok` first when it exists. On Linux and macOS, npm's postinstall replaces
+it with a link to the package's own binary (`bin/grok-native`), which is what Sillage
+starts. On Windows the launcher stays, so the version actually started can be the one the
+official installer or the TUI's own updates left in `%USERPROFILE%\.grok\bin`.
 
 `--no-leader` provides a dedicated process without the shared server `grok` starts
 for its clients, which would ignore `--plugin-dir`. `--disable-web-search` disables
@@ -109,7 +120,7 @@ Live permissions use the `_x.ai/yolo_mode_changed` notification (`yolo_mode`,
 - **Models**: `session/set_config_option` refuses (`-32602`) a model the account no
   longer offers or an effort the model does not list; `session/new` falls back on the
   default model without a word. The runner keeps Grok's value with a notice.
-- **Images**: Grok reports `image: false` but reads image blocks sent by its TUI.
+- **Images**: 1.0.94 reports `image: true` (1.0.62 reported false yet read them).
   Mentioned files are sent as `file://` links, expanded like an `@path`.
 - **Catalog**: the `initialize` response contains the signed-in account's models
   (`_meta.modelState`) and built-in commands without opening a session. On a stale

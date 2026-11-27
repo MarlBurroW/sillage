@@ -3587,6 +3587,8 @@ export const en = {
   'codex.notice.reviewFinished': 'Codex finished the review.',
   'copilot.retry.notice': 'GitHub Copilot is retrying the request after a transient error.',
   'copilot.autoModel.notice': 'Auto is using {model}.',
+  'grok.hookBlocked.notice': 'A Grok hook blocked this message.',
+  'grok.hookStopped.notice': 'A Grok hook stopped this turn.',
   'grok.modelUnavailable.notice': 'Grok no longer offers {requested} to this account: the session continues on {model}, shown in the composer.',
   'grok.effortUnavailable.notice': '{model} does not offer the {requested} effort: the session continues on {effort}, shown in the composer.',
   'copilot.modelAdjusted.notice': 'The saved model or effort is not available for this GitHub Copilot account. Copilot kept an available one, shown in the composer.',

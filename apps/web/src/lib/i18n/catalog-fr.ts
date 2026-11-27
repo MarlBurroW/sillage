@@ -3579,6 +3579,8 @@ export const fr: Catalog = {
   'codex.notice.reviewFinished': 'Codex a terminé la revue.',
   'copilot.retry.notice': 'GitHub Copilot relance la requête après une erreur passagère.',
   'copilot.autoModel.notice': 'Auto utilise {model}.',
+  'grok.hookBlocked.notice': 'Un hook Grok a bloqué ce message.',
+  'grok.hookStopped.notice': 'Un hook Grok a arrêté ce tour.',
   'grok.modelUnavailable.notice': 'Grok ne propose plus {requested} à ce compte : la session continue sur {model}, affiché dans le composer.',
   'grok.effortUnavailable.notice': '{model} ne propose pas l’effort {requested} : la session continue sur {effort}, affiché dans le composer.',
   'copilot.modelAdjusted.notice': 'Le modèle ou l’effort enregistré n’est pas disponible pour ce compte GitHub Copilot. Copilot en a gardé un disponible, affiché dans le composer.',

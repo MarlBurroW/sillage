@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Deterministic fake `grok agent stdio`: Grok Build 1.0.62 ACP without models or networking.
+// Deterministic fake `grok agent stdio`: Grok Build 1.0.94 ACP without models or networking.
 //
 // Prompts `fixture:{"steps":[…]}` play scenarios: each step emits
 // an update (`update`, under `session` for a sub-agent's), raw notification (`notify`), client request
@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
 if (process.argv.includes('--version')) {
-  console.log('grok 1.0.62 (fixture)')
+  console.log('grok 1.0.94 (fixture)')
   process.exit(0)
 }
 
