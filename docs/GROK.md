@@ -101,6 +101,11 @@ Live permissions use the `_x.ai/yolo_mode_changed` notification (`yolo_mode`,
   `subagent_finished` (`status`, `tokens_used`, `output`). The runner puts the thread
   under the spawning call (named by `subagent_id: <id>` in a background spawn's
   result, or still open for a foreground one) and starts a task for the agents pane.
+- **Background work**: `background_tasks` under `_x.ai/session_notification` republishes
+  a session's whole list (`task_id`, `kind: "bash"`, `status`, `output_file`); running
+  tasks become `background.updated` (`kind: 'shell'`). The runner reads the last 8 KiB of
+  `output_file`, kept under `$GROK_HOME/sessions`, for the agents pane. No client request
+  stops a task: only the model can (`kill_command_or_subagent`).
 - **Models**: `session/set_config_option` refuses (`-32602`) a model the account no
   longer offers or an effort the model does not list; `session/new` falls back on the
   default model without a word. The runner keeps Grok's value with a notice.
@@ -130,7 +135,8 @@ read in a disposable process for both the CLI sign-in and every account.
 
 ## Out of scope
 
-Background jobs (shells, monitors) as tasks, importing sessions started in the TUI.
+Stopping background work from Sillage (no client request exists), importing sessions
+started in the TUI.
 
 ## Verification
 

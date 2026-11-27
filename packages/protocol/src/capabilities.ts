@@ -99,7 +99,8 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
   },
   // Grok Build speaks ACP plus `_x.ai/…` extensions: `interject` inserts a message
   // into the current turn; `exit_plan_mode` submits the plan (probed on 1.0.62). Its
-  // slash commands arrive with `initialize`, without opening a session.
+  // slash commands arrive with `initialize`, without opening a session. Background work
+  // writes to a file the runner reads; only the model stops it (`kill_command_or_subagent`).
   grok: {
     steer: true,
     compact: true,
@@ -107,7 +108,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     planReview: true,
     cliSessions: false,
     stopBackgroundTask: false,
-    readBackgroundOutput: false,
+    readBackgroundOutput: true,
     draftCommands: true,
     nativeFork: true,
   },

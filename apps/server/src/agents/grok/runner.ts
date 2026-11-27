@@ -20,6 +20,7 @@ import {
   parseSlashCommand,
   type AgentConfig,
   type AgentQuestion,
+  type BackgroundTaskOutput,
   type GrokConfig,
   type GrokPermissionMode,
   type McpServerStatus,
@@ -48,6 +49,7 @@ import type {
   RunnerContext,
 } from '../types.js'
 import { builtInModels, MODELS_UPDATE_WAIT_MS, toSlashCommands } from './catalog.js'
+import { grokHome, outputFiles, readOutputTail, runningTasks, type GrokBackgroundTask } from './background.js'
 import { consumedAnything, parseSessionUsage, toTurnUsage, usageSince, type SessionUsage } from './session-usage.js'
 import { grokLaunch, sameLaunch, toAcpMcpServer, type GrokLaunch } from './launch.js'
 import {
@@ -77,6 +79,8 @@ const NOTIFICATION_NOISE = new Set([
   'tool_call_delta_chunk', 'pending_interaction', 'interaction_resolved', 'response_completed', 'response_started',
   'turn_usage', 'model_changed', 'session_summary_generated', 'last_turn_summary', 'turn_completed',
   'image_compressed', 'auto_continue_completed',
+  // Said again by `background_tasks`, the full list, and by the wake-up turn that follows.
+  'task_backgrounded', 'task_completed',
 ])
 
 /** `_x.ai/session/usage` answers at once; a CLI ignoring it must not hold a turn's end for long. */
@@ -145,6 +149,11 @@ export class GrokRunner implements AgentRunner {
   private readonly spawnResults = new Map<string, { call: string; input: unknown; presentation: ToolPresentation }>()
   /** Thread of each spawning call, to tell what a background sub-agent still runs when a turn ends. */
   private readonly spawnParents = new Map<string, string | null>()
+  /** Background work still running, by the session (main or sub-agent) whose list named it. */
+  private readonly background = new Map<string, GrokBackgroundTask[]>()
+  /** Output file of every background task seen, ended ones included. */
+  private readonly outputs = new Map<string, string>()
+  private lastBackground = '[]'
   private readonly tools = new Map<string, ToolTrack>()
   private readonly closedTools = new Set<string>()
   /** Cardless calls (`ask_user_question`) whose later updates must remain hidden. */
@@ -459,8 +468,19 @@ export class GrokRunner implements AgentRunner {
         this.onSubAgent(update, main ? null : child!.call)
         return
       }
+      if (update.sessionUpdate === 'background_tasks' && (main || child)) {
+        this.onBackgroundTasks(sessionId as string, update, child?.taskId)
+        return
+      }
       if (!main) return
       this.onExtensionUpdate(update)
+      return
+    }
+    if (method === '_x.ai/task_backgrounded' || method === '_x.ai/task_completed') {
+      // Said again by `background_tasks`, the full list, and by the wake-up turn that follows.
+      const update = fields(fields(params).update)
+      const task = method === '_x.ai/task_completed' ? fields(update.task_snapshot) : update
+      if (typeof task.task_id === 'string' && typeof task.output_file === 'string') this.outputs.set(task.task_id, task.output_file)
       return
     }
     if (method === '_x.ai/mcp/server_status') {
@@ -949,6 +969,17 @@ export class GrokRunner implements AgentRunner {
     this.ctx.emit({ type: 'task.completed', taskId: child.taskId, status, summary: text(update.output), durationMs, ambient: false }, update)
   }
 
+  /** A session's full list of background work: what runs across all sessions becomes `background.updated`. */
+  private onBackgroundTasks(sessionId: string, update: Record<string, unknown>, parentTaskId?: string): void {
+    for (const [taskId, file] of outputFiles(update)) this.outputs.set(taskId, file)
+    this.background.set(sessionId, runningTasks(update, parentTaskId))
+    const tasks = [...this.background.values()].flat().map(({ outputFile: _file, ...task }) => task)
+    const payload = JSON.stringify(tasks)
+    if (payload === this.lastBackground) return
+    this.lastBackground = payload
+    this.ctx.emit({ type: 'background.updated', tasks }, update)
+  }
+
   /** The latest spawning call still open on a thread and not yet given its sub-agent: a foreground spawn waits for it. */
   private openSpawn(thread: string | null): string | null {
     const linked = new Set([...this.children.values()].map((child) => child.call))
@@ -1137,9 +1168,15 @@ export class GrokRunner implements AgentRunner {
     return this.interactions.resolvePlanReview(requestId, review)
   }
 
-  /** Grok stops background work through model tools, not client requests. */
+  /** Grok stops background work through model tools (`kill_command_or_subagent`), not client requests. */
   async stopBackgroundTask(): Promise<boolean> {
     return false
+  }
+
+  /** Tail of the file Grok writes a background task's output to, without asking the CLI. */
+  async readBackgroundTaskOutput(taskId: string): Promise<BackgroundTaskOutput | null> {
+    const file = this.outputs.get(taskId)
+    return file ? readOutputTail(file, grokHome(this.ctx.processEnv)) : null
   }
 
   /** Model, effort and permission modes change live; web tools, skills and MCP require fresh processes. */

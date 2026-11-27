@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { chmod, copyFile, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -622,4 +622,45 @@ test('sub-agents: a foreground spawn takes the sub-agent Grok announces while it
   assert.deepEqual(f.events.filter((event) => event.type === 'tool.completed').map((event) => event.type === 'tool.completed' && [event.toolCallId, event.isError]),
     [['inner', false], ['outer', false]])
   for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+test('background work: Grok’s task list becomes background.updated, its output is read from its file, no raw notices', async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'sillage-grok-home-'))
+  t.after(() => rm(home, { recursive: true, force: true }))
+  const terminal = join(home, 'sessions', '%2Fws', 'ses_fixture', 'terminal')
+  await mkdir(terminal, { recursive: true })
+  const file = join(terminal, 'call-1.log')
+  await writeFile(file, `${'x'.repeat(9000)}é tail\n`)
+  const outside = join(home, 'elsewhere.log')
+  await writeFile(outside, 'secret')
+  const f = await runnerFixture(t, { processEnv: { GROK_HOME: home } })
+  const task = (id: string, status: string, outputFile: string) => ({ task_id: id, command: 'sleep 3; echo hi', description: 'Sleep then echo', cwd: f.cwd, kind: 'bash', status, output_file: outputFile })
+  const list = (...tasks: unknown[]) => ({ notify: '_x.ai/session_notification', params: { sessionId: 'ses_fixture', update: { sessionUpdate: 'background_tasks', tasks } } })
+  await f.turn({
+    steps: [
+      { notify: '_x.ai/task_backgrounded', params: { sessionId: 'ses_fixture', update: { sessionUpdate: 'task_backgrounded', tool_call_id: 'call-1', task_id: 'bg-1', command: 'sleep 3; echo hi', output_file: file, description: 'Sleep then echo' } } },
+      list(task('bg-1', 'running', file), task('bg-2', 'running', outside)),
+    ],
+    usage: {},
+    later: [
+      { notify: '_x.ai/task_completed', params: { sessionId: 'ses_fixture', update: { sessionUpdate: 'task_completed', task_snapshot: { task_id: 'bg-1', output: 'hi\n', output_file: file }, will_wake: true } } },
+      list(task('bg-1', 'completed', file), task('bg-2', 'running', outside)),
+    ],
+  })
+  await until(() => f.count('background.updated') === 2, 'background ended')
+  assert.deepEqual(f.events.filter((event) => event.type === 'background.updated').map((event) => event.type === 'background.updated' && event.tasks), [
+    [{ id: 'bg-1', kind: 'shell', description: 'Sleep then echo' }, { id: 'bg-2', kind: 'shell', description: 'Sleep then echo' }],
+    [{ id: 'bg-2', kind: 'shell', description: 'Sleep then echo' }],
+  ])
+  assert.equal(f.count('agent.notice'), 0, 'no raw notice for task_backgrounded, background_tasks or task_completed')
+
+  // The tail, cut at 8 KiB without a broken character; ended tasks stay readable.
+  const tail = await f.runner.readBackgroundTaskOutput!('bg-1')
+  assert.ok(tail)
+  assert.equal(tail.totalBytes, Buffer.byteLength(`${'x'.repeat(9000)}é tail\n`))
+  assert.equal(tail.truncated, true)
+  assert.ok(tail.output.endsWith('é tail\n') && !tail.output.startsWith('�'))
+  // A file outside the session's GROK_HOME sessions is not read, nor an unknown task.
+  assert.equal(await f.runner.readBackgroundTaskOutput!('bg-2'), null)
+  assert.equal(await f.runner.readBackgroundTaskOutput!('nope'), null)
 })
