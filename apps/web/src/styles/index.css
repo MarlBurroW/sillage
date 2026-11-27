@@ -139,6 +139,21 @@
   }
 }
 
+/*
+ * Autofill paints its own colours over a field whatever the theme (light blue and black in
+ * Chrome, yellow in Safari), as !important browser styles. Inputs here are transparent inside a
+ * tinted box, so a saved password showed as a pale strip within its field. Hold the colour change
+ * off indefinitely, and set the text through the one property those styles leave alone. A single
+ * selector: in a list, one pseudo-class a browser does not know would drop the whole rule.
+ */
+input:-webkit-autofill {
+  -webkit-text-fill-color: var(--sg-ink);
+  caret-color: var(--sg-ink);
+  transition:
+    background-color 600000s 0s,
+    color 600000s 0s;
+}
+
 @layer utilities {
   /*
    * Fade the thread's bottom edge. Abruptly clipping above the composer often cuts a text line,
