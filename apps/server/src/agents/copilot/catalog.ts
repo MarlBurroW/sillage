@@ -1,6 +1,4 @@
 import { mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type { AgentModelDto, AgentModelsDto, SlashCommandDto } from '@sillage/protocol'
 import { AcpClient } from '../acp/client.js'
 import { fields } from '../acp/content.js'
@@ -8,7 +6,7 @@ import { toSlashCommands } from '../acp/commands.js'
 import { CachedProbe } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { agentProcessEnv } from '../process-env.js'
-import { COPILOT_AUTO_MODEL, copilotLaunch } from './launch.js'
+import { COPILOT_AUTO_MODEL, copilotProbeLaunch, explainSignIn } from './launch.js'
 
 /**
  * Copilot's models follow the signed-in plan (a Free plan lists only Auto) and arrive only with a
@@ -23,9 +21,11 @@ const COMMANDS_WAIT_MS = 3_000
 
 /**
  * Commands that would move the session somewhere Sillage does not track: another working
- * directory, or extra directories outside the conversation's settings.
+ * directory, extra directories outside the conversation's settings, or another native session
+ * (`/session delete` replaces the current one). `/allow-all`, `/permissions`, `/autopilot` and
+ * `/plan` stay: Copilot announces what they change, and the conversation's settings follow.
  */
-const UNTRACKED_COMMANDS = new Set(['cwd', 'add-dir'])
+const UNTRACKED_COMMANDS = new Set(['cwd', 'add-dir', 'session'])
 
 export function copilotCommands(listed: unknown): SlashCommandDto[] {
   return toSlashCommands(listed).filter((command) => !UNTRACKED_COMMANDS.has(command.name))
@@ -87,7 +87,8 @@ export function modelCatalog(state: unknown): AgentModelDto[] {
 export class CopilotCatalog {
   private readonly probe = new CachedProbe<CopilotListing>(TTL_MS, () => this.read())
 
-  constructor(private readonly executable: () => Promise<string>) {}
+  /** `cwd` is an empty folder of Sillage's own: the user's home would make Copilot index it and read its AGENTS.md. */
+  constructor(private readonly executable: () => Promise<string>, private readonly cwd: string) {}
 
   invalidate(): void { this.probe.invalidate() }
 
@@ -96,13 +97,12 @@ export class CopilotCatalog {
   }
 
   private async read(): Promise<CopilotListing> {
-    // An empty directory: the user's home would make Copilot index it and read its AGENTS.md.
-    const cwd = join(tmpdir(), 'sillage-copilot-catalog')
+    const cwd = this.cwd
     mkdirSync(cwd, { recursive: true, mode: 0o700 })
     let commands: SlashCommandDto[] | null = null
     let announced: () => void = () => {}
     const commandsSeen = new Promise<void>((resolve) => { announced = resolve })
-    const launch = copilotLaunch({ agent: 'copilot', model: '', reasoningEffort: '', autoTier: '', mode: 'agent', allowAll: 'off', additionalDirectories: [], mcpServers: [], sillageMcp: false, skillLibrary: false }, { skillRoots: [], directories: [], instructionsDir: null })
+    const launch = copilotProbeLaunch()
     const client = new AcpClient({
       label: 'copilot-catalog', binary: await this.executable(), args: launch.args, cwd,
       env: agentProcessEnv(launch.env), onStderr: () => {},
@@ -114,7 +114,8 @@ export class CopilotCatalog {
     const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
     try {
       await client.initialize(CLIENT_INFO)
-      const session = await client.request<{ sessionId: string }>('session/new', { cwd, mcpServers: [] }, PROBE_TIMEOUT_MS)
+      // The models follow the plan: without a sign-in there is no catalog, and the composer says why.
+      const session = await client.request<{ sessionId: string }>('session/new', { cwd, mcpServers: [] }, PROBE_TIMEOUT_MS).catch((error: unknown) => { throw explainSignIn(error) })
       const models = modelCatalog(session)
       // Efforts are per model and only advertised for the selected one.
       for (const model of models) {

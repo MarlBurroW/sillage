@@ -39,6 +39,11 @@ export interface AgentCapabilities {
    * on the first turn.
    */
   draftCommands: boolean
+  /**
+   * The CLI can branch a session at a chosen turn. Without it a fork starts a new session of the
+   * same CLI that receives the conversation up to that turn as portable context (`portable_fork`).
+   */
+  nativeFork: boolean
 }
 
 export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
@@ -51,6 +56,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: true,
     readBackgroundOutput: true,
     draftCommands: true,
+    nativeFork: true,
   },
   codex: {
     steer: true,
@@ -61,6 +67,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: false,
     readBackgroundOutput: false,
     draftCommands: false,
+    nativeFork: true,
   },
   // `steer` is true, probed on opencode 1.18.25 and 2.4.1: a prompt sent during a turn is consumed
   // at the next step of that turn. opencode's plan mode is a selectable agent; it submits nothing
@@ -76,6 +83,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: true,
     readBackgroundOutput: true,
     draftCommands: true,
+    nativeFork: true,
   },
   // Google ACP supports native import, but neither live steering nor manual compaction.
   antigravity: {
@@ -87,6 +95,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: false,
     readBackgroundOutput: false,
     draftCommands: true,
+    nativeFork: false,
   },
   // Grok Build speaks ACP plus `_x.ai/…` extensions: `interject` inserts a message
   // into the current turn; `exit_plan_mode` submits the plan (probed on 1.0.62). Its
@@ -100,18 +109,24 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     stopBackgroundTask: false,
     readBackgroundOutput: false,
     draftCommands: true,
+    nativeFork: true,
   },
-  // GitHub Copilot CLI 1.0.116 speaks plain ACP: no steer or compact RPC (`/compact` stays a
-  // slash command), no plan review request. Its slash commands need a session, which a probe
-  // can open without persisting a turn. Native session import is not wired yet.
+  // GitHub Copilot CLI 1.0.116 over ACP. A prompt sent during a turn cancels it rather than
+  // steering it. `/compact` is a slash command the runner sends as a prompt. Plan mode offers no
+  // review request to an ACP client (no `exit_plan_mode` tool). Sessions started in a terminal
+  // are listed by `session/list` and adopted from the history `session/load` replays; later
+  // turns made outside Sillage are not resynced. Background shells can only be stopped by the
+  // model (`stop_bash`). Slash commands need a session, which a probe opens without a turn.
+  // No fork RPC (`session/fork`: Method not found).
   copilot: {
     steer: false,
-    compact: false,
+    compact: true,
     resyncSessions: false,
     planReview: false,
-    cliSessions: false,
+    cliSessions: true,
     stopBackgroundTask: false,
     readBackgroundOutput: false,
     draftCommands: true,
+    nativeFork: false,
   },
 }

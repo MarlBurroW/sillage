@@ -14,6 +14,8 @@ import type { RunnerContext } from '../agents/types.js'
  */
 const cwd = await mkdtemp(join(tmpdir(), 'sillage-copilot-probe-'))
 await writeFile(join(cwd, 'note.txt'), 'hello\n')
+/** Stands for the server's `Paths.copilot`: the instructions folder must not sit in the workspace. */
+const stateDir = await mkdtemp(join(tmpdir(), 'sillage-copilot-state-'))
 
 function context(events: SillageEvent[], resumeSessionId: string | null, onSession: (id: string) => void, done: () => void, runner: () => CopilotRunner): RunnerContext {
   return {
@@ -39,7 +41,7 @@ async function turn(resume: string | null, prompt: string): Promise<{ events: Si
   let sessionId = ''
   let finish: () => void = () => {}
   const completed = new Promise<void>((resolve) => { finish = resolve })
-  const runner: CopilotRunner = new CopilotRunner(context(events, resume, (id) => { sessionId = id }, () => finish(), () => runner))
+  const runner: CopilotRunner = new CopilotRunner(context(events, resume, (id) => { sessionId = id }, () => finish(), () => runner), { stateDir })
   const timeout = setTimeout(() => { console.error('The Copilot probe exceeded 180 seconds.'); finish() }, 180_000)
   try {
     await runner.start()
@@ -67,4 +69,5 @@ try {
   console.log(`OK: turn, permission, edit, instructions, usage and resume. Session to delete: ${first.sessionId}`)
 } finally {
   await rm(cwd, { recursive: true, force: true })
+  await rm(stateDir, { recursive: true, force: true })
 }

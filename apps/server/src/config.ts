@@ -95,6 +95,12 @@ export interface Paths {
   antigravityAccounts: string
   /** One `GROK_HOME` per additional Grok account; see `grok-accounts/homes.ts`. */
   grokAccounts: string
+  /**
+   * What Sillage writes for Copilot to read: one instruction folder per conversation, and the
+   * empty folder its catalog probe runs in. Under the data directory because the system
+   * temporary one is shared with other local accounts.
+   */
+  copilot: string
   /** Former per-account gauge logins, deleted at startup; account tokens read usage now. */
   claudeAccounts: string
   webRoot: string
@@ -147,6 +153,7 @@ function resolvePaths(): Paths {
     codexAccounts: join(data, 'codex-accounts'),
     antigravityAccounts: join(data, 'antigravity-accounts'),
     grokAccounts: join(data, 'grok-accounts'),
+    copilot: join(data, 'copilot'),
     claudeAccounts: join(data, 'claude-accounts'),
     // Per data directory: test servers beside daemons share preconfigured source IDs
     // but must not refresh
