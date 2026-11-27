@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
-import { conversations, openDatabase, projects, runMigrations, turnUsage, users } from '@sillage/db'
+import { benchmarkRuns, benchmarks, conversations, events, openDatabase, projects, runMigrations, turnUsage, users } from '@sillage/db'
 import type { ConsumptionReport, ConversationStatsDto, SillageEvent } from '@sillage/protocol'
+import { antigravityTurnTokens } from '../src/agents/antigravity/usage.js'
 import { runCostUsd } from '../src/benchmarks/cost.js'
 import { computeRunMetrics } from '../src/benchmarks/metrics.js'
 import { TurnUsageRecorder } from '../src/consumption/recorder.js'
@@ -44,7 +45,7 @@ function database(t: TestContext) {
   return db
 }
 
-function conversation(db: ReturnType<typeof database>, id: string, agent: 'claude' | 'codex', extra: Partial<typeof conversations.$inferInsert> = {}) {
+function conversation(db: ReturnType<typeof database>, id: string, agent: 'claude' | 'codex' | 'antigravity', extra: Partial<typeof conversations.$inferInsert> = {}) {
   db.insert(conversations).values({ id, projectId: 'p', userId: 'alice', title: id, agent, status: 'idle', config: '{}', createdAt: 1, updatedAt: 1, ...extra } as typeof conversations.$inferInsert).run()
 }
 
@@ -215,6 +216,49 @@ test('history is read once from the journals, forks do not count twice and Claud
   db.delete(turnUsage).run()
   await new TurnUsageRecorder(db).importHistory()
   assert.equal(db.select().from(turnUsage).all().length, 0)
+})
+
+// Payloads probed on antigravity-acp 1.4.3 and 1.5.2 (27 Nov 2026).
+const gross143 = { totalTokens: 60128, inputTokens: 58538, outputTokens: 274, thoughtTokens: 1316, cachedReadTokens: 37124, cachedWriteTokens: 0 }
+const net152 = { totalTokens: 226295, inputTokens: 43648, outputTokens: 4751, thoughtTokens: 3953, cachedReadTokens: 177896, cachedWriteTokens: 0 }
+
+test('Antigravity usage is read in its 1.4 form (cache inside the input) and its 1.5 form (reasoning inside the output)', () => {
+  assert.deepEqual(antigravityTurnTokens(gross143), { inputTokens: 21414, outputTokens: 1590, cacheReadTokens: 37124, cacheCreationTokens: 0 })
+  assert.deepEqual(antigravityTurnTokens(net152), { inputTokens: 43648, outputTokens: 4751, cacheReadTokens: 177896, cacheCreationTokens: 0 })
+  // Reasoning equal to the cache read makes both sums agree: the targeted release's form wins.
+  assert.deepEqual(antigravityTurnTokens({ totalTokens: 1110, inputTokens: 1000, outputTokens: 10, thoughtTokens: 100, cachedReadTokens: 100 }), { inputTokens: 900, outputTokens: 110, cacheReadTokens: 100, cacheCreationTokens: 0 })
+  // Without a total, a cache larger than the input can only be net of it.
+  assert.deepEqual(antigravityTurnTokens({ inputTokens: 40, outputTokens: 5, thoughtTokens: 2, cachedReadTokens: 900 }), { inputTokens: 40, outputTokens: 5, cacheReadTokens: 900, cacheCreationTokens: 0 })
+  assert.deepEqual(antigravityTurnTokens({}), { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })
+})
+
+test('Antigravity turns journaled with the cache inside their input are repaired once, with what derives from them', async (t) => {
+  const db = database(t)
+  const log = new EventLog(db)
+  // Totals as the old runner summed them: inputs include the cache read, outputs the reasoning.
+  conversation(db, 'ag', 'antigravity', { createdAt: 1, model: 'gemini-test', inputTokens: 58538 + 43648, outputTokens: 1590 + 4751 })
+  log.appendBatch('ag', [
+    { ts: 10, event: { type: 'session.started', agent: 'antigravity', agentSessionId: 's', model: 'gemini-test', cwd: '/', tools: [] } as SillageEvent },
+    { ts: 20, event: completed(58538, 1590, 37124), raw: { stopReason: 'end_turn', usage: gross143 } },
+    // Already right: left as it is.
+    { ts: 30, event: completed(43648, 4751, 177896), raw: { stopReason: 'end_turn', usage: net152 } },
+  ])
+  // Live recording had already written the inflated row.
+  new TurnUsageRecorder(db).observe('ag', { seq: 2, ts: 20, event: completed(58538, 1590, 37124) }, undefined)
+  db.insert(benchmarks).values({ id: 'b', userId: 'alice', name: 'b', prompt: 'p', variants: '[]', maxDurationMinutes: 10, createdAt: 1, updatedAt: 1 }).run()
+  db.insert(benchmarkRuns).values({ id: 'r', benchmarkId: 'b', variantId: 'v', conversationId: 'ag', repetition: 1, status: 'succeeded', finishedAt: 40, metrics: JSON.stringify({ version: 3, inputTokens: 1 }) }).run()
+
+  await new TurnUsageRecorder(db).importHistory()
+  assert.deepEqual(db.select().from(turnUsage).orderBy(turnUsage.seq).all().map((row) => [row.seq, row.inputTokens, row.outputTokens, row.cacheReadTokens]), [
+    [2, 21414, 1590, 37124],
+    [3, 43648, 4751, 177896],
+  ])
+  const journaled = db.select({ payload: events.payload }).from(events).where(eq(events.seq, 2)).get()!
+  assert.deepEqual(JSON.parse(journaled.payload), completed(21414, 1590, 37124))
+  const totals = db.select({ input: conversations.inputTokens, output: conversations.outputTokens }).from(conversations).where(eq(conversations.id, 'ag')).get()
+  assert.deepEqual(totals, { input: 21414 + 43648, output: 1590 + 4751 })
+  // The benchmark run folds its journal again at its next read.
+  assert.equal(JSON.parse(db.select({ metrics: benchmarkRuns.metrics }).from(benchmarkRuns).get()!.metrics!).version, 0)
 })
 
 test('Codex sub-agents are read back once from their rollouts, before live recording took over', async (t) => {

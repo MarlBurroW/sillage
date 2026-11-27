@@ -24,6 +24,7 @@ import { persistAntigravityArtifacts, prepareAntigravityResume, rememberAntigrav
 import { antigravityArgs } from './launch.js'
 import { configOption, optionsOf } from './catalog.js'
 import { describeAntigravityTool } from './tools.js'
+import { antigravityTurnTokens } from './usage.js'
 import { TurnLifecycle } from '../turn-lifecycle.js'
 
 interface ToolTrack { update: Record<string, unknown>; input: string; output: string; diffs: AcpDiff[]; settle: NodeJS.Timeout | null }
@@ -449,7 +450,7 @@ export class AntigravityRunner implements AgentRunner {
     const usage = fields(response.usage)
     this.turn.end({
       stopReason: response.stopReason === 'end_turn' ? 'completed' : response.stopReason === 'cancelled' ? 'interrupted' : String(response.stopReason ?? 'completed'),
-      usage: { costUsd: 0, inputTokens: Number(usage.inputTokens ?? 0), outputTokens: Number(usage.outputTokens ?? 0) + Number(usage.thoughtTokens ?? 0), cacheReadTokens: Number(usage.cachedReadTokens ?? 0), cacheCreationTokens: Number(usage.cachedWriteTokens ?? 0) },
+      usage: { costUsd: 0, ...antigravityTurnTokens(usage) },
       raw,
       close: () => {
         this.closeText()

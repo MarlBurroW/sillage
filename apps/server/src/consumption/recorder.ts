@@ -2,6 +2,7 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { appSettings, conversations, turnUsage, type Db } from '@sillage/db'
 import type { AgentKind, SillageEvent } from '@sillage/protocol'
 import { userCodexHome } from '../codex-accounts/homes.js'
+import { repairAntigravityUsage } from './antigravity-usage-repair.js'
 import { importCodexSubAgentUsage } from './codex-subagent-history.js'
 import { consumedUsageOf, turnUsageOf, type ClaudeModelUsage, type ModelTurnUsage } from './turn-usage.js'
 
@@ -10,6 +11,8 @@ const HISTORY_VERSION = 1
 const HISTORY_KEY = 'turnUsageHistory'
 /** Codex sub-agents read back from the CLI's rollouts, apart: the journals are not read again for it. */
 const SUB_AGENT_HISTORY_KEY = 'codexSubAgentUsageHistory'
+/** Antigravity turns journaled with the cache read inside their input, corrected once. */
+const ANTIGRAVITY_REPAIR_KEY = 'antigravityUsageRepair'
 
 interface Owner { userId: string; projectId: string | null; agent: AgentKind; model: string | null }
 interface Running { model: string | null; claude: ClaudeModelUsage | null }
@@ -56,7 +59,7 @@ export class TurnUsageRecorder {
   }
 
   historyReady(): boolean {
-    return this.readHistoryVersion() >= HISTORY_VERSION && this.setting(SUB_AGENT_HISTORY_KEY) >= 1
+    return this.readHistoryVersion() >= HISTORY_VERSION && this.setting(SUB_AGENT_HISTORY_KEY) >= 1 && this.setting(ANTIGRAVITY_REPAIR_KEY) >= 1
   }
 
   /** Reads the journals once, in the background. Safe to call at every start. */
@@ -69,6 +72,11 @@ export class TurnUsageRecorder {
   private async readHistory(): Promise<void> {
     // Sub-agents are recorded live from now on: only what their rollouts hold before this start.
     const cutoff = Date.now()
+    // First, so that journals read for the first time already give the corrected counters.
+    if (this.setting(ANTIGRAVITY_REPAIR_KEY) < 1) {
+      repairAntigravityUsage(this.db)
+      this.saveSetting(ANTIGRAVITY_REPAIR_KEY, 1)
+    }
     if (this.readHistoryVersion() < HISTORY_VERSION) await this.readJournals()
     if (this.setting(SUB_AGENT_HISTORY_KEY) < 1) {
       await importCodexSubAgentUsage(this.db, this.codexHome, cutoff)

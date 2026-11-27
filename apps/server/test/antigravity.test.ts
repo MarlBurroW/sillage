@@ -55,7 +55,8 @@ test('Antigravity streams human tool metadata, edits, thoughts and ACP token usa
     { update: { sessionUpdate: 'tool_call_update', toolCallId: 'mcp', status: 'completed', rawOutput: 'Created' } },
     { update: { sessionUpdate: 'tool_call', toolCallId: 'edit', title: 'Running replace_file_content', rawInput: { TargetFile: join(f.root, 'a.txt'), TargetContent: 'a', ReplacementContent: 'b' }, content: [{ type: 'diff', path: join(f.root, 'a.txt'), oldText: 'a', newText: 'b' }] } },
     { update: { sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed' } },
-  ], { inputTokens: 2, outputTokens: 3, cachedReadTokens: 7, thoughtTokens: 5 })
+    // 1.4.3 as probed: the input includes the cache read, the output leaves the reasoning out.
+  ], { totalTokens: 60128, inputTokens: 58538, outputTokens: 274, thoughtTokens: 1316, cachedReadTokens: 37124, cachedWriteTokens: 0 })
   const started = f.events.filter((event) => event.type === 'tool.started')
   assert.deepEqual(started.map((event) => event.name), ['Read', 'sillage/create_card', 'Edit'])
   assert.equal(started[1]!.title, 'Record the discovered issue')
@@ -63,7 +64,7 @@ test('Antigravity streams human tool metadata, edits, thoughts and ACP token usa
   const completed = f.events.findIndex((event) => event.type === 'tool.completed' && event.toolCallId === 'edit')
   assert.match(describeEdit(f.raw[completed], f.root, 'a.txt').patch, /\+b/)
   const end = f.events.find((event) => event.type === 'turn.completed')!
-  assert.equal(end.inputTokens, 2); assert.equal(end.outputTokens, 8); assert.equal(end.cacheReadTokens, 7)
+  assert.equal(end.inputTokens, 21414); assert.equal(end.outputTokens, 1590); assert.equal(end.cacheReadTokens, 37124)
   const created = (await f.rpc()).find((entry) => entry.method === 'session/new')
   assert.equal(created.params._meta.antigravity.systemPrompt.append, 'Shared instructions and memory')
   assert.deepEqual(f.events.find((event) => event.type === 'commands.updated')?.commands.map((command) => command.name), ['plan', 'usage', 'logout'])
