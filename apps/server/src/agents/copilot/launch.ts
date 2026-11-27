@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import type { CopilotConfig } from '@sillage/protocol'
+import type { CopilotConfig, McpServer } from '@sillage/protocol'
 import { agentProcessEnv } from '../process-env.js'
 
 /** How Sillage launches `copilot --acp` and its environment. All claims probed on GitHub Copilot CLI 1.0.116. */
@@ -29,7 +29,37 @@ const TOKEN_VARIABLES = ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN']
 export function copilotProcessEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
   const env = agentProcessEnv(overrides)
   if (overrides.COPILOT_HOME) for (const name of TOKEN_VARIABLES) delete env[name]
+  // Must stay unset for `escapeDollars` to produce a literal dollar sign.
+  delete env[UNSET_VARIABLE]
   return env
+}
+
+/**
+ * Copilot expands `$NAME`, `${NAME}` and `${NAME:-default}` in every string of an MCP config file
+ * (command, args, env, url, headers) when NAME is set, and has no escape: `$$` and `\$` expand
+ * too. A default is taken literally and in one pass, so `${unset:-$}` is the only way to write a
+ * dollar sign (probed on 1.0.116). Servers passed over ACP are not expanded.
+ */
+const UNSET_VARIABLE = 'SILLAGE_UNSET_FOR_LITERAL_DOLLAR'
+const LITERAL_DOLLAR = `\${${UNSET_VARIABLE}:-$}`
+// A function, since a replacement string gives `$` sequences a meaning of their own.
+const escapeDollars = (value: string) => value.replaceAll('$', () => LITERAL_DOLLAR)
+const escapeMap = (map: Record<string, string>) => Object.fromEntries(Object.entries(map).map(([name, value]) => [name, escapeDollars(value)]))
+
+/**
+ * Contents of the `--additional-mcp-config` file holding Sillage's servers, null without any.
+ * Servers passed in `session/new` share a namespace with `$COPILOT_HOME/mcp-config.json`, the
+ * workspace's `.mcp.json` and plugins, and lose to a same-named server there without a word
+ * (probed on 1.0.116 and 1.0.117): a user who added `sillage` to their terminal Copilot would
+ * replace the session's own server. This channel is read last and wins. It holds secrets, so it
+ * is a private file rather than an argument.
+ */
+export function copilotMcpConfig(servers: McpServer[]): string | null {
+  if (!servers.length) return null
+  const entries = servers.map(({ name, transport }) => [name, transport.type === 'stdio'
+    ? { type: 'local', command: escapeDollars(transport.command), args: transport.args.map(escapeDollars), env: escapeMap(transport.env), tools: ['*'] }
+    : { type: transport.type, url: escapeDollars(transport.url), headers: escapeMap(transport.headers), tools: ['*'] }])
+  return JSON.stringify({ mcpServers: Object.fromEntries(entries) })
 }
 
 /** Key of Copilot's extensions in ACP `_meta`, and prefix of its extension methods. */
@@ -87,6 +117,8 @@ export interface CopilotLaunchInput {
   directories: string[]
   /** Directory holding `.github/instructions/sillage.instructions.md`, null without an overview. */
   instructionsDir: string | null
+  /** File written from `copilotMcpConfig`, null without servers. */
+  mcpConfigFile?: string | null
 }
 
 /** Launch-time choices requiring a process restart when changed. */
@@ -116,6 +148,7 @@ export function copilotLaunch(config: CopilotConfig, input: CopilotLaunchInput):
   if (config.autoTier && (config.model === COPILOT_AUTO_MODEL || !config.model)) args.push('--auto-tier', config.autoTier)
   for (const dir of [...new Set(input.directories)]) args.push('--add-dir', dir)
   for (const dir of skillDirs(input.skillRoots)) args.push('--plugin-dir', dir)
+  if (input.mcpConfigFile) args.push('--additional-mcp-config', `@${input.mcpConfigFile}`)
   const env: Record<string, string> = { ...COPILOT_ISOLATION_ENV }
   // Read on every launch, so a resumed session gets the current SILLAGE.md too.
   if (input.instructionsDir) env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS = input.instructionsDir

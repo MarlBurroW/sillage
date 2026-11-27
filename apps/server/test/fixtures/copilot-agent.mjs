@@ -12,7 +12,7 @@
 // process so far, to which `usage` adds this turn's. `after` steps play once the prompt is
 // answered: what Copilot does by itself when background work reports back.
 // Any other prompt gets a plain reply; `/compact` compacts.
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
@@ -54,6 +54,23 @@ let allowAll = 'off'
 let active = null
 const spent = { inputTokens: 0, outputTokens: 0, totalTokens: 0, thoughtTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 }
 writeFileSync(join(root, 'launch.json'), JSON.stringify({ args: process.argv.slice(2), instructions: process.env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS ?? null, autoUpdate: process.env.COPILOT_AUTO_UPDATE, cwd: process.cwd(), home: process.env.COPILOT_HOME ?? null, tokens: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'].filter((name) => process.env[name]) }))
+
+// One namespace for every MCP source, the later winning: the user's `mcp-config.json`, servers
+// passed in the session request, then `--additional-mcp-config` files (probed on 1.0.116). The
+// winners, with their source, go to `mcp.json`.
+function mcpServers(requested) {
+  const servers = new Map()
+  const add = (source, entries) => { for (const [name, server] of entries) servers.set(name, { source, ...server }) }
+  const home = process.env.COPILOT_HOME
+  if (home && existsSync(join(home, 'mcp-config.json'))) add('user', Object.entries(JSON.parse(readFileSync(join(home, 'mcp-config.json'), 'utf8')).mcpServers))
+  add('acp', (requested ?? []).map(({ name, ...server }) => [name, server]))
+  const argv = process.argv.slice(2)
+  argv.forEach((arg, index) => {
+    if (arg === '--additional-mcp-config' && argv[index + 1]?.startsWith('@')) add('additional', Object.entries(JSON.parse(readFileSync(argv[index + 1].slice(1), 'utf8')).mcpServers))
+  })
+  writeFileSync(join(root, 'mcp.json'), JSON.stringify(Object.fromEntries(servers)))
+  for (const name of servers.keys()) event('session.mcp_server_status_changed', { serverName: name, status: 'pending' })
+}
 
 // Auto is listed twice, as Copilot does; only the GPT model has efforts.
 const options = () => [
@@ -129,7 +146,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     case 'session/new':
       // What Copilot answers without a sign-in, and all it says.
       if (process.env.COPILOT_FIXTURE_SIGNED_OUT) return write({ id: message.id, error: { code: -32000, message: 'Authentication required' } })
-      for (const server of message.params.mcpServers ?? []) event('session.mcp_server_status_changed', { serverName: server.name, status: 'pending' })
+      mcpServers(message.params.mcpServers)
       setTimeout(() => { commands(); commands() }, 5)
       return reply({ sessionId, ...state() })
     case 'session/list':
@@ -141,6 +158,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       ] })
     case 'session/load': {
       sessionId = message.params.sessionId
+      mcpServers(message.params.mcpServers)
       const child = { 'github.com/copilot': { agentId: 'agent-old' } }
       // Copilot replays the stored history before answering: prompts, calls and replies, a
       // sub-agent's included, but neither thoughts nor the session events.

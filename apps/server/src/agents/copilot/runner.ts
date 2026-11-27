@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ContentBlock as AcpContent, RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
-import { parseElicitationFields, parseSlashCommand, type AgentConfig, type ContentBlock, type CopilotConfig, type McpServerStatus } from '@sillage/protocol'
+import { parseElicitationFields, parseSlashCommand, type AgentConfig, type ContentBlock, type CopilotConfig, type McpServer, type McpServerStatus } from '@sillage/protocol'
 import { AcpClient, AcpRpcError } from '../acp/client.js'
 import { diffsOf, fields, type AcpDiff } from '../acp/content.js'
-import { toAcpMcpServer } from '../acp/mcp.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { PendingInteractions } from '../interactions.js'
 import { failedStatuses } from '../mcp-registry.js'
@@ -18,7 +17,7 @@ import { ToolDurations } from '../tool-durations.js'
 import { TurnLifecycle, type TurnUsage } from '../turn-lifecycle.js'
 import type { AgentRunner, ElicitationAnswer, OutgoingAttachment, OutgoingMention, PermissionDecision, PlanReview, QuestionAnswer, RunnerContext } from '../types.js'
 import { configOption, copilotCommands, effortOption } from './catalog.js'
-import { COPILOT_CLIENT_CAPABILITIES, COPILOT_EVENT_METHOD, COPILOT_META, copilotLaunch, copilotProcessEnv, explainSignIn, instructionsFile, modeOf, modeValue, sameLaunch, skillDirs, type CopilotLaunch } from './launch.js'
+import { COPILOT_CLIENT_CAPABILITIES, COPILOT_EVENT_METHOD, COPILOT_META, copilotLaunch, copilotMcpConfig, copilotProcessEnv, explainSignIn, instructionsFile, modeOf, modeValue, sameLaunch, skillDirs, type CopilotLaunch } from './launch.js'
 import { askUserQuestions } from './questions.js'
 import { backgroundAgent, backgroundShell, describeCopilotTool, nativeToolRequest, outputOf, shellExit, type NativeToolRequest } from './tools.js'
 import { quotaLimit, refusedLimit, type CopilotLimit, type CopilotQuota } from './usage.js'
@@ -166,13 +165,30 @@ export class CopilotRunner implements AgentRunner {
     return root
   }
 
-  private launchFor(config: CopilotConfig, instructionsDir: string | null): CopilotLaunch {
+  /** Sillage's MCP servers for this conversation, private for the secrets they hold. */
+  private get mcpConfigFile(): string {
+    return join(this.runnerOptions.stateDir, 'mcp', `${this.conversationId}.json`)
+  }
+
+  private writeMcpConfig(servers: McpServer[]): string | null {
+    const file = this.mcpConfigFile
+    const contents = copilotMcpConfig(servers)
+    if (!contents) { rmSync(file, { force: true }); return null }
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+    // `mode` only applies on creation: a file left by an older run is truncated, then narrowed.
+    writeFileSync(file, contents, { mode: 0o600 })
+    chmodSync(file, 0o600)
+    return file
+  }
+
+  private launchFor(config: CopilotConfig, instructionsDir: string | null, mcpConfigFile: string | null): CopilotLaunch {
     const memory = this.ctx.memoryDir()
     return copilotLaunch(config, {
       skillRoots: this.ctx.skillRoots(config),
       // Without these, Copilot asks for every path outside cwd, memory and attachments included.
       directories: [...config.additionalDirectories, ...(this.ctx.workTrees?.() ?? []), ...(memory ? [memory] : []), this.ctx.attachmentsRoot].filter((dir) => existsSync(dir)),
       instructionsDir,
+      mcpConfigFile,
     })
   }
 
@@ -190,7 +206,9 @@ export class CopilotRunner implements AgentRunner {
     this.counted = NO_TOKENS
     this.events = false
     this.wake = null
-    const launch = this.launchFor(this.config, this.writeInstructions(this.config))
+    const resolved = this.ctx.resolveMcpServers(this.config)
+    this.launchedMcp = JSON.stringify(resolved.servers)
+    const launch = this.launchFor(this.config, this.writeInstructions(this.config), this.writeMcpConfig(resolved.servers))
     this.launched = launch
     this.skills = new Map(skillDirs(this.ctx.skillRoots(this.config)).flatMap((dir) => {
       try {
@@ -198,8 +216,6 @@ export class CopilotRunner implements AgentRunner {
         return [[typeof data.name === 'string' ? data.name : dir.split(/[\\/]/).at(-1)!, { path: join(dir, 'SKILL.md'), description: typeof data.description === 'string' ? data.description : '' }] as const]
       } catch { return [] }
     }))
-    const resolved = this.ctx.resolveMcpServers(this.config)
-    this.launchedMcp = JSON.stringify(resolved.servers)
     const client = new AcpClient({
       label: 'copilot', binary: this.ctx.binary, args: launch.args, cwd: this.ctx.cwd,
       env: copilotProcessEnv({ ...launch.env, ...this.ctx.processEnv }),
@@ -220,9 +236,9 @@ export class CopilotRunner implements AgentRunner {
     })
     this.client = client
     await client.initialize(CLIENT_INFO, COPILOT_CLIENT_CAPABILITIES)
-    const mcpServers = resolved.servers.map(toAcpMcpServer)
     const open = async (method: string, params: Fields): Promise<Fields> => {
-      try { return fields(await client.request(method, { ...params, cwd: this.ctx.cwd, mcpServers }, 90_000)) }
+      // The servers come from `--additional-mcp-config`, where Copilot's own files cannot shadow them.
+      try { return fields(await client.request(method, { ...params, cwd: this.ctx.cwd, mcpServers: [] }, 90_000)) }
       catch (error) { throw explainSignIn(error, Boolean(this.ctx.processEnv?.COPILOT_HOME)) }
     }
     let session: Fields
@@ -750,8 +766,9 @@ export class CopilotRunner implements AgentRunner {
   /** Live for model, effort, mode and permissions; anything read at launch needs a restart. */
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'copilot' || !this.client || this.turn.open || !this.launched) return false
-    const launch = this.launchFor(config, this.ctx.projectOverview(config) ? this.instructionsRoot : null)
-    if (!sameLaunch(launch, this.launched) || JSON.stringify(this.ctx.resolveMcpServers(config).servers) !== this.launchedMcp) return false
+    const servers = this.ctx.resolveMcpServers(config).servers
+    const launch = this.launchFor(config, this.ctx.projectOverview(config) ? this.instructionsRoot : null, servers.length ? this.mcpConfigFile : null)
+    if (!sameLaunch(launch, this.launched) || JSON.stringify(servers) !== this.launchedMcp) return false
     // The account is the process's `COPILOT_HOME`, read at launch.
     if (config.account !== this.config.account) return false
     await this.applyOptions(config)
@@ -805,6 +822,7 @@ export class CopilotRunner implements AgentRunner {
     const client = this.client; this.client = null
     await client?.closeAndWait()
     rmSync(this.instructionsRoot, { recursive: true, force: true })
+    rmSync(this.mcpConfigFile, { force: true })
   }
 
   private notice(code: string, message: string, details: unknown, level: 'info' | 'warning' = 'info'): void {

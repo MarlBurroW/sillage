@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -326,6 +326,42 @@ test('Copilot names MCP calls after their server and tool, and follows server he
   const states = f.of('mcp.updated').map((event) => event.servers.map((server) => `${server.name}:${server.state}:${server.tools.join('+')}${server.external ? ':external' : ''}`).join(' '))
   assert.deepEqual(states.slice(-3), ['probe:connected:', 'probe:connected: github-mcp-server:failed::external', 'probe:connected:echo github-mcp-server:failed::external'])
   assert.equal(f.of('mcp.updated').at(-1)!.servers[1]!.error, 'offline')
+})
+
+/** Copilot's expansion of MCP config files as probed on 1.0.116: `$NAME`, `${NAME}`, `${NAME:-default}`, one pass. */
+function copilotExpand(value: string, env: Record<string, string>): string {
+  return value.replace(/\$\{(\w+)(?::-([^}]*))?\}|\$(\w+)/g, (match, braced?: string, fallback?: string, bare?: string) => {
+    const name = braced ?? bare!
+    if (env[name]) return env[name]
+    return fallback ?? match
+  })
+}
+
+test('Copilot passes Sillage MCP servers where the user\'s own Copilot servers cannot shadow them, secrets intact', async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'sillage-copilot-home-'))
+  t.after(() => rm(home, { recursive: true, force: true }))
+  // The user added a server of the same name to their terminal Copilot, as `copilot mcp add sillage` would.
+  await writeFile(join(home, 'mcp-config.json'), JSON.stringify({ mcpServers: { probe: { type: 'local', command: '/nonexistent/user-probe' }, mine: { type: 'local', command: '/usr/bin/mine' } } }))
+  const secret = 'pa$$w0rd${HOME}$1'
+  const probe: McpServer = { id: 'probe-id', name: 'probe', enabled: true, transport: { type: 'stdio', command: 'node', args: ['server.mjs', '$HOME'], env: { SECRET: secret } }, projectId: null, createdAt: 0, updatedAt: 0 }
+  const remote: McpServer = { id: 'remote-id', name: 'remote', enabled: true, transport: { type: 'http', url: 'https://mcp.example/x?k=$HOME', headers: { Authorization: 'Bearer $TOKEN' } }, projectId: null, createdAt: 0, updatedAt: 0 }
+  const f = await fixture(t, { processEnv: { COPILOT_HOME: home }, resolveMcpServers: () => ({ servers: [probe, remote], failures: [] }) })
+  const opened = (await f.rpc()).find((entry) => entry.method === 'session/new')
+  assert.deepEqual(opened.params.mcpServers, [])
+  const launched = JSON.parse(await readFile(join(f.root, 'launch.json'), 'utf8')).args as string[]
+  const file = launched[launched.indexOf('--additional-mcp-config') + 1]!.slice(1)
+  assert.equal((await stat(file)).mode & 0o777, 0o600)
+  const winners = JSON.parse(await readFile(join(f.root, 'mcp.json'), 'utf8'))
+  assert.deepEqual(Object.fromEntries(Object.entries(winners).map(([name, server]) => [name, (server as { source: string }).source])), { probe: 'additional', mine: 'user', remote: 'additional' })
+  // Copilot expands variables in that file, and nothing but an unset variable's default escapes a dollar sign.
+  const env = { HOME: '/home/someone', TOKEN: 'server-token', '1': 'one' }
+  assert.equal(copilotExpand(winners.probe.env.SECRET, env), secret)
+  assert.deepEqual(winners.probe.args.map((arg: string) => copilotExpand(arg, env)), ['server.mjs', '$HOME'])
+  assert.equal(copilotExpand(winners.remote.url, env), 'https://mcp.example/x?k=$HOME')
+  assert.equal(copilotExpand(winners.remote.headers.Authorization, env), 'Bearer $TOKEN')
+  assert.deepEqual(f.of('mcp.updated').at(-1)!.servers.map((server) => [server.name, server.state, server.external]), [['probe', 'pending', false], ['remote', 'pending', false], ['mine', 'pending', true]])
+  await f.runner.stop()
+  assert.equal(existsSync(file), false)
 })
 
 test('Copilot reports errors, retries and refusals as what they are, not as reply text', async (t) => {

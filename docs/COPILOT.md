@@ -47,7 +47,7 @@ requests) is listed under [Not yet verified](#not-yet-verified).
 | Commands | Published live and for drafts. `/model` and `/clear` are hidden like for the other CLIs; `/cwd`, `/add-dir` and `/session` too, which would move the session out of what Sillage tracks. | Scripted: `/usage`, `/context`, `/env`, `/compact` and a skill's own command answer as replies. |
 | Compaction | The compact action sends `/compact`; Copilot's events say when it starts and what it saved. Automatic compaction is reported the same way. | Scripted (manual). |
 | Skills | One `--plugin-dir` per library skill; each is also a slash command. Reload is a restart before the next turn. | Scripted: listed in the model's skills, command expands the skill. |
-| MCP | Servers go in `session/new` and `session/load` (stdio, HTTP, SSE). Health follows Copilot's events: pending, connected, failed with its reason. Servers from Copilot's own files and its built-in GitHub server show as external. | Scripted with one working and one broken stdio server. No per-server reconnect call. |
+| MCP | Servers go in a private `--additional-mcp-config` file (stdio, HTTP, SSE), so a server of the same name in Copilot's own files cannot replace them. Health follows Copilot's events: pending, connected, failed with its reason. Servers from Copilot's own files and its built-in GitHub server show as external. | Scripted with one working and one broken stdio server, and with a same-named broken server in `mcp-config.json` (1.0.116, 1.0.117). No per-server reconnect call. |
 | Instructions | SILLAGE.md and the overview go to an instruction file in a private folder named by `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, reread on every launch. | Scripted (the text reaches the system prompt) and signed in. Repository `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` are **not masked**. |
 | Memory | Reachable through Copilot's file tools (`--add-dir`). | Not tried on a real turn. |
 | Errors | Copilot's errors, warnings and retries are journaled as such, with shared codes for rejected sign-in, rate limit, exhausted quota and context overflow. A refused request for quota or rate limit also marks the account as stopped, which is what lets Sillage offer to resume later. | Scripted: provider 401 and 429. Real quota and rate-limit refusals not seen. |
@@ -69,10 +69,12 @@ requests) is listed under [Not yet verified](#not-yet-verified).
 | `--add-dir` for additional directories, worktrees, memory and attachments | Copilot asks for every path outside the working directory otherwise. |
 | `--auto-tier` | The Auto profile, only when the model is Auto. |
 | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` | The instruction channel, see below. |
+| `--additional-mcp-config @<file>` | Sillage's MCP servers. Copilot puts every source in one namespace and the later wins: `mcp-config.json`, workspace `.mcp.json`, plugins, then this flag. Servers passed in `session/new` lose to a same-named one in `mcp-config.json` without a word. `--disable-mcp-server <name>` would turn off both. Copilot expands `$NAME` and `${NAME}` in that file, with no escape: every dollar sign is written as an unset variable's default (`${…:-$}`), so values arrive as typed. |
 | Announced at `initialize`: `elicitation.form`, and the session events of `COPILOT_SESSION_EVENTS` | See [Session events](#session-events). |
 
 What Sillage writes for Copilot lives under `<data>/copilot`: one instruction folder
-per conversation, removed when its session stops, and the empty folder the catalog
+and one MCP file (mode 0600, it holds the servers' secrets) per conversation, removed
+when its session stops, and the empty folder the catalog
 probe runs in. Not in the system temporary directory, which other local accounts can
 write to first.
 
@@ -279,9 +281,9 @@ overage; only a refused request marks the account as stopped.
 - A sub-agent on a plan whose models allow it.
 - A sign-in made from Sillage: none is offered.
 - Images and documents on a signed-in turn (the scripted provider received the image).
-- The Sillage MCP server and a registry server over HTTP in a real conversation;
-  whether a server Sillage passes can collide with one of the same name in
-  `~/.copilot/mcp-config.json`.
+- The Sillage MCP server and a registry server over HTTP in a real conversation.
+- A same-named server in a workspace `.mcp.json` or a plugin: `copilot help mcp` puts
+  them before `--additional-mcp-config` too.
 - Windows and macOS, Desktop included: the npm `copilot` shim follows the generic
   npm launch path.
 - `/fleet`, `/delegate`, workflows (`run_dynamic_workflow`), `/remote`.
