@@ -1,10 +1,11 @@
-import { BROWSER_MCP_SERVER_NAME, CODEX_BUILTIN_MCP_SERVER_NAME, type ToolPresentation } from '@sillage/protocol'
+import { ADVISOR_TOOL, BROWSER_MCP_SERVER_NAME, CODEX_BUILTIN_MCP_SERVER_NAME, readAdvisorOutcome, type ToolPresentation } from '@sillage/protocol'
 import { fields, flag, text, outputText, scalar } from './tool-payload'
 import { toolWebInput } from './tool-web-input'
 import { toolEdits, type EditPresentation } from './tool-edits'
 import type { ToolItem } from './chat-fold'
 import { translate, type MessageKey } from './i18n'
 import { EFFORT_KEYS } from './effort-labels'
+import { formatTokens } from './tokens'
 
 export type ToolOrigin = { kind: 'native' | 'sillage' | 'mcp'; server: string; name: string }
 
@@ -107,6 +108,7 @@ export function toolLabel(name: string, presentation?: ToolPresentation): string
   const origin = toolOrigin(name, presentation)
   const key = origin.kind !== 'sillage' ? undefined : isBrowser(origin) ? BROWSER_LABELS[origin.name] : SILLAGE_LABELS[origin.name]
   if (key) return translate(key)
+  if (origin.kind === 'native' && name === ADVISOR_TOOL) return translate('tool.advisor.label')
   // Connector action names label the operation; they must not hide its query/target summary.
   if (presentation?.label?.trim()) return presentation.label.trim()
   // Aucun sens inventé pour un serveur inconnu : on enlève seulement le préfixe et les séparateurs.
@@ -145,6 +147,11 @@ export function toolSummary(tool: ToolItem, edits: EditPresentation | null = too
   const description = ['Bash', 'Agent', 'Task'].includes(tool.name) ? text(input, 'description')?.trim() : null
   const title = tool.title?.trim() || description || tool.presentation?.title?.trim()
   if (title) return { text: title, mono: false }
+  // The advisor gets no question, only the conversation: what it consulted is the model.
+  if (tool.name === ADVISOR_TOOL) {
+    const model = readAdvisorOutcome(tool.output)?.model
+    return model ? { text: model, mono: true } : null
+  }
   if (tool.name === 'Bash') {
     const action = commandSummary(input?.commandActions)
     if (action) return { text: action, mono: false }
@@ -188,12 +195,23 @@ export type ToolQualifier = { text: string; hint: string }
 
 /**
  * Call settings that explain an unusual cost or duration, shown as pills beside the summary.
+ * An advisor consultation shows the tokens its model spent, and a refusal.
  * Claude Code's Agent `effort` (2.1.292) runs the sub-agent at another level, so a `max` one is
  * slow and costly; Read's `allow_large` (2.1.296) lifts the usual size limit for one call. Both
  * stay in the raw arguments too; the pill only surfaces them on the collapsed line.
  */
 export function toolQualifiers(tool: ToolItem): ToolQualifier[] {
   const input = fields(tool.input)
+  // Each consultation rereads the whole conversation with another model: its tokens are the cost.
+  if (tool.name === ADVISOR_TOOL) {
+    const outcome = readAdvisorOutcome(tool.output)
+    const pills: ToolQualifier[] = []
+    if (outcome?.status === 'refused') pills.push({ text: translate('tool.advisor.refused'), hint: translate('tool.advisor.refusedHint') })
+    const usage = outcome?.usage
+    const total = usage ? usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens : 0
+    if (total > 0) pills.push({ text: translate('tool.advisor.tokens', { count: formatTokens(total) }), hint: translate('tool.advisor.tokensHint') })
+    return pills
+  }
   if (tool.name === 'Agent' || tool.name === 'Task') {
     const effort = text(input, 'effort')?.trim()
     if (!effort) return []

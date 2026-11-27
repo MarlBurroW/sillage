@@ -96,6 +96,9 @@ async function mount(page) {
       // Call settings worth seeing collapsed: a sub-agent's effort and Read's allow_large.
       {...tool('agent-effort','Agent'),input:{description:'Auditer le module de facturation et ses tests de bout en bout',prompt:'Audit',subagent_type:'general-purpose',effort:'max'}},
       {...tool('read-large','Read'),input:{file_path:'apps/server/src/agents/claude/runner.ts',allow_large:true}},
+      // Claude's advisor: an empty input (it rereads the conversation), the consulted model and its tokens.
+      {...tool('advisor','advisor'),input:{},output:{status:'redacted',text:null,errorCode:null,model:'claude-opus-5-5',usage:{inputTokens:24831,outputTokens:664,cacheReadTokens:0,cacheCreationTokens:0}}},
+      {...tool('advisor-text','advisor'),input:{},output:{status:'advised',text:'Vérifie d’abord **les tests**.',errorCode:null,model:'claude-opus-5-5',usage:null}},
       tool('active','Read','running'),
     ]
     window.makeItems = (mode) => [...history, ...examples.map((t,i)=> mode==='running'&&i===examples.length-1?{...t,status:'running',durationMs:null}:t), ...(mode==='text'?[message('100','Le filtre est corrigé. Les tests passent.')]:[])]
@@ -187,6 +190,9 @@ try {
         assert.ok(box.x>=row.x && box.x+box.width<=row.x+row.width,variant+' visible qualifier on '+width)
       }
       assert.match(await heading('agent-effort').innerText(),/Auditer le module/,'The description stays the summary')
+      assert.match(await heading('advisor').innerText(),/Conseiller[\s\S]*claude-opus-5-5/,'The advisor row names the consulted model')
+      assert.equal(await heading('advisor').locator('.sg-tool-qualifier').textContent(),'25.5 k tokens')
+      assert.equal(await heading('advisor-text').locator('.sg-tool-qualifier').count(),0,'No usage reported, no pill')
       for (const [id,expected] of [['codex-edit','+1−1'],['claude-edit','+2−1'],['opencode-patch','+2−1'],['write','+3']]) {
         assert.equal(await heading(id).locator('.sg-tool-counts').textContent(),expected)
         const badge=await heading(id).locator('.sg-tool-counts').boundingBox()
@@ -217,6 +223,16 @@ try {
       assert.match(await row.locator('.sg-tool-detail').innerText(),hint)
       await row.getByRole('button',{name:'Brut',exact:true}).click()
       assert.match(await row.locator('.sg-tool-detail').innerText(),field)
+      await row.locator('.sg-tool-heading').click()
+    }
+    // The advisor's details say why no question or advice is shown, give its usage, and keep the native output.
+    for (const [id,expected] of [['advisor',/Pas de question à part[\s\S]*avis chiffré[\s\S]*claude-opus-5-5[\s\S]*24\s831/],['advisor-text',/Vérifie d’abord les tests/]]) {
+      const row=page.locator(`#thread [data-tool-id="${id}"]`)
+      await row.locator('.sg-tool-heading').click()
+      assert.match(await row.locator('.sg-tool-detail').innerText(),expected)
+      await page.screenshot({path:`${output}/${id}-open-${width}.png`})
+      await row.getByRole('button',{name:'Brut',exact:true}).click()
+      assert.match(await row.locator('.sg-tool-detail').innerText(),/"status": "(redacted|advised)"/)
       await row.locator('.sg-tool-heading').click()
     }
     // Historical web arguments recover from inline and lazily loaded final results.

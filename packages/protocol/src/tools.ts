@@ -62,3 +62,42 @@ const SPAWN_TOOLS: ReadonlySet<string> = new Set<CanonicalToolName>(['Task', 'Ag
 export function isSpawnTool(name: string): boolean {
   return SPAWN_TOOLS.has(name)
 }
+
+/**
+ * Claude Code's advisor (`/advisor`, probed on 2.1.332): the API runs it as a server tool named
+ * `advisor`, so the call arrives as `server_tool_use` with an empty input, since the advisor model
+ * rereads the whole conversation rather than answering a question, and its answer as an
+ * `advisor_tool_result` block. The adapter journals the pair as an ordinary tool call under this
+ * name, with an `AdvisorOutcome` as output.
+ */
+export const ADVISOR_TOOL = 'advisor'
+
+/**
+ * What one consultation gave. `advised` carries the advice; `redacted` means the API returned it
+ * encrypted, readable by the model only (the usual case on a subscription); `refused` is an
+ * advisor that declined; `unavailable` an API error, with its code.
+ */
+export interface AdvisorOutcome {
+  status: 'advised' | 'redacted' | 'refused' | 'unavailable'
+  text: string | null
+  errorCode: string | null
+  /** Model that answered, resolved by the API; null when its usage was not reported. */
+  model: string | null
+  /** Tokens the advisor model consumed for this consultation, billed apart from the main model. */
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number } | null
+}
+
+const ADVISOR_STATUSES: ReadonlySet<string> = new Set(['advised', 'redacted', 'refused', 'unavailable'])
+
+/** Reads a journaled advisor output back; null for anything else, so views can fall back. */
+export function readAdvisorOutcome(value: unknown): AdvisorOutcome | null {
+  if (!value || typeof value !== 'object') return null
+  const outcome = value as Partial<AdvisorOutcome>
+  return typeof outcome.status === 'string' && ADVISOR_STATUSES.has(outcome.status) ? {
+    status: outcome.status,
+    text: typeof outcome.text === 'string' ? outcome.text : null,
+    errorCode: typeof outcome.errorCode === 'string' ? outcome.errorCode : null,
+    model: typeof outcome.model === 'string' ? outcome.model : null,
+    usage: outcome.usage && typeof outcome.usage === 'object' ? outcome.usage : null,
+  } : null
+}

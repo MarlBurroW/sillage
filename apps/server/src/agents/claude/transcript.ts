@@ -1,8 +1,9 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ContentBlock, SillageEvent } from '@sillage/protocol'
+import { ADVISOR_TOOL, type ContentBlock, type SillageEvent } from '@sillage/protocol'
 import { toWorkspacePath } from '../paths.js'
 import { editedPath } from './file-edits.js'
+import { advisorCallId, advisorIterations, advisorResult } from './advisor.js'
 import { TranscriptReader } from './transcript-reader.js'
 
 /**
@@ -37,7 +38,7 @@ export interface TranscriptEntry {
   isSidechain?: unknown
   isMeta?: unknown
   isCompactSummary?: unknown
-  message?: { id?: unknown; model?: unknown; content?: unknown }
+  message?: { id?: unknown; model?: unknown; content?: unknown; usage?: unknown }
   toolUseResult?: { type?: unknown; agentId?: unknown }
   compactMetadata?: { trigger?: unknown; preTokens?: unknown; postTokens?: unknown }
 }
@@ -159,6 +160,8 @@ export interface TranscriptTranslationState {
   model: string | null
   inTurn: boolean
   count: number
+  /** API message and advisor answers already read from it: its usage lists one run per answer. */
+  advice?: [string, number]
 }
 
 /**
@@ -201,8 +204,9 @@ export function transcriptTranslator(cwd: string, thread: string | null, saved?:
   let model: string | null = saved?.model ?? null
   let inTurn = saved?.inTurn ?? false
   let count = saved?.count ?? 0
+  let advice = saved?.advice
 
-  const snapshot = (): TranscriptTranslationState => ({ pendingTools: [...pendingTools], model, inTurn, count })
+  const snapshot = (): TranscriptTranslationState => ({ pendingTools: [...pendingTools], model, inTurn, count, ...(advice ? { advice } : {}) })
   const push = (entry: TranscriptEntry): TranslatedEvent[] => {
     const events: TranslatedEvent[] = []
     // Older CLIs mark inline subagent turns this way. Treating as main would show subagent prompts
@@ -219,7 +223,35 @@ export function transcriptTranslator(cwd: string, thread: string | null, saved?:
 
       const blocks: ContentBlock[] = []
       for (const block of message.content as Record<string, unknown>[]) {
-        if (block.type === 'text' && typeof block.text === 'string') {
+        const advisorCall = advisorCallId(block)
+        const answer = advisorResult(block)
+        if (advisorCall) {
+          pendingTools.set(advisorCall, { path: null, startedAt: ts })
+          blocks.push({ type: 'tool_use', toolCallId: advisorCall, name: ADVISOR_TOOL, input: block.input ?? {} })
+          events.push({
+            ts,
+            event: { type: 'tool.started', toolCallId: advisorCall, name: ADVISOR_TOOL, input: block.input ?? {}, parentToolCallId: thread },
+            raw: block,
+          })
+        } else if (answer) {
+          // Unlike the live stream, each saved entry already carries the message's final usage.
+          const messageId = typeof message.id === 'string' ? message.id : ''
+          const index = advice?.[0] === messageId ? advice[1] : 0
+          advice = [messageId, index + 1]
+          const started = pendingTools.get(answer.toolCallId)
+          pendingTools.delete(answer.toolCallId)
+          events.push({
+            ts,
+            event: {
+              type: 'tool.completed',
+              toolCallId: answer.toolCallId,
+              output: { ...answer.outcome, ...advisorIterations(message.usage)[index] },
+              isError: answer.outcome.status === 'unavailable',
+              durationMs: started ? Math.max(ts - started.startedAt, 0) : 0,
+            },
+            raw: block,
+          })
+        } else if (block.type === 'text' && typeof block.text === 'string') {
           blocks.push({ type: 'text', text: block.text })
         } else if (block.type === 'thinking' && typeof block.thinking === 'string') {
           blocks.push({ type: 'thinking', text: block.thinking })

@@ -1,10 +1,11 @@
 import { Circle, CircleCheck, CircleDot } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { readAdvisorOutcome } from '@sillage/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { toolEdits } from '../../lib/tool-edits'
 import { languageFromPath } from '../../lib/highlight'
-import { translate, type MessageKey } from '../../lib/i18n'
+import { formatCount, translate, type MessageKey } from '../../lib/i18n'
 import { toolQualifiers } from '../../lib/tool-presentation'
 import { DiffHunks } from '../DiffHunks'
 import { Markdown } from '../chat/Markdown'
@@ -374,6 +375,50 @@ const plan: ToolView = (tool) => {
 }
 
 /**
+ * Claude's advisor: no question to show, since it rereads the conversation, and usually no advice
+ * either, since the API encrypts it for Claude alone. Saying so beats an empty block, which reads
+ * as a lost answer.
+ */
+const advisor: ToolView = (tool) => {
+  const outcome = readAdvisorOutcome(tool.output)
+  if (!pending(tool) && outcome === null) return null
+  const input = fields(tool.input)
+  const question = input && Object.keys(input).length > 0 ? JSON.stringify(input, null, 2) : null
+  const usage = outcome?.usage
+  const rows: [MessageKey, number][] = usage ? [
+    ['tool.advisor.usage.input', usage.inputTokens],
+    ['tool.advisor.usage.output', usage.outputTokens],
+    ['tool.advisor.usage.cacheRead', usage.cacheReadTokens],
+    ['tool.advisor.usage.cacheWrite', usage.cacheCreationTokens],
+  ] : []
+  const answer = outcome === null ? <Empty>{translate('tool.advisor.pending')}</Empty>
+    : outcome.text ? <div className="max-h-80 overflow-auto rounded-md border border-line bg-sunken px-2 py-1.5"><Markdown text={outcome.text} /></div>
+    : <Empty>{outcome.status === 'unavailable'
+      ? outcome.errorCode ? translate('tool.advisor.unavailable', { code: outcome.errorCode }) : translate('tool.advisor.unavailableUnknown')
+      : translate(outcome.status === 'refused' ? 'tool.advisor.refusedText' : 'tool.advisor.redacted')}</Empty>
+  return (
+    <>
+      <Section label={translate('tool.advisor.question')}>
+        {question ? <Code content={question} language="json" /> : <Empty>{translate('tool.advisor.questionWhole')}</Empty>}
+      </Section>
+      <Section label={translate('tool.advisor.answer')}>{answer}</Section>
+      {rows.length > 0 ? (
+        <Section label={translate('tool.advisor.usage')} hint={outcome?.model}>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md border border-line bg-sunken p-2 text-xs">
+            {rows.map(([key, count]) => (
+              <div key={key} className="col-span-2 grid grid-cols-subgrid">
+                <dt className="text-ink-faint">{translate(key)}</dt>
+                <dd className="min-w-0 font-mono text-ink-soft tabular-nums">{formatCount(count)}</dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
+      ) : null}
+    </>
+  )
+}
+
+/**
  * Fallback for tools without dedicated views: MCP, future CLI tools, and unexpected payloads. Short
  * fields fit definition lists for glanceable parameters; long or structured fields get blocks.
  * Indented JSON contained the same information but required reading it all.
@@ -454,4 +499,5 @@ export const VIEWS: Record<string, ToolView> = {
   Agent: subAgent,
   WebFetch: webFetch,
   ExitPlanMode: plan,
+  advisor,
 }

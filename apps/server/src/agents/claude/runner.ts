@@ -18,11 +18,13 @@ import {
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
 import {
+  ADVISOR_TOOL,
   claudePermissionModeSchema,
   parseElicitationFields,
   type AgentConfig,
   type BackgroundTaskOutput,
   type ClaudeConfig,
+  type AdvisorOutcome,
   type ContentBlock,
   type McpServerStatus,
   type PermissionOption,
@@ -39,6 +41,7 @@ import { journalDeath } from '../session-close.js'
 import { toWorkspacePath } from '../paths.js'
 import { ToolDurations } from '../tool-durations.js'
 import { parseWorkflowProgress } from './workflow-progress.js'
+import { advisorCallId, advisorIterations, advisorResult } from './advisor.js'
 import { mcpServersDelivery, type McpServersDelivery } from './mcp-delivery.js'
 import type {
   AgentRunner,
@@ -178,6 +181,11 @@ export class ClaudeRunner implements AgentRunner {
    * thread it continues.
    */
   private readonly agentSpawns = new Map<string, string>()
+  /**
+   * Advisor answers waiting for their usage. It only arrives with the `message_delta` closing the
+   * API message, after the answer block, so their completion waits for it.
+   */
+  private pendingAdvice: { messageId: string; toolCallId: string; outcome: AdvisorOutcome; durationMs: number }[] = []
   /** Last forwarded thinking count, limiting events to one per `THINKING_TOKENS_STEP`. */
   private thinkingTokensSent = 0
   /** Native ID required to read session summary. */
@@ -658,6 +666,11 @@ export class ClaudeRunner implements AgentRunner {
           this.streamingMessageIds.set(parentToolCallId, event.message.id)
           return
         }
+        if (event.type === 'message_delta') {
+          const messageId = this.streamingMessageIds.get(parentToolCallId)
+          if (messageId) this.settleAdvice(messageId, advisorIterations(event.usage))
+          return
+        }
         if (event.type !== 'content_block_delta') return
 
         const messageId = this.streamingMessageIds.get(parentToolCallId)
@@ -677,10 +690,30 @@ export class ClaudeRunner implements AgentRunner {
         const parentToolCallId = this.threadOf(message)
 
         for (const block of message.message.content) {
+          // Advisor blocks are missing from the SDK's content types.
+          const native = block as unknown as Record<string, unknown>
+          const advisorCall = advisorCallId(native)
+          const advice = advisorResult(native)
           if (block.type === 'text') {
             blocks.push({ type: 'text', text: block.text })
           } else if (block.type === 'thinking') {
             blocks.push({ type: 'thinking', text: block.thinking })
+          } else if (advisorCall) {
+            // Run by the API, not the CLI: no permission and no `tool_result` comes for it.
+            this.durations.start(advisorCall)
+            blocks.push({ type: 'tool_use', toolCallId: advisorCall, name: ADVISOR_TOOL, input: native.input ?? {} })
+            this.ctx.emit(
+              {
+                type: 'tool.started',
+                toolCallId: advisorCall,
+                name: ADVISOR_TOOL,
+                input: native.input ?? {},
+                parentToolCallId,
+              },
+              block,
+            )
+          } else if (advice) {
+            this.pendingAdvice.push({ messageId: message.message.id, ...advice, durationMs: this.durations.stop(advice.toolCallId) })
           } else if (block.type === 'tool_use') {
             this.durations.start(block.id)
             this.trackEdit(block.id, block.name, block.input)
@@ -783,6 +816,8 @@ export class ClaudeRunner implements AgentRunner {
             message,
           )
         }
+        // A stream that never closed its message still owes the advisor calls their outcome.
+        this.settleAdvice(null, [])
         // The CLI's total covers its whole process: the journal wants this turn's share.
         const turnCost = claudeTurnCost(message, this.processCostUsd)
         this.processCostUsd = message.total_cost_usd
@@ -848,6 +883,25 @@ export class ClaudeRunner implements AgentRunner {
   }
 
   /** Forward CLI signals (see `signals.ts`); ignore nonsignals. */
+  /**
+   * Completes the advisor calls of a finished API message, giving each the usage of its run.
+   * `messageId` null settles every call still waiting, without usage when none was reported.
+   */
+  private settleAdvice(messageId: string | null, runs: Pick<AdvisorOutcome, 'model' | 'usage'>[]): void {
+    const settled = this.pendingAdvice.filter((advice) => messageId === null || advice.messageId === messageId)
+    if (settled.length === 0) return
+    this.pendingAdvice = this.pendingAdvice.filter((advice) => !settled.includes(advice))
+    settled.forEach((advice, index) => {
+      this.ctx.emit({
+        type: 'tool.completed',
+        toolCallId: advice.toolCallId,
+        output: { ...advice.outcome, ...runs[index] },
+        isError: advice.outcome.status === 'unavailable',
+        durationMs: advice.durationMs,
+      })
+    })
+  }
+
   private emitSignal(message: SDKMessage): void {
     const event = translateSignal(message)
     if (event) this.ctx.emit(event, message)

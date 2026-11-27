@@ -15,6 +15,7 @@ import {
   Globe,
   Image,
   ListChecks,
+  Lightbulb,
   ListTodo,
   Loader,
   Pencil,
@@ -59,6 +60,7 @@ const TOOL_ICONS: Record<string, ReactNode> = {
   Task: <Bot size={14} />,
   Agent: <Bot size={14} />,
   ExitPlanMode: <ListChecks size={14} />,
+  advisor: <Lightbulb size={14} />,
 }
 
 /**
