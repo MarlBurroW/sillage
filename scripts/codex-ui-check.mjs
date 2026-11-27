@@ -92,6 +92,8 @@ try {
         { id: '1', header: '', question: 'Des contraintes ?', multiSelect: false, secret: false, allowOther: true, options: [] },
       ] })
       window.appendEvent({ type: 'agent.notice', code: 'test', level: 'info', message: 'Un événement reste consultable.', details: { preserved: true } })
+      // The server writes Codex notices in English; the thread shows them in the interface language.
+      window.appendEvent({ type: 'agent.notice', code: 'codex_retry', level: 'info', message: 'Euclid is retrying after an interruption: Reconnecting... 1/5', details: { agent: 'Euclid', message: 'Reconnecting... 1/5' } })
     })
     await page.getByText("L'agent te pose une question", { exact: true }).waitFor()
     await page.getByText('Vérifier les interactions', { exact: true }).waitFor()
@@ -107,7 +109,8 @@ try {
     assert.equal(await page.getByText('Travail en cours', { exact: true }).isVisible(), true)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.locator('[data-agent-notices="info"] > summary').click()
-    await page.getByText('Détails techniques', { exact: true }).click()
+    await page.getByText('Euclid réessaie après une interruption : Reconnecting... 1/5', { exact: true }).waitFor()
+    await page.getByText('Détails techniques', { exact: true }).first().click()
     await page.getByText('"preserved": true', { exact: false }).waitFor()
     await Promise.all([
       page.waitForResponse((response) => response.url().includes('/questions/request')),

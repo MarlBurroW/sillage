@@ -61,6 +61,14 @@ a generic fallback and a TypeScript exhaustiveness check. An unimplemented serve
 request produces a warning and an explicit RPC error. Rendering a dynamic tool
 does not provide client-side execution.
 
+Notices Sillage writes itself carry a `codex_*` code and English text; the web
+translates them by code. Texts from Codex (warnings, deprecations, sub-agent
+errors) are shown as sent. A sub-agent's warning or error shows its own message
+under its name, with retries as information, instead of a generic line. Routine
+notifications stay out of the thread: the under-development warning about
+`default_mode_request_user_input` (silenced by `suppress_unstable_features_warning`),
+`account/updated` unless the plan or sign-in changes, and `thread/goal/cleared`.
+
 ## 0.172.0 compatibility
 
 The 0.170–0.172 protocol adds one notification, `thread/search/partial` (results of

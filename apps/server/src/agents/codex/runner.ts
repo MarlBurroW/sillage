@@ -17,7 +17,9 @@ import type {
   AccountRateLimitsUpdatedNotification,
   AskForApproval,
   AgentMessageDeltaNotification,
+  AccountUpdatedNotification,
   ConfigReadResponse,
+  DeprecationNoticeNotification,
   CommandExecutionOutputDeltaNotification,
   CommandExecutionRequestApprovalParams,
   CommandExecutionRequestApprovalResponse,
@@ -86,7 +88,7 @@ import { startedItem, completedItem } from './item-events.js'
 import { NOTIFICATION_POLICY } from './notification-policy.js'
 import { CodexSubAgentUsage, CodexTurnUsage } from './turn-usage.js'
 import { CLIENT_INFO } from './client-info.js'
-import { describeTurnError } from './errors.js'
+import { codexErrorCode, describeTurnError } from './errors.js'
 import { fromCodexMcpStatus, toCodexThreadConfig, type CodexMcpStartup } from './mcp.js'
 import { describeWindow } from './quota.js'
 import { detach } from '../../detach.js'
@@ -265,6 +267,8 @@ export class CodexRunner implements AgentRunner {
   private readonly completedTurns = new Set<string>()
   /** Actual CLI-selected model, needed when conversation configuration says default. */
   private threadModel: string | null = null
+  /** Sign-in and plan from the last account/updated, to report only real changes. */
+  private account: string | null = null
   /**
    * `[sandbox_workspace_write] network_access` as the CLI resolves it for this cwd and home, read
    * once per process: what `networkAccess: CLI_DEFAULT` applies. A promise so the read overlaps
@@ -351,7 +355,8 @@ export class CodexRunner implements AgentRunner {
       onNotification: (method, params) => {
         try { this.translate(method, params) }
         catch (error) {
-          this.notice('translation_failed', `Impossible de lire l'événement Codex ${method} : ${error instanceof Error ? error.message : String(error)}`, 'warning', params)
+          const reason = error instanceof Error ? error.message : String(error)
+          this.notice('codex_translation_failed', `Sillage cannot read Codex event ${method}: ${reason}`, 'warning', { method, reason, params })
         }
       },
       onServerRequest: (method, params, id) => this.handleServerRequest(method, params, id),
@@ -378,6 +383,10 @@ export class CodexRunner implements AgentRunner {
       ...toCodexThreadConfig(this.mcpServers),
       // Also enable structured questions during normal working mode.
       'features.default_mode_request_user_input': true,
+      // That feature is flagged under development, so Codex warns about it on every thread start
+      // (924 notices in production before this). Sillage turns it on deliberately: silence it.
+      // Probed on codex-cli 0.172.0: the warning goes from 1 to 0.
+      suppress_unstable_features_warning: true,
       // Project instructions arrive from SILLAGE.md through
       // developerInstructions: reading repository AGENTS.md too would duplicate them. Zero
       // disables only project files; CODEX_HOME AGENTS.md remains active
@@ -666,7 +675,7 @@ export class CodexRunner implements AgentRunner {
       case 'thread/settings/updated': {
         const p = params as ThreadSettingsUpdatedNotification
         const model = p.threadSettings.model
-        if (this.threadModel && model !== this.threadModel) this.notice(method, `Modèle Codex : ${model}`, 'info')
+        if (this.threadModel && model !== this.threadModel) this.notice('codex_model_changed', `Codex model: ${model}`, 'info', { model })
         this.threadModel = model
         return
       }
@@ -693,7 +702,7 @@ export class CodexRunner implements AgentRunner {
         if (p.status.type === 'active') {
           this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'running')
         } else if (p.status.type === 'systemError') {
-          this.notice(method, 'Codex signale une erreur de session.', 'warning', p)
+          this.notice('codex_session_error', 'Codex reports a session error.', 'warning', p)
         }
         return
       }
@@ -713,18 +722,18 @@ export class CodexRunner implements AgentRunner {
 
       case 'model/rerouted': {
         const p = params as ModelReroutedNotification
-        this.notice(method, `Codex utilise ${p.toModel} à la place de ${p.fromModel}.`, 'warning', p)
+        this.notice('codex_model_rerouted', `Codex uses ${p.toModel} instead of ${p.fromModel}.`, 'warning', p)
         return
       }
 
       case 'model/safetyBuffering/updated': {
         const p = params as ModelSafetyBufferingUpdatedNotification
-        if (p.showBufferingUi) this.notice(method, 'Codex vérifie sa réponse avant de la transmettre.', 'info', p)
+        if (p.showBufferingUi) this.notice('codex_safety_buffering', 'Codex is checking its answer before sending it.', 'info', p)
         return
       }
 
       case 'model/verification':
-        this.notice(method, 'Codex demande une vérification du compte.', 'warning', params)
+        this.notice('codex_verification', 'Codex asks for an account verification.', 'warning', params)
         return
 
       case 'hook/started': {
@@ -753,7 +762,10 @@ export class CodexRunner implements AgentRunner {
         const p = params as ItemGuardianApprovalReviewCompletedNotification
         this.ctx.emit({ type: 'tool.completed', toolCallId: `review-${p.reviewId}`, output: p.review,
           isError: p.review.status === 'denied', durationMs: p.completedAtMs - p.startedAtMs }, p)
-        if (p.review.status === 'denied') this.notice(method, p.review.rationale ?? 'La vérification automatique a refusé cette action.', 'warning', p.action)
+        if (p.review.status === 'denied') {
+          this.notice('codex_auto_review_denied', p.review.rationale ?? 'Automatic review denied this action.', 'warning',
+            { rationale: p.review.rationale ?? null, action: p.action })
+        }
         return
       }
 
@@ -797,7 +809,7 @@ export class CodexRunner implements AgentRunner {
       case 'error': {
         const p = params as ErrorNotification
         if (p.willRetry) {
-          this.notice('retry', `Codex réessaie après une interruption : ${p.error.message}`, 'info')
+          this.notice('codex_retry', `Codex is retrying after an interruption: ${p.error.message}`, 'info', { message: p.error.message })
           return
         }
         this.reportedErrorTurn = p.turnId
@@ -910,11 +922,32 @@ export class CodexRunner implements AgentRunner {
         return
       }
 
+      /**
+       * Probed on 0.172.0: sent on every thread start once routing is known, so the first one says
+       * nothing new. Later ones matter only when the plan or sign-in actually changed.
+       */
+      case 'account/updated': {
+        const p = params as AccountUpdatedNotification
+        const account = `${p.authMode}:${p.planType}`
+        if (this.account !== null && account !== this.account) {
+          this.notice('codex_account_changed', `Codex account changed: ${p.planType ?? p.authMode ?? 'signed out'}`, 'info', p)
+        }
+        this.account = account
+        return
+      }
+
+      // The summary is the useful text; the generic event line used to hide it.
+      case 'deprecationNotice': {
+        const p = params as DeprecationNoticeNotification
+        this.notice(method, p.details ? `${p.summary}\n${p.details}` : p.summary, 'warning', p)
+        return
+      }
+
       default: {
         // codex/event notifications duplicate the typed v2 stream with v1 events.
         if (method.startsWith('codex/event/') || NOTIFICATION_POLICY[method] === 'ignore') return
         // Journal every state while rendering replaces the previous marker.
-        this.notice(method, `Événement Codex : ${method}`, 'info', params,
+        this.notice('codex_event', `Codex event: ${method}`, 'info', { method, params },
           `codex-notice:${this.turnId ?? 'session'}:${method}`)
         return
       }
@@ -1066,7 +1099,29 @@ export class CodexRunner implements AgentRunner {
         return
       }
       default:
-        if (method === 'error' || method === 'warning') this.notice(method, 'Un sous-agent Codex signale un problème.', 'warning', params)
+        if (method === 'error' || method === 'warning') this.childProblem(method, params, threadId)
+    }
+  }
+
+  /**
+   * A sub-agent's warning or error, with its own text: the generic line used instead hid usage
+   * limits behind "a sub-agent reports a problem". Same split as the main thread: a retry is
+   * information, anything else a warning. Not an `error` event, which would fail the parent turn.
+   */
+  private childProblem(method: 'error' | 'warning', params: unknown, threadId: string): void {
+    const agent = this.childThreads.get(threadId)?.description || 'Codex'
+    if (method === 'warning') {
+      const { message } = params as WarningNotification
+      this.notice('codex_subagent_warning', `${agent}: ${message}`, 'warning', { agent, message })
+      return
+    }
+    const p = params as ErrorNotification
+    const message = p.error.additionalDetails ? `${p.error.message}\n${p.error.additionalDetails}` : p.error.message
+    if (p.willRetry) {
+      this.notice('codex_retry', `${agent} is retrying after an interruption: ${message}`, 'info', { agent, message })
+    } else {
+      this.notice('codex_subagent_error', `${agent}: ${message}`, 'warning',
+        { agent, message, code: codexErrorCode(p.error.codexErrorInfo) })
     }
   }
 
@@ -1208,8 +1263,8 @@ export class CodexRunner implements AgentRunner {
       }
 
       default:
-        this.notice(method, `Codex demande une interaction non prise en charge : ${method}.`, 'warning', params)
-        return Promise.reject(new CodexRpcError(`Requête serveur non gérée : ${method}`, -32601))
+        this.notice('codex_unsupported_request', `Codex asks for an interaction Sillage does not support: ${method}.`, 'warning', { method, params })
+        return Promise.reject(new CodexRpcError(`Unhandled server request: ${method}`, -32601))
     }
   }
 
@@ -1234,7 +1289,7 @@ export class CodexRunner implements AgentRunner {
   async answerQuestion(requestId: string, answer: QuestionAnswer): Promise<boolean> {
     if (this.interactions.resolveQuestion(requestId, answer)) return true
     return this.asyncQuestions.answer(requestId, answer, async (text, clientMessageId, threadId) => {
-      if (!this.client || !this.threadId) throw new Error('La session Codex est fermée.')
+      if (!this.client || !this.threadId) throw new Error('The Codex session is closed.')
       const input: UserInput[] = [{ type: 'text', text, text_elements: [] }]
       const child = threadId && threadId !== this.threadId ? this.childThreads.get(threadId) : null
       if (child && threadId) await this.client.call('turn/start', { threadId, input, clientUserMessageId: clientMessageId })
@@ -1325,7 +1380,7 @@ export class CodexRunner implements AgentRunner {
     mentions: OutgoingMention[],
     skills: string[],
   ): Promise<void> {
-    if (!this.client || !this.threadId) throw new Error('La session Codex n\'est pas démarrée.')
+    if (!this.client || !this.threadId) throw new Error('The Codex session has not started.')
 
     // The manager journaled the message before starting this runner; only steering echoes here.
     const { input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills), this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
@@ -1340,7 +1395,7 @@ export class CodexRunner implements AgentRunner {
   }
 
   private async startTurn(input: UserInput[], clientUserMessageId?: string): Promise<void> {
-    if (!this.client || !this.threadId) throw new Error('La session Codex est fermée.')
+    if (!this.client || !this.threadId) throw new Error('The Codex session is closed.')
     // Configuration travels per turn as defined by the protocol,
     // making setting changes immediate.
     const turn = await this.client.callExperimental<TurnStartResponse>('turn/start', {

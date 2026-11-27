@@ -143,7 +143,7 @@ function completedEvents(
     case 'enteredReviewMode':
     case 'exitedReviewMode': return [{
       type: 'agent.notice', code: item.type, level: 'info',
-      message: item.type === 'enteredReviewMode' ? 'Codex démarre une revue.' : 'Codex a terminé la revue.', details: item.review,
+      message: item.type === 'enteredReviewMode' ? 'Codex starts a review.' : 'Codex finished the review.', details: item.review,
     }]
     case 'userMessage': // Already journaled on send.
     case 'subAgentActivity': // Associated with its subagent by the runner.

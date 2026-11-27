@@ -100,7 +100,8 @@ test('plans, outils récents, événements inconnus et clôtures orphelines rest
   assert.deepEqual(plan, { type: 'plan.updated', items: [{ text: 'Inspect the CLI', status: 'in_progress' }] })
   assert.ok(f.events.some((event) => event.type === 'tool.started' && event.name === 'functions/exec'))
   assert.ok(f.events.some((event) => event.type === 'tool.started' && event.name === 'Codex/futureTool'))
-  const notices = f.events.filter((event) => event.type === 'agent.notice').filter((event) => event.code === 'future/progress')
+  const notices = f.events.filter((event) => event.type === 'agent.notice')
+    .filter((event) => event.code === 'codex_event' && (event.details as { method: string }).method === 'future/progress')
   assert.equal(notices.length, 2)
   assert.equal(notices[0]!.id, notices[1]!.id)
   assert.equal(f.events.filter((event) => event.type === 'turn.completed').length, 1)
@@ -465,4 +466,50 @@ test('a configuration stored with the old webSearch flag reads as the CLI defaul
   const stored = parseAgentConfig(JSON.stringify({ ...current, webSearch: false, profile: null }))
   assert.equal(stored.agent === 'codex' && stored.networkAccess, '')
   assert.equal('webSearch' in stored || 'profile' in stored, false)
+})
+
+test('Sillage silences the warning about the feature it turns on itself', async t => {
+  const f = await runnerFixture(t)
+  const start = (await f.records()).find(record => record.method === 'thread/start')
+  assert.equal(start.params.config['features.default_mode_request_user_input'], true)
+  assert.equal(start.params.config.suppress_unstable_features_warning, true)
+})
+
+test('routine Codex notifications stay out of the thread; account changes and deprecations say something', async t => {
+  const f = await runnerFixture(t)
+  const account = (planType: string) => ({ method: 'account/updated', params: { authMode: 'chatgpt', planType, reason: 'workspaceRoutingReady' } })
+  await f.emit([
+    account('pro'), account('pro'),
+    { method: 'thread/goal/cleared', params: { threadId: 'root' } },
+    { method: 'deprecationNotice', params: { summary: 'Old flag is deprecated', details: 'Use the new one' } },
+    account('plus'),
+    done(),
+  ])
+  const notices = f.events.filter(event => event.type === 'agent.notice')
+  assert.deepEqual(notices.map(event => [event.code, event.message]), [
+    ['deprecationNotice', 'Old flag is deprecated\nUse the new one'],
+    ['codex_account_changed', 'Codex account changed: plus'],
+  ])
+})
+
+test('a sub-agent problem shows its own text: retries as information, usage limits as warnings', async t => {
+  const f = await runnerFixture(t)
+  const error = (message: string, willRetry: boolean, codexErrorInfo: unknown = null) => ({ method: 'error', params: {
+    threadId: 'child', turnId: 'child-turn', willRetry, error: { message, codexErrorInfo, additionalDetails: null } } })
+  await f.emit([
+    { method: 'thread/started', params: { thread: { id: 'child', agentNickname: 'Euclid', parentThreadId: 'root', preview: '' } } },
+    error('Reconnecting... 1/5', true),
+    error("You've hit your usage limit.", false, 'usageLimitExceeded'),
+    { method: 'warning', params: { threadId: 'child', message: 'Falling back from WebSockets to HTTPS transport.' } },
+    done(),
+  ])
+  const notices = f.events.filter(event => event.type === 'agent.notice')
+    .map(event => [event.code, event.level, event.details])
+  assert.deepEqual(notices, [
+    ['codex_retry', 'info', { agent: 'Euclid', message: 'Reconnecting... 1/5' }],
+    ['codex_subagent_error', 'warning', { agent: 'Euclid', message: "You've hit your usage limit.", code: 'usage_limit_exceeded' }],
+    ['codex_subagent_warning', 'warning', { agent: 'Euclid', message: 'Falling back from WebSockets to HTTPS transport.' }],
+  ])
+  // The parent turn is not failed by its sub-agent.
+  assert.equal(f.events.some(event => event.type === 'error'), false)
 })

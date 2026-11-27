@@ -98,6 +98,39 @@ export function activityOf(items: ChatItem[], thread: string | null): string | n
 }
 
 
+/**
+ * Codex notices written by Sillage itself. The server's English text stays as the fallback for
+ * the journal, the API and older clients; the CLI's own texts (warnings, sub-agent messages,
+ * deprecations) are shown as they are. Null for anything else.
+ */
+function codexNoticeText(item: NoticeItem): string | null {
+  const details = (item.details ?? {}) as Record<string, unknown>
+  const text = (key: string): string => {
+    const value = details[key]
+    return typeof value === 'string' ? value : ''
+  }
+  switch (item.code) {
+    case 'codex_retry':
+      return details.agent
+        ? translate('codex.notice.subAgentRetry', { agent: text('agent'), message: text('message') })
+        : translate('codex.notice.retry', { message: text('message') })
+    case 'codex_model_changed': return translate('codex.notice.modelChanged', { model: text('model') })
+    case 'codex_model_rerouted': return translate('codex.notice.modelRerouted', { from: text('fromModel'), to: text('toModel') })
+    case 'codex_session_error': return translate('codex.notice.sessionError')
+    case 'codex_safety_buffering': return translate('codex.notice.safetyBuffering')
+    case 'codex_verification': return translate('codex.notice.verification')
+    case 'codex_account_changed':
+      return translate('codex.notice.accountChanged', { plan: text('planType') || text('authMode') || translate('codex.notice.signedOut') })
+    case 'codex_event': return translate('codex.notice.event', { method: text('method') })
+    case 'codex_translation_failed': return translate('codex.notice.translationFailed', { method: text('method'), reason: text('reason') })
+    case 'codex_unsupported_request': return translate('codex.notice.unsupportedRequest', { method: text('method') })
+    case 'codex_auto_review_denied': return text('rationale') || translate('codex.notice.autoReviewDenied')
+    case 'enteredReviewMode': return translate('codex.notice.reviewStarted')
+    case 'exitedReviewMode': return translate('codex.notice.reviewFinished')
+    default: return null
+  }
+}
+
 export function noticeText(item: NoticeItem): string {
   if (item.code === 'claude_session_writes_lost') return translate('claude.notice.sessionWritesLost')
   if (item.code === 'claude_permission_mode_adjusted') {
@@ -117,6 +150,8 @@ export function noticeText(item: NoticeItem): string {
     const details = item.details as { model?: string } | null
     return translate('copilot.autoModel.notice', { model: details?.model ?? '' })
   }
+  const codex = codexNoticeText(item)
+  if (codex !== null) return codex
   if (item.code === 'antigravity_account_signed_out') return translate('antigravity.logout.notice')
   if (item.code === 'portable_fork') return translate('antigravity.fork.notice')
   if (item.code === 'additional_directories_unsupported') return translate('antigravity.directories.notice')
