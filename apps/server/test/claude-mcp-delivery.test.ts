@@ -116,3 +116,14 @@ test('untrusted steering is marked synthetic, the user\'s own is not', async (t)
   assert.equal(steered[0]?.isSynthetic, undefined)
   assert.equal(steered[1]?.isSynthetic, true)
 })
+
+test('the CLI is asked for thinking summaries, not the empty blocks SDK sessions get by default', async (t) => {
+  // Card #128: without the flag, 92 % of thinking blocks in production carried no text.
+  const f = await setup(t)
+  const launch = (await f.trace()).find((message) => message.type === 'launch')
+  const index = launch?.args.indexOf('--thinking-display') ?? -1
+  assert.notEqual(index, -1)
+  assert.equal(launch?.args[index + 1], 'summarized')
+  // The thinking type stays the model's own: Haiku 4.5 has no adaptive thinking.
+  assert.equal(launch?.args.some((arg: string) => arg.startsWith('--thinking=')), false)
+})

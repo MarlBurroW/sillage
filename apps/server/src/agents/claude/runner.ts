@@ -330,6 +330,13 @@ export class ClaudeRunner implements AgentRunner {
         // subagent on its own model and prompt cache, so each summary costs little; probed on
         // 2.1.318, where it arrives as `task_progress.summary`.
         agentProgressSummaries: true,
+        // SDK sessions default to `omitted`: thinking blocks arrive with empty text, so the thread
+        // showed no reasoning at all. The flag asks the API for a prose summary, on every model
+        // (Haiku 4.5 included), for sub-agents too, and the transcript keeps it for import and
+        // resync; probed on 2.1.332. Billing covers the full reasoning either way. Not
+        // `thinking: { type: 'adaptive', display }`, which would also force the thinking type on
+        // models without adaptive thinking.
+        extraArgs: { 'thinking-display': 'summarized' },
         abortController: this.abort,
         ...(this.ctx.resumeSessionId ? { resume: this.ctx.resumeSessionId } : {}),
         // Always supplied, never left to SDK. Internal resolution searches platform package
