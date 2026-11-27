@@ -6,6 +6,7 @@ import type {
   AgentKind,
   AgentModelsDto,
   AgentUsage,
+  UsageResetOutcome,
   EditDiffDto,
   ProjectCommandsDto,
 } from '@sillage/protocol'
@@ -60,6 +61,12 @@ export interface AgentAdapter {
   usage(force: boolean): Promise<AgentUsage>
   /** Same catalog read for additional accounts. `credential` identifies accounts to CLIs: Claude tokens (`ClaudeAccountStore`), Codex `CODEX_HOME` (`CodexAccountHomes`). Optional for CLIs without additional accounts. */
   usageForAccount?(accountId: string, credential: string, force: boolean): Promise<AgentUsage>
+  /**
+   * Spends one free quota reset (`AgentUsage.resetCredits`): the CLI's own login with a null
+   * credential, else the account the credential identifies. Irreversible; only an explicit
+   * request from someone allowed to act on that account calls it. Absent for CLIs without resets.
+   */
+  consumeUsageReset?(credential: string | null): Promise<UsageResetOutcome>
   /** Recognized slash commands in directories without running sessions, serving drafts. Unsupported CLIs return empty lists; `force` bypasses caches for refresh buttons. */
   commands(cwd: string, force: boolean, credential?: string): Promise<ProjectCommandsDto>
   /** Replaces `CLI_DEFAULT` with actual CLI announcements. Unreachable catalogs leave sentinels so CLIs apply their own startup defaults correctly. */

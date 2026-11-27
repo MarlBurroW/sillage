@@ -9,6 +9,7 @@ import {
   type CodexModeDto,
   type EditDiffDto,
   type ProjectCommandsDto,
+  type UsageResetOutcome,
 } from '@sillage/protocol'
 import type { CollaborationModeMask, Model, ThreadForkResponse } from '@sillage/codex-bindings/v2'
 import type { Config } from '../../config.js'
@@ -172,6 +173,11 @@ export class CodexAdapter implements AgentAdapter {
 
   usage(force: boolean): Promise<AgentUsage> {
     return this.usageReader.read(force)
+  }
+
+  /** credential is the account's CODEX_HOME, null for the CLI's own login. */
+  consumeUsageReset(credential: string | null): Promise<UsageResetOutcome> {
+    return this.usageReader.consumeReset(credential ?? undefined)
   }
 
   /** credential is the account's CODEX_HOME; see CodexAccountHomes. */

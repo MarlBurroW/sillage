@@ -49,6 +49,16 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     case 'config/read': send({ id, result: { config: { sandbox_workspace_write: process.env.FIXTURE_CLI_NETWORK ? {
       writable_roots: [], network_access: process.env.FIXTURE_CLI_NETWORK === 'true', exclude_tmpdir_env_var: false, exclude_slash_tmp: false,
     } : null, service_tier: process.env.FIXTURE_CLI_TIER ?? null }, origins: {}, layers: null } }); break
+    // Quota resets: two credits, the second expiring first. Nothing here reaches a real account.
+    case 'account/rateLimits/read': send({ id, result: {
+      rateLimits: { limitId: 'codex', limitName: null, primary: { usedPercent: 100, windowDurationMins: 10080, resetsAt: 1796000000 }, secondary: null, credits: null, planType: 'pro' },
+      rateLimitsByLimitId: null,
+      rateLimitResetCredits: { availableCount: 2, credits: [
+        { id: 'late', resetType: 'codexRateLimits', status: 'available', grantedAt: 1, expiresAt: 1797114566, title: 'Full reset', description: 'Granted later.' },
+        { id: 'soon', resetType: 'codexRateLimits', status: 'available', grantedAt: 1, expiresAt: 1796164434, title: 'Full reset', description: 'Thanks for using Codex!' },
+      ] },
+    } }); break
+    case 'account/rateLimitResetCredit/consume': send({ id, result: { outcome: process.env.FIXTURE_RESET_OUTCOME ?? 'reset' } }); break
     case 'skills/list': send({ id, result: { data: [] } }); break
     case 'mcpServerStatus/list': send({ id, result: { data: [], nextCursor: null } }); break
     case 'turn/start': {

@@ -1,5 +1,5 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentKind, AgentUsage, UsageWindow } from '@sillage/protocol'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { AgentKind, AgentUsage, UsageResetOutcome, UsageWindow } from '@sillage/protocol'
 import { api } from './api'
 import { translate, type MessageKey } from './i18n'
 
@@ -40,6 +40,18 @@ export function useRefreshUsage(agent: AgentKind, account: string | null = null)
     const fresh = await api.get<AgentUsage>(usagePath(agent, account, true))
     queryClient.setQueryData(usageKey(agent, account), fresh)
   }
+}
+
+/**
+ * Spends one free quota reset of the account (Codex). Irreversible: callers confirm first. Every
+ * usage reading of this CLI is refetched afterwards, since the server dropped its cache.
+ */
+export function useConsumeUsageReset(agent: AgentKind, account: string | null = null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<{ outcome: UsageResetOutcome; resumed: number }>(`/api/agents/${agent}/usage/reset`, { account }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['usage', agent] }),
+  })
 }
 
 /** Short names for Claude's quota windows, which the stream and usage read identify by type. */

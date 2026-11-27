@@ -38,6 +38,7 @@
     "test:cli-updates-ui": "node scripts/cli-updates-ui-check.mjs",
     "test:concentration-ui": "node scripts/concentration-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
+    "test:usage-resets-ui": "node scripts/usage-resets-ui-check.mjs",
     "test:qol-ui": "node scripts/qol-ui-check.mjs",
     "test:status-bar-ui": "node scripts/status-bar-ui-check.mjs",
   "test:mentions-ui": "node scripts/mentions-ui-check.mjs",

@@ -1,6 +1,13 @@
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import type { AgentUsage, UsageWindow } from '@sillage/protocol'
-import type { GetAccountRateLimitsResponse, RateLimitSnapshot } from '@sillage/codex-bindings/v2'
+import type { AgentUsage, UsageResetCredits, UsageResetOutcome, UsageWindow } from '@sillage/protocol'
+import type {
+  ConsumeAccountRateLimitResetCreditResponse,
+  GetAccountRateLimitsResponse,
+  RateLimitResetCredit,
+  RateLimitResetCreditsSummary,
+  RateLimitSnapshot,
+} from '@sillage/codex-bindings/v2'
 import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { CodexAppServerClient } from './app-server-client.js'
@@ -45,6 +52,29 @@ function toCredits(snapshot: RateLimitSnapshot): AgentUsage['credits'] {
   }
 }
 
+/** Available credits, soonest expiry first: the one worth spending before it is lost. */
+function availableCredits(summary: RateLimitResetCreditsSummary | null): RateLimitResetCredit[] {
+  return (summary?.credits ?? [])
+    .filter((credit) => credit.status === 'available')
+    .sort((a, b) => (a.expiresAt ?? Infinity) - (b.expiresAt ?? Infinity))
+}
+
+/**
+ * Probed on codex-cli 0.172.0: `availableCount` is a JSON number despite the generated `bigint`.
+ * Null without a credit, so the panel offers nothing to spend.
+ */
+export function toResetCredits(summary: RateLimitResetCreditsSummary | null): UsageResetCredits | null {
+  const available = Number(summary?.availableCount ?? 0)
+  if (!summary || available <= 0) return null
+  const next = availableCredits(summary)[0]
+  return {
+    available,
+    nextExpiresAt: next?.expiresAt ? next.expiresAt * 1000 : null,
+    title: next?.title ?? null,
+    description: next?.description ?? null,
+  }
+}
+
 function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fetchedAt'> {
   const buckets = response.rateLimitsByLimitId ?? { [response.rateLimits.limitId ?? '']: response.rateLimits }
   const entries = Object.entries(buckets).filter(
@@ -68,6 +98,7 @@ function normalize(response: GetAccountRateLimitsResponse): Omit<AgentUsage, 'fe
     limitsAvailable: windows.length > 0,
     windows,
     credits: toCredits(response.rateLimits),
+    resetCredits: toResetCredits(response.rateLimitResetCredits ?? null),
   }
 }
 
@@ -90,6 +121,27 @@ export class CodexUsageReader {
     return this.cached.read(force)
   }
 
+  /**
+   * Spends one free reset of the account (the CLI's own login without `home`). Irreversible: the
+   * route asks for it only after an explicit confirmation, and nothing calls it on its own. Picks
+   * the credit that expires first rather than letting the backend choose. The idempotency key is
+   * fresh per attempt, as the protocol asks; readings are dropped so the panel shows the reset.
+   */
+  async consumeReset(home?: string): Promise<UsageResetOutcome> {
+    const outcome = await this.withClient(home, async (client) => {
+      const usage = await client.call<GetAccountRateLimitsResponse, 'account/rateLimits/read'>('account/rateLimits/read', undefined)
+      const credit = availableCredits(usage.rateLimitResetCredits ?? null)[0]
+      const response = await client.call<ConsumeAccountRateLimitResetCreditResponse, 'account/rateLimitResetCredit/consume'>(
+        'account/rateLimitResetCredit/consume',
+        { idempotencyKey: randomUUID(), creditId: credit?.id ?? null },
+      )
+      return response.outcome satisfies UsageResetOutcome
+    })
+    this.cached.invalidate()
+    this.byAccount.invalidate()
+    return outcome
+  }
+
   /** Usage for the account identified by the supplied CODEX_HOME. */
   async readForAccount(accountId: string, home: string, force = false): Promise<AgentUsage> {
     this.homes.set(accountId, home)
@@ -100,7 +152,13 @@ export class CodexUsageReader {
     }
   }
 
-  private async probe(home?: string): Promise<Omit<AgentUsage, 'fetchedAt'>> {
+  private probe(home?: string): Promise<Omit<AgentUsage, 'fetchedAt'>> {
+    return this.withClient(home, async (client) => normalize(
+      await client.call<GetAccountRateLimitsResponse, 'account/rateLimits/read'>('account/rateLimits/read', undefined),
+    ))
+  }
+
+  private async withClient<T>(home: string | undefined, run: (client: CodexAppServerClient) => Promise<T>): Promise<T> {
     const client = new CodexAppServerClient({
       binary: await this.executable(),
       cwd: home ?? homedir(),
@@ -112,12 +170,7 @@ export class CodexUsageReader {
 
     try {
       await client.initialize(CLIENT_INFO)
-      return normalize(
-        await client.call<GetAccountRateLimitsResponse, 'account/rateLimits/read'>(
-          'account/rateLimits/read',
-          undefined,
-        ),
-      )
+      return await run(client)
     } finally {
       client.close()
     }

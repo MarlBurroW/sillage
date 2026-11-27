@@ -5,6 +5,8 @@ import { conversations, usageLimitResumes, type Db, type UsageLimitResumeRow } f
 import {
   conversationPath,
   DEFAULT_USAGE_LIMIT_RESUME_MESSAGE,
+  parseAgentConfig,
+  type AgentKind,
   USAGE_LIMIT_RESUMED_NOTICE,
   USAGE_LIMIT_STOP_NOTICE,
   type ContentBlock,
@@ -300,6 +302,30 @@ export class UsageLimitResumeService {
       this.resuming.delete(row.conversationId)
     }
   }
+}
+
+/**
+ * After a quota reset, the sessions waiting on that account's limit need not wait for the window:
+ * their scheduled resume becomes due now and the next pass (within `TICK_MS`) sends it. `account`
+ * is the conversation's Sillage account, null for the CLI's own login. Returns how many moved.
+ */
+export function bringForwardUsageLimitResumes(db: Db, agent: AgentKind, account: string | null, now = Date.now()): number {
+  const waiting = db
+    .select({ id: usageLimitResumes.id, agent: conversations.agent, config: conversations.config })
+    .from(usageLimitResumes)
+    .innerJoin(conversations, eq(conversations.id, usageLimitResumes.conversationId))
+    .where(and(eq(usageLimitResumes.status, 'scheduled'), isNull(usageLimitResumes.resolvedAt)))
+    .all()
+  let moved = 0
+  for (const row of waiting) {
+    if (row.agent !== agent) continue
+    let config
+    try { config = parseAgentConfig(row.config) } catch { continue }
+    if (!('account' in config) || (config.account ?? null) !== account) continue
+    db.update(usageLimitResumes).set({ resumeAt: now }).where(eq(usageLimitResumes.id, row.id)).run()
+    moved += 1
+  }
+  return moved
 }
 
 /** The agent reads the header before the account's text: it says who is speaking and why. */

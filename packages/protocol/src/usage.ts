@@ -34,6 +34,24 @@ export const usageCreditsSchema = z.object({
   enabled: z.boolean(),
 })
 
+/**
+ * Free quota resets the account was granted (Codex), each lifting every usage window at once.
+ * They expire, so the soonest expiry is what the user needs to know.
+ */
+export const usageResetCreditsSchema = z.object({
+  available: z.number(),
+  /** Soonest expiry among the listed credits, in milliseconds; null when none expires or unknown. */
+  nextExpiresAt: z.number().nullable(),
+  /** The backend's wording for the credit ("Full reset"), when given. */
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+})
+export type UsageResetCredits = z.infer<typeof usageResetCreditsSchema>
+
+/** What redeeming one reset did, in Codex's terms. */
+export const usageResetOutcomeSchema = z.enum(['reset', 'nothingToReset', 'noCredit', 'alreadyRedeemed'])
+export type UsageResetOutcome = z.infer<typeof usageResetOutcomeSchema>
+
 export const agentUsageSchema = z.object({
   agent: agentKindSchema,
   /** CLI-reported plan (`max`, `plus`, etc.); null for usage billing. */
@@ -45,6 +63,8 @@ export const agentUsageSchema = z.object({
   limitsAvailable: z.boolean(),
   windows: z.array(usageWindowSchema),
   credits: usageCreditsSchema.nullable(),
+  /** Absent for CLIs without the concept; null when the account reports none. */
+  resetCredits: usageResetCreditsSchema.nullable().optional(),
   fetchedAt: z.number(),
 })
 export type AgentUsage = z.infer<typeof agentUsageSchema>

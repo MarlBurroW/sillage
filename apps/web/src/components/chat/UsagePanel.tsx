@@ -1,17 +1,81 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Loader, RefreshCw, X } from 'lucide-react'
 import { useState } from 'react'
-import type { AgentKind } from '@sillage/protocol'
+import type { AgentKind, UsageResetCredits, UsageResetOutcome } from '@sillage/protocol'
 import { AGENT_LABELS } from '../AgentIcon'
 import { locale, useTranslate } from '../../lib/i18n'
-import { useAgentUsage, useRefreshUsage } from '../../lib/usage'
-import { Banner, IconButton, cx } from '../ui'
+import { useCurrentUser } from '../../lib/session'
+import { useAgentUsage, useConsumeUsageReset, useRefreshUsage } from '../../lib/usage'
+import { Banner, Button, ConfirmDialog, IconButton, cx } from '../ui'
 import { UsageBar, readAge } from './UsageBar'
 
 /**
  * Account usage equivalent to /usage. Assume no known windows: display CLI inventory in reported
  * order. This let Fable gauges appear without specific code and supports future ones too.
  */
+
+/**
+ * Free quota resets (Codex). Spending one is irreversible and lifts every window at once, so the
+ * button only opens a confirmation that says so. The CLI's own login belongs to the admin, like
+ * the server's rule; an additional account to its owner, who is the only one shown it.
+ */
+function ResetCredits({ agent, account, credits }: { agent: AgentKind; account: string | null; credits: UsageResetCredits }) {
+  const t = useTranslate()
+  const { data: user } = useCurrentUser()
+  const consume = useConsumeUsageReset(agent, account)
+  const [confirming, setConfirming] = useState(false)
+  const [outcome, setOutcome] = useState<{ outcome: UsageResetOutcome; resumed: number } | null>(null)
+  const allowed = account !== null || user?.isAdmin === true
+  const expires = credits.nextExpiresAt === null
+    ? null
+    : new Date(credits.nextExpiresAt).toLocaleDateString(locale(), { day: 'numeric', month: 'long' })
+  // API errors arrive already translated from their code.
+  const error = consume.error ? consume.error.message || t('usage.error') : null
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-line pt-3" data-usage-resets>
+      <div className="flex items-baseline gap-2 text-sm">
+        <span className="min-w-0 flex-1 truncate text-ink">{t('usage.resets.title')}</span>
+        <span className="shrink-0 text-[0.6875rem] text-ink-faint">{t('usage.resets.count', { count: credits.available })}</span>
+      </div>
+      {credits.description || expires ? (
+        <p className="text-[0.6875rem] text-ink-faint">
+          {[credits.description, expires ? t('usage.resets.expires', { date: expires }) : null].filter(Boolean).join(' ')}
+        </p>
+      ) : null}
+      {outcome ? (
+        <p role="status" className="text-xs text-ink-soft">
+          {outcome.outcome === 'reset' && outcome.resumed > 0
+            ? t('usage.resets.outcome.resumed')
+            : t(`usage.resets.outcome.${outcome.outcome}`)}
+        </p>
+      ) : null}
+      {error ? <Banner>{error}</Banner> : null}
+      {allowed ? (
+        <Button variant="secondary" size="sm" className="self-start" onClick={() => { setOutcome(null); setConfirming(true) }}>
+          {t('usage.resets.use')}
+        </Button>
+      ) : (
+        <p className="text-[0.6875rem] text-ink-faint">{t('usage.resets.adminOnly')}</p>
+      )}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('usage.resets.confirm.title')}
+        confirmLabel={t('usage.resets.confirm.action')}
+        busy={consume.isPending}
+        onConfirm={() => {
+          consume.mutate(undefined, {
+            onSuccess: (result) => setOutcome(result),
+            onSettled: () => setConfirming(false),
+          })
+        }}
+      >
+        <p className="text-sm text-ink-soft">{t('usage.resets.confirm.body')}</p>
+      </ConfirmDialog>
+    </div>
+  )
+}
 
 /**
  * Radix portals mount on open and unmount on close, guaranteeing usage refetch without client
@@ -93,6 +157,8 @@ function UsageContent({ agent, account }: { agent: AgentKind; account: string | 
                 ) : null}
               </div>
             ) : null}
+
+            {usage.resetCredits ? <ResetCredits agent={agent} account={account} credits={usage.resetCredits} /> : null}
 
             <p
               className="text-[0.6875rem] text-ink-faint"

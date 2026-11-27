@@ -18,6 +18,7 @@ import type { CopilotAccountHomes } from '../../copilot-accounts/homes.js'
 import type { CopilotAccountStore } from '../../copilot-accounts/store.js'
 import type { AntigravityAccountStore } from '../../antigravity-accounts/store.js'
 import { assertWorkingDirectory, projectCwd } from '../../workspace.js'
+import { bringForwardUsageLimitResumes } from '../../usage-limits/resume-service.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
@@ -170,6 +171,34 @@ export function registerAgentRoutes(
         err,
       )
     }
+  })
+
+  /**
+   * Spends one free quota reset (Codex), after the interface asked for an explicit confirmation.
+   * Same ownership as the account itself: the CLI's own login belongs to the admin (scope rule:
+   * global), an additional account to its owner. On `reset`, sessions waiting on that account's
+   * limit resume on the next pass instead of at the window's end.
+   */
+  app.post('/api/agents/:agent/usage/reset', async (request) => {
+    const user = requireUser(request)
+    const adapter = resolveAdapter(paramsAgent(request.params))
+    const { account } = z.object({ account: z.string().min(1).nullable().default(null) }).parse(request.body ?? {})
+    if (!adapter.consumeUsageReset) throw new HttpError(404, 'usage_reset_unsupported', 'This CLI offers no quota reset.')
+    let credential: string | null = null
+    if (account === null) {
+      requireAdmin(request)
+    } else {
+      credential = accountCredential(adapter.kind, user.id, account)
+      if (credential === null) throw new HttpError(404, 'agent_account_not_found', 'Unknown account for this CLI.')
+    }
+    let outcome
+    try {
+      outcome = await adapter.consumeUsageReset(credential)
+    } catch (err) {
+      throw cliUnavailable(adapter, 'usage_reset_failed', 'Could not use a quota reset with {label}: {error}.', err)
+    }
+    const resumed = outcome === 'reset' ? bringForwardUsageLimitResumes(ctx.db, adapter.kind, account) : 0
+    return { outcome, resumed }
   })
 
   /** Model catalog of the CLI's own login, or of an additional account with `?account=` because plans decide the list. `?refresh=1` bypasses the cache like `/usage`, for a list that changed after a login. */

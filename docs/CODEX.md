@@ -57,6 +57,19 @@ that turn and the following ones, an omitted field keeps the thread's tier, and
 `service_tier` from `config.toml` (read with `config/read`), else `"default"`:
 omitting it would leave a tier chosen earlier in the session in force.
 
+## Free quota resets
+
+`account/rateLimits/read` also lists the free resets the account was granted
+(`rateLimitResetCredits`: a count, and per credit a title and an expiry). The
+usage panel shows how many remain and when the next one expires. **Use a reset**
+asks for a confirmation, then calls `account/rateLimitResetCredit/consume` with
+a fresh `idempotencyKey` and the credit that expires first. The resets of the
+CLI's own login belong to the admin, those of an additional account to its
+owner (`POST /api/agents/codex/usage/reset`). On `reset`, sessions waiting on
+that account's usage limit resume on the next pass instead of at the window's
+end. Tests only ever consume against the fixture app-server: a probe would
+spend a real reset.
+
 ## Activities
 
 Messages, proposed plans, work steps, commands, file changes, MCP and dynamic tools,
