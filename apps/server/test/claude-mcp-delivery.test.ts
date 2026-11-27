@@ -127,3 +127,10 @@ test('the CLI is asked for thinking summaries, not the empty blocks SDK sessions
   // The thinking type stays the model's own: Haiku 4.5 has no adaptive thinking.
   assert.equal(launch?.args.some((arg: string) => arg.startsWith('--thinking=')), false)
 })
+
+test('the CLI is told Sillage stops background tasks one by one, so an interrupt spares them', async (t) => {
+  // Card #132: undeclared, the CLI killed every background sub-agent and workflow on interrupt.
+  const f = await setup(t)
+  const initialize = (await f.trace()).find((message) => message.request?.subtype === 'initialize')
+  assert.equal(initialize?.request.perTaskStopAffordance, true)
+})

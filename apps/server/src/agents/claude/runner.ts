@@ -337,6 +337,11 @@ export class ClaudeRunner implements AgentRunner {
         // `thinking: { type: 'adaptive', display }`, which would also force the thinking type on
         // models without adaptive thinking.
         extraArgs: { 'thinking-display': 'summarized' },
+        // The Agents pane stops each background task through `stopTask`. Without this declaration
+        // the CLI fails closed: interrupting a turn to redirect it also killed every background
+        // sub-agent and workflow, 6 ms later. Probed on 2.1.332: declared, they survive the
+        // interrupt and `stopTask` still stops them. `terminate` ends the process and all of it.
+        perTaskStopAffordance: true,
         abortController: this.abort,
         ...(this.ctx.resumeSessionId ? { resume: this.ctx.resumeSessionId } : {}),
         // Always supplied, never left to SDK. Internal resolution searches platform package
