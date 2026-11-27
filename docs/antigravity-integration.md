@@ -64,6 +64,10 @@ The agent reads it on demand, so it stays while a session runs; when the last
 Antigravity session in that folder stops, Sillage removes the untracked system skills
 and the folders this leaves empty (`agents/antigravity/system-skills.ts`). A system
 skill committed to the repository, or any other skill there, is left alone.
+Catalog, usage and command probes open their sessions in a folder of Sillage's own,
+`<GEMINI_HOME>/sillage-probe-cwd`, and clean it after each probe: models and commands do
+not depend on the project. Earlier probes ran in the home folder; the server removes
+what they left there at startup.
 
 ## Deliberate differences from Claude
 

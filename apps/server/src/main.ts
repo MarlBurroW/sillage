@@ -1,6 +1,8 @@
 import { PreviewService } from './previews/service.js'
 import { BrowserManager } from './browser/manager.js'
 import { mkdirSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { removeMaterializedSystemSkills } from './agents/antigravity/system-skills.js'
 import { openDatabase, projects } from '@sillage/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { installFaultPolicy } from './detach.js'
@@ -223,6 +225,9 @@ async function main(): Promise<void> {
   usageLimits.start(app.log)
   prices.start()
 
+  // Before card #127, catalog probes opened their sessions in the home folder, where Antigravity
+  // left its system skills. Before listening: no Antigravity session can be running there yet.
+  try { removeMaterializedSystemSkills(homedir()) } catch (err) { app.log.warn({ err }, 'Antigravity system skills cleanup failed') }
   await app.listen({ host: config.server.host, port: config.server.port })
   // A busy preview port must not keep Sillage down: previews answer nothing, and the log says why.
   if (previews) {

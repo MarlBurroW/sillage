@@ -1,5 +1,4 @@
-import { homedir } from 'node:os'
-import { statSync } from 'node:fs'
+import { mkdirSync, statSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentModelDto, AgentModelsDto, AgentUsage, SlashCommandDto } from '@sillage/protocol'
@@ -10,6 +9,7 @@ import { CachedProbe } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { antigravityEnv, userAntigravityHome } from '../../antigravity-accounts/homes.js'
 import { antigravityArgs } from './launch.js'
+import { removeMaterializedSystemSkills } from './system-skills.js'
 
 function credentialRevision(home: string): string {
   return ['settings.json', '../sillage-credentials.json'].map((name) => {
@@ -41,6 +41,18 @@ export function modelCatalog(state: unknown): AgentModelsDto {
   return { models, modes: [], account: null, outputStyles: [], fastMode: null, agents: [], fetchedAt: Date.now() }
 }
 
+/**
+ * Folder the probes open their sessions in. `session/new` writes the system skills into the
+ * session's folder (see system-skills.ts), and a probe ran in the user's home or the project's
+ * repository left them there. Models and commands do not depend on the project (1.4.3 lists
+ * `plan`, `usage` and `logout` everywhere), so one folder of Sillage's own serves every probe.
+ */
+export function antigravityProbeFolder(home: string): string {
+  const dir = join(home, 'sillage-probe-cwd')
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  return dir
+}
+
 export class AntigravityCatalog {
   private readonly catalogs = new Map<string, CachedProbe<Listing>>()
   private readonly quotas = new Map<string, CachedProbe<Omit<AgentUsage, 'fetchedAt'>>>()
@@ -51,12 +63,12 @@ export class AntigravityCatalog {
     this.quotas.clear()
   }
 
-  list(home = userAntigravityHome(), cwd = homedir(), force = false): Promise<Listing & { fetchedAt: number }> {
+  list(home = userAntigravityHome(), force = false): Promise<Listing & { fetchedAt: number }> {
     for (const [key, probe] of this.catalogs) if (probe.expired(60 * 60_000)) this.catalogs.delete(key)
-    const key = JSON.stringify([home, cwd, credentialRevision(home)])
+    const key = JSON.stringify([home, credentialRevision(home)])
     let probe = this.catalogs.get(key)
     if (!probe) {
-      probe = new CachedProbe(60 * 60_000, () => this.probe(home, cwd, false).then((result) => result.listing))
+      probe = new CachedProbe(60 * 60_000, () => this.probe(home, false).then((result) => result.listing))
       this.catalogs.set(key, probe)
     }
     return probe.read(force)
@@ -67,13 +79,14 @@ export class AntigravityCatalog {
     const key = JSON.stringify([home, credentialRevision(home)])
     let probe = this.quotas.get(key)
     if (!probe) {
-      probe = new CachedProbe(60_000, () => this.probe(home, homedir(), true).then((result) => parseUsage(result.report)))
+      probe = new CachedProbe(60_000, () => this.probe(home, true).then((result) => parseUsage(result.report)))
       this.quotas.set(key, probe)
     }
     return probe.read(force)
   }
 
-  private async probe(home: string, cwd: string, usage: boolean): Promise<{ listing: Listing; report: string }> {
+  private async probe(home: string, usage: boolean): Promise<{ listing: Listing; report: string }> {
+    const cwd = antigravityProbeFolder(home)
     let commands: SlashCommandDto[] = []
     let report = ''
     let sessionId: string | null = null
@@ -104,6 +117,7 @@ export class AntigravityCatalog {
       return { listing: { models, commands }, report }
     } finally {
       await client.closeAndWait()
+      removeMaterializedSystemSkills(cwd)
       // Probe sessions contain no user messages. Let the native process release
       // SQLite before removing only the files belonging to this probe.
       if (sessionId && /^[\w-]+$/.test(sessionId)) {

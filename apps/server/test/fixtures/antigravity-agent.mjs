@@ -2,7 +2,7 @@
 // ACP 1.4.3 wire shapes captured from Google's distribution. No network or model calls.
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 const root = dirname(process.argv[1])
@@ -75,6 +75,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     case 'session/new':
     case 'session/resume':
       sessionId = message.params.sessionId ?? randomUUID()
+      // 1.4.3 materializes its system skill into the session's folder at session/new, prompt or not.
+      if (message.method === 'session/new' && message.params.cwd) {
+        mkdirSync(join(message.params.cwd, 'skills', 'system', 'run-workflow'), { recursive: true })
+        writeFileSync(join(message.params.cwd, 'skills', 'system', 'run-workflow', 'SKILL.md'), '---\nname: run-workflow\ndescription: Workflows\nmetadata:\n  namespace: system\n---\nBody\n')
+      }
       // Exercise notifications arriving before session/new's response.
       update({ sessionUpdate: 'available_commands_update', availableCommands: ['plan', 'usage', 'logout'].map((name) => ({ name, description: name })) })
       return reply({ sessionId, configOptions: options() })

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,7 +8,7 @@ import { test, type TestContext } from 'node:test'
 import { applyEvent, emptyChatState } from '@sillage/protocol/chat-state'
 import { DEFAULT_ANTIGRAVITY_CONFIG, sillageEventSchema, type SillageEvent } from '@sillage/protocol'
 import { AntigravityRunner } from '../src/agents/antigravity/runner.js'
-import { AntigravityCatalog, parseUsage } from '../src/agents/antigravity/catalog.js'
+import { AntigravityCatalog, antigravityProbeFolder, parseUsage } from '../src/agents/antigravity/catalog.js'
 import { AntigravityAccountHomes, antigravityEnv, antigravitySessionHome, writeAntigravityCredentials } from '../src/antigravity-accounts/homes.js'
 import { validateAntigravityCallback } from '../src/antigravity-accounts/login.js'
 import { describeEdit } from '../src/agents/acp/content.js'
@@ -142,9 +143,14 @@ test('Antigravity model options change live and resume never replays persisted h
   assert.equal(rpc.find((entry) => entry.method === 'session/resume').params.sessionId, 'existing')
   assert.deepEqual(rpc.filter((entry) => entry.method === 'session/set_config_option').map((entry) => entry.params.configId), ['model', 'thinking_level', 'mode'])
   const catalog = new AntigravityCatalog(async () => f.binary)
-  const result = await catalog.list(f.home, f.root)
+  const result = await catalog.list(f.home)
   assert.equal(result.models.models[1]!.efforts.length, 2)
   assert.equal((await catalog.usage(f.home)).windows[0]!.label, 'Gemini Pro · Weekly Limit Remaining')
+  // Probes open their sessions in Sillage's own folder and take the system skills back out.
+  const probed = rpc.length
+  const sessions = (await f.rpc()).slice(probed).filter((entry) => entry.method === 'session/new').map((entry) => entry.params.cwd)
+  assert.deepEqual(sessions, [antigravityProbeFolder(f.home), antigravityProbeFolder(f.home)])
+  assert.equal(existsSync(join(antigravityProbeFolder(f.home), 'skills')), false)
 })
 
 test('Google callback relay rejects other ports, states, hosts and credentials', () => {

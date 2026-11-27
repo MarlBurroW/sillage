@@ -32,9 +32,10 @@ export class AntigravityAdapter implements AgentAdapter {
   createRunner(ctx: RunnerContext): AgentRunner { return new AntigravityRunner(ctx) }
   forkCut(): never { throw new ForkError('Antigravity uses a portable history fork.') }
   async fork(): Promise<string> { throw new ForkError('Antigravity has no native fork RPC. Use the portable history fork.') }
-  async models(home?: string, force = false): Promise<AgentModelsDto> { return (await this.catalog.list(home, undefined, force)).models }
-  async commands(cwd: string, force: boolean, home?: string): Promise<ProjectCommandsDto> {
-    const listing = await this.catalog.list(home, cwd, force)
+  async models(home?: string, force = false): Promise<AgentModelsDto> { return (await this.catalog.list(home, force)).models }
+  async commands(_cwd: string, force: boolean, home?: string): Promise<ProjectCommandsDto> {
+    // Probed outside the project: see antigravityProbeFolder.
+    const listing = await this.catalog.list(home, force)
     return { commands: listing.commands, fetchedAt: listing.fetchedAt }
   }
   usage(force: boolean): Promise<AgentUsage> { return this.catalog.usage(undefined, force) }
