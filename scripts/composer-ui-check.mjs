@@ -267,7 +267,12 @@ try {
     await pick('Modèle', /^Modèle Alpha/)
     await pick('Effort de réflexion', 'Élevé')
     await pick('Mode', 'Plan')
+    // Network access sits beside the sandbox and follows the CLI until chosen.
+    assert.match(await row('Réseau').textContent(), /Défaut du CLI/)
+    await pick('Réseau', /^Autorisé/)
     await pick('Bac à sable', /^Accès total/)
+    // Full access has no sandbox, hence no network switch.
+    assert.equal(await row('Réseau').count(), 0)
     await pick('Approbations', /^Jamais/)
     await mcpView()
     await page.getByRole('switch', { name: 'Documentation', exact: true }).click()
@@ -281,6 +286,7 @@ try {
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.codex.collaborationMode, 'plan')
     assert.equal(stored.codex.askForApproval, 'never')
+    assert.equal(stored.codex.networkAccess, 'on')
     assert.deepEqual(stored.codex.mcpServers, ['docs'])
     assert.match(await status().getAttribute('aria-label'), /Accès total/)
     if (viewport.width >= 700) {

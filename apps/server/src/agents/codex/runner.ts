@@ -17,6 +17,7 @@ import type {
   AccountRateLimitsUpdatedNotification,
   AskForApproval,
   AgentMessageDeltaNotification,
+  ConfigReadResponse,
   CommandExecutionOutputDeltaNotification,
   CommandExecutionRequestApprovalParams,
   CommandExecutionRequestApprovalResponse,
@@ -264,6 +265,12 @@ export class CodexRunner implements AgentRunner {
   private readonly completedTurns = new Set<string>()
   /** Actual CLI-selected model, needed when conversation configuration says default. */
   private threadModel: string | null = null
+  /**
+   * `[sandbox_workspace_write] network_access` as the CLI resolves it for this cwd and home, read
+   * once per process: what `networkAccess: CLI_DEFAULT` applies. A promise so the read overlaps
+   * thread startup instead of delaying it; settled long before the first turn/start needs it.
+   */
+  private cliNetworkAccess: Promise<boolean> = Promise.resolve(false)
 
   /** See AgentRunner: update this.config only after successful application. */
   get appliedConfig(): AgentConfig {
@@ -282,11 +289,16 @@ export class CodexRunner implements AgentRunner {
     return this.config.askForApproval === CLI_DEFAULT ? null : this.config.askForApproval
   }
 
-  /** Sillage sandbox strings map to protocol object unions here using generated types. */
-  private sandboxPolicy(): SandboxPolicy {
+  /**
+   * Sillage sandbox strings map to protocol object unions here using generated types. The policy
+   * is explicit on every turn, so it replaces the CLI's own: see `codexNetworkAccessSchema` for
+   * why network access needs the CLI's value looked up rather than left to it.
+   */
+  private async sandboxPolicy(): Promise<SandboxPolicy> {
+    const setting = this.config.networkAccess
     switch (this.config.sandbox) {
       case 'read-only':
-        return { type: 'readOnly', networkAccess: this.config.webSearch }
+        return { type: 'readOnly', networkAccess: setting === 'on' }
       case 'danger-full-access':
         return { type: 'dangerFullAccess' }
       case 'workspace-write':
@@ -294,10 +306,23 @@ export class CodexRunner implements AgentRunner {
           type: 'workspaceWrite',
           // Reread each turn so worktrees created mid-session appear on the next.
           writableRoots: [...this.config.additionalDirectories, ...(this.ctx.workTrees?.() ?? [])],
-          networkAccess: this.config.webSearch,
+          networkAccess: setting === CLI_DEFAULT ? await this.cliNetworkAccess : setting === 'on',
           excludeTmpdirEnvVar: false,
           excludeSlashTmp: false,
         }
+    }
+  }
+
+  /**
+   * Off when the read fails or the key is absent, which is Codex's own default. Passing cwd
+   * includes project layers, as the CLI would see them for this conversation.
+   */
+  private async readCliNetworkAccess(client: CodexAppServerClient): Promise<boolean> {
+    try {
+      const read = await client.call<ConfigReadResponse, 'config/read'>('config/read', { cwd: this.ctx.cwd })
+      return read.config?.sandbox_workspace_write?.network_access === true
+    } catch {
+      return false
     }
   }
 
@@ -334,6 +359,7 @@ export class CodexRunner implements AgentRunner {
     })
 
     await this.client.initialize(CLIENT_INFO)
+    this.cliNetworkAccess = this.readCliNetworkAccess(this.client)
 
     // Before both thread/start and thread/resume. Probing established roots belong to
     // the process rather than thread, disappear with app-server, and must be restored
@@ -1323,7 +1349,7 @@ export class CodexRunner implements AgentRunner {
       input,
       cwd: this.ctx.cwd,
       approvalPolicy: this.approvalPolicy(),
-      sandboxPolicy: this.sandboxPolicy(),
+      sandboxPolicy: await this.sandboxPolicy(),
       model: this.config.model,
       effort: this.config.reasoningEffort || null,
       // app-server sends no reasoning summary unless asked (probed on 0.163.0: empty

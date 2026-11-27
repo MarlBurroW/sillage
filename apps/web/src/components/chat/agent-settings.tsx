@@ -258,6 +258,21 @@ function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']
   ]
 }
 
+type NetworkChoice = typeof CLI_DEFAULT_CHOICE | 'on' | 'off'
+
+/**
+ * Network access inside the Codex sandbox. Not web search: it decides whether commands such as
+ * `npm install`, `git fetch` or `curl` reach the network. The CLI default follows config.toml,
+ * which Sillage's per-turn sandbox policy would otherwise override.
+ */
+function codexNetworkOptions(t: Translate): SettingChoice<NetworkChoice>[] {
+  return [
+    { value: CLI_DEFAULT_CHOICE, label: t('composer.network.default'), hint: t('composer.network.default.hint') },
+    { value: 'on', label: t('composer.network.on'), hint: t('composer.network.on.hint') },
+    { value: 'off', label: t('composer.network.off'), hint: t('composer.network.off.hint') },
+  ]
+}
+
 /**
  * opencode tool-family rules in native vocabulary: ask, allow, deny. `CLI_DEFAULT` is real state
  * where Sillage supplies no rule and local opencode.json decides; give it an entry like Codex
@@ -694,6 +709,7 @@ export function useAgentSettings({
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
+  const networkOptionList = codexNetworkOptions(t)
   const speedOptionList = speedOptions(t)
   const ultracodeOptionList = ultracodeOptions(t)
   const suggestionOptionList = suggestionOptions(t)
@@ -998,6 +1014,20 @@ export function useAgentSettings({
         value: codex.sandbox,
         onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
       }),
+      // Full access has no sandbox, hence no network switch. Sent on every turn: applied live.
+      ...(codex.sandbox !== 'danger-full-access'
+        ? [
+            setting({
+              key: 'network',
+              label: t('composer.setting.network'),
+              icon: <Globe size={15} />,
+              options: networkOptionList,
+              value: codex.networkAccess || CLI_DEFAULT_CHOICE,
+              onChange: (choice) =>
+                onConfigChange({ ...codex, networkAccess: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice }),
+            }),
+          ]
+        : []),
       // Applied live by Codex, so no pending annotation.
       ...(libraryAvailable
         ? [

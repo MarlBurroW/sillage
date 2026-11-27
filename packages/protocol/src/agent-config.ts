@@ -184,6 +184,20 @@ export const codexEffortSchema = z.string()
 export const codexModeSchema = z.enum(['plan', 'default'])
 export type CodexMode = z.infer<typeof codexModeSchema>
 
+/**
+ * Network access inside the Codex sandbox (`read-only` and `workspace-write`; full access has no
+ * sandbox). Sillage must send an explicit `sandboxPolicy` on every turn to pass worktree roots,
+ * which overrides `[sandbox_workspace_write] network_access` from `config.toml`. The empty string
+ * (`CLI_DEFAULT`) reads that setting through `config/read` instead, so the user's file wins and
+ * Codex's own default (off) applies without one. `read-only` has no such key in `config.toml`:
+ * the sentinel means off there.
+ *
+ * Replaces `webSearch`, which drove this flag under a misleading name and had no control in the
+ * interface: every stored value is the `false` default, read as the sentinel by dropping the key.
+ */
+export const codexNetworkAccessSchema = z.enum(['', 'on', 'off'])
+export type CodexNetworkAccess = z.infer<typeof codexNetworkAccessSchema>
+
 export const codexConfigSchema = z.object({
   agent: z.literal('codex'),
   /** Empty means “CLI default model”, resolved at creation. */
@@ -192,8 +206,7 @@ export const codexConfigSchema = z.object({
   collaborationMode: codexModeSchema.default('default'),
   askForApproval: codexApprovalConfigSchema,
   sandbox: codexSandboxSchema,
-  webSearch: z.boolean().default(false),
-  profile: z.string().nullable().default(null),
+  networkAccess: codexNetworkAccessSchema.default(''),
   additionalDirectories: z.array(z.string()).default([]),
   /** MCP registry server IDs enabled for this conversation. */
   mcpServers: z.array(z.string()).default([]),
@@ -388,8 +401,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   askForApproval: 'on-request',
   collaborationMode: 'default',
   sandbox: 'workspace-write',
-  webSearch: false,
-  profile: null,
+  networkAccess: CLI_DEFAULT,
   additionalDirectories: [],
   mcpServers: [],
   sillageMcp: true,

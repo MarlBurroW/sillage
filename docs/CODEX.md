@@ -24,6 +24,25 @@ Structured questions are also enabled in Default mode through a **thread** overr
 (`features.default_mode_request_user_input`). A short instruction tells the model
 how to use forms. A list of choices written only in prose does not create a form.
 
+## Sandbox network access
+
+Every `turn/start` carries an explicit `sandboxPolicy`, because worktrees created
+mid-session must join `writableRoots`. That policy replaces the one in
+`config.toml`, network access included. The composer therefore offers a **Network**
+setting beside the sandbox (hidden in full access, which has no sandbox):
+
+- **CLI default** (the default): Sillage reads
+  `[sandbox_workspace_write] network_access` through `config/read` (with the
+  conversation's cwd) when the process starts and applies it. Unset means off,
+  Codex's own default. `read-only` has no such key and stays off.
+- **Allowed** / **Blocked** force the value, for read only and workspace write.
+
+Probed on 0.172.0: with network access off, `curl` fails to resolve hosts and the
+model does not ask to escalate, even with `on-request` approval. The setting
+replaces the old `webSearch` field, which drove this flag under a misleading name;
+stored values were all `false` and now read as the CLI default. Codex's real web
+search (`web_search` in `config.toml`) is not exposed.
+
 ## Activities
 
 Messages, proposed plans, work steps, commands, file changes, MCP and dynamic tools,

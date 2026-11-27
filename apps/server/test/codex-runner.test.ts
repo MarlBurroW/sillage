@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_CODEX_CONFIG, sillageEventSchema } from '@sillage/protocol'
+import { DEFAULT_CODEX_CONFIG, parseAgentConfig, sillageEventSchema } from '@sillage/protocol'
 import { CodexRunner } from '../src/agents/codex/runner.js'
 import { CodexAppServerClient } from '../src/agents/codex/app-server-client.js'
 import { runnerFixture, asyncMessage, context, done, fixture, itemEvent } from './codex-support.js'
@@ -422,4 +422,47 @@ test('a model named after a Codex sub-agent started updates its Agent call', asy
   assert.deepEqual(updated, [{ type: 'tool.input_updated', toolCallId: started.toolCallId,
     input: { description: 'Inspector', prompt: 'Inspect', model: 'gpt-6-luna', effort: 'high' } }])
   for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+// Sillage sends an explicit sandboxPolicy on every turn, which replaces config.toml's own. Probed
+// on codex-cli 0.172.0: networkAccess false makes `curl` fail to resolve hosts and the model does
+// not ask to escalate, so the value must follow the composer, or config.toml when left to the CLI.
+for (const [setting, cli, sandbox, expected] of [
+  ['', undefined, 'workspace-write', false],
+  ['', 'true', 'workspace-write', true],
+  ['', 'false', 'workspace-write', false],
+  ['on', undefined, 'workspace-write', true],
+  ['off', 'true', 'workspace-write', false],
+  ['', 'true', 'read-only', false],
+  ['on', undefined, 'read-only', true],
+] as const) {
+  test(`network access ${setting || 'CLI default'} with config.toml ${cli ?? 'unset'} in ${sandbox} → ${expected}`, async t => {
+    const transport = await fixture(t)
+    const state = context({
+      ...transport, processEnv: cli ? { FIXTURE_CLI_NETWORK: cli } : {},
+      config: { ...DEFAULT_CODEX_CONFIG, sandbox, networkAccess: setting },
+    })
+    const runner = new CodexRunner(state.ctx)
+    transport.onClose(() => runner.stop())
+    await runner.start()
+    await runner.send(`fixture:${JSON.stringify({ notifications: [done()] })}`, [], [], [])
+    const turn = (await transport.records()).find(record => record.method === 'turn/start')
+    assert.equal(turn.params.sandboxPolicy.networkAccess, expected)
+  })
+}
+
+test('a network access change applies on the next turn without restarting Codex', async t => {
+  const f = await runnerFixture(t)
+  await f.emit([done()])
+  assert.equal(await f.runner.applyConfig({ ...DEFAULT_CODEX_CONFIG, networkAccess: 'on' }), true)
+  await f.emit([done('turn-2')])
+  const turns = (await f.records()).filter(record => record.method === 'turn/start')
+  assert.deepEqual(turns.map(turn => turn.params.sandboxPolicy.networkAccess), [false, true])
+})
+
+test('a configuration stored with the old webSearch flag reads as the CLI default network access', () => {
+  const { networkAccess: _, ...current } = DEFAULT_CODEX_CONFIG
+  const stored = parseAgentConfig(JSON.stringify({ ...current, webSearch: false, profile: null }))
+  assert.equal(stored.agent === 'codex' && stored.networkAccess, '')
+  assert.equal('webSearch' in stored || 'profile' in stored, false)
 })
