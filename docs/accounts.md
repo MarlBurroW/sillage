@@ -213,7 +213,11 @@ See [the integration inventory and validation limits](antigravity-integration.md
 No extra accounts yet. Copilot uses the sign-in of the machine Sillage runs on:
 
 - `copilot login` in a terminal on that machine. On a server it prints a link and a
-  code to enter on GitHub from any browser.
+  code to enter on GitHub from any browser. Copilot keeps the token in the system
+  keychain; a server without one must allow the plain-text fallback first, by
+  accepting the prompt Copilot shows in a terminal or by setting
+  `"storeTokenPlaintext": true` in `~/.copilot/settings.json`. The token then lives
+  in `~/.copilot/config.json`, readable by that user only.
 - Or a token in the server's environment: `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`,
   then `GITHUB_TOKEN`. One of these wins over a stored login without saying so, so
   a `GH_TOKEN` set for the GitHub CLI also decides which Copilot plan pays. Classic
@@ -221,6 +225,6 @@ No extra accounts yet. Copilot uses the sign-in of the machine Sillage runs on:
   permission.
 
 Without a sign-in, a conversation fails at its first message and says how to sign
-in. The usage gauge shows the plan quota the last turn reported, since Copilot has
-no call to read it between turns. Probed on GitHub Copilot CLI 1.0.116; see
+in. The usage gauge shows the plan budget the last turn reported (AI credits, or
+premium requests), since Copilot has no call to read it between turns. Probed on GitHub Copilot CLI 1.0.116; see
 [the integration inventory](COPILOT.md).

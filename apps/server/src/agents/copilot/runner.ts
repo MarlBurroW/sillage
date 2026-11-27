@@ -47,7 +47,7 @@ const ERROR_CODES: Record<string, string> = {
   context_limit: 'context_window_exceeded',
 }
 /** What a permission request calls an edit, which the row already says. */
-const PLAIN_REASONS = new Set(['Edit file', 'Create file'])
+const PLAIN_REASONS = new Set(['Edit file', 'Update file', 'Create file', 'Delete file'])
 const NO_TOKENS: Tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
 function text(value: unknown): string | null { return typeof value === 'string' && value.trim() ? value : null }
@@ -68,8 +68,11 @@ function turnUsage(spent: Tokens): TurnUsage {
 export interface CopilotRunnerOptions {
   /** Sillage-owned folder for what Copilot reads from disk; see `Paths.copilot`. */
   stateDir: string
-  /** Receives the account quota each model call reports, the only place Copilot's ACP gives it. */
-  onQuota?: (quota: CopilotQuota) => void
+  /**
+   * Receives the account quota each model call reports, the only place Copilot's ACP gives it,
+   * and whether that call was billed in AI credits.
+   */
+  onQuota?: (quota: CopilotQuota, credits: boolean) => void
 }
 
 /**
@@ -96,7 +99,11 @@ export class CopilotRunner implements AgentRunner {
   private readonly streams = new Map<string, OpenText>()
   /** Shells left running in the background, by Copilot's shell ID. */
   private readonly background = new Map<string, { id: string; description: string }>()
-  private echoes: string[] = []
+  /**
+   * Lines Copilot may write into the reply for an event it also sent as data, with the notice a
+   * line stands for; null when the journal already shows it.
+   */
+  private readonly echoes = new Map<string, (() => void) | null>()
   /** Notifications that arrive before the session ID is known. */
   private early: [string, unknown][] | null = []
   /** `session/load` replays the whole history before answering; on a resume it is already journaled. */
@@ -423,7 +430,15 @@ export class CopilotRunner implements AgentRunner {
   private timeline(type: string, data: Fields, agentId: string | null, raw: unknown): void {
     const message = text(data.message)
     if (!message) return
-    this.echoes = [...this.echoes.slice(-7), `${ECHO_PREFIX[type]}: ${message}`]
+    const line = `${ECHO_PREFIX[type]}: ${message}`
+    // Information is only shown when Copilot writes it into the reply: it keeps most of it to
+    // itself (routing and guidance notes sent with every session), and so does the journal.
+    const shown = type === 'session.info' && !agentId && !QUIET_INFO.has(String(data.infoType))
+      ? () => this.ctx.emit({ type: 'agent.notice', code: `copilot_info_${text(data.infoType) ?? 'other'}`, message, level: 'info', details: data }, raw)
+      : null
+    this.echoes.delete(line)
+    this.echoes.set(line, shown)
+    if (this.echoes.size > 8) this.echoes.delete(this.echoes.keys().next().value!)
     // A sub-agent's trouble comes back through the call that spawned it.
     if (agentId) return
     if (type === 'session.error') {
@@ -434,15 +449,15 @@ export class CopilotRunner implements AgentRunner {
       if (kind === 'quota' || kind === 'rate_limit') this.ctx.emit({ type: 'usage.updated', costUsd: 0, inputTokens: 0, outputTokens: 0, context: null, rateLimit: refusedLimit(kind, this.limit) })
     } else if (type === 'session.warning') {
       this.ctx.emit({ type: 'agent.notice', code: `copilot_warning_${text(data.warningType) ?? 'other'}`, message, level: 'warning', details: data }, raw)
-    } else if (!QUIET_INFO.has(String(data.infoType))) {
-      this.ctx.emit({ type: 'agent.notice', code: `copilot_info_${text(data.infoType) ?? 'other'}`, message, level: 'info', details: data }, raw)
     }
   }
 
   private isEcho(chunk: string): boolean {
-    const index = this.echoes.indexOf(chunk.trim())
-    if (index < 0) return false
-    this.echoes.splice(index, 1)
+    const line = chunk.trim()
+    if (!this.echoes.has(line)) return false
+    const shown = this.echoes.get(line)
+    this.echoes.delete(line)
+    shown?.()
     return true
   }
 
@@ -452,7 +467,7 @@ export class CopilotRunner implements AgentRunner {
     if (this.spent) this.spent = { input: this.spent.input + call.input, output: this.spent.output + call.output, cacheRead: this.spent.cacheRead + call.cacheRead, cacheWrite: this.spent.cacheWrite + call.cacheWrite }
     const quota = fields(data.quotaSnapshots)
     if (Object.keys(quota).length) {
-      this.runnerOptions.onQuota?.(quota as CopilotQuota)
+      this.runnerOptions.onQuota?.(quota as CopilotQuota, typeof fields(data.copilotUsage).totalNanoAiu === 'number')
       const limit = quotaLimit(quota as CopilotQuota)
       // Every model call repeats it: journal a reading only when it moved.
       if (limit && JSON.stringify(limit) !== JSON.stringify(this.limit)) { this.limit = limit; this.ctx.emit({ type: 'usage.updated', costUsd: 0, inputTokens: 0, outputTokens: 0, context: null, rateLimit: limit }) }
@@ -460,7 +475,8 @@ export class CopilotRunner implements AgentRunner {
     // Auto routes each request: say which model answered when it changes.
     if (!agentId && data.isAuto === true && typeof data.model === 'string' && data.model !== this.routed) {
       this.routed = data.model
-      this.ctx.emit({ type: 'agent.notice', id: 'copilot-auto-model', code: 'copilot_auto_model', message: `Auto is using ${data.model}.`, level: 'info', details: { model: data.model } })
+      const model = text(data.modelDisplayName) ?? data.model
+      this.ctx.emit({ type: 'agent.notice', id: 'copilot-auto-model', code: 'copilot_auto_model', message: `Auto is using ${model}.`, level: 'info', details: { model } })
     }
   }
 

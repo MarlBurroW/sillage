@@ -1,4 +1,6 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentModelDto, AgentModelsDto, SlashCommandDto } from '@sillage/protocol'
 import { AcpClient } from '../acp/client.js'
 import { fields } from '../acp/content.js'
@@ -84,6 +86,18 @@ export function modelCatalog(state: unknown): AgentModelDto[] {
   return [...byValue.values()].sort((a, b) => Number(b.value === COPILOT_AUTO_MODEL) - Number(a.value === COPILOT_AUTO_MODEL))
 }
 
+/**
+ * `session/new` leaves a folder in Copilot's home even for a session that never receives a
+ * prompt, and `session/close` keeps it (observed on 1.0.116): unlisted, but one more per catalog
+ * read. The probe removes its own, and only its own: a session with an event log is someone's.
+ */
+export function forgetProbeSession(sessionId: unknown, home = process.env.COPILOT_HOME || join(homedir(), '.copilot')): void {
+  if (typeof sessionId !== 'string' || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(sessionId)) return
+  const dir = join(home, 'session-state', sessionId)
+  if (!existsSync(dir) || existsSync(join(dir, 'events.jsonl'))) return
+  rmSync(dir, { recursive: true, force: true })
+}
+
 export class CopilotCatalog {
   private readonly probe = new CachedProbe<CopilotListing>(TTL_MS, () => this.read())
 
@@ -112,10 +126,12 @@ export class CopilotCatalog {
       },
     })
     const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
+    let opened: unknown = null
     try {
       await client.initialize(CLIENT_INFO)
       // The models follow the plan: without a sign-in there is no catalog, and the composer says why.
       const session = await client.request<{ sessionId: string }>('session/new', { cwd, mcpServers: [] }, PROBE_TIMEOUT_MS).catch((error: unknown) => { throw explainSignIn(error) })
+      opened = session.sessionId
       const models = modelCatalog(session)
       // Efforts are per model and only advertised for the selected one.
       for (const model of models) {
@@ -129,6 +145,7 @@ export class CopilotCatalog {
     } finally {
       clearTimeout(timeout)
       await client.closeAndWait()
+      forgetProbeSession(opened)
     }
   }
 }

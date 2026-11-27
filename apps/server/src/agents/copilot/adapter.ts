@@ -7,7 +7,7 @@ import { ForkError, type AgentAdapter, type DescribeEditArgs } from '../registry
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { CopilotCatalog } from './catalog.js'
 import { CopilotRunner } from './runner.js'
-import { copilotUsage, type CopilotQuota } from './usage.js'
+import { copilotUsage, type ObservedQuota } from './usage.js'
 
 export class CopilotAdapter implements AgentAdapter {
   readonly kind = 'copilot' as const
@@ -24,7 +24,7 @@ export class CopilotAdapter implements AgentAdapter {
   private readonly catalog: CopilotCatalog
   private readonly stateDir: string
   /** Quota of the machine's Copilot login as the last model call reported it; see `usage.ts`. */
-  private observed: { quota: CopilotQuota; at: number } | null = null
+  private observed: ObservedQuota | null = null
 
   constructor(config: Config) {
     this.binary = config.agents.copilot.binary
@@ -36,7 +36,7 @@ export class CopilotAdapter implements AgentAdapter {
   invalidateCatalogs(): void { this.catalog.invalidate() }
 
   createRunner(ctx: RunnerContext): AgentRunner {
-    return new CopilotRunner(ctx, { stateDir: this.stateDir, onQuota: (quota) => { this.observed = { quota, at: Date.now() } } })
+    return new CopilotRunner(ctx, { stateDir: this.stateDir, onQuota: (quota, credits) => { this.observed = { quota, credits, at: Date.now() } } })
   }
 
   forkCut(): never { throw new ForkError('GitHub Copilot uses a portable history fork.') }

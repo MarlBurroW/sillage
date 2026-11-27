@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { AGENT_CAPABILITIES, DEFAULT_COPILOT_CONFIG, isPermissiveConfig, sillageEventSchema, type CopilotConfig, type McpServer, type SillageEvent } from '@sillage/protocol'
 import { describeEdit } from '../src/agents/acp/content.js'
-import { CopilotCatalog } from '../src/agents/copilot/catalog.js'
+import { CopilotCatalog, forgetProbeSession } from '../src/agents/copilot/catalog.js'
 import { COPILOT_SESSION_EVENTS, copilotLaunch, modeOf, skillDirs } from '../src/agents/copilot/launch.js'
 import { askUserQuestions } from '../src/agents/copilot/questions.js'
 import { CopilotRunner } from '../src/agents/copilot/runner.js'
@@ -35,14 +35,14 @@ async function agent(t: TestContext): Promise<{ root: string; binary: string }> 
 async function fixture(t: TestContext, changes: Partial<RunnerContext> = {}, config: Partial<CopilotConfig> = {}, options: { start?: boolean } = {}) {
   const { root, binary } = await agent(t)
   const stateDir = join(root, 'state')
-  const events: SillageEvent[] = [], raw: unknown[] = [], configs: CopilotConfig[] = [], quotas: CopilotQuota[] = [], statuses: string[] = []
+  const events: SillageEvent[] = [], raw: unknown[] = [], configs: CopilotConfig[] = [], quotas: [CopilotQuota, boolean][] = [], statuses: string[] = []
   const ctx: RunnerContext = {
     conversationId: `conversation-${randomUUID()}`, cwd: root, binary, config: { ...DEFAULT_COPILOT_CONFIG, ...config }, attachmentsRoot: root, resumeSessionId: null,
     projectOverview: () => 'Shared instructions and memory', maskedInstructionRoots: () => [], memoryDir: () => null, skillRoots: () => [], resolveMcpServers: () => ({ servers: [], failures: [] }),
     emit: (event, native) => { sillageEventSchema.parse(event); events.push(event); raw.push(native) }, setStatus: (status) => { statuses.push(status) }, setAgentSessionId: () => {},
     updateConfig: (next) => { configs.push(next as CopilotConfig) }, openPermissionRequest: () => randomUUID(), closePermissionRequest: () => {}, ...changes,
   }
-  const runner = new CopilotRunner(ctx, { stateDir, onQuota: (quota) => { quotas.push(quota) } })
+  const runner = new CopilotRunner(ctx, { stateDir, onQuota: (quota, credits) => { quotas.push([quota, credits]) } })
   t.after(() => runner.stop())
   if (options.start !== false) await runner.start()
   const rpc = async () => (await readFile(join(root, 'rpc.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
@@ -72,6 +72,24 @@ test('Copilot catalog puts Auto first, merges its two entries and reads per-mode
   assert.deepEqual(listing.commands.map((command) => command.name), ['compact', 'usage'])
   // The probe runs in an empty folder of Sillage's own, not in the shared temporary directory.
   assert.equal(JSON.parse(await readFile(join(root, 'launch.json'), 'utf8')).cwd, cwd)
+})
+
+test('Copilot catalog probe removes the empty session it leaves in Copilot\'s home, and nothing else', async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'sillage-copilot-home-'))
+  t.after(() => rm(home, { recursive: true, force: true }))
+  const empty = '66a0ad48-5f65-44cf-bfec-07c3e6499134', used = '001040c9-cf48-4f04-b850-f7c518d45903'
+  for (const id of [empty, used]) {
+    await mkdir(join(home, 'session-state', id, 'checkpoints'), { recursive: true })
+    await writeFile(join(home, 'session-state', id, 'workspace.yaml'), 'cwd: /p\n')
+  }
+  await writeFile(join(home, 'session-state', used, 'events.jsonl'), '{}\n')
+  forgetProbeSession(empty, home)
+  // A session that received a prompt has an event log: it is someone's conversation.
+  forgetProbeSession(used, home)
+  forgetProbeSession('../../etc', home)
+  forgetProbeSession(undefined, home)
+  assert.equal(existsSync(join(home, 'session-state', empty)), false)
+  assert.equal(existsSync(join(home, 'session-state', used, 'events.jsonl')), true)
 })
 
 test('Copilot launch passes the Auto profile only for Auto, skills one by one and the instructions folder', async (t) => {
@@ -351,7 +369,10 @@ test('Copilot reports errors, retries and refusals as what they are, not as repl
     chunk('Warning: Third-party MCP servers are disabled by your organization.'),
     { event: { type: 'session.info', data: { infoType: 'notification', message: 'Plan: 75% used.' } } },
     chunk('Info: Plan: 75% used.'),
+    // Sent with every real session and never written into the reply: Copilot keeps it to itself.
+    { event: { type: 'session.info', data: { infoType: 'search_subagent_exploration_guidance', message: 'Search-subagent exploration guidance: disabled.' } } },
   ])
+  assert.equal(f.of('agent.notice').length, 3)
   assert.deepEqual(f.of('agent.notice').slice(-2).map((event) => [event.code, event.level, event.message]), [['copilot_warning_policy', 'warning', 'Third-party MCP servers are disabled by your organization.'], ['copilot_info_notification', 'info', 'Plan: 75% used.']])
 })
 
@@ -477,24 +498,36 @@ test('Copilot interrupts the turn through session/cancel', async (t) => {
 })
 
 test('Copilot quota comes from what each model call reports', async (t) => {
+  // A plan billed in premium requests, as the CLI's schema describes it.
   const quota = { premium_interactions: { entitlementRequests: 300, usedRequests: 285, resetDate: '2026-12-01T00:00:00.000Z', overageAllowedWithExhaustedQuota: false }, chat: { isUnlimitedEntitlement: true, entitlementRequests: 0, usedRequests: 12 }, completions: { hasQuota: false } }
   assert.deepEqual(copilotUsage(null), { agent: 'copilot', plan: null, limitsAvailable: false, windows: [], credits: null, fetchedAt: copilotUsage(null).fetchedAt })
-  assert.deepEqual(copilotUsage({ quota, at: 42 }), { agent: 'copilot', plan: null, limitsAvailable: true, windows: [{ id: 'premium_interactions', label: 'Premium requests', utilization: 0.95, resetsAt: Date.parse('2026-12-01T00:00:00.000Z') }], credits: null, fetchedAt: 42 })
+  assert.deepEqual(copilotUsage({ quota, credits: false, at: 42 }), { agent: 'copilot', plan: null, limitsAvailable: true, windows: [{ id: 'premium_interactions', label: 'Premium requests', utilization: 0.95, resetsAt: Date.parse('2026-12-01T00:00:00.000Z') }], credits: null, fetchedAt: 42 })
   // A full quota warns; only a refused request stops the account.
   const full = quotaLimit({ premium_interactions: { entitlementRequests: 300, usedRequests: 320, resetDate: '2026-12-01T00:00:00.000Z' } })!
   assert.deepEqual([full.status, full.utilization], ['allowed_warning', 1])
   assert.deepEqual(refusedLimit('quota', full), { ...full, status: 'rejected' })
   assert.equal(quotaLimit({ chat: { isUnlimitedEntitlement: true } }), null)
 
+  // As a signed-in account billed in AI credits reported it after a few turns: `chat` is the
+  // monthly credit budget, precise in its percentage only; the editor's completions are not
+  // the CLI's; no premium entitlement is not a quota used up.
+  const credits = {
+    chat: { isUnlimitedEntitlement: false, entitlementRequests: 200, usedRequests: 1, usageAllowedWithExhaustedQuota: false, overage: 0, overageAllowedWithExhaustedQuota: false, remainingPercentage: 99.7, resetDate: '2026-12-01T00:00:00Z' },
+    completions: { isUnlimitedEntitlement: false, entitlementRequests: 2000, usedRequests: 432, remainingPercentage: 78.4, resetDate: '2026-12-01T00:00:00Z' },
+    premium_interactions: { isUnlimitedEntitlement: false, entitlementRequests: 0, usedRequests: 0, remainingPercentage: 0, resetDate: '2026-12-01T00:00:00Z' },
+  }
+  assert.deepEqual(copilotUsage({ quota: credits, credits: true, at: 1 }).windows, [{ id: 'chat', label: 'AI credits', utilization: 0.003, resetsAt: Date.parse('2026-12-01T00:00:00Z') }])
+  assert.deepEqual(quotaLimit(credits), { type: 'chat', status: 'allowed', utilization: 0.003, resetsAt: Date.parse('2026-12-01T00:00:00Z'), overageEnabled: false })
+
   const f = await fixture(t)
   await f.turn([
-    { event: { type: 'assistant.usage', data: { model: 'gpt-test', isAuto: true, inputTokens: 10, outputTokens: 1, quotaSnapshots: quota } } },
-    { event: { type: 'assistant.usage', data: { model: 'gpt-test', isAuto: true, inputTokens: 10, outputTokens: 1, quotaSnapshots: quota } } },
+    { event: { type: 'assistant.usage', data: { model: 'gpt-test', modelDisplayName: 'GPT Test', isAuto: true, inputTokens: 10, outputTokens: 1, quotaSnapshots: quota } } },
+    { event: { type: 'assistant.usage', data: { model: 'gpt-test', modelDisplayName: 'GPT Test', isAuto: true, inputTokens: 10, outputTokens: 1, quotaSnapshots: quota, copilotUsage: { totalNanoAiu: 25336000 } } } },
     chunk('Done', 'r1'),
   ])
-  assert.deepEqual(f.quotas, [quota, quota])
+  assert.deepEqual(f.quotas, [[quota, false], [quota, true]])
   // The same reading twice is journaled once.
   assert.deepEqual(f.of('usage.updated').filter((event) => event.rateLimit).map((event) => [event.rateLimit!.type, event.rateLimit!.status, event.rateLimit!.utilization]), [['premium_interactions', 'allowed_warning', 0.95]])
   // Auto routes each request: the model that answered is named once.
-  assert.deepEqual(f.of('agent.notice').map((event) => [event.id, event.code, event.details]), [['copilot-auto-model', 'copilot_auto_model', { model: 'gpt-test' }]])
+  assert.deepEqual(f.of('agent.notice').map((event) => [event.id, event.code, event.details]), [['copilot-auto-model', 'copilot_auto_model', { model: 'GPT Test' }]])
 })
