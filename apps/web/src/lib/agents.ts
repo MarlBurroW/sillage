@@ -15,6 +15,7 @@ import {
 import { useMemo } from 'react'
 import { translate, translateError, useTranslate, type MessageKey } from './i18n'
 import { api } from './api'
+import { EFFORT_KEYS } from './effort-labels'
 import { useCurrentUser } from './session'
 import { useUpdateHiddenAgents, useUserSettings } from './user-settings'
 
@@ -262,16 +263,6 @@ export function effortsFor(models: AgentModelDto[] | undefined, value: string): 
 }
 
 /** Levels shared by the three CLIs; opencode-specific variants retain their names. */
-const EFFORT_KEYS: Record<string, MessageKey> = {
-  none: 'effort.level.none',
-  minimal: 'effort.level.minimal',
-  low: 'effort.level.low',
-  medium: 'effort.level.medium',
-  high: 'effort.level.high',
-  xhigh: 'effort.level.xhigh',
-  max: 'effort.level.max',
-}
-
 /**
  * Effort-level label in the UI language. The server does not know that language: it sends the value
  * and an English label (Claude) or raw value (Codex, opencode), used only as fallback for unknown

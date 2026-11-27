@@ -1,9 +1,10 @@
 import { BROWSER_MCP_SERVER_NAME, CODEX_BUILTIN_MCP_SERVER_NAME, type ToolPresentation } from '@sillage/protocol'
-import { fields, text, outputText, scalar } from './tool-payload'
+import { fields, flag, text, outputText, scalar } from './tool-payload'
 import { toolWebInput } from './tool-web-input'
 import { toolEdits, type EditPresentation } from './tool-edits'
 import type { ToolItem } from './chat-fold'
 import { translate, type MessageKey } from './i18n'
+import { EFFORT_KEYS } from './effort-labels'
 
 export type ToolOrigin = { kind: 'native' | 'sillage' | 'mcp'; server: string; name: string }
 
@@ -182,6 +183,31 @@ export function toolSummary(tool: ToolItem, edits: EditPresentation | null = too
   return null
 }
 
+
+export type ToolQualifier = { text: string; hint: string }
+
+/**
+ * Call settings that explain an unusual cost or duration, shown as pills beside the summary.
+ * Claude Code's Agent `effort` (2.1.292) runs the sub-agent at another level, so a `max` one is
+ * slow and costly; Read's `allow_large` (2.1.296) lifts the usual size limit for one call. Both
+ * stay in the raw arguments too; the pill only surfaces them on the collapsed line.
+ */
+export function toolQualifiers(tool: ToolItem): ToolQualifier[] {
+  const input = fields(tool.input)
+  if (tool.name === 'Agent' || tool.name === 'Task') {
+    const effort = text(input, 'effort')?.trim()
+    if (!effort) return []
+    const key = EFFORT_KEYS[effort]
+    const level = key ? translate(key) : effort
+    return [{ text: translate('tool.qualifier.effort', { level }), hint: translate('tool.qualifier.effortHint', { level }) }]
+  }
+  if (tool.name === 'Read' && flag(input, 'allow_large')) {
+    // With a range, the lifted limit applies to that range only: “whole file” would mislead.
+    const ranged = scalar(input, 'offset') !== null || scalar(input, 'limit') !== null
+    return [{ text: translate(ranged ? 'tool.qualifier.largeRange' : 'tool.qualifier.wholeFile'), hint: translate('tool.qualifier.allowLargeHint') }]
+  }
+  return []
+}
 
 /** Use the harness parser only when it describes the entire command unambiguously. */
 function commandSummary(value: unknown): string | null {

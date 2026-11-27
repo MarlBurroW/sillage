@@ -5,6 +5,7 @@ import { parseUnifiedDiff } from '../../lib/diff'
 import { toolEdits } from '../../lib/tool-edits'
 import { languageFromPath } from '../../lib/highlight'
 import { translate, type MessageKey } from '../../lib/i18n'
+import { toolQualifiers } from '../../lib/tool-presentation'
 import { DiffHunks } from '../DiffHunks'
 import { Markdown } from '../chat/Markdown'
 import { ImageGallery } from '../chat/ImageViewer'
@@ -74,6 +75,7 @@ const read: ToolView = (tool) => {
     path,
     offset === null ? null : translate('tool.read.fromLine', { line: offset }),
     limit === null ? null : translate('tool.read.lines', { count: limit }),
+    ...toolQualifiers(tool).map((qualifier) => qualifier.text),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ')
@@ -305,7 +307,10 @@ const subAgent: ToolView = (tool) => {
 
   return (
     <>
-      <Section label={translate('tool.subagent.instructions')} hint={text(tool.input, 'subagent_type')}>
+      <Section
+        label={translate('tool.subagent.instructions')}
+        hint={[text(tool.input, 'subagent_type'), ...toolQualifiers(tool).map((qualifier) => qualifier.text)].filter(Boolean).join(' · ')}
+      >
         <Plain content={prompt} />
       </Section>
       {report === null ? null : (

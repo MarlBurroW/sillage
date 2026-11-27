@@ -2,7 +2,7 @@ import { Logo } from '../Logo'
 import { toolEdits } from '../../lib/tool-edits'
 import { toolWebInput } from '../../lib/tool-web-input'
 import { useToolStyle, type ToolStyle } from '../../lib/tool-style'
-import { toolLabel, toolOrigin, toolPreview, toolIntent, toolSummary, INTENT_LABELS } from '../../lib/tool-presentation'
+import { toolLabel, toolOrigin, toolPreview, toolIntent, toolSummary, toolQualifiers, INTENT_LABELS } from '../../lib/tool-presentation'
 import {
   Bot,
   ChevronRight,
@@ -160,6 +160,7 @@ export const ToolCall = memo(function ToolCall({
   const [raw, setRaw] = useState(false)
   const edits = useMemo(() => toolEdits(tool), [tool])
   const summary = toolSummary(tool, edits)
+  const qualifiers = toolQualifiers(tool)
   const counts = tool.status === 'failed' || tool.status === 'interrupted' ? null : edits?.counts
   const countLabel = counts ? t(edits?.scope === 'written'
     ? tool.status === 'running' ? 'tool.write.countsPlanned' : 'tool.write.counts'
@@ -182,7 +183,7 @@ export const ToolCall = memo(function ToolCall({
     >
       <button
         type="button"
-        title={`${label} — ${statusLabel}${summary ? ` — ${summary.text}` : ''}`}
+        title={[label, statusLabel, summary?.text, ...qualifiers.map((qualifier) => qualifier.text)].filter(Boolean).join(' — ')}
         onClick={() => { setOpen(!open); onOpenChange?.(tool.id, !open) }}
         aria-expanded={open}
         className="sg-tool-heading flex w-full items-center gap-2 text-left"
@@ -205,6 +206,9 @@ export const ToolCall = memo(function ToolCall({
           <span className="flex-1" />
         )}
 
+        {qualifiers.map((qualifier) => (
+          <span key={qualifier.text} className="sg-tool-qualifier" title={qualifier.hint}>{qualifier.text}</span>
+        ))}
         {counts ? <span className="sg-tool-counts" role="img" aria-label={countLabel} title={countLabel}>
           <span className="text-positive">+{counts.added}</span>
           {edits?.scope !== 'written' ? <span className="text-critical">−{counts.removed}</span> : null}

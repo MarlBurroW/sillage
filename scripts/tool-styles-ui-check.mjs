@@ -93,6 +93,9 @@ async function mount(page) {
       {...tool('dynamic-native','functions/custom'),input:{path:'src/a.ts'},presentation:{origin:'native'}},
       {...tool('browser-click','mcp__sillage-browser__browser_click'),input:{element:'Bouton Envoyer',ref:'e12'}},
       {...tool('connector-label','github/search'),input:{query:'bugs in the parser'},presentation:{origin:'mcp',label:'Rechercher des tickets'}},
+      // Call settings worth seeing collapsed: a sub-agent's effort and Read's allow_large.
+      {...tool('agent-effort','Agent'),input:{description:'Auditer le module de facturation et ses tests de bout en bout',prompt:'Audit',subagent_type:'general-purpose',effort:'max'}},
+      {...tool('read-large','Read'),input:{file_path:'apps/server/src/agents/claude/runner.ts',allow_large:true}},
       tool('active','Read','running'),
     ]
     window.makeItems = (mode) => [...history, ...examples.map((t,i)=> mode==='running'&&i===examples.length-1?{...t,status:'running',durationMs:null}:t), ...(mode==='text'?[message('100','Le filtre est corrigé. Les tests passent.')]:[])]
@@ -176,6 +179,14 @@ try {
       assert.equal(await heading('dynamic-native').locator('.sg-mcp-mark').count(),0,'Dynamic native tools are not MCP')
       assert.equal(await heading('browser-click').locator('.sg-mcp-mark').count(),0,'The agent browser is a Sillage tool, not a third-party MCP')
       assert.match(await heading('browser-click').innerText(),/Cliquer[\s\S]*Bouton Envoyer/)
+      for (const [id,expected] of [['agent-effort','Effort : Maximal'],['read-large','Fichier entier']]) {
+        const pill=heading(id).locator('.sg-tool-qualifier')
+        assert.equal(await pill.textContent(),expected)
+        const box=await pill.boundingBox()
+        const row=await heading(id).boundingBox()
+        assert.ok(box.x>=row.x && box.x+box.width<=row.x+row.width,variant+' visible qualifier on '+width)
+      }
+      assert.match(await heading('agent-effort').innerText(),/Auditer le module/,'The description stays the summary')
       for (const [id,expected] of [['codex-edit','+1−1'],['claude-edit','+2−1'],['opencode-patch','+2−1'],['write','+3']]) {
         assert.equal(await heading(id).locator('.sg-tool-counts').textContent(),expected)
         const badge=await heading(id).locator('.sg-tool-counts').boundingBox()
@@ -199,6 +210,15 @@ try {
     await described.getByRole('button',{name:'Brut',exact:true}).click()
     assert.match(await described.locator('.sg-tool-detail').innerText(),/description/)
     await described.locator('.sg-tool-heading').click()
+    // Details repeat the qualifiers beside the concrete target, and the raw arguments keep the field.
+    for (const [id,hint,field] of [['agent-effort',/general-purpose · Effort : Maximal/,/"effort": "max"/],['read-large',/runner\.ts · Fichier entier/,/"allow_large": true/]]) {
+      const row=page.locator(`#thread [data-tool-id="${id}"]`)
+      await row.locator('.sg-tool-heading').click()
+      assert.match(await row.locator('.sg-tool-detail').innerText(),hint)
+      await row.getByRole('button',{name:'Brut',exact:true}).click()
+      assert.match(await row.locator('.sg-tool-detail').innerText(),field)
+      await row.locator('.sg-tool-heading').click()
+    }
     // Historical web arguments recover from inline and lazily loaded final results.
     for (const [id, query, result] of [['web-find','stream-json','Matching result'],['web-multiple','first query','Multiple search result'],['web-fetch','https://example.com/docs','Page result'],['web-lazy','loaded query','Loaded result']]) {
       const row=page.locator(`#thread [data-tool-id="${id}"]`)
@@ -275,6 +295,6 @@ try {
   await fresh.page.locator('#thread .sg-tools-timeline').first().waitFor()
   await fresh.context.close()
   assert.deepEqual(errors,[])
-  console.log('OK: six styles, human metadata, tool summaries, web inputs, lazy bodies, settings sync, grouping, scroll, mobile and reduced motion.')
+  console.log('OK: six styles, human metadata, tool summaries, call qualifiers, web inputs, lazy bodies, settings sync, grouping, scroll, mobile and reduced motion.')
 } catch(error){console.error(diagnostics);throw error}
 finally{await browser?.close();vite.kill('SIGTERM');await once(vite,'exit').catch(()=>{})}
