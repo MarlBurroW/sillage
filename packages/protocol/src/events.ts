@@ -245,6 +245,12 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     model: z.string(),
     cwd: z.string(),
     tools: z.array(z.string()),
+    /**
+     * Version of the CLI process holding the session, as it reports itself. A conversation keeps
+     * the binary it started with: after a CLI update, open sessions still run the old version
+     * and only this field says so. Absent from older CLIs and from CLIs that do not report it.
+     */
+    cliVersion: z.string().nullish(),
   }),
   z.object({
     type: z.literal('session.ended'),

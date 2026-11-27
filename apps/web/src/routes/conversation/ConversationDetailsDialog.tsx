@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Link } from 'react-router-dom'
-import { FolderTree, GitBranch, SquareKanban, Terminal, X } from 'lucide-react'
+import { FolderTree, GitBranch, SquareKanban, Terminal, TriangleAlert, X } from 'lucide-react'
 import {
   conversationPath,
   type ClaudeAccountDto,
@@ -12,6 +12,7 @@ import type { ChatState } from '@sillage/protocol/chat-state'
 import { AGENT_LABELS, AgentIcon } from '../../components/AgentIcon'
 import { UsageSummary } from '../../components/chat/UsageSummary'
 import { IconButton } from '../../components/ui'
+import { sessionVersionGap } from '../../lib/session-version'
 import { useTranslate } from '../../lib/i18n'
 
 /** “Details” dialog: model, workspace, origin, card, API control, handoff block and usage. */
@@ -39,6 +40,7 @@ export function ConversationDetailsDialog({
   billingAccount: ClaudeAccountDto | null | undefined
 }) {
   const t = useTranslate()
+  const versionGap = sessionVersionGap(conversation.agent, state.cliVersion)
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -59,6 +61,20 @@ export function ConversationDetailsDialog({
             <Meta title={AGENT_LABELS[conversation.agent]}>
               {state.model ?? AGENT_LABELS[conversation.agent]}
             </Meta>
+
+            {/*
+             * The version of the process holding the conversation, not of the binary installed
+             * now: after a CLI update, an open session keeps the old one until its process exits,
+             * and nothing else on screen says so. Shown only when the CLI reports it.
+             */}
+            {state.cliVersion ? (
+              <Meta
+                icon={versionGap ? <TriangleAlert size={10} className="text-caution" /> : undefined}
+                title={versionGap ?? t('conversation.meta.cliVersion', { agent: AGENT_LABELS[conversation.agent] })}
+              >
+                {state.cliVersion}
+              </Meta>
+            ) : null}
 
             <Meta
               icon={worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
@@ -166,6 +182,13 @@ export function ConversationDetailsDialog({
               cacheReadTokens={state.cacheReadTokens}
             />
           </div>
+          {/* Spelled out, not only in the tooltip: phones have no hover. */}
+          {versionGap ? (
+            <p className="mt-3 flex items-start gap-1.5 text-xs text-caution">
+              <TriangleAlert size={12} className="mt-0.5 shrink-0" />
+              <span>{state.cliVersion} · {versionGap}</span>
+            </p>
+          ) : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -313,6 +313,12 @@ export interface ChatState {
   cacheCreationTokens: number
   cacheReadTokens: number
   model: string | null
+  /**
+   * CLI version reported by the process holding the session, null when it does not say. Absent
+   * from projections folded before the field existed: the next `session.started` fills it, which
+   * spares rebuilding every stored projection for a detail.
+   */
+  cliVersion?: string | null
   rateLimit: RateLimitState | null
   context: ContextState | null
   /** Track turn completion to display a reliable activity indicator. */
@@ -436,6 +442,7 @@ export function emptyChatState(): ChatState {
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
     model: null,
+    cliVersion: null,
     rateLimit: null,
     context: null,
     editTurns: [],
@@ -724,6 +731,9 @@ export function applyEvent(
         })
       }
       state.model = event.model
+      // Replaced rather than kept: a later process that does not report its version must not
+      // inherit the previous one's.
+      state.cliVersion = event.cliVersion ?? null
       break
     }
 

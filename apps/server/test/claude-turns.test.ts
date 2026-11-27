@@ -70,3 +70,13 @@ test('a sub-agent still talking neither keeps an interrupted turn open nor opens
   f.translate(ping(null))
   assert.equal(count(f.events, 'turn.started'), 2)
 })
+
+test('session.started carries the version of the CLI process holding the session', () => {
+  const init = { type: 'system', subtype: 'init', permissionMode: 'default', cwd: '/', tools: [], mcp_servers: [], slash_commands: [] }
+  const f = runner()
+  f.translate({ ...init, model: 'opus', claude_code_version: '2.1.320' })
+  // An older CLI omits the field: null, never the version of a previous process.
+  f.translate({ ...init, model: 'sonnet' })
+  const started = f.events.filter((event) => event.type === 'session.started')
+  assert.deepEqual(started.map((event) => event.type === 'session.started' && event.cliVersion), ['2.1.320', null])
+})

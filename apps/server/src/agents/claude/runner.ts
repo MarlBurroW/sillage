@@ -593,6 +593,9 @@ export class ClaudeRunner implements AgentRunner {
                 model: message.model,
                 cwd: message.cwd,
                 tools: message.tools,
+                // Init repeats per turn, but the version cannot change within one process: the
+                // first init of each process (a new runner) is enough to carry it.
+                cliVersion: message.claude_code_version ?? null,
               },
               message,
             )
