@@ -284,6 +284,41 @@ test('Claude token totals are rebuilt once from every model of their turns, neve
   assert.equal(db.select({ input: conversations.inputTokens }).from(conversations).where(eq(conversations.id, 'delegating')).get()?.input, 0)
 })
 
+test('Antigravity sub-agents are read back once from their transcripts, under the invoke_subagent that started them', async (t) => {
+  const db = database(t)
+  const log = new EventLog(db)
+  const root = await mkdtemp(join(tmpdir(), 'sillage-antigravity-homes-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const homes = { accounts: join(root, 'accounts'), user: join(root, 'default') }
+  const brain = join(homes.accounts, 'acct', 'sillage-sessions', 'agh', 'antigravity-acp', 'brain')
+  const transcript = async (id: string, steps: Record<string, unknown>[]) => {
+    await mkdir(join(brain, id, '.system_generated', 'logs'), { recursive: true })
+    await writeFile(join(brain, id, '.system_generated', 'logs', 'transcript_full.jsonl'), steps.map((step) => JSON.stringify(step) + '\n').join(''))
+  }
+  const planner = (step_index: number, created_at: string, input_tokens: number, cache_read_tokens: number, output_tokens: number) => ({ step_index, type: 'PLANNER_RESPONSE', created_at, input_tokens, cache_read_tokens, output_tokens })
+  const invoke = (step_index: number, created_at: string, ...ids: string[]) => ({ step_index, type: 'INVOKE_SUBAGENT', created_at, content: ids.map((id) => `{ "conversationId":  "${id}" }`).join('\n') })
+  // Production order: step indexes on disk are not sorted, and the tool id's suffix is not the step's.
+  await transcript('main', [invoke(20, '2026-10-30T13:55:43Z', 'a', 'b'), planner(1, '2026-10-30T13:55:00Z', 9, 9, 9)])
+  await transcript('a', [planner(1, '2026-10-30T13:55:50Z', 100, 1000, 10), planner(2, '2099-01-01T00:00:00Z', 5, 5, 5)])
+  await transcript('b', [planner(1, '2026-10-30T13:56:00Z', 200, 2000, 20), invoke(2, '2026-10-30T13:56:01Z', 'c')])
+  await transcript('c', [planner(1, '2026-10-30T13:56:05Z', 1, 2, 3)])
+  conversation(db, 'agh', 'antigravity', { createdAt: 1, model: 'gemini-test', agentSessionId: 'main', config: JSON.stringify({ account: 'acct' }), inputTokens: 50, outputTokens: 5 })
+  const tool = (ts: number, toolCallId: string) => ({ ts, event: { type: 'tool.started', toolCallId, name: 'invoke_subagent', input: {}, title: 'Running invoke_subagent', parentToolCallId: null } as SillageEvent })
+  log.appendBatch('agh', [tool(Date.parse('2026-10-30T13:50:00Z'), 'main:3'), tool(Date.parse('2026-10-30T13:55:43.622Z'), 'main:15'), { ts: Date.parse('2026-10-30T13:57:00Z'), event: completed(50, 5) }])
+
+  const recorder = new TurnUsageRecorder(db, join(root, 'codex'), homes)
+  await recorder.importHistory()
+  assert.deepEqual(db.select().from(turnUsage).orderBy(turnUsage.seq).all().map((row) => [row.seq, row.model, row.inputTokens, row.outputTokens, row.cacheReadTokens]), [
+    [2, 'gemini-test', 301, 33, 3002],
+    [3, 'gemini-test', 50, 5, 0],
+  ])
+  const totals = db.select({ input: conversations.inputTokens, output: conversations.outputTokens }).from(conversations).where(eq(conversations.id, 'agh')).get()
+  assert.deepEqual(totals, { input: 50 + 301, output: 5 + 33 })
+  db.delete(turnUsage).run()
+  await new TurnUsageRecorder(db, join(root, 'codex'), homes).importHistory()
+  assert.equal(db.select().from(turnUsage).all().length, 0)
+})
+
 test('Codex sub-agents are read back once from their rollouts, before live recording took over', async (t) => {
   const db = database(t)
   const log = new EventLog(db)

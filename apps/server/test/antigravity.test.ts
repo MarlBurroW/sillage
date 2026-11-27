@@ -333,3 +333,43 @@ test('Native artifacts stay inside the allowed home, survive account deletion, a
   assert.match(await readFile(join(next, 'antigravity-acp', 'brain', 'native-id', 'plan.md'), 'utf8'), /native plan/)
   await assert.rejects(readFile(join(next, 'antigravity-acp', 'acp_token.json')))
 })
+
+test('Antigravity sub-agents settle their own tokens at each turn end, once, nested ones included', async (t) => {
+  const f = await fixture(t)
+  const sessionId = f.events.find((event) => event.type === 'session.started')!.agentSessionId
+  const brain = join(antigravitySessionHome(f.home, 'conversation', []), 'antigravity-acp', 'brain')
+  const transcript = async (id: string, steps: Record<string, unknown>[], append = false) => {
+    const dir = join(brain, id, '.system_generated', 'logs')
+    await mkdir(dir, { recursive: true })
+    const text = steps.map((step) => JSON.stringify(step) + '\n').join('')
+    await writeFile(join(dir, 'transcript_full.jsonl'), append ? (await readFile(join(dir, 'transcript_full.jsonl'), 'utf8').catch(() => '')) + text : text)
+  }
+  const planner = (step_index: number, input_tokens: number, cache_read_tokens: number, output_tokens: number) => ({ step_index, type: 'PLANNER_RESPONSE', status: 'DONE', created_at: '2026-11-27T19:52:11Z', input_tokens, cache_read_tokens, output_tokens })
+  const invoke = (step_index: number, ...ids: string[]) => ({ step_index, type: 'INVOKE_SUBAGENT', status: 'DONE', content: `Created the following subagents:\n${ids.map((id) => `{\n  "conversationId":  "${id}"\n}`).join('\n')}` })
+  // The main transcript's own steps are the prompt's usage: never counted here.
+  await transcript(sessionId, [planner(1, 13804, 0, 427), invoke(6, 'child')])
+  await transcript('child', [planner(1, 5827, 0, 217), planner(2, 1000, 2000, 30), invoke(3, 'grandchild')])
+  await transcript('grandchild', [planner(1, 10, 20, 3)])
+  await f.turn([], { totalTokens: 10, inputTokens: 8, outputTokens: 2, thoughtTokens: 0, cachedReadTokens: 0 })
+  const consumed = () => f.events.filter((event) => event.type === 'usage.consumed')
+  assert.deepEqual(consumed().map(({ inputTokens, outputTokens, cacheReadTokens }) => [inputTokens, outputTokens, cacheReadTokens]), [[6827, 247, 2000], [10, 3, 20]])
+  // Settled before the turn closes.
+  assert.ok(f.events.findIndex((event) => event.type === 'usage.consumed') < f.events.findIndex((event) => event.type === 'turn.completed'))
+
+  // A sub-agent still working: only its new steps, and a step written out of order or twice once.
+  await transcript('child', [planner(5, 100, 0, 7), planner(4, 50, 0, 1), planner(2, 1000, 2000, 30)], true)
+  await f.turn([])
+  assert.deepEqual(consumed().slice(2).map(({ inputTokens, outputTokens }) => [inputTokens, outputTokens]), [[150, 8]])
+  await f.turn([])
+  assert.equal(consumed().length, 3)
+
+  // A resumed session starts from what is on disk: earlier runners counted it.
+  const before = consumed().length
+  const resumed = new AntigravityRunner({ ...f.ctx, resumeSessionId: sessionId })
+  t.after(() => resumed.stop())
+  await resumed.start()
+  const ended = f.events.filter((event) => event.type === 'turn.completed').length
+  await resumed.send('fixture:' + JSON.stringify({ steps: [] }), [], [], [])
+  await until(() => f.events.filter((event) => event.type === 'turn.completed').length > ended)
+  assert.equal(consumed().length, before)
+})

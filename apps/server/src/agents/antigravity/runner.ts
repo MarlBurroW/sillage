@@ -25,6 +25,7 @@ import { antigravityArgs } from './launch.js'
 import { configOption, optionsOf } from './catalog.js'
 import { describeAntigravityTool } from './tools.js'
 import { antigravityTurnTokens } from './usage.js'
+import { AntigravitySubAgentUsage } from './subagent-usage.js'
 import { TurnLifecycle } from '../turn-lifecycle.js'
 
 interface ToolTrack { update: Record<string, unknown>; input: string; output: string; diffs: AcpDiff[]; settle: NodeJS.Timeout | null }
@@ -109,6 +110,8 @@ export class AntigravityRunner implements AgentRunner {
   private replaying = false
   private home = ''
   private readonly background = new Map<string, string>()
+  /** Sub-agents' tokens, which the prompt's usage leaves out; null until the session is known. */
+  private subAgents: AntigravitySubAgentUsage | null = null
 
   async importHistory(): Promise<void> {
     this.replaying = true
@@ -168,6 +171,11 @@ export class AntigravityRunner implements AgentRunner {
     if (!this.sessionId) throw new Error('Antigravity did not return a session ID.')
     this.ctx.setAgentSessionId(this.sessionId)
     if (storageRoot) await rememberAntigravityStorage(view, storageRoot, this.sessionId)
+    if (!this.subAgents && !this.replaying) {
+      this.subAgents = new AntigravitySubAgentUsage(join(view, 'antigravity-acp', 'brain'))
+      // What a resumed session's sub-agents consumed was recorded by earlier runners or the history import.
+      try { this.subAgents.baseline(this.sessionId) } catch { /* unreadable transcripts: counted from the next turn */ }
+    }
     this.options = session
     await this.applyOptions(this.config, this.ctx.resumeSessionId !== null)
     const selected = this.options
@@ -448,6 +456,12 @@ export class AntigravityRunner implements AgentRunner {
   }
   private endTurn(response: Record<string, unknown>, raw: unknown, token?: number): void {
     const usage = fields(response.usage)
+    // Before the turn closes, so benchmarks bounded at settlement include them.
+    if (this.subAgents && this.sessionId && !this.replaying) {
+      let used: ReturnType<AntigravitySubAgentUsage['settle']> = []
+      try { used = this.subAgents.settle(this.sessionId) } catch { /* a transcript read must not keep the turn open */ }
+      for (const { id, tokens } of used) this.ctx.emit({ type: 'usage.consumed', model: null, costUsd: 0, ...tokens }, { antigravitySubAgent: id })
+    }
     this.turn.end({
       stopReason: response.stopReason === 'end_turn' ? 'completed' : response.stopReason === 'cancelled' ? 'interrupted' : String(response.stopReason ?? 'completed'),
       usage: { costUsd: 0, ...antigravityTurnTokens(usage) },

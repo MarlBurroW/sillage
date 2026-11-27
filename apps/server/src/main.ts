@@ -41,7 +41,7 @@ import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
 import { GrokAccountHomes } from './grok-accounts/homes.js'
-import { AntigravityAccountHomes } from './antigravity-accounts/homes.js'
+import { AntigravityAccountHomes, userAntigravityHome } from './antigravity-accounts/homes.js'
 import { GrokLoginService } from './grok-accounts/login.js'
 import { AntigravityLoginService } from './antigravity-accounts/login.js'
 import { GrokAccountStore } from './grok-accounts/store.js'
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
   const copilotAccounts = { store: new CopilotAccountStore(db), homes: new CopilotAccountHomes(config.paths.copilotAccounts) }
   const copilotLogin = new CopilotLoginService(copilotAccounts.homes, copilotAccounts.store, () => registry.adapter('copilot').cli.executable())
   // What each turn consumed, and the public prices the dashboard applies to it.
-  const turnUsage = new TurnUsageRecorder(db)
+  const turnUsage = new TurnUsageRecorder(db, undefined, { accounts: config.paths.antigravityAccounts, user: userAntigravityHome() })
   const prices = new PriceCatalog(db)
   const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts, copilotAccounts, turnUsage)
   // Agent browsers (tool family `browser`): launched on the agent's first use, closed when idle.

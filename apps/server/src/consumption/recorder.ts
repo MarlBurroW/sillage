@@ -2,6 +2,8 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { appSettings, conversations, turnUsage, type Db } from '@sillage/db'
 import type { AgentKind, SillageEvent } from '@sillage/protocol'
 import { userCodexHome } from '../codex-accounts/homes.js'
+import { userAntigravityHome } from '../antigravity-accounts/homes.js'
+import { importAntigravitySubAgentUsage } from './antigravity-subagent-history.js'
 import { repairAntigravityUsage } from './antigravity-usage-repair.js'
 import { importCodexSubAgentUsage } from './codex-subagent-history.js'
 import { consumedUsageOf, turnUsageOf, type ClaudeModelUsage, type ModelTurnUsage } from './turn-usage.js'
@@ -15,6 +17,8 @@ const SUB_AGENT_HISTORY_KEY = 'codexSubAgentUsageHistory'
 const ANTIGRAVITY_REPAIR_KEY = 'antigravityUsageRepair'
 /** Claude token totals rebuilt from `turn_usage`, once: they used to leave sub-agents and the advisor out. */
 const CLAUDE_TOKENS_KEY = 'claudeTokenTotalsRepair'
+/** Antigravity sub-agents read back from their transcripts, apart like Codex's. */
+const ANTIGRAVITY_SUB_AGENT_KEY = 'antigravitySubAgentUsageHistory'
 
 interface Owner { userId: string; projectId: string | null; agent: AgentKind; model: string | null }
 interface Running { model: string | null; claude: ClaudeModelUsage | null }
@@ -28,7 +32,12 @@ export class TurnUsageRecorder {
   private readonly running = new Map<string, Running>()
   private history: Promise<void> | null = null
 
-  constructor(private readonly db: Db, private readonly codexHome = userCodexHome()) {}
+  constructor(
+    private readonly db: Db,
+    private readonly codexHome = userCodexHome(),
+    /** Where managed Google accounts live, beside the default home; null when only the latter is used. */
+    private readonly antigravityHomes: { accounts: string | null; user: string } = { accounts: null, user: userAntigravityHome() },
+  ) {}
 
   /** Called for every event a runner emits, with the native payload the journal stores beside it. */
   observe(conversationId: string, entry: { seq: number; ts: number; event: SillageEvent }, raw: unknown): void {
@@ -62,7 +71,7 @@ export class TurnUsageRecorder {
 
   historyReady(): boolean {
     return this.readHistoryVersion() >= HISTORY_VERSION && this.setting(SUB_AGENT_HISTORY_KEY) >= 1
-      && this.setting(ANTIGRAVITY_REPAIR_KEY) >= 1 && this.setting(CLAUDE_TOKENS_KEY) >= 1
+      && this.setting(ANTIGRAVITY_REPAIR_KEY) >= 1 && this.setting(CLAUDE_TOKENS_KEY) >= 1 && this.setting(ANTIGRAVITY_SUB_AGENT_KEY) >= 1
   }
 
   /** Reads the journals once, in the background. Safe to call at every start. */
@@ -95,6 +104,10 @@ export class TurnUsageRecorder {
           output_tokens = max(output_tokens, coalesce((select sum(output_tokens) from turn_usage where turn_usage.conversation_id = conversations.id), 0))
         where agent = 'claude'`)
       this.saveSetting(CLAUDE_TOKENS_KEY, 1)
+    }
+    if (this.setting(ANTIGRAVITY_SUB_AGENT_KEY) < 1) {
+      await importAntigravitySubAgentUsage(this.db, this.antigravityHomes, cutoff)
+      this.saveSetting(ANTIGRAVITY_SUB_AGENT_KEY, 1)
     }
   }
 
