@@ -4,6 +4,7 @@ import { DEFAULT_OPENCODE_CONFIG, PREFERRED_CLI_RELEASES, isCompatibleCliVersion
 import type { Config } from '../src/config.js'
 import type { EventLog } from '../src/events/event-log.js'
 import { OpencodeAdapter } from '../src/agents/opencode/adapter.js'
+import { SessionGrants, matchesPattern } from '../src/agents/opencode/v2/permissions.js'
 import { describeTool } from '../src/agents/opencode/v2/tools.js'
 import { fixture2 } from './opencode2-support.js'
 
@@ -133,4 +134,25 @@ test('OpenCode 2 : sessions natives listées puis importées sans requête au mo
   assert.ok(formats.every((format) => format === 'opencode-server@v2'))
   assert.ok(!(await records()).some((record) => record.path.endsWith('/prompt')), 'no model request')
   assert.deepEqual(state.statuses.at(-1), 'idle')
+})
+
+test('OpenCode 2 : motifs de session lus comme opencode 2.4.2', () => {
+  // A trailing ` *` also covers the bare command, but not a longer word.
+  assert.equal(matchesPattern('echo one', 'echo *', 'linux'), true)
+  assert.equal(matchesPattern('echo', 'echo *', 'linux'), true)
+  assert.equal(matchesPattern('echoes', 'echo *', 'linux'), false)
+  assert.equal(matchesPattern('git log a.b', 'git log a.b', 'linux'), true)
+  assert.equal(matchesPattern('git log axb', 'git log a.b', 'linux'), false)
+  assert.equal(matchesPattern('https://example.com/a', 'https://example.com/*', 'linux'), true)
+  assert.equal(matchesPattern('https://evil.test/?x=https://example.com/', 'https://example.com/*', 'linux'), false)
+  // Windows: backslashes read as slashes, case ignored.
+  assert.equal(matchesPattern('C:\\Repo\\a.ts', 'c:/repo/*', 'win32'), true)
+  assert.equal(matchesPattern('C:/Repo/a.ts', 'c:/repo/*', 'linux'), false)
+
+  const grants = new SessionGrants('linux')
+  grants.grant('edit', ['src/a.ts'], undefined)
+  assert.equal(grants.covers('edit', ['src/a.ts']), true)
+  assert.equal(grants.covers('edit', ['src/b.ts']), false)
+  assert.equal(grants.covers('edit', []), false)
+  assert.equal(grants.covers('shell', ['src/a.ts']), false)
 })

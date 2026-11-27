@@ -47,6 +47,7 @@ import { readCommands2, readModels2, readSkills2, toAgentSkills, toSlashCommands
 import { OpencodeServer } from '../server.js'
 import { fromOpencode2McpStatus, toOpencode2Config, type Opencode2Config } from './config.js'
 import { historyEvents } from './history.js'
+import { SessionGrants } from './permissions.js'
 import { elicitationAnswer, formElicitation, formQuestions, isQuestionForm, questionAnswer } from './forms.js'
 import {
   contentText,
@@ -164,6 +165,8 @@ export class Opencode2Runner implements AgentRunner {
   private readonly interactions: PendingInteractions
   /** Native request (per_…, frm_…) mapped to Sillage request ID and the session asking. */
   private readonly nativeRequests = new Map<string, { requestId: string; sessionId: string }>()
+  /** "Allow for the session" approvals, held by Sillage for this conversation's lifetime. */
+  private readonly sessionGrants = new SessionGrants()
   /** Requests opencode closed itself, requiring no answer. */
   private readonly settledNatively = new Set<string>()
 
@@ -749,13 +752,20 @@ export class Opencode2Runner implements AgentRunner {
 
   private onPermissionAsked(request: EventData<'permission.asked'>): void {
     if (!this.inTree(request.sessionID) || this.nativeRequests.has(request.id)) return
+    const path = `/api/session/${request.sessionID}/permission/${request.id}/reply`
+    if (this.sessionGrants.covers(request.action, request.resources)) {
+      this.reply('POST', path, { decision: 'once' satisfies PermissionReply })
+      return
+    }
     const details = describePermission(request.action, request.resources, request.metadata, this.ctx.cwd)
     const requestId = this.interactions.requestPermission(details, (decision) => {
       this.nativeRequests.delete(request.id)
       if (this.settledNatively.delete(request.id)) return
-      // 2.x keeps two scopes like 1.x: once, or for the server's lifetime.
-      const reply: PermissionReply = decision?.decision === 'allowed' ? (decision.scope === 'once' ? 'once' : 'always') : 'reject'
-      this.reply('POST', `/api/session/${request.sessionID}/permission/${request.id}/reply`, { decision: reply })
+      // Never `always`: 2.x would save a widened, permanent project rule (see permissions.ts).
+      const allowed = decision?.decision === 'allowed'
+      if (allowed && decision.scope !== 'once') this.sessionGrants.grant(request.action, request.resources, request.save)
+      const reply: PermissionReply = allowed ? 'once' : 'reject'
+      this.reply('POST', path, { decision: reply })
     })
     this.nativeRequests.set(request.id, { requestId, sessionId: request.sessionID })
   }

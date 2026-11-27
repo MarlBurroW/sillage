@@ -138,6 +138,14 @@ Probed on 2.4.1, data directories isolated.
 - **Permissions**: `permission.asked {action, resources, metadata}`, edits carrying
   `metadata.files[]` with a unified patch; answered by
   `POST /api/session/{id}/permission/{req}/reply {decision: once|always|reject}`.
+  Unlike 1.x, where `always` lasts for the instance, 2.x `always` saves a rule in
+  opencode's database for the whole project, under the widened `save` pattern of the
+  request (`echo *` for `echo one`), and it then applies to later conversations and to
+  the TUI (probed on 2.4.2). Sillage never sends it: "Allow for the session" replies
+  `once` and remembers the `save` patterns, then answers matching requests of the same
+  conversation itself (`v2/permissions.ts`, opencode's wildcard). Rules saved by
+  Sillage before this fix stay until removed: `GET /api/permission/saved`, then
+  `DELETE /api/permission/saved/{id}`.
 - **Forms** replace 1.x questions. The question tool opens a form with
   `metadata.kind: "question"`: one field per question, a `string` with options for
   a single choice, a `multiselect` for several, `custom` allowing free text.

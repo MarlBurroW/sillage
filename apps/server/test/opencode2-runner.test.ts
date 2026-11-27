@@ -145,7 +145,8 @@ test('OpenCode 2 : permissions et fichiers joints', async (t) => {
   const replies = (await f.records()).filter((record) => record.path.endsWith('/reply'))
   assert.deepEqual(replies.map((record) => [record.path, record.body.decision]), [
     [`/api/session/${ROOT}/permission/per_1/reply`, 'once'],
-    [`/api/session/${ROOT}/permission/per_2/reply`, 'always'],
+    // Never `always`: 2.x would save it as a permanent project rule.
+    [`/api/session/${ROOT}/permission/per_2/reply`, 'once'],
     [`/api/session/${ROOT}/permission/per_3/reply`, 'reject'],
   ])
 
@@ -262,6 +263,36 @@ test('OpenCode 2 : sous-agent de fond, tour de réveil, demande de l\'enfant pen
   // Ending the wake-up turn did not expire the child's request.
   assert.equal(f.count('permission.resolved'), 0)
   assert.equal(f.statuses.at(-1), 'awaiting_input')
+})
+
+test('OpenCode 2 : « pour la session » reste dans la conversation, jamais une règle opencode', async (t) => {
+  const f = await runner2Fixture(t)
+  const replies = async (expected: number) => {
+    let found: unknown[][] = []
+    for (let tries = 0; tries < 500 && found.length < expected; tries++) {
+      found = (await f.records()).filter((record) => record.path.endsWith('/reply')).map((record) => [record.path.split('/')[5], record.body.decision])
+      if (found.length < expected) await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    return found
+  }
+  // 2.x proposes saving the command family (`echo *`), probed on 2.4.2.
+  await f.play([started(), permission('per_1', 'shell', ['echo one'], { command: 'echo one' }, ROOT, ['echo *'])])
+  await until(() => f.count('permission.requested') === 1)
+  f.runner.resolvePermission(f.of('permission.requested')[0]!.requestId, { decision: 'allowed', scope: 'session', decidedBy: 'u' })
+  assert.equal((await replies(1)).length, 1)
+
+  // Same family, a sub-agent included: answered `once` by Sillage without asking again.
+  // Another command or another action with the same text still asks.
+  await f.play([
+    childCreated(),
+    permission('per_2', 'shell', ['echo two'], {}),
+    permission('per_3', 'shell', ['echo'], {}, CHILD),
+    permission('per_4', 'shell', ['echo three', 'rm -rf build'], {}),
+    permission('per_5', 'webfetch', ['echo two'], {}),
+  ])
+  await until(() => f.count('permission.requested') === 3)
+  assert.deepEqual(await replies(3), [['per_1', 'once'], ['per_2', 'once'], ['per_3', 'once']])
+  assert.deepEqual(f.of('permission.requested').slice(1).map((event) => event.input), [{ command: 'echo three && rm -rf build' }, { url: 'echo two' }])
 })
 
 test('OpenCode 2 : interruption, échec et reprise', async (t) => {

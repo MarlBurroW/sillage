@@ -82,8 +82,8 @@ export const toolSuccess = (id: string, output: string, metadata: Record<string,
   ev('session.tool.success', { sessionID, assistantMessageID, id, content: [{ type: 'text', text: output }], metadata, executed: false })
 export const toolProgress = (id: string, metadata: Record<string, unknown>, assistantMessageID = 'msg_a', sessionID = ROOT) =>
   ev('session.tool.progress', { sessionID, assistantMessageID, id, metadata })
-export const permission = (id: string, action: string, resources: string[], metadata: Record<string, unknown> = {}, sessionID = ROOT) =>
-  ev('permission.asked', { id, sessionID, action, resources, save: ['*'], metadata })
+export const permission = (id: string, action: string, resources: string[], metadata: Record<string, unknown> = {}, sessionID = ROOT, save = ['*']) =>
+  ev('permission.asked', { id, sessionID, action, resources, save, metadata })
 export const form = (id: string, kind: string, fields: unknown[], sessionID = ROOT, title = 'Questions') =>
   ev('form.created', { form: { id, sessionID, title, metadata: { kind }, fields } })
 export const job = (status: string, extra: Record<string, unknown> = {}) =>
