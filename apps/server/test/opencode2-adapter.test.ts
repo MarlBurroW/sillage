@@ -41,7 +41,7 @@ test('OpenCode 2 : catalogue des modèles utilisables, variantes, agents par ide
   assert.deepEqual(listing.agents, [{ name: 'general', description: 'General work' }])
   assert.equal((await adapter.resolveDefaults(DEFAULT_OPENCODE_CONFIG)).model, 'fixture/small')
   assert.deepEqual((await adapter.commands(cwd, false)).commands.map((command) => command.name), ['review'])
-  assert.equal((await adapter.cli.describe()).version, '2.4.1')
+  assert.equal((await adapter.cli.describe()).version, '2.4.2')
 })
 
 test('OpenCode 2 : fork au message qui suit le dernier gardé, coupe lue dans les deux formats', async (t) => {
@@ -95,7 +95,7 @@ test('versions : Sillage installe la 2.x et reconnaît encore la 1.x', () => {
   assert.equal(release.package, '@opencode/cli')
   // The 1.x package claims the same command: it leaves the prefix first.
   assert.deepEqual(release.replaces, ['opencode-ai'])
-  assert.deepEqual(['1.19.5', '1.20.0', '2.4.1', '2.9.0', '1.18.0', '2.3.0', '3.0.0', 'nightly'].map((version) => isCompatibleCliVersion(release, version)),
+  assert.deepEqual(['1.19.5', '1.20.0', '2.4.2', '2.9.0', '1.18.0', '2.4.1', '3.0.0', 'nightly'].map((version) => isCompatibleCliVersion(release, version)),
     [true, true, true, true, false, false, false, null])
   // CLIs with a single target keep the caret rule.
   assert.equal(isCompatibleCliVersion(PREFERRED_CLI_RELEASES.codex, '1.0.0'), false)

@@ -7,7 +7,7 @@ with an SSE stream. It speaks both OpenCode majors, which ship different servers
 |---|---|---|
 | Distribution | npm `opencode-ai` | npm `@opencode/cli` |
 | API | `/session/...`, stream `GET /event` | `/api/...`, stream `GET /api/event` |
-| Bindings | `@sillage/opencode-bindings` (`GET /doc`, **1.19.5**) | `@sillage/opencode-bindings/v2` (`GET /openapi.json`, **2.4.1**) |
+| Bindings | `@sillage/opencode-bindings` (`GET /doc`, **1.19.5**) | `@sillage/opencode-bindings/v2` (`GET /openapi.json`, **2.4.2**) |
 | Runner | `agents/opencode/runner.ts` | `agents/opencode/v2/runner.ts` |
 | Journal `rawFormat` | `opencode-server@v1` | `opencode-server@v2` |
 
@@ -20,7 +20,7 @@ session without restarting Sillage. Majors above 2 are rejected with
 Catalog, command and fork probes follow the same detection.
 
 Sillage installs and recommends OpenCode 2 (`PREFERRED_CLI_RELEASES`:
-`@opencode/cli` 2.4.1). 1.x stays supported (`alsoSupported`: no version
+`@opencode/cli` 2.4.2). 1.x stays supported (`alsoSupported`: no version
 warning), and Settings › CLI versions offers the update, with a note on the
 history migration below. Both packages claim the `opencode` command, so npm
 refuses to install one over the other (EEXIST): the installer first removes the
@@ -196,6 +196,13 @@ panel (2.x has no todo tool), and calls made inside Code Mode's `execute`, shown
 one call.
 
 ## Verification
+
+On November 27, 2026, OpenCode **2.4.2** (Linux x64, data directories isolated)
+passed `opencode:types:check` (additions only: `experimental.push.*`, skill files,
+agent `instructions`, two experimental flags; nothing Sillage reads changed), the
+manual probe, and real turns through the runner: text, reasoning, a background
+`explore` subagent with its report, shells and compaction. A 2.4.1 database reopens
+as is. The only new event, `experimental.push.updated` (phone pairing), is ignored.
 
 On November 24, 2026, OpenCode **2.4.1** (Linux x64, data directories isolated)
 passed the manual probe below (Read, Edit, permission, injected instructions,

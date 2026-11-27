@@ -346,6 +346,18 @@ test('OpenCode 2 : une session reprise ne recompte pas ce qu’elle avait dépen
   assert.equal(f.count('usage.consumed'), 0)
 })
 
+test('OpenCode 2 : appairage push ignoré, événement inconnu signalé une fois', async (t) => {
+  const f = await runner2Fixture(t)
+  await f.turn([
+    started(),
+    { type: 'experimental.push.updated', data: { devices: [] } },
+    { type: 'experimental.future.thing', data: {} },
+    { type: 'experimental.future.thing', data: {} },
+    succeeded(),
+  ])
+  assert.deepEqual(f.of('agent.notice').map((event) => event.code), ['experimental.future.thing'])
+})
+
 test('OpenCode 2 : interruption, échec et reprise', async (t) => {
   const f = await runner2Fixture(t, { resumeSessionId: 'ses_old' })
   assert.equal(f.of('session.started')[0]?.agentSessionId, 'ses_old')

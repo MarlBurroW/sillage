@@ -8,7 +8,7 @@ Sillage speaks both OpenCode majors, which ship different servers:
 
 - OpenCode 1 bindings generated with **opencode 1.19.5**: `src/openapi.d.ts`, read from
   `GET /doc`, short names in `src/index.ts` (`@sillage/opencode-bindings`).
-- OpenCode 2 bindings generated with **opencode 2.4.1**: `src/v2/openapi.d.ts`, read from
+- OpenCode 2 bindings generated with **opencode 2.4.2**: `src/v2/openapi.d.ts`, read from
   `GET /openapi.json`, short names in `src/v2/index.ts` (`@sillage/opencode-bindings/v2`).
 
 The script writes the bindings of the binary it runs (`OPENCODE_BIN`, otherwise

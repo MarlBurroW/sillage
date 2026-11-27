@@ -317,7 +317,7 @@ export interface paths {
         };
         /**
          * List active sessions
-         * @description Retrieve foreground Session drains currently owned by this OpenCode process. Sessions absent from the result are inactive.
+         * @description List the sessions whose agent is running right now in this server process. Sessions missing from the result are idle.
          */
         get: operations["session.active"];
         put?: never;
@@ -367,7 +367,7 @@ export interface paths {
         put?: never;
         /**
          * Fork session
-         * @description Create a child session by copying projected history before a message. Omit before to copy the full history.
+         * @description Create a child session with this session's history before a message. Omit before to copy the full history.
          */
         post: operations["session.fork"];
         delete?: never;
@@ -387,7 +387,7 @@ export interface paths {
         put?: never;
         /**
          * Switch session agent
-         * @description Switch the agent used by subsequent provider turns.
+         * @description Change the agent the session uses from its next model call on.
          */
         post: operations["session.switchAgent"];
         delete?: never;
@@ -407,7 +407,7 @@ export interface paths {
         put?: never;
         /**
          * Switch session model
-         * @description Switch the model used by subsequent provider turns.
+         * @description Change the model the session uses from its next model call on.
          */
         post: operations["session.switchModel"];
         delete?: never;
@@ -447,7 +447,7 @@ export interface paths {
         put?: never;
         /**
          * Send message
-         * @description Durably admit one session input and schedule agent-loop execution unless resume is false.
+         * @description Send a user message and start the agent unless resume is false. Returns once the message is queued, not when the agent finishes: wait with POST /api/experimental/session/:sessionID/wait or the session.execution.* events, then read the reply with GET /api/session/:sessionID/message. An archived session is unarchived.
          */
         post: operations["session.prompt"];
         delete?: never;
@@ -467,7 +467,7 @@ export interface paths {
         put?: never;
         /**
          * Run command
-         * @description Execute a slash command callback immediately.
+         * @description Run a named command in the session. Most commands send a prompt, so like session.prompt this returns before the agent finishes. An archived session is unarchived.
          */
         post: operations["session.command"];
         delete?: never;
@@ -487,7 +487,7 @@ export interface paths {
         put?: never;
         /**
          * Activate skill
-         * @description Activate a skill for a session by appending a skill message and resuming execution.
+         * @description Activate a skill for a session by appending a skill message and resuming execution. An archived session is unarchived.
          */
         post: operations["experimental.session.skill"];
         delete?: never;
@@ -507,7 +507,7 @@ export interface paths {
         put?: never;
         /**
          * Add synthetic message
-         * @description Durably admit synthetic session input and schedule execution unless resume is false.
+         * @description Add a message the model reads as user input but the user didn't type, such as a notification. Starts the agent unless resume is false or the session has a staged revert.
          */
         post: operations["session.synthetic"];
         delete?: never;
@@ -527,7 +527,7 @@ export interface paths {
         put?: never;
         /**
          * Run shell command
-         * @description Execute one shell command in the session's working directory. Emits a shell.started event before execution and a shell.ended event with the merged output after.
+         * @description Execute one shell command in the session's working directory. Emits a shell.started event before execution and a shell.ended event with the merged output after. An archived session is unarchived.
          */
         post: operations["session.shell"];
         delete?: never;
@@ -547,7 +547,7 @@ export interface paths {
         put?: never;
         /**
          * Compact session
-         * @description Durably admit a session compaction request. Steers by default: it runs at the next step boundary instead of waiting behind queued prompts.
+         * @description Queue a summary of the session's history. Steers by default: it runs before the next model call, ahead of queued messages.
          */
         post: operations["session.compact"];
         delete?: never;
@@ -567,7 +567,7 @@ export interface paths {
         put?: never;
         /**
          * Wait for session
-         * @description Wait for a session agent loop to become idle.
+         * @description Wait until the session's agent stops running in this server process. Returns at once when idle. Experimental: may change without compatibility guarantees.
          */
         post: operations["experimental.session.wait"];
         delete?: never;
@@ -679,7 +679,7 @@ export interface paths {
         };
         /**
          * List session inbox
-         * @description List durable enqueued session work not yet delivered, ordered by enqueue sequence. Includes user, synthetic, compaction, and move items.
+         * @description List user, synthetic, compaction and move items not yet delivered to the agent, oldest first. Delivered user and synthetic items move to session.message.list.
          */
         get: operations["session.inbox.list"];
         put?: never;
@@ -809,7 +809,7 @@ export interface paths {
         put?: never;
         /**
          * Interrupt session execution
-         * @description Interrupt active execution owned by this OpenCode process. Returns interrupted=true when an active execution was interrupted and false for the idle no-op. When resume=true, execution resumes pending steering input and next-in-line control items (manual compaction, moves) while queued prompts remain parked.
+         * @description Stop the session's agent if it is running in this server process; interrupted=false means nothing was running. With resume=true it continues with pending steer items, compaction and moves, while queued messages keep waiting.
          */
         post: operations["session.interrupt"];
         delete?: never;
@@ -847,7 +847,7 @@ export interface paths {
         };
         /**
          * Get session message
-         * @description Retrieve one projected message owned by the Session.
+         * @description Retrieve one message of the session by ID.
          */
         get: operations["session.message.get"];
         put?: never;
@@ -975,7 +975,7 @@ export interface paths {
         };
         /**
          * Get session messages
-         * @description Retrieve projected messages for a session, optionally filtered by type. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline, passing the same type filter on each page.
+         * @description List a session's messages, optionally filtered by type. Follow cursor.next or cursor.previous with the same type filter. Items still in the inbox aren't included.
          */
         get: operations["session.message.list"];
         put?: never;
@@ -1979,6 +1979,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experimental/skill/{skillID}/file/*": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read skill file
+         * @description Read one file of a skill, loading it when the skill serves it on demand. SKILL.md returns the body without frontmatter. Experimental: may change without compatibility guarantees.
+         */
+        get: operations["experimental.skill.file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/{rpcID}/{method}": {
         parameters: {
             query?: never;
@@ -2567,6 +2587,122 @@ export interface paths {
          * @description Forget a machine by name, closing any live link and revoking its key. Behind the machines flag. Experimental: may change without compatibility guarantees.
          */
         delete: operations["experimental.machine.remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experimental/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get push settings
+         * @description List the registered phones with their choices, bells and pauses, the server-wide pause and the shared session bells. Never returns callback URLs or keys. Experimental: may change without compatibility guarantees.
+         */
+        get: operations["experimental.push.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experimental/push/device/{deviceID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register a phone
+         * @description Register or renew a phone's relay callback URL and public key, and answer with the server's public key for it. Keeps the phone's pause, session bells and, unless given, its level. Experimental: may change without compatibility guarantees.
+         */
+        put: operations["experimental.push.device.register"];
+        post?: never;
+        /**
+         * Remove a phone
+         * @description Stop sending notifications to a phone. Experimental: may change without compatibility guarantees.
+         */
+        delete: operations["experimental.push.device.remove"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a phone
+         * @description Pause or resume notifications to one phone, or change the level it gets by default. Experimental: may change without compatibility guarantees.
+         */
+        patch: operations["experimental.push.device.update"];
+        trace?: never;
+    };
+    "/api/experimental/push/device/{deviceID}/session/{sessionID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a phone's session bell
+         * @description Choose what one phone gets for one session. Experimental: may change without compatibility guarantees.
+         */
+        put: operations["experimental.push.device.session.set"];
+        post?: never;
+        /**
+         * Clear a phone's session bell
+         * @description Let one phone follow the shared bell or its default for one session again. Experimental: may change without compatibility guarantees.
+         */
+        delete: operations["experimental.push.device.session.remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experimental/push/session/{sessionID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a session bell
+         * @description Choose what every phone gets for one session. Experimental: may change without compatibility guarantees.
+         */
+        put: operations["experimental.push.session.set"];
+        post?: never;
+        /**
+         * Clear a session bell
+         * @description Let every phone follow its default for one session again. Experimental: may change without compatibility guarantees.
+         */
+        delete: operations["experimental.push.session.remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experimental/push/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pause all notifications
+         * @description Pause or resume notifications to every phone. Experimental: may change without compatibility guarantees.
+         */
+        put: operations["experimental.push.settings.set"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3161,6 +3297,8 @@ export interface components {
                 home_memory?: boolean;
                 project_overlay?: boolean;
                 opencode_api?: boolean;
+                mcp_skills?: boolean;
+                compaction_jobs?: boolean;
                 sqlite_fts?: boolean;
                 video_generate?: boolean | {
                     model?: string | {
@@ -3695,6 +3833,73 @@ export interface components {
                 completed?: number;
             };
         };
+        "Push.Settings": {
+            paused: boolean;
+            /** @description Milliseconds since the Unix epoch */
+            until?: number;
+        };
+        "Session.ID": string;
+        "Push.Bell": {
+            level: components["schemas"]["Push.Level"];
+            /** @description Milliseconds since the Unix epoch */
+            until?: number;
+        };
+        /** @enum {string} */
+        "Push.Level": "all" | "attention" | "none";
+        PushDeviceNotFoundErrorEncoded: {
+            /** @enum {string} */
+            _tag: "PushDeviceNotFoundError";
+            deviceID: string;
+            message: string;
+        };
+        /** @description A lowercase canonical UUID chosen by the phone */
+        "Push.DeviceID": string;
+        "Push.Device": {
+            id: components["schemas"]["Push.DeviceID"];
+            name: string;
+            platform: components["schemas"]["Push.Platform"];
+            /** @description Milliseconds since the Unix epoch */
+            expiresAt: number;
+            settings: components["schemas"]["Push.DeviceSettings"];
+            paused: boolean;
+            sessions: {
+                [key: string]: components["schemas"]["Push.Bell"];
+            };
+            time: {
+                /** @description Milliseconds since the Unix epoch */
+                created: number;
+                /** @description Milliseconds since the Unix epoch */
+                updated: number;
+            };
+        };
+        "Push.DeviceSettings": {
+            default: components["schemas"]["Push.Level"];
+        };
+        /** @enum {string} */
+        "Push.Platform": "android" | "ios";
+        "Push.DevicePatch": {
+            paused?: boolean;
+            settings?: components["schemas"]["Push.DeviceSettings"];
+        };
+        "Push.Registered": {
+            publicKey: string;
+        };
+        "Push.Register": {
+            callbackURL: string;
+            /** @description Milliseconds since the Unix epoch */
+            expiresAt: number;
+            publicKey: string;
+            platform: components["schemas"]["Push.Platform"];
+            name: string;
+            settings?: components["schemas"]["Push.DeviceSettings"];
+        };
+        "Push.Info": {
+            settings: components["schemas"]["Push.Settings"];
+            devices: components["schemas"]["Push.Device"][];
+            sessions: {
+                [key: string]: components["schemas"]["Push.Bell"];
+            };
+        };
         MachineNotFoundErrorEncoded: {
             /** @enum {string} */
             _tag: "MachineNotFoundError";
@@ -3762,7 +3967,6 @@ export interface components {
         };
         /** @enum {string} */
         "Job.Status": "running" | "completed" | "error" | "cancelled";
-        "Session.ID": string;
         "Job.Video": {
             /** @enum {string} */
             kind: "video";
@@ -3982,7 +4186,7 @@ export interface components {
         "Automation.CodeActionInput": {
             /** @enum {string} */
             type: "code";
-            /** @description Code Mode JavaScript run on each trigger with no model (32 KB output cap). Call tools statically as tools.<ns>.<tool>(...) or tools["ns-name"].tool(...); each is authorized once at creation to run unattended. Receives input = { state, now, runs, args } (also globals): state starts null, now is epoch ms, runs counts earlier runs. Event triggers also receive input.event = { id, timestamp, data }; data follows the event type's payloadSchema. Return nothing, or { state?, done?, send? }. JSON state is kept for the next run; done: true stops. lastOutput shows the delivery target and any logs. Return at most one send per run. { send: { prompt } } steers the creating session; { send: { prompt, to: { subagent } } } starts a permitted child that does not report back. No session IDs. Omit send to stay quiet. A rejected send commits neither state nor done. Example code string: if (runs < 2) return; return { done: true, send: { prompt: "Three checks elapsed. Review the build." } } */
+            /** @description Code Mode JavaScript run on each trigger with no model (32 KB output cap). Call tools statically as tools.<ns>.<tool>(...) or tools["ns-name"].tool(...); each is authorized once at creation to run unattended. A shell command still running at its timeout is stopped and the call throws; it never moves to the background. Receives input = { state, now, runs, args } (also globals): state starts null, now is epoch ms, runs counts earlier runs. Event triggers also receive input.event = { id, timestamp, data }; data follows the event type's payloadSchema. Return nothing, or { state?, done?, send? }. JSON state is kept for the next run; done: true stops. lastOutput shows the delivery target and any logs. Return at most one send per run. { send: { prompt } } steers the creating session; { send: { prompt, to: { subagent } } } starts a permitted child that does not report back. No session IDs. Omit send to stay quiet. A rejected send commits neither state nor done. Example code string: if (runs < 2) return; return { done: true, send: { prompt: "Three checks elapsed. Review the build." } } */
             code: string;
             args?: unknown;
         };
@@ -4107,7 +4311,7 @@ export interface components {
             exitCode?: number;
         };
         V2EventEncoded: string;
-        V2Event: components["schemas"]["location.shutdown"] | components["schemas"]["models-dev.refreshed"] | components["schemas"]["credential.updated"] | components["schemas"]["credential.switched"] | components["schemas"]["integration.updated"] | components["schemas"]["provider.updated"] | components["schemas"]["model.updated"] | components["schemas"]["agent.updated"] | components["schemas"]["session.created"] | components["schemas"]["session.agent.selected"] | components["schemas"]["session.model.selected"] | components["schemas"]["session.moved"] | components["schemas"]["session.renamed"] | components["schemas"]["session.metadata.updated"] | components["schemas"]["session.permissions"] | components["schemas"]["session.viewed"] | components["schemas"]["session.archived"] | components["schemas"]["session.unarchived"] | components["schemas"]["session.usage.updated"] | components["schemas"]["session.deleted"] | components["schemas"]["session.forked"] | components["schemas"]["session.inbox.delivered"] | components["schemas"]["session.inbox.enqueued"] | components["schemas"]["session.inbox.cancelled"] | components["schemas"]["session.inbox.delivery.changed"] | components["schemas"]["session.execution.started"] | components["schemas"]["session.execution.succeeded"] | components["schemas"]["session.execution.failed"] | components["schemas"]["session.execution.interrupted"] | components["schemas"]["session.instructions.updated"] | components["schemas"]["session.synthetic"] | components["schemas"]["session.skill.activated"] | components["schemas"]["session.shell.started"] | components["schemas"]["session.shell.ended"] | components["schemas"]["session.step.started"] | components["schemas"]["session.step.first-token"] | components["schemas"]["session.step.streamed"] | components["schemas"]["session.step.ended"] | components["schemas"]["session.step.failed"] | components["schemas"]["session.text.started"] | components["schemas"]["session.text.delta"] | components["schemas"]["session.text.ended"] | components["schemas"]["session.reasoning.started"] | components["schemas"]["session.reasoning.delta"] | components["schemas"]["session.reasoning.ended"] | components["schemas"]["session.tool.input.started"] | components["schemas"]["session.tool.input.delta"] | components["schemas"]["session.tool.input.ended"] | components["schemas"]["session.tool.called"] | components["schemas"]["session.tool.progress"] | components["schemas"]["session.tool.success"] | components["schemas"]["session.tool.failed"] | components["schemas"]["session.retry.scheduled"] | components["schemas"]["session.compaction.started"] | components["schemas"]["session.compaction.delta"] | components["schemas"]["session.compaction.ended"] | components["schemas"]["session.compaction.failed"] | components["schemas"]["session.revert.staged"] | components["schemas"]["session.revert.cleared"] | components["schemas"]["session.revert.committed"] | components["schemas"]["filesystem.changed"] | components["schemas"]["reference.updated"] | components["schemas"]["permission.asked"] | components["schemas"]["permission.replied"] | components["schemas"]["plugin.updated"] | components["schemas"]["project.updated"] | components["schemas"]["worktree.updated"] | components["schemas"]["worktree.resolved"] | components["schemas"]["command.updated"] | components["schemas"]["config.updated"] | components["schemas"]["skill.updated"] | components["schemas"]["pty.created"] | components["schemas"]["pty.updated"] | components["schemas"]["pty.exited"] | components["schemas"]["pty.deleted"] | components["schemas"]["persistent-pty.added"] | components["schemas"]["persistent-pty.removed"] | components["schemas"]["persistent-pty.updated"] | components["schemas"]["shell.created"] | components["schemas"]["shell.exited"] | components["schemas"]["shell.deleted"] | components["schemas"]["experimental.job.updated"] | components["schemas"]["form.created"] | components["schemas"]["form.replied"] | components["schemas"]["form.cancelled"] | components["schemas"]["websearch.updated"] | components["schemas"]["artifact.updated"] | components["schemas"]["SessionStatusUpdated"] | components["schemas"]["session.idle"] | components["schemas"]["tui.prompt.append"] | components["schemas"]["tui.command.execute"] | components["schemas"]["tui.toast.show"] | components["schemas"]["tui.session.select"] | components["schemas"]["installation.updated"] | components["schemas"]["installation.update-available"] | components["schemas"]["vcs.branch.updated"] | components["schemas"]["mcp.status.changed"] | components["schemas"]["mcp.resources.changed"] | components["schemas"]["experimental.mcp.event"] | components["schemas"]["V2Event.rpc"] | components["schemas"]["V2Event.server.connected"];
+        V2Event: components["schemas"]["location.shutdown"] | components["schemas"]["models-dev.refreshed"] | components["schemas"]["credential.updated"] | components["schemas"]["credential.switched"] | components["schemas"]["integration.updated"] | components["schemas"]["provider.updated"] | components["schemas"]["model.updated"] | components["schemas"]["agent.updated"] | components["schemas"]["session.created"] | components["schemas"]["session.agent.selected"] | components["schemas"]["session.model.selected"] | components["schemas"]["session.moved"] | components["schemas"]["session.renamed"] | components["schemas"]["session.metadata.updated"] | components["schemas"]["session.permissions"] | components["schemas"]["session.viewed"] | components["schemas"]["session.archived"] | components["schemas"]["session.unarchived"] | components["schemas"]["session.usage.updated"] | components["schemas"]["session.deleted"] | components["schemas"]["session.forked"] | components["schemas"]["session.inbox.delivered"] | components["schemas"]["session.inbox.enqueued"] | components["schemas"]["session.inbox.cancelled"] | components["schemas"]["session.inbox.delivery.changed"] | components["schemas"]["session.execution.started"] | components["schemas"]["session.execution.succeeded"] | components["schemas"]["session.execution.failed"] | components["schemas"]["session.execution.interrupted"] | components["schemas"]["session.instructions.updated"] | components["schemas"]["session.synthetic"] | components["schemas"]["session.skill.activated"] | components["schemas"]["session.shell.started"] | components["schemas"]["session.shell.ended"] | components["schemas"]["session.step.started"] | components["schemas"]["session.step.first-token"] | components["schemas"]["session.step.streamed"] | components["schemas"]["session.step.ended"] | components["schemas"]["session.step.failed"] | components["schemas"]["session.text.started"] | components["schemas"]["session.text.delta"] | components["schemas"]["session.text.ended"] | components["schemas"]["session.reasoning.started"] | components["schemas"]["session.reasoning.delta"] | components["schemas"]["session.reasoning.ended"] | components["schemas"]["session.tool.input.started"] | components["schemas"]["session.tool.input.delta"] | components["schemas"]["session.tool.input.ended"] | components["schemas"]["session.tool.called"] | components["schemas"]["session.tool.progress"] | components["schemas"]["session.tool.success"] | components["schemas"]["session.tool.failed"] | components["schemas"]["session.retry.scheduled"] | components["schemas"]["session.compaction.started"] | components["schemas"]["session.compaction.delta"] | components["schemas"]["session.compaction.ended"] | components["schemas"]["session.compaction.failed"] | components["schemas"]["session.revert.staged"] | components["schemas"]["session.revert.cleared"] | components["schemas"]["session.revert.committed"] | components["schemas"]["filesystem.changed"] | components["schemas"]["reference.updated"] | components["schemas"]["permission.asked"] | components["schemas"]["permission.replied"] | components["schemas"]["plugin.updated"] | components["schemas"]["project.updated"] | components["schemas"]["worktree.updated"] | components["schemas"]["worktree.resolved"] | components["schemas"]["command.updated"] | components["schemas"]["config.updated"] | components["schemas"]["skill.updated"] | components["schemas"]["pty.created"] | components["schemas"]["pty.updated"] | components["schemas"]["pty.exited"] | components["schemas"]["pty.deleted"] | components["schemas"]["persistent-pty.added"] | components["schemas"]["persistent-pty.removed"] | components["schemas"]["persistent-pty.updated"] | components["schemas"]["shell.created"] | components["schemas"]["shell.exited"] | components["schemas"]["shell.deleted"] | components["schemas"]["experimental.job.updated"] | components["schemas"]["form.created"] | components["schemas"]["form.replied"] | components["schemas"]["form.cancelled"] | components["schemas"]["websearch.updated"] | components["schemas"]["experimental.push.updated"] | components["schemas"]["artifact.updated"] | components["schemas"]["SessionStatusUpdated"] | components["schemas"]["session.idle"] | components["schemas"]["tui.prompt.append"] | components["schemas"]["tui.command.execute"] | components["schemas"]["tui.toast.show"] | components["schemas"]["tui.session.select"] | components["schemas"]["installation.updated"] | components["schemas"]["installation.update-available"] | components["schemas"]["vcs.branch.updated"] | components["schemas"]["mcp.status.changed"] | components["schemas"]["mcp.resources.changed"] | components["schemas"]["experimental.mcp.event"] | components["schemas"]["V2Event.rpc"] | components["schemas"]["V2Event.server.connected"];
         "V2Event.server.connected": {
             id: components["schemas"]["Event.ID"];
             metadata?: Record<string, unknown> | null;
@@ -4301,6 +4505,15 @@ export interface components {
             metadata?: Record<string, unknown>;
             /** @enum {string} */
             type: "artifact.updated";
+            location?: components["schemas"]["Location.Ref"];
+            data: unknown;
+        };
+        "experimental.push.updated": {
+            id: components["schemas"]["Event.ID"];
+            created: number;
+            metadata?: Record<string, unknown>;
+            /** @enum {string} */
+            type: "experimental.push.updated";
             location?: components["schemas"]["Location.Ref"];
             data: unknown;
         };
@@ -5493,7 +5706,10 @@ export interface components {
                 delivery: components["schemas"]["Session.Inbox.Delivery"];
             };
         };
-        /** @enum {string} */
+        /**
+         * @description steer delivers before the agent's next model call, even mid-work. queue waits until the agent finishes its current work, then delivers one queued item at a time. Sending defaults to steer.
+         * @enum {string}
+         */
         "Session.Inbox.Delivery": "steer" | "queue";
         "session.inbox.cancelled": {
             id: components["schemas"]["Event.ID"];
@@ -5580,6 +5796,7 @@ export interface components {
             end: number;
             text: string;
         };
+        /** @description An agent @-mentioned in the prompt, such as @explore, to suggest the model use it. Only the @name in text reaches the model; this records which agent it names and doesn't change the session's own agent. */
         "Prompt.AgentAttachment": {
             name: string;
             mention?: components["schemas"]["Prompt.Mention"];
@@ -5971,12 +6188,25 @@ export interface components {
         "Rpc.Input": {
             input?: unknown;
         };
+        SkillLoadErrorEncoded: {
+            /** @enum {string} */
+            _tag: "SkillLoadError";
+            skill: components["schemas"]["Skill.ID"];
+            message: string;
+        };
+        SkillNotFoundErrorEncoded: {
+            /** @enum {string} */
+            _tag: "SkillNotFoundError";
+            skill: components["schemas"]["Skill.ID"];
+            message: string;
+        };
         "Skill.Info": {
             id: components["schemas"]["Skill.ID"];
             name: components["schemas"]["Skill.Name"];
             description?: string;
             autoinvoke?: boolean;
             path: components["schemas"]["AbsolutePath"];
+            /** @description The SKILL.md body. Empty for a skill whose body loads on demand, such as an MCP skill. */
             content: string;
         };
         "Command.Info": {
@@ -7317,12 +7547,6 @@ export interface components {
             sessionID: string;
             message: string;
         };
-        SkillNotFoundErrorEncoded: {
-            /** @enum {string} */
-            _tag: "SkillNotFoundError";
-            skill: components["schemas"]["Skill.ID"];
-            message: string;
-        };
         CommandExecutionErrorEncoded: {
             /** @enum {string} */
             _tag: "CommandExecutionError";
@@ -7340,6 +7564,7 @@ export interface components {
             mention?: components["schemas"]["Prompt.Mention"];
         };
         "PromptInput.FileAttachment": {
+            /** @description A file: URL on the server (a file, a directory, or ?start=N&end=M for lines of a text file), a data: URL, or a media: ref from a message. Up to 20 MB. */
             uri: string;
             source?: components["schemas"]["Prompt.FileSource"];
             name?: string;
@@ -7515,6 +7740,10 @@ export interface components {
             model?: components["schemas"]["Model.Ref"];
             request: components["schemas"]["Provider.Request"];
             system?: string;
+            instructions?: string | {
+                selected: string;
+                unselected: string;
+            };
             description?: string;
             /** @enum {string} */
             mode: "subagent" | "primary" | "all";
@@ -7687,8 +7916,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -7783,8 +8013,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -7837,8 +8068,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -7893,8 +8125,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -7947,8 +8180,9 @@ export interface operations {
         parameters: {
             query: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 id: components["schemas"]["Plugin.ID"];
             };
             header?: never;
@@ -8002,8 +8236,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -8062,8 +8297,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -8127,13 +8363,13 @@ export interface operations {
             query?: {
                 limit?: string;
                 order?: "asc" | "desc";
-                search?: string;
+                search?: string & unknown;
                 parentID?: components["schemas"]["Session.ID"] | "null";
                 archived?: "true" | "false";
-                directory?: components["schemas"]["AbsolutePath"];
+                directory?: components["schemas"]["AbsolutePath"] & unknown;
                 project?: components["schemas"]["Project.ID"];
-                subpath?: components["schemas"]["RelativePath"];
-                cursor?: components["schemas"]["SessionsCursor"];
+                subpath?: components["schemas"]["RelativePath"] & unknown;
+                cursor?: components["schemas"]["SessionsCursor"] & unknown;
             };
             header?: never;
             path?: never;
@@ -8180,14 +8416,18 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description If a session with this ID already exists, it is returned unchanged, so retries are safe. */
                     id?: components["schemas"]["Session.ID"] | null;
-                    /** @description Set parentID to create a subagent session at the parent's location; set agent to choose its agent (otherwise it uses the default) and start it with session.prompt. After each completed round, the child sends a `<background-result kind="subagent">` report to the parent's inbox and wakes the parent unless it has a staged revert. */
+                    /** @description Creates a child session at the parent's location. Each time the child finishes running, it sends its last reply to the parent as a `<background-result kind="subagent">` message and wakes the parent, unless the parent has a staged revert. */
                     parentID?: components["schemas"]["Session.ID"] | null;
                     title?: string | null;
                     agent?: components["schemas"]["Agent.ID"] | null;
                     model?: components["schemas"]["Model.Ref"] | null;
+                    /** @description Defaults to the server's working directory. Ignored when parentID is set. */
                     location?: components["schemas"]["Location.PublicRef"] | null;
+                    /** @description Opaque to OpenCode. Child sessions inherit the parent's metadata unless you pass your own. */
                     metadata?: components["schemas"]["Session.Metadata"] | null;
+                    /** @description Applied on top of the agent's rules. Child sessions inherit the parent's rules unless you pass your own. */
                     permissions?: components["schemas"]["Permission.Ruleset"] | null;
                 };
             };
@@ -8236,10 +8476,10 @@ export interface operations {
     "experimental.session.stats": {
         parameters: {
             query?: {
-                from?: string;
-                to?: string;
+                from?: string & unknown;
+                to?: string & unknown;
                 project?: components["schemas"]["Project.ID"];
-                timezone?: string;
+                timezone?: string & unknown;
                 tools?: "none" | "summary" | "detail";
             };
             header?: never;
@@ -8833,13 +9073,16 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Sending the same ID again returns the original item instead of adding a second one, so retries are safe. Reusing it in another session or for another kind of item fails with 409. */
                     id?: components["schemas"]["Session.Message.ID"] | null;
                     text: string;
                     files?: components["schemas"]["PromptInput.FileAttachment"][];
                     agents?: components["schemas"]["Prompt.AgentAttachment"][];
                     skills?: components["schemas"]["PromptInput.SkillAttachment"][];
+                    /** @description Stored on the message. The model doesn't see it. */
                     metadata?: Record<string, unknown>;
                     delivery?: components["schemas"]["Session.Inbox.Delivery"] | null;
+                    /** @description false adds the message to the inbox without starting the agent; it is delivered the next time the session runs. */
                     resume?: boolean | null;
                 };
             };
@@ -8892,6 +9135,15 @@ export interface operations {
                     "application/json": components["schemas"]["ConflictErrorEncoded"];
                 };
             };
+            /** @description SkillLoadError */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillLoadErrorEncoded"];
+                };
+            };
         };
     };
     "session.command": {
@@ -8907,6 +9159,7 @@ export interface operations {
             content: {
                 "application/json": {
                     name: string;
+                    /** @description The command's arguments. */
                     text: string;
                     files?: components["schemas"]["PromptInput.FileAttachment"][];
                     agents?: components["schemas"]["Prompt.AgentAttachment"][];
@@ -9013,6 +9266,15 @@ export interface operations {
                     "application/json": components["schemas"]["SessionNotFoundErrorEncoded"] | components["schemas"]["SkillNotFoundErrorEncoded"] | components["schemas"]["LocationNotFoundErrorEncoded"];
                 };
             };
+            /** @description SkillLoadError */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillLoadErrorEncoded"];
+                };
+            };
         };
     };
     "session.synthetic": {
@@ -9027,11 +9289,15 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Sending the same ID again returns the original item instead of adding a second one, so retries are safe. Reusing it in another session or for another kind of item fails with 409. */
                     id?: components["schemas"]["Session.Message.ID"] | null;
                     text: string;
+                    /** @description Short label shown in the transcript instead of the full text. */
                     description?: string | null;
+                    /** @description Stored on the message. The model doesn't see it. */
                     metadata?: Record<string, unknown>;
                     delivery?: components["schemas"]["Session.Inbox.Delivery"] | null;
+                    /** @description false adds the message to the inbox without starting the agent; it is delivered the next time the session runs. */
                     resume?: boolean | null;
                 };
             };
@@ -9975,7 +10241,7 @@ export interface operations {
     "experimental.session.log": {
         parameters: {
             query?: {
-                after?: string;
+                after?: string & unknown;
                 follow?: "true" | "false";
             };
             header?: never;
@@ -10348,7 +10614,7 @@ export interface operations {
     "session.form.cancel": {
         parameters: {
             query?: {
-                message?: string;
+                message?: string & unknown;
             };
             header?: never;
             path: {
@@ -10640,8 +10906,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 types?: components["schemas"]["Model.Type"] | components["schemas"]["Model.Type"][];
             };
             header?: never;
@@ -10704,8 +10971,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -11332,8 +11600,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -11395,8 +11664,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11460,8 +11730,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -11514,8 +11785,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11570,8 +11842,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -11625,8 +11898,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11684,8 +11958,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11743,8 +12018,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11807,8 +12083,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11864,8 +12141,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11916,8 +12194,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -11974,8 +12253,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -12037,8 +12317,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -12094,8 +12375,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -12146,8 +12428,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -12200,8 +12483,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -12257,8 +12541,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -12308,8 +12593,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -12359,8 +12645,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -12410,8 +12697,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -12464,12 +12752,13 @@ export interface operations {
         parameters: {
             query: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
-                name: string;
+                } & unknown;
+                name: string & unknown;
             };
             header?: {
-                "x-opencode-ticket"?: string;
+                "x-opencode-ticket"?: string & unknown;
             };
             path?: never;
             cookie?: never;
@@ -12530,10 +12819,11 @@ export interface operations {
         parameters: {
             query: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
-                name: string;
-                ticket?: string;
+                } & unknown;
+                name: string & unknown;
+                ticket?: string & unknown;
             };
             header?: never;
             path?: never;
@@ -12903,8 +13193,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -12957,8 +13248,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -13010,7 +13302,7 @@ export interface operations {
     "permission.saved.list": {
         parameters: {
             query?: {
-                projectID?: components["schemas"]["Project.ID"];
+                projectID?: components["schemas"]["Project.ID"] & unknown;
             };
             header?: never;
             path?: never;
@@ -13391,8 +13683,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -13442,8 +13735,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 path?: string;
             };
             header?: never;
@@ -13497,8 +13791,9 @@ export interface operations {
         parameters: {
             query: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 query: string;
                 type?: "file" | "directory";
                 limit?: string;
@@ -13554,8 +13849,9 @@ export interface operations {
         parameters: {
             query: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 path: string;
             };
             header?: never;
@@ -13613,8 +13909,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -13678,8 +13975,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -13734,8 +14032,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -13788,8 +14087,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -13838,12 +14138,76 @@ export interface operations {
             };
         };
     };
+    "experimental.skill.file": {
+        parameters: {
+            query?: {
+                location?: {
+                    /** @description Absolute path of the directory. */
+                    directory?: string | null;
+                } & unknown;
+            };
+            header?: never;
+            path: {
+                skillID: components["schemas"]["Skill.ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+            /** @description SkillNotFoundError | FileNotFoundError | LocationNotFoundError */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillNotFoundErrorEncoded"] | components["schemas"]["FileNotFoundErrorEncoded"] | components["schemas"]["LocationNotFoundErrorEncoded"];
+                };
+            };
+            /** @description SkillLoadError */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillLoadErrorEncoded"];
+                };
+            };
+        };
+    };
     "rpc.call": {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -13908,7 +14272,7 @@ export interface operations {
     "event.subscribe": {
         parameters: {
             query?: {
-                types?: ("location.shutdown" | "models-dev.refreshed" | "credential.updated" | "credential.switched" | "integration.updated" | "provider.updated" | "model.updated" | "agent.updated" | "session.created" | "session.agent.selected" | "session.model.selected" | "session.moved" | "session.renamed" | "session.metadata.updated" | "session.permissions" | "session.viewed" | "session.archived" | "session.unarchived" | "session.usage.updated" | "session.deleted" | "session.forked" | "session.inbox.delivered" | "session.inbox.enqueued" | "session.inbox.cancelled" | "session.inbox.delivery.changed" | "session.execution.started" | "session.execution.succeeded" | "session.execution.failed" | "session.execution.interrupted" | "session.instructions.updated" | "session.synthetic" | "session.skill.activated" | "session.shell.started" | "session.shell.ended" | "session.step.started" | "session.step.first-token" | "session.step.streamed" | "session.step.ended" | "session.step.failed" | "session.text.started" | "session.text.delta" | "session.text.ended" | "session.reasoning.started" | "session.reasoning.delta" | "session.reasoning.ended" | "session.tool.input.started" | "session.tool.input.delta" | "session.tool.input.ended" | "session.tool.called" | "session.tool.progress" | "session.tool.success" | "session.tool.failed" | "session.retry.scheduled" | "session.compaction.started" | "session.compaction.delta" | "session.compaction.ended" | "session.compaction.failed" | "session.revert.staged" | "session.revert.cleared" | "session.revert.committed" | "filesystem.changed" | "reference.updated" | "permission.asked" | "permission.replied" | "plugin.updated" | "project.updated" | "worktree.updated" | "worktree.resolved" | "command.updated" | "config.updated" | "skill.updated" | "pty.created" | "pty.updated" | "pty.exited" | "pty.deleted" | "persistent-pty.added" | "persistent-pty.removed" | "persistent-pty.updated" | "shell.created" | "shell.exited" | "shell.deleted" | "experimental.job.updated" | "form.created" | "form.replied" | "form.cancelled" | "websearch.updated" | "artifact.updated" | "session.status" | "session.idle" | "tui.prompt.append" | "tui.command.execute" | "tui.toast.show" | "tui.session.select" | "installation.updated" | "installation.update-available" | "vcs.branch.updated" | "mcp.status.changed" | "mcp.resources.changed" | "experimental.mcp.event") | string | (("location.shutdown" | "models-dev.refreshed" | "credential.updated" | "credential.switched" | "integration.updated" | "provider.updated" | "model.updated" | "agent.updated" | "session.created" | "session.agent.selected" | "session.model.selected" | "session.moved" | "session.renamed" | "session.metadata.updated" | "session.permissions" | "session.viewed" | "session.archived" | "session.unarchived" | "session.usage.updated" | "session.deleted" | "session.forked" | "session.inbox.delivered" | "session.inbox.enqueued" | "session.inbox.cancelled" | "session.inbox.delivery.changed" | "session.execution.started" | "session.execution.succeeded" | "session.execution.failed" | "session.execution.interrupted" | "session.instructions.updated" | "session.synthetic" | "session.skill.activated" | "session.shell.started" | "session.shell.ended" | "session.step.started" | "session.step.first-token" | "session.step.streamed" | "session.step.ended" | "session.step.failed" | "session.text.started" | "session.text.delta" | "session.text.ended" | "session.reasoning.started" | "session.reasoning.delta" | "session.reasoning.ended" | "session.tool.input.started" | "session.tool.input.delta" | "session.tool.input.ended" | "session.tool.called" | "session.tool.progress" | "session.tool.success" | "session.tool.failed" | "session.retry.scheduled" | "session.compaction.started" | "session.compaction.delta" | "session.compaction.ended" | "session.compaction.failed" | "session.revert.staged" | "session.revert.cleared" | "session.revert.committed" | "filesystem.changed" | "reference.updated" | "permission.asked" | "permission.replied" | "plugin.updated" | "project.updated" | "worktree.updated" | "worktree.resolved" | "command.updated" | "config.updated" | "skill.updated" | "pty.created" | "pty.updated" | "pty.exited" | "pty.deleted" | "persistent-pty.added" | "persistent-pty.removed" | "persistent-pty.updated" | "shell.created" | "shell.exited" | "shell.deleted" | "experimental.job.updated" | "form.created" | "form.replied" | "form.cancelled" | "websearch.updated" | "artifact.updated" | "session.status" | "session.idle" | "tui.prompt.append" | "tui.command.execute" | "tui.toast.show" | "tui.session.select" | "installation.updated" | "installation.update-available" | "vcs.branch.updated" | "mcp.status.changed" | "mcp.resources.changed" | "experimental.mcp.event") | string)[];
+                types?: ("location.shutdown" | "models-dev.refreshed" | "credential.updated" | "credential.switched" | "integration.updated" | "provider.updated" | "model.updated" | "agent.updated" | "session.created" | "session.agent.selected" | "session.model.selected" | "session.moved" | "session.renamed" | "session.metadata.updated" | "session.permissions" | "session.viewed" | "session.archived" | "session.unarchived" | "session.usage.updated" | "session.deleted" | "session.forked" | "session.inbox.delivered" | "session.inbox.enqueued" | "session.inbox.cancelled" | "session.inbox.delivery.changed" | "session.execution.started" | "session.execution.succeeded" | "session.execution.failed" | "session.execution.interrupted" | "session.instructions.updated" | "session.synthetic" | "session.skill.activated" | "session.shell.started" | "session.shell.ended" | "session.step.started" | "session.step.first-token" | "session.step.streamed" | "session.step.ended" | "session.step.failed" | "session.text.started" | "session.text.delta" | "session.text.ended" | "session.reasoning.started" | "session.reasoning.delta" | "session.reasoning.ended" | "session.tool.input.started" | "session.tool.input.delta" | "session.tool.input.ended" | "session.tool.called" | "session.tool.progress" | "session.tool.success" | "session.tool.failed" | "session.retry.scheduled" | "session.compaction.started" | "session.compaction.delta" | "session.compaction.ended" | "session.compaction.failed" | "session.revert.staged" | "session.revert.cleared" | "session.revert.committed" | "filesystem.changed" | "reference.updated" | "permission.asked" | "permission.replied" | "plugin.updated" | "project.updated" | "worktree.updated" | "worktree.resolved" | "command.updated" | "config.updated" | "skill.updated" | "pty.created" | "pty.updated" | "pty.exited" | "pty.deleted" | "persistent-pty.added" | "persistent-pty.removed" | "persistent-pty.updated" | "shell.created" | "shell.exited" | "shell.deleted" | "experimental.job.updated" | "form.created" | "form.replied" | "form.cancelled" | "websearch.updated" | "experimental.push.updated" | "artifact.updated" | "session.status" | "session.idle" | "tui.prompt.append" | "tui.command.execute" | "tui.toast.show" | "tui.session.select" | "installation.updated" | "installation.update-available" | "vcs.branch.updated" | "mcp.status.changed" | "mcp.resources.changed" | "experimental.mcp.event") | string | (("location.shutdown" | "models-dev.refreshed" | "credential.updated" | "credential.switched" | "integration.updated" | "provider.updated" | "model.updated" | "agent.updated" | "session.created" | "session.agent.selected" | "session.model.selected" | "session.moved" | "session.renamed" | "session.metadata.updated" | "session.permissions" | "session.viewed" | "session.archived" | "session.unarchived" | "session.usage.updated" | "session.deleted" | "session.forked" | "session.inbox.delivered" | "session.inbox.enqueued" | "session.inbox.cancelled" | "session.inbox.delivery.changed" | "session.execution.started" | "session.execution.succeeded" | "session.execution.failed" | "session.execution.interrupted" | "session.instructions.updated" | "session.synthetic" | "session.skill.activated" | "session.shell.started" | "session.shell.ended" | "session.step.started" | "session.step.first-token" | "session.step.streamed" | "session.step.ended" | "session.step.failed" | "session.text.started" | "session.text.delta" | "session.text.ended" | "session.reasoning.started" | "session.reasoning.delta" | "session.reasoning.ended" | "session.tool.input.started" | "session.tool.input.delta" | "session.tool.input.ended" | "session.tool.called" | "session.tool.progress" | "session.tool.success" | "session.tool.failed" | "session.retry.scheduled" | "session.compaction.started" | "session.compaction.delta" | "session.compaction.ended" | "session.compaction.failed" | "session.revert.staged" | "session.revert.cleared" | "session.revert.committed" | "filesystem.changed" | "reference.updated" | "permission.asked" | "permission.replied" | "plugin.updated" | "project.updated" | "worktree.updated" | "worktree.resolved" | "command.updated" | "config.updated" | "skill.updated" | "pty.created" | "pty.updated" | "pty.exited" | "pty.deleted" | "persistent-pty.added" | "persistent-pty.removed" | "persistent-pty.updated" | "shell.created" | "shell.exited" | "shell.deleted" | "experimental.job.updated" | "form.created" | "form.replied" | "form.cancelled" | "websearch.updated" | "experimental.push.updated" | "artifact.updated" | "session.status" | "session.idle" | "tui.prompt.append" | "tui.command.execute" | "tui.toast.show" | "tui.session.select" | "installation.updated" | "installation.update-available" | "vcs.branch.updated" | "mcp.status.changed" | "mcp.resources.changed" | "experimental.mcp.event") | string)[];
             };
             header?: never;
             path?: never;
@@ -13953,8 +14317,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -14007,8 +14372,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -14073,8 +14439,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -14129,8 +14496,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -14195,8 +14563,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -14246,11 +14615,12 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: {
-                "x-opencode-ticket"?: string;
+                "x-opencode-ticket"?: string & unknown;
             };
             path: {
                 ptyID: components["schemas"]["Pty.ID"];
@@ -14312,8 +14682,11 @@ export interface operations {
     "pty.connect": {
         parameters: {
             query?: {
+                /** @description Absolute path of the location directory. Omit to use the server's default location. */
                 "location[directory]"?: string;
+                /** @description Output offset to replay from. Use -1 to start at the current end; omit to replay all retained output. */
                 cursor?: string;
+                /** @description Single-use ticket from pty.connect.token, which authorizes the connection without the usual credentials. */
                 ticket?: string;
             };
             header?: never;
@@ -14374,7 +14747,7 @@ export interface operations {
     "experimental.persistentPty.read": {
         parameters: {
             query?: {
-                lines?: string;
+                lines?: string & unknown;
             };
             header?: never;
             path: {
@@ -14877,7 +15250,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "x-opencode-ticket"?: string;
+                "x-opencode-ticket"?: string & unknown;
             };
             path: {
                 ptyID: components["schemas"]["Pty.ID"];
@@ -14947,11 +15320,16 @@ export interface operations {
     "experimental.persistentPty.connect": {
         parameters: {
             query?: {
-                cursor?: string;
-                role?: string;
                 attachment_id?: string;
+                /** @description Output offset to replay from. Defaults to 0. */
+                cursor?: string;
+                /** @description Attach as controller (the default) or observer. */
+                role?: string;
+                /** @description Set to true to take over control of the terminal. */
                 takeover?: string;
+                /** @description Set to 1 to send framed input messages instead of raw terminal input. */
                 input_protocol?: string;
+                /** @description Single-use ticket from experimental.persistentPty.connectToken, which authorizes the connection without the usual credentials. */
                 ticket?: string;
             };
             header?: never;
@@ -15479,8 +15857,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -15551,8 +15930,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 sessionID?: components["schemas"]["Session.ID"];
                 provider?: string;
             };
@@ -15625,8 +16005,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -15701,8 +16082,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -15775,8 +16157,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -15844,8 +16227,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -15922,8 +16306,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -16295,12 +16680,424 @@ export interface operations {
             };
         };
     };
+    "experimental.push.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Push.Info"];
+                    };
+                };
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.device.register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: components["schemas"]["Push.DeviceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Push.Register"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Push.Registered"];
+                    };
+                };
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.device.remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: components["schemas"]["Push.DeviceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description <No Content> */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.device.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: components["schemas"]["Push.DeviceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Push.DevicePatch"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Push.Device"];
+                    };
+                };
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+            /** @description PushDeviceNotFoundError */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDeviceNotFoundErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.device.session.set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: components["schemas"]["Push.DeviceID"];
+                sessionID: components["schemas"]["Session.ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Push.Bell"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Push.Bell"];
+                    };
+                };
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+            /** @description PushDeviceNotFoundError */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDeviceNotFoundErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.device.session.remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: components["schemas"]["Push.DeviceID"];
+                sessionID: components["schemas"]["Session.ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description <No Content> */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+            /** @description PushDeviceNotFoundError */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDeviceNotFoundErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.session.set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: components["schemas"]["Session.ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Push.Bell"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Push.Bell"];
+                    };
+                };
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.session.remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: components["schemas"]["Session.ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description <No Content> */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+        };
+    };
+    "experimental.push.settings.set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Push.Settings"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Push.Settings"];
+                    };
+                };
+            };
+            /** @description InvalidRequestError */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestErrorEncoded"];
+                };
+            };
+            /** @description UnauthorizedError */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthorizedErrorEncoded"];
+                };
+            };
+        };
+    };
     "shell.list": {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -16353,8 +17150,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -16416,8 +17214,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -16472,8 +17271,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path: {
@@ -16523,10 +17323,11 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
-                cursor?: string;
-                limit?: string;
+                } & unknown;
+                cursor?: string & unknown;
+                limit?: string & unknown;
             };
             header?: never;
             path: {
@@ -16586,8 +17387,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -16840,9 +17642,10 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
-                provider?: string;
+                } & unknown;
+                provider?: string & unknown;
             };
             header?: never;
             path?: never;
@@ -16917,8 +17720,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -16971,8 +17775,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -17034,8 +17839,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -17088,8 +17894,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 search?: string;
                 limit?: string;
             };
@@ -17144,8 +17951,9 @@ export interface operations {
         parameters: {
             query: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
                 mode: components["schemas"]["Vcs.Mode"];
                 base?: string;
                 context?: string;
@@ -17309,8 +18117,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -17402,8 +18211,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -17465,8 +18275,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -17535,8 +18346,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;
@@ -17598,8 +18410,9 @@ export interface operations {
         parameters: {
             query?: {
                 location?: {
+                    /** @description Absolute path of the directory. */
                     directory?: string | null;
-                };
+                } & unknown;
             };
             header?: never;
             path?: never;

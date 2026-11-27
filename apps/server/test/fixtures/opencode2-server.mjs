@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { createServer } from 'node:http'
 
 if (process.argv.includes('--version')) {
-  console.log('opencode v2.4.1')
+  console.log('opencode v2.4.2')
   process.exit(0)
 }
 

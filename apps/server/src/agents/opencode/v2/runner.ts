@@ -104,6 +104,8 @@ const NOISE = [
   'session.forked', 'session.inbox.delivered', 'session.inbox.cancelled', 'session.inbox.delivery.',
   'session.instructions.', 'session.synthetic', 'session.skill.', 'session.shell.', 'session.step.first-token',
   'session.step.streamed', 'session.tool.input.delta', 'session.compaction.delta', 'session.revert.',
+  // Phone pairing for push notifications (2.4.2): nothing for Sillage to show.
+  'experimental.push.',
   'session.status', 'session.idle', 'V2Event.',
 ]
 
