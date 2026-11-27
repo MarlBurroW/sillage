@@ -73,7 +73,9 @@ export const COPILOT_EVENT_METHOD = `${COPILOT_META}/sessionEvent`
  * which tool call spawned a sub-agent (`assistant.turn_start`), per-call usage and quota, errors
  * and retries as data rather than as "Error: …" text, compaction, MCP server health, and the end
  * of a turn Copilot started by itself when background work finished (`session.idle`), and the
- * end of the reply while attached background work keeps the prompt pending (`assistant.idle`).
+ * end of the reply while attached background work keeps the prompt pending (`assistant.idle`),
+ * prompts scheduled with `/every` and `/after` (`session.schedule_*`) and the message a schedule
+ * sends when it fires (`user.message`).
  * `tool.execution_*` and `subagent.*` are not relayed even when asked for (1.0.116).
  */
 export const COPILOT_SESSION_EVENTS = [
@@ -81,7 +83,15 @@ export const COPILOT_SESSION_EVENTS = [
   'assistant.idle', 'session.idle', 'session.info', 'session.warning', 'session.error',
   'session.compaction_start', 'session.compaction_complete',
   'session.mcp_server_status_changed', 'session.mcp_servers_loaded', 'session.mcp_server_tools_loaded',
+  'session.schedule_created', 'session.schedule_cancelled', 'session.schedule_rearmed', 'user.message',
 ] as const
+
+/** Cadence of a schedule as `/every` writes it (`90s`, `1h30m`): Copilot gives milliseconds, not a cron expression. */
+export function scheduleInterval(ms: number): string {
+  const seconds = Math.max(1, Math.round(ms / 1000))
+  const parts: [number, string][] = [[Math.floor(seconds / 86_400), 'd'], [Math.floor(seconds % 86_400 / 3600), 'h'], [Math.floor(seconds % 3600 / 60), 'm'], [seconds % 60, 's']]
+  return parts.filter(([count]) => count > 0).map(([count, unit]) => `${count}${unit}`).join('')
+}
 
 /**
  * Announced on top of the shared ACP handshake. `elicitation.form` is what makes Copilot offer

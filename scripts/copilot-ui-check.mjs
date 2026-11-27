@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 // GitHub Copilot journeys on both editions, against the fixture agent: defaults, adoption of a
-// native session, a scripted conversation (tools, sub-agent, question, permission, compaction),
-// fork, transfers both ways, the consumption color and the phone layout.
+// native session, a scripted conversation (tools, sub-agent, question, permission, schedules,
+// compaction), fork, transfers both ways, the consumption color and the phone layout.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -202,6 +202,26 @@ try {
     await page.getByText('File created.', { exact: true }).first().waitFor()
     assert.deepEqual((await rpc()).filter((entry) => 'answer' in entry).at(-1).answer, { outcome: { outcome: 'selected', optionId: 'allow_once' } })
 
+    // 5b. `/every` and `/after` are loops; the prompt a schedule sends opens its turn in the thread.
+    await send(fixture({ steps: [
+      { event: { type: 'session.schedule_created', data: { id: 1, intervalMs: 3_600_000, prompt: 'Check the build', recurring: true, origin: 'user' } } },
+      { event: { type: 'session.schedule_created', data: { id: 2, intervalMs: 1_800_000, prompt: 'Say hello', recurring: false, origin: 'user' } } },
+      chunk('Scheduled both.', 'reply-schedules'),
+    ], after: [
+      { wait: 4000 },
+      { event: { type: 'user.message', data: { content: '[Scheduled prompt #2]\nSay hello', source: 'schedule-2', messageId: 'scheduled-2' } } },
+      chunk('Hello from the schedule.', 'reply-scheduled'),
+      { event: { type: 'session.schedule_cancelled', data: { id: 2 } } },
+    ] }))
+    await page.getByText('Scheduled both.', { exact: true }).first().waitFor()
+    const loops = page.locator('[title*="une fois, dans 30m"]').filter({ hasText: '2 boucles' }).first()
+    await loops.waitFor()
+    assert.match(await loops.getAttribute('title'), /^1h · 0 réveil · aucun réveil pour le moment\nCheck the build/)
+    await page.screenshot({ path: `/var/tmp/sillage-copilot-${profile}-loops.png` })
+    await page.getByText('Hello from the schedule.', { exact: true }).first().waitFor()
+    await page.getByText('[Scheduled prompt #2]', { exact: false }).first().waitFor()
+    await page.locator('[title*="Check the build"]').filter({ hasText: '1 boucle' }).first().waitFor()
+
     // 6. Manual compaction goes through Copilot's slash command.
     await page.getByRole('button', { name: 'Compacter le contexte' }).click()
     for (let attempt = 0; attempt < 100 && !(await rpc()).some((entry) => entry.method === 'session/prompt' && entry.params.prompt[0].text === '/compact'); attempt++) await delay(100)
@@ -257,7 +277,7 @@ try {
     await page.screenshot({ path: `/var/tmp/sillage-copilot-${profile}-phone-defaults.png` })
     await context.close()
     await rm(join(data, 'rpc.jsonl'), { force: true })
-    console.log(`OK: Copilot ${profile}: defaults, import, tools and sub-agent, question, permission, compaction, fork, transfers, phone layout`)
+    console.log(`OK: Copilot ${profile}: defaults, import, tools and sub-agent, question, permission, schedules, compaction, fork, transfers, phone layout`)
   }
   assert.deepEqual(errors, [])
 } finally {

@@ -113,6 +113,8 @@ say what plain ACP leaves out:
 | `assistant.turn_retry` | A retry notice. |
 | `assistant.idle` | The end of the reply while an attached shell keeps the prompt pending: the turn closes there. |
 | `session.idle` | The end of a turn Copilot started by itself. |
+| `session.schedule_created`, `session.schedule_cancelled`, `session.schedule_rearmed` | Prompts scheduled with `/every` and `/after`, published as loops: the conversation shows them, and the pool keeps the process that will fire them. |
+| `user.message` | With a `schedule-<id>` source: the prompt a schedule sends, journaled as the user message of the turn it opens. |
 | `session.info`, `session.warning`, `session.error` | Notices and errors as data. |
 | `session.compaction_start`, `session.compaction_complete` | Compaction, with tokens before and after. |
 | `session.mcp_server_status_changed`, `session.mcp_servers_loaded` | MCP server health. |
@@ -175,6 +177,9 @@ Quirks of 1.0.116 the next maintainer must know.
   `cancelled` without stopping the shell (1.0.117). A detached shell outlives the
   request anyway. Either way, when the shell finishes, Copilot reads its output and
   answers without a prompt, and nothing but `session.idle` says that turn is over.
+- **Schedules live in the process.** `/every` and `/after` (10 s at least) fire
+  only while the process runs: after `session/load` they are neither announced nor
+  fired (1.0.117). Stopping the conversation's CLI ends them, as for Claude's loops.
 - **Entering Autopilot turns `allow_all` on, leaving it turns it back to Manual**,
   whatever it was before. The mode is therefore applied after the permissions.
 - **`config_option_update` follows every model change, a sub-agent's included.**

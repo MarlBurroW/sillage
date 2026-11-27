@@ -200,13 +200,19 @@ function plural(prefix: PluralPrefix, count: number): string {
   return translate(`${prefix}.${form}`, { count })
 }
 
+/** An interval as Copilot's `/every` and `/after` write it, rather than a cron expression. */
+const INTERVAL = /^(\d+[dhms])+$/
+
 /** Cadence, counted wakeups, and latest wakeup age, one loop per line. */
 function describeLoops(loops: ArmedLoop[], now: number): string {
   return loops
     .map((loop) => {
+      // A Copilot `/after` is one-shot with a delay; Claude's one-shot loops pace themselves.
       const cadence = loop.recurring
         ? (describeSchedule(loop.schedule) ?? loop.schedule)
-        : translate('conversation.loop.oneShot')
+        : INTERVAL.test(loop.schedule)
+          ? translate('conversation.loop.once', { delay: loop.schedule })
+          : translate('conversation.loop.oneShot')
       const fired =
         loop.lastFiredAt === null
           ? translate('conversation.loop.pending')

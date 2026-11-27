@@ -9,7 +9,7 @@ import { loopKey, type ChatState } from './chat-fold'
 
 export interface ArmedLoop {
   id: string
-  /** Five-field cron expression as held by the CLI. */
+  /** As held by the CLI: Claude's five-field cron expression, Copilot's interval (`1h30m`), shown as is. */
   schedule: string
   recurring: boolean
   prompt: string

@@ -9,7 +9,7 @@ import { AGENT_CAPABILITIES, DEFAULT_COPILOT_CONFIG, isPermissiveConfig, sillage
 import { describeEdit } from '../src/agents/acp/content.js'
 import { CopilotAdapter } from '../src/agents/copilot/adapter.js'
 import { CopilotCatalog, forgetProbeSession } from '../src/agents/copilot/catalog.js'
-import { COPILOT_SESSION_EVENTS, copilotLaunch, modeOf, skillDirs } from '../src/agents/copilot/launch.js'
+import { COPILOT_SESSION_EVENTS, copilotLaunch, modeOf, scheduleInterval, skillDirs } from '../src/agents/copilot/launch.js'
 import { askUserQuestions } from '../src/agents/copilot/questions.js'
 import { CopilotRunner } from '../src/agents/copilot/runner.js'
 import { listCopilotSessions } from '../src/agents/copilot/sessions.js'
@@ -523,6 +523,40 @@ test('Copilot hands the conversation back when its reply is over, while an attac
   assert.equal(followUp.stopReason, 'completed')
   assert.deepEqual(f.of('turn.completed').map((event) => event.stopReason), ['completed', 'completed', 'completed', 'completed', 'completed'])
   assert.ok(f.of('message.completed').some((event) => event.blocks.some((block) => block.type === 'text' && block.text === 'Still here.')))
+})
+
+test('Copilot schedules are loops, and the prompt a schedule sends opens its turn in the thread', async (t) => {
+  const f = await fixture(t)
+  assert.deepEqual([scheduleInterval(3_600_000), scheduleInterval(10_000), scheduleInterval(5_400_000), scheduleInterval(90_061_000)], ['1h', '10s', '1h30m', '1d1h1m1s'])
+  // As 1.0.117 announces `/every 1h Check the build` then `/after 10s Say hello`.
+  await f.turn([
+    { event: { type: 'session.schedule_created', data: { id: 1, intervalMs: 3_600_000, prompt: 'Check the build', recurring: true, origin: 'user' } } },
+    { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Scheduled #1 every 1h → Check the build' } } },
+    { event: { type: 'session.schedule_created', data: { id: 2, intervalMs: 10_000, prompt: 'Say hello', recurring: false, origin: 'user' } } },
+  ], {
+    after: [
+      { wait: 20 },
+      { event: { type: 'user.message', data: { content: '[Scheduled prompt #2]\nSay hello', source: 'schedule-2', messageId: 'scheduled-2', delivery: 'idle' } } },
+      { event: { type: 'assistant.usage', data: { model: 'gpt-test', inputTokens: 30, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
+      chunk('Hello!', 'r-hello'),
+      { event: { type: 'session.schedule_cancelled', data: { id: 2 } } },
+    ],
+  })
+  assert.deepEqual(f.of('loops.updated').at(0)!.loops, [{ id: '1', schedule: '1h', recurring: true, prompt: 'Check the build' }])
+  assert.deepEqual(f.of('loops.updated').at(1)!.loops.map((loop) => [loop.id, loop.schedule, loop.recurring]), [['1', '1h', true], ['2', '10s', false]])
+  await until(() => f.of('turn.completed').length === 2)
+  // The scheduled prompt is the wake turn's user message, and counts as the loop firing.
+  const started = f.events.findIndex((event) => event.type === 'turn.started' && f.events.indexOf(event) > f.events.indexOf(f.of('turn.completed')[0]!))
+  const scheduled = f.of('message.completed').find((event) => event.role === 'user')!
+  assert.deepEqual(scheduled.blocks, [{ type: 'text', text: '[Scheduled prompt #2]\nSay hello' }])
+  assert.ok(started >= 0 && started < f.events.indexOf(scheduled))
+  assert.deepEqual(f.of('prompt.injected').map((event) => event.text), ['Say hello'])
+  assert.deepEqual(f.of('loops.updated').at(-1)!.loops.map((loop) => loop.id), ['1'])
+  assert.equal(f.of('turn.completed')[1]!.inputTokens, 30)
+  // A new process has none of them.
+  await f.runner.stop()
+  await f.runner.start()
+  assert.deepEqual(f.of('loops.updated').at(-1)!.loops, [])
 })
 
 test('Copilot compacts through its slash command, outside any turn', async (t) => {

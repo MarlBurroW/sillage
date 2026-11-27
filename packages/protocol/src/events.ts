@@ -240,6 +240,7 @@ export type WorkflowProgress = z.infer<typeof workflowProgressSchema>
  */
 export const loopSchema = z.object({
   id: z.string(),
+  /** Claude's five-field cron expression, or Copilot's interval as `/every` writes it (`1h30m`). */
   schedule: z.string(),
   recurring: z.boolean(),
   prompt: z.string(),
@@ -683,9 +684,10 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Loops armed for this session, sampled at the end of every turn.
+   * Loops armed for this session: sampled at the end of every turn for Claude, published as
+   * Copilot announces each `/every` or `/after` schedule and its end.
    *
-   * Same replacement semantics as `background.updated`, for an even stronger reason: the CLI
+   * Same replacement semantics as `background.updated`, for an even stronger reason: Claude
    * announces neither loop creation nor completion, only answering list requests. An expired
    * loop disappears without an event; only the next sample removes it.
    *

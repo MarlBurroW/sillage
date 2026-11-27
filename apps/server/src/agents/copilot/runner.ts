@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ContentBlock as AcpContent, RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
-import { parseElicitationFields, parseSlashCommand, type AgentConfig, type ContentBlock, type CopilotConfig, type McpServer, type McpServerStatus } from '@sillage/protocol'
+import { parseElicitationFields, parseSlashCommand, type AgentConfig, type ContentBlock, type CopilotConfig, type Loop, type McpServer, type McpServerStatus } from '@sillage/protocol'
 import { AcpClient, AcpRpcError } from '../acp/client.js'
 import { diffsOf, fields, type AcpDiff } from '../acp/content.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
@@ -17,7 +17,7 @@ import { ToolDurations } from '../tool-durations.js'
 import { TurnLifecycle, type TurnUsage } from '../turn-lifecycle.js'
 import type { AgentRunner, ElicitationAnswer, OutgoingAttachment, OutgoingMention, PermissionDecision, PlanReview, QuestionAnswer, RunnerContext } from '../types.js'
 import { configOption, copilotCommands, effortOption } from './catalog.js'
-import { COPILOT_CLIENT_CAPABILITIES, COPILOT_EVENT_METHOD, COPILOT_META, copilotLaunch, copilotMcpConfig, copilotProcessEnv, explainSignIn, instructionsFile, modeOf, modeValue, sameLaunch, skillDirs, type CopilotLaunch } from './launch.js'
+import { COPILOT_CLIENT_CAPABILITIES, COPILOT_EVENT_METHOD, COPILOT_META, copilotLaunch, copilotMcpConfig, copilotProcessEnv, explainSignIn, instructionsFile, modeOf, modeValue, sameLaunch, scheduleInterval, skillDirs, type CopilotLaunch } from './launch.js'
 import { askUserQuestions } from './questions.js'
 import { backgroundAgent, backgroundShell, describeCopilotTool, nativeToolRequest, outputOf, shellExit, type NativeToolRequest } from './tools.js'
 import { quotaLimit, refusedLimit, type CopilotLimit, type CopilotQuota } from './usage.js'
@@ -101,6 +101,12 @@ export class CopilotRunner implements AgentRunner {
   private lastSpawn: string | null = null
   /** Text being streamed, per thread: the main one (`''`) and one per spawning call. */
   private readonly streams = new Map<string, OpenText>()
+  /**
+   * Prompts scheduled with `/every` and `/after`, by Copilot's schedule ID. They live in the
+   * process only: a resumed session neither announces nor fires them (1.0.117). Published as
+   * loops, which also keeps the pool from stopping a process that is waiting to fire one.
+   */
+  private readonly schedules = new Map<string, Loop>()
   /** Shells left running in the background, by Copilot's shell ID. */
   private readonly background = new Map<string, { id: string; description: string }>()
   /**
@@ -215,6 +221,8 @@ export class CopilotRunner implements AgentRunner {
     this.counted = NO_TOKENS
     this.events = false
     this.wake = null
+    // A new process has none of the previous one's schedules.
+    if (this.schedules.size) { this.schedules.clear(); this.publishLoops() }
     const resolved = this.ctx.resolveMcpServers(this.config)
     this.launchedMcp = JSON.stringify(resolved.servers)
     const launch = this.launchFor(this.config, this.writeInstructions(this.config), this.writeMcpConfig(resolved.servers))
@@ -408,6 +416,35 @@ export class CopilotRunner implements AgentRunner {
       case 'assistant.turn_retry':
         if (!agentId) this.ctx.emit({ type: 'agent.notice', id: 'api-retry', code: 'copilot_retry', message: 'GitHub Copilot is retrying the request after a transient error.', level: 'info', details: { reason: data.reason ?? null, model: data.model ?? null } }, event)
         return
+      case 'session.schedule_created':
+      case 'session.schedule_rearmed': {
+        const id = String(data.id ?? '')
+        const known = this.schedules.get(id)
+        const interval = Number(data.intervalMs)
+        const prompt = text(data.prompt) ?? known?.prompt
+        if (!id || !prompt) return
+        const loop: Loop = { id, schedule: Number.isFinite(interval) && interval > 0 ? scheduleInterval(interval) : known?.schedule ?? '', recurring: typeof data.recurring === 'boolean' ? data.recurring : known?.recurring ?? true, prompt }
+        if (JSON.stringify(loop) === JSON.stringify(known)) return
+        this.schedules.set(id, loop)
+        this.publishLoops()
+        return
+      }
+      case 'session.schedule_cancelled':
+        if (this.schedules.delete(String(data.id ?? ''))) this.publishLoops()
+        return
+      case 'user.message': {
+        // Prompts Sillage sends are journaled on send; a schedule's arrives only here, and opens
+        // the turn Copilot runs for it.
+        const source = text(data.source)
+        const content = text(data.content)
+        if (agentId || !source?.startsWith('schedule-') || !content || this.replaying) return
+        this.wakeUp(null)
+        if (this.wake === null || this.turn.token !== this.wake) return
+        const loop = this.schedules.get(source.slice('schedule-'.length))
+        this.ctx.emit({ type: 'prompt.injected', text: loop?.prompt ?? content.replace(/^\[Scheduled prompt #\d+\]\n/, '') }, event)
+        this.ctx.emit({ type: 'message.completed', messageId: text(data.messageId) ?? randomUUID(), role: 'user', blocks: [{ type: 'text', text: content }], parentToolCallId: null }, event)
+        return
+      }
       case 'assistant.idle':
         // The prompt response waits for attached background work, a shell started in async mode
         // without `detach`: the reply is over, the conversation is free. When the shell reports
@@ -659,6 +696,10 @@ export class CopilotRunner implements AgentRunner {
     if (!isError) for (const diff of track.diffs) this.ctx.emit({ type: 'file.edited', toolCallId: id, path: toWorkspacePath(this.ctx.cwd, diff.path), action: diff.oldText === null || diff.oldText === '' ? 'created' : 'modified' })
     this.tools.delete(id)
     this.natives.delete(id)
+  }
+
+  private publishLoops(): void {
+    this.ctx.emit({ type: 'loops.updated', loops: [...this.schedules.values()] })
   }
 
   private publishBackground(): void {

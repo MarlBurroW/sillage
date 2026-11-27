@@ -861,6 +861,7 @@ export const fr: Catalog = {
   'conversation.loop.lastFired': 'dernier réveil il y a {ago}',
   'conversation.loop.pending': 'aucun réveil pour le moment',
   'conversation.loop.oneShot': "cadence choisie par l'agent",
+  'conversation.loop.once': 'une fois, dans {delay}',
 
   'signal.running': 'En cours',
   'signal.subagents.one': '{count} sous-agent',

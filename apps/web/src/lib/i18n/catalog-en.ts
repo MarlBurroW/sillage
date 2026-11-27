@@ -870,6 +870,7 @@ export const en = {
   'conversation.loop.lastFired': 'last wakeup {ago} ago',
   'conversation.loop.pending': 'no wakeup yet',
   'conversation.loop.oneShot': 'self-paced',
+  'conversation.loop.once': 'once, in {delay}',
 
   // Conversation signals shared by header, composer, and sidebar.
   'signal.running': 'Working',

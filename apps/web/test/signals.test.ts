@@ -60,6 +60,11 @@ test('loop details give cadence, wakeups and age from the render clock', () => {
   assert.equal(signal!.detail, '5m · 2 wakeups · last wakeup 3 min ago\ncheck CI\n\nself-paced · 1 wakeup · no wakeup yet\nlater')
 })
 
+test('Copilot schedules read as their interval, and `/after` as a single run', () => {
+  const [signal] = buildSignals({ ...idle, loops: [loop({ schedule: '1h', iterations: 0, lastFiredAt: null }), loop({ id: 'l2', schedule: '30m', recurring: false, prompt: 'later', iterations: 0, lastFiredAt: null })] })
+  assert.equal(signal!.detail, '1h · 0 wakeups · no wakeup yet\ncheck CI\n\nonce, in 30m · 0 wakeups · no wakeup yet\nlater')
+})
+
 // Plural forms follow the interface language: English pluralizes 0, French does not.
 test('a loop that never fired reads "0 wakeups"', () => {
   const [signal] = buildSignals({ ...idle, loops: [loop({ iterations: 0, lastFiredAt: null })] })
