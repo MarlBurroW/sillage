@@ -50,3 +50,7 @@
 .sg-tool-counts{display:inline-flex;gap:5px;flex-shrink:0;font:11px/16px var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 /* Call settings worth seeing collapsed (sub-agent effort, large read): quieter than counts, never shrunk away. */
 .sg-tool-qualifier{flex-shrink:0;white-space:nowrap;font-size:10px;line-height:14px;color:var(--sg-ink-soft);border:1px solid var(--sg-line-strong);border-radius:999px;padding:0 6px}
+/* Minimal: one quiet line per sequence for readers who never open the calls; an opened one hangs from it. */
+.sg-tools-sober>.sg-tool-group-heading{min-height:28px;padding:4px 0;border-bottom:0;background:transparent;color:var(--sg-ink-faint)}
+.sg-tools-sober>.sg-tool-group-heading:hover{background:transparent;color:var(--sg-ink-soft)}
+.sg-tools-sober>.sg-tool-list{margin:2px 0 6px 6px;padding-left:10px;border-left:1px solid var(--sg-line);border-radius:0}

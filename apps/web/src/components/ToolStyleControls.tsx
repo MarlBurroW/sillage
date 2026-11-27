@@ -1,7 +1,9 @@
 import { useTranslate } from '../lib/i18n'
 import { TOOL_STYLES, TOOL_STYLE_LABELS, useToolStyle } from '../lib/tool-style'
 import type { ToolItem } from '../lib/chat-fold'
+import { toolActivity } from '../lib/tool-presentation'
 import { ToolCallGroup } from './chat/ToolCall'
+import { TurnActivity } from './chat/TurnActivity'
 import { cx } from './ui'
 
 // L’aperçu emploie les vrais composants, sans conversation ni accès à une sortie distante.
@@ -15,16 +17,20 @@ export function ToolStyleControls() {
   const t = useTranslate()
   return <div className="flex flex-col gap-4">
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label={t('toolStyle.title')}>
+      {/* Minimal changes what is shown rather than how: a row of its own under the six looks. */}
       {TOOL_STYLES.map((option) => <button key={option} type="button" aria-pressed={style === option}
-        onClick={() => setStyle(option)} className={cx('rounded-md border px-3 py-2 text-xs', style === option ? 'border-accent bg-accent-wash' : 'border-line hover:border-line-strong')}>
+        onClick={() => setStyle(option)} className={cx('rounded-md border px-3 py-2 text-xs', option === 'sober' && 'col-span-2 sm:col-span-3', style === option ? 'border-accent bg-accent-wash' : 'border-line hover:border-line-strong')}>
         {t(TOOL_STYLE_LABELS[option])}
         {option === 'inline' ? <span className="block text-[0.625rem] text-ink-faint">{t('toolStyle.default')}</span> : null}
+        {option === 'sober' ? <span className="block text-[0.625rem] text-ink-faint">{t('toolStyle.soberHint')}</span> : null}
       </button>)}
     </div>
     <div className="rounded-md border border-line bg-canvas p-3" data-tool-style-preview>
       <p className="mb-2 text-xs text-ink-faint">{t('toolStyle.preview')}</p>
       <p className="mb-3 text-sm">{t('toolStyle.sample')}</p>
       <ToolCallGroup tools={preview} complete={false} conversationId="appearance-preview" />
+      {/* The activity line changes too: what kind of work, not which tool. */}
+      {style === 'sober' ? <TurnActivity label={toolActivity(preview.at(-1)!)} /> : null}
     </div>
   </div>
 }

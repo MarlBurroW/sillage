@@ -46,6 +46,7 @@ export function ChatThread({
   conversationId,
   canDecide = false,
   mayCollapseTools = true,
+  revealTools = false,
   onFork,
   flashedId = null,
   anchors,
@@ -59,8 +60,11 @@ export function ChatThread({
    * Allow responding to prompts. False by default, including read-only shared conversations, where
    * prompts render without actions.
    */
-  mayCollapseTools?: boolean
   canDecide?: boolean
+  /** A completed sequence may fold now: false while the reader is elsewhere, so nothing moves. */
+  mayCollapseTools?: boolean
+  /** Thread search is open: one-line sequences show their calls so matches inside are found. */
+  revealTools?: boolean
   /** Absent when threads cannot fork because subagents have no independent entity. */
   onFork?: (message: MessageItem) => void
   /** Recently reached message highlighted briefly for orientation. */
@@ -124,7 +128,7 @@ export function ChatThread({
   function renderRowContent(row: ChatRow | NoticeRow) {
         if (row.kind === 'notice-group') return <NoticeGroup key={row.key} row={row} />
         if (row.kind === 'tool-group') {
-          return <ToolCallGroup quiet={concentration} key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
+          return <ToolCallGroup quiet={concentration} reveal={revealTools} key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
         }
         if (row.kind === 'tool') {
           return <ToolCall key={row.key} tool={row.tool} conversationId={conversationId} />
