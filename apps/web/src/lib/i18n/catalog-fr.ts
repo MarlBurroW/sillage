@@ -3170,11 +3170,11 @@ export const fr: Catalog = {
 
   // Login
   'login.error.unreachable': 'Le serveur est injoignable.',
-  'login.subtitle': 'Plateforme de développement agentique',
   'login.username.label': "Nom d'utilisateur",
   'login.password.label': 'Mot de passe',
-  'login.submit.pending': 'Connexion...',
+  'login.submit.pending': 'Connexion…',
   'login.submit.action': 'Se connecter',
+  'login.help': 'Pas de compte, ou mot de passe oublié ? Un administrateur s’en occupe dans Réglages\u00a0›\u00a0Comptes.',
 
   // Accounts
   'users.adminOnly.title': 'Réservé aux administrateurs',
@@ -3943,6 +3943,9 @@ export const fr: Catalog = {
 
   // Common
   'common.select.placeholder': 'Choisir...',
+  'common.password.show': 'Afficher le mot de passe',
+  'common.password.hide': 'Masquer le mot de passe',
+  'common.password.capsLock': 'Verr. Maj est activé.',
 
   // Remaining extracted text: miscellaneous
   'common.copy': 'Copier',

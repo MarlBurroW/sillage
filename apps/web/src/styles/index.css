@@ -612,6 +612,24 @@ input:-webkit-autofill {
 }
 
 /*
+ * Water under the sign-in form (components/login/LoginWater.tsx). The far rows fade into the page
+ * like a horizon, and the strip appears once its first frame is drawn rather than flashing in.
+ */
+.sg-login-water {
+  mask-image: linear-gradient(to bottom, transparent, black 22%);
+  opacity: 0;
+  transition: opacity 0.9s ease-out;
+}
+.sg-login-water[data-ready] {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sg-login-water {
+    transition: none;
+  }
+}
+
+/*
  * CLI installation bar sweeps because npm provides no fraction. Stay still for reduced motion;
  * adjacent text suffices.
  */

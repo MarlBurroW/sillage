@@ -74,6 +74,7 @@
     "test:desktop-updates-ui": "node scripts/desktop-updates-ui-check.mjs",
     "test:desktop-update": "node scripts/desktop-update-check.mjs",
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
+    "test:login-ui": "node scripts/login-ui-check.mjs",
     "test:tour-ui": "node scripts/interface-tour-ui-check.mjs",
     "test:windows-feedback-ui": "node scripts/windows-feedback-ui-check.mjs",
     "test:board-feedback-ui": "node scripts/board-feedback-ui-check.mjs",

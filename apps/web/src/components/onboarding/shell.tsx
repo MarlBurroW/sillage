@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowRight, Check, Info, Languages, Lightbulb, Loader, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Info, Lightbulb, X } from 'lucide-react'
 import { useEffect, useRef, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react'
 import type { CurrentUser, InstanceProfile, OnboardingAnswers, OnboardingState } from '@sillage/protocol'
-import { LOCALES, LOCALE_LABELS, setLocale, useLocale, usePendingLocale, useTranslate } from '../../lib/i18n'
+import { useTranslate } from '../../lib/i18n'
 import type { OnboardingExit, OnboardingStepId } from '../../lib/onboarding'
+import { LanguageSwitch } from '../LanguageSwitch'
 import { Logo } from '../Logo'
 import { Button, cx } from '../ui'
 
@@ -159,41 +160,6 @@ export function CardGrid({ columns = 2, children }: { columns?: 1 | 2 | 3; child
   return (
     <div className={cx('grid gap-2', columns === 3 ? 'sm:grid-cols-3' : columns === 2 ? 'sm:grid-cols-2' : '')}>
       {children}
-    </div>
-  )
-}
-
-/**
- * Language accessible from the first screen: users need it immediately when the interface speaks
- * another language, before Appearance settings are reachable. Same mechanism as settings.
- */
-function LanguageSwitch({ compact = false }: { compact?: boolean }) {
-  const active = useLocale()
-  const pending = usePendingLocale()
-  return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-line bg-surface p-0.5" role="group" aria-label="Language">
-      {compact ? null : <Languages size={14} className="ml-1.5 text-ink-faint" aria-hidden />}
-      {LOCALES.map((option) => (
-        <button
-          key={option}
-          type="button"
-          lang={option}
-          // The code alone on a phone, where the full names crowd out the step title.
-          aria-label={LOCALE_LABELS[option]}
-          aria-pressed={active === option}
-          aria-busy={pending === option}
-          onClick={() => {
-            setLocale(option).catch((error: unknown) => console.warn(error))
-          }}
-          className={cx(
-            'inline-flex h-7 items-center gap-1 rounded px-2 text-xs font-medium transition-colors',
-            active === option ? 'bg-accent-wash text-ink' : 'text-ink-soft hover:text-ink',
-          )}
-        >
-          {pending === option ? <Loader size={12} className="animate-spin" aria-hidden /> : null}
-          {compact ? option.toUpperCase() : LOCALE_LABELS[option]}
-        </button>
-      ))}
     </div>
   )
 }

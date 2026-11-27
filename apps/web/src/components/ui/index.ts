@@ -5,6 +5,7 @@ export { ChoiceList, type Choice } from './ChoiceList'
 export { ConfirmDialog } from './ConfirmDialog'
 export { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSwatch } from './ContextMenu'
 export { Field } from './Field'
+export { PasswordField } from './PasswordField'
 export {
   Menu,
   MenuCheckboxItem,
