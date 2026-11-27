@@ -2,6 +2,7 @@
 @import './tokens.css';
 @import './typing-indicator.css';
 @import './tools.css';
+@import './thinking.css';
 
 /*
  * Map tokens into Tailwind's namespace. Tailwind keys and source tokens must never share names or

@@ -1,7 +1,7 @@
 import { useConcentration } from '../../lib/concentration'
 import { TooltipButton } from '../ui/Tooltip'
-import { MoreHorizontal, Brain, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
-import { memo, useMemo, useState } from 'react'
+import { MoreHorizontal, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { isAudioType, isPlayableMediaType, parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@sillage/protocol'
 import { formatBytes } from '../../lib/attachments'
@@ -154,7 +154,9 @@ export const MessageBubble = memo(function MessageBubble({
 
   return (
     <div className="group flex flex-col gap-2">
-      {thinking || liveThinking ? <ThinkingBlock text={thinking || liveThinking} /> : null}
+      {thinking || liveThinking ? (
+        <ThinkingBlock text={thinking || liveThinking} live={!thinking && !liveText} />
+      ) : null}
       <Attachments images={images} files={files} />
       {shown ? (
         <>
@@ -281,35 +283,50 @@ function Attachments({
 }
 
 /**
- * Collapsed reasoning content. Running state belongs to turn activity, which remains visible after
- * reasoning completes mid-turn.
+ * The agent's reasoning, set apart from tool calls: tools are actions shown as rows or cards,
+ * reasoning is prose, so it gets no frame, only a left rule and the agent's own words. It
+ * unfolds while it is being written and folds once the answer starts, unless the reader chose.
+ * Running state belongs to turn activity, which remains visible after reasoning completes.
  */
-function ThinkingBlock({ text }: { text: string }) {
-  const [open, setOpen] = useState(false)
+function ThinkingBlock({ text, live }: { text: string; live: boolean }) {
+  // null follows the stream; a click pins the reader's choice for this message.
+  const [chosen, setChosen] = useState<boolean | null>(null)
+  const open = chosen ?? live
   const t = useTranslate()
+  const preview = thinkingPreview(text)
+  const body = useRef<HTMLDivElement>(null)
+  const [clipped, setClipped] = useState(false)
+  // Fade the top only once early lines are actually cut off, or short reasoning looks dimmed.
+  useLayoutEffect(() => {
+    const node = body.current
+    setClipped(!!node && live && node.scrollHeight > node.clientHeight)
+  }, [text, live, open])
 
   return (
-    <div className="sg-thinking rounded-md border border-line bg-surface/40">
+    <div className={cx('sg-thinking', live && 'sg-thinking-live')}>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setChosen(!open)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-ink-faint"
+        className="sg-thinking-heading"
       >
-        <ChevronRight
-          size={13}
-          className={cx('shrink-0 transition-transform', open && 'rotate-90')}
-        />
-        <Brain size={13} className="shrink-0" />
-        <span>{t('message.thinking.label')}</span>
+        <span className="sg-thinking-label">{t('message.thinking.label')}</span>
+        {!open && preview ? <span className="sg-thinking-preview">{preview}</span> : null}
+        <ChevronRight size={12} className={cx('shrink-0 transition-transform', open && 'rotate-90')} />
       </button>
       {open ? (
-        <p className="border-t border-line px-2.5 py-2 text-xs whitespace-pre-wrap text-ink-soft">
-          {text}
-        </p>
+        <div ref={body} className={cx('sg-thinking-body', clipped && 'sg-thinking-clipped')}>
+          <Markdown text={text} />
+        </div>
       ) : null}
     </div>
   )
+}
+
+/** First line without its Markdown emphasis: Codex summaries open with a bold title. */
+function thinkingPreview(text: string): string {
+  const line = text.split('\n').find((value) => value.trim()) ?? ''
+  return line.replace(/^#+\s*/, '').replace(/\*\*|__|`/g, '').trim()
 }
 
 function messageResources(blocks: MessageItem['blocks']): MessageResources | undefined {

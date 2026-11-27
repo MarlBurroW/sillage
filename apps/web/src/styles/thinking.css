@@ -1,0 +1,18 @@
+/*
+ * Reasoning reads as the agent's voice, not as an action: no frame, background or fixed row
+ * height like tool rows, and none of the accent or dashed left rules that mark Sillage and MCP
+ * tools. Italic prose behind a thin neutral rule.
+ */
+.sg-thinking{min-width:0;margin-top:6px}
+.sg-thinking-heading{display:flex;align-items:center;gap:6px;max-width:100%;min-height:28px;padding:2px 0;font-size:12.5px;font-style:italic;color:var(--sg-ink-faint);text-align:left}
+.sg-thinking-heading:hover{color:var(--sg-ink-soft)}
+.sg-thinking-heading:focus-visible{outline:2px solid var(--sg-accent);outline-offset:2px}
+.sg-thinking-label{flex-shrink:0}
+.sg-thinking-preview{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--sg-ink-soft)}
+.sg-thinking-preview::before{content:'— ';color:var(--sg-ink-faint)}
+.sg-thinking-body{margin:4px 0 2px 1px;padding-left:12px;border-left:1px solid var(--sg-line-strong);border-radius:0;font-size:13px;font-style:italic;color:var(--sg-ink-soft)}
+.sg-thinking-body .sg-markdown{color:inherit}
+.sg-thinking-body code,.sg-thinking-body pre{font-style:normal}
+/* While it is written, show the latest lines: column-reverse keeps the bottom in view. */
+.sg-thinking-live .sg-thinking-body{display:flex;flex-direction:column-reverse;max-height:14em;overflow:hidden}
+.sg-thinking-live .sg-thinking-clipped{mask-image:linear-gradient(to bottom,transparent,#000 3em)}
