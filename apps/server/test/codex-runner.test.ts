@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DEFAULT_CODEX_CONFIG, parseAgentConfig, sillageEventSchema } from '@sillage/protocol'
-import { CodexRunner } from '../src/agents/codex/runner.js'
+import { CodexRunner, codexReviewTarget } from '../src/agents/codex/runner.js'
 import { codexModel } from '../src/agents/codex/adapter.js'
 import { CodexAppServerClient } from '../src/agents/codex/app-server-client.js'
 import { runnerFixture, asyncMessage, context, done, fixture, itemEvent } from './codex-support.js'
@@ -609,4 +609,32 @@ test('a resumed thread shows the goal it already carries', async t => {
   const notice = state.events.find(event => event.type === 'agent.notice' && event.code === 'codex_goal')
   assert.ok(notice?.type === 'agent.notice')
   assert.equal((notice.details as { objective: string }).objective, 'Watch the sessions')
+})
+
+test('/review messages name the review target; anything else is an ordinary message', () => {
+  assert.deepEqual(codexReviewTarget('/review'), { type: 'uncommittedChanges' })
+  assert.deepEqual(codexReviewTarget('  /review  '), { type: 'uncommittedChanges' })
+  assert.deepEqual(codexReviewTarget('/review branch main'), { type: 'baseBranch', branch: 'main' })
+  assert.deepEqual(codexReviewTarget('/review commit 4be4fdce36'), { type: 'commit', sha: '4be4fdce36', title: null })
+  assert.deepEqual(codexReviewTarget('/review focus on error handling'), { type: 'custom', instructions: 'focus on error handling' })
+  assert.equal(codexReviewTarget('/reviewer'), null)
+  assert.equal(codexReviewTarget('please /review this'), null)
+})
+
+test('/review starts the native review, whose turn closes under its root id', async t => {
+  const f = await runnerFixture(t)
+  assert.deepEqual(f.events.find(event => event.type === 'commands.updated'),
+    { type: 'commands.updated', commands: [{ name: 'review', description: 'Codex code review: uncommitted changes, or `branch <name>`, `commit <sha>`, or your own review instructions', argumentHint: '[branch <name> | commit <sha> | instructions]', aliases: [] }] })
+  await f.runner.send('/review branch main', [], [], [])
+  // As on the real CLI, the review's notifications follow the review/start response: wait for them.
+  for (let i = 0; i < 100 && !f.events.some(event => event.type === 'turn.completed'); i++) await new Promise(resolve => setTimeout(resolve, 20))
+  const records = await f.records()
+  assert.equal(records.some(record => record.method === 'turn/start'), false)
+  assert.deepEqual(records.find(record => record.method === 'review/start').params, { threadId: 'root', target: { type: 'baseBranch', branch: 'main' } })
+  // One turn, started and completed: the inner id did not open a second one that never ends.
+  assert.equal(f.events.filter(event => event.type === 'turn.started').length, 1)
+  assert.equal(f.events.filter(event => event.type === 'turn.completed').length, 1)
+  assert.equal(f.statuses.at(-1), 'idle')
+  // The review reads as the agent's answer.
+  assert.ok(f.events.some(event => event.type === 'message.completed' && event.role === 'assistant'))
 })

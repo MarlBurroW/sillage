@@ -21,7 +21,7 @@ import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 import { describeEdit } from './file-edits.js'
 import { CodexModelCatalog } from './model-catalog.js'
-import { CodexRunner } from './runner.js'
+import { CodexRunner, REVIEW_COMMAND } from './runner.js'
 import { CodexUsageReader } from './usage.js'
 
 /** A `model/list` entry in the shared shape. */
@@ -166,9 +166,12 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
-  /** Codex exposes no slash commands: skills use dollar prefixes, published after session startup. */
+  /**
+   * Codex exposes no slash commands of its own (skills use dollar prefixes, published after
+   * session startup); Sillage offers `/review`, which the runner turns into `review/start`.
+   */
   async commands(): Promise<ProjectCommandsDto> {
-    return { commands: [], fetchedAt: Date.now() }
+    return { commands: [REVIEW_COMMAND], fetchedAt: Date.now() }
   }
 
   usage(force: boolean): Promise<AgentUsage> {

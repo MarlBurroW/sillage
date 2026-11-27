@@ -12,6 +12,7 @@ import {
   type ContentBlock,
   type McpServer,
   type McpServerStatus,
+  type SlashCommandDto,
 } from '@sillage/protocol'
 import type { CollaborationMode, RequestId } from '@sillage/codex-bindings'
 import type {
@@ -21,6 +22,8 @@ import type {
   AccountUpdatedNotification,
   ConfigReadResponse,
   DeprecationNoticeNotification,
+  ReviewStartResponse,
+  ReviewTarget,
   ThreadGoal,
   ThreadGoalClearedNotification,
   ThreadGoalGetResponse,
@@ -133,6 +136,31 @@ interface CliDefaults {
 }
 
 const NO_CLI_DEFAULTS: CliDefaults = { networkAccess: false, serviceTier: null }
+
+/**
+ * Codex's native code review (`/review` in its TUI), offered as a slash command: the message goes
+ * through the ordinary send path (journal, queue, status) and the runner calls `review/start`
+ * instead of `turn/start`. The review prompt is OpenAI's, maintained with the CLI.
+ */
+export const REVIEW_COMMAND: SlashCommandDto = {
+  name: 'review',
+  description: 'Codex code review: uncommitted changes, or `branch <name>`, `commit <sha>`, or your own review instructions',
+  argumentHint: '[branch <name> | commit <sha> | instructions]',
+  aliases: [],
+}
+
+/** The review a `/review` message asks for; null for any other message. */
+export function codexReviewTarget(text: string): ReviewTarget | null {
+  const match = /^\/review(?:\s+([\s\S]*))?$/.exec(text.trim())
+  if (!match) return null
+  const argument = match[1]?.trim() ?? ''
+  if (!argument) return { type: 'uncommittedChanges' }
+  const branch = /^branch\s+(\S+)$/.exec(argument)
+  if (branch) return { type: 'baseBranch', branch: branch[1]! }
+  const commit = /^commit\s+([0-9a-f]{7,40})$/i.exec(argument)
+  if (commit) return { type: 'commit', sha: commit[1]!, title: null }
+  return { type: 'custom', instructions: argument }
+}
 
 /** Background-task id of the thread's goal: one per thread, never a thread id. */
 const GOAL_TASK_ID = 'codex-goal'
@@ -483,6 +511,7 @@ export class CodexRunner implements AgentRunner {
     )
     detach(this.publishMcpStatus(), 'MCP status publication')
     detach(this.publishSkills(), 'skills publication')
+    this.ctx.emit({ type: 'commands.updated', commands: [REVIEW_COMMAND] })
     // A resumed thread may carry a goal set in an earlier process; nothing announces it again.
     if (this.ctx.resumeSessionId) detach(this.readGoal(), 'goal read')
   }
@@ -855,9 +884,11 @@ export class CodexRunner implements AgentRunner {
         return
       }
 
+      // A review's turn is announced under its own id, but completes under its root's (see
+      // startReview): the root id is the turn. Ordinary turns are their own root.
       case 'turn/started': {
         const p = params as TurnStartedNotification
-        this.beginTurn(p.turn.id)
+        this.beginTurn(p.turn.rootTurnId ?? p.turn.id)
         return
       }
 
@@ -1460,6 +1491,19 @@ export class CodexRunner implements AgentRunner {
   ): Promise<void> {
     if (!this.client || !this.threadId) throw new Error('The Codex session has not started.')
 
+    // A review takes no attachments: with any, the message is an ordinary one.
+    const review = attachments.length === 0 && mentions.length === 0 ? codexReviewTarget(text) : null
+    if (review) {
+      this.ctx.setStatus('running')
+      try {
+        await this.startReview(review)
+      } catch (error) {
+        if (!this.turnId && this.client) this.ctx.setStatus('idle')
+        throw error
+      }
+      return
+    }
+
     // The manager journaled the message before starting this runner; only steering echoes here.
     const { input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills), this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     this.ctx.setStatus('running')
@@ -1470,6 +1514,18 @@ export class CodexRunner implements AgentRunner {
       if (!this.turnId && this.client) this.ctx.setStatus('idle')
       throw error
     }
+  }
+
+  /**
+   * Probed on codex-cli 0.172.0 (inline delivery, on a throwaway repository): the response carries
+   * the review's turn; the CLI then announces a turn with another id whose `rootTurnId` is that
+   * one, runs commands, and ends with `exitedReviewMode` plus an `agentMessage` holding the same
+   * review text, so the review reads as an ordinary answer. `turn/completed` carries the root id.
+   */
+  private async startReview(target: ReviewTarget): Promise<void> {
+    if (!this.client || !this.threadId) throw new Error('The Codex session is closed.')
+    const { turn } = await this.client.call<ReviewStartResponse, 'review/start'>('review/start', { threadId: this.threadId, target })
+    if (turn.status === 'inProgress' && !this.completedTurns.has(turn.id)) this.beginTurn(turn.id)
   }
 
   private async startTurn(input: UserInput[], clientUserMessageId?: string): Promise<void> {

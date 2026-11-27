@@ -64,6 +64,18 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     // Thread goal: `FIXTURE_GOAL` is the objective a resumed thread already carries.
     case 'thread/goal/get': send({ id, result: { goal: process.env.FIXTURE_GOAL ? goalOf(params.threadId, process.env.FIXTURE_GOAL, 'active') : null } }); break
     case 'thread/goal/set': send({ id, result: { goal: goalOf(params.threadId, params.objective ?? 'Ship it', params.status ?? 'active') } }); break
+    // Shape probed on 0.172.0: the response carries the root turn, the CLI announces another turn
+    // id rooted on it, and completes under the root id.
+    case 'review/start': {
+      const root = { id: 'review-turn', rootTurnId: 'review-turn', status: 'inProgress', items: [], error: null }
+      send({ id, result: { turn: root, reviewThreadId: params.threadId } })
+      notify('turn/started', { threadId: 'root', turn: { ...root, id: 'review-inner' } })
+      const review = { type: 'exitedReviewMode', id: 'exit', review: '- [P1] Preserve addition in `add`' }
+      notify('item/completed', { threadId: 'root', turnId: 'review-turn', item: review })
+      notify('item/completed', { threadId: 'root', turnId: 'review-turn', item: { type: 'agentMessage', id: 'answer', text: review.review, phase: 'final_answer', memoryCitation: null, moderation: null, delivery: null, questions: null } })
+      notify('turn/completed', { threadId: 'root', turn: { ...root, status: 'completed' } })
+      break
+    }
     case 'skills/list': send({ id, result: { data: [] } }); break
     case 'mcpServerStatus/list': send({ id, result: { data: [], nextCursor: null } }); break
     case 'turn/start': {

@@ -35,8 +35,8 @@ export interface AgentCapabilities {
   readBackgroundOutput: boolean
   /**
    * The CLI can list slash commands for a directory without a running session: conversation
-   * drafts offer them before the first turn. Codex has no slash commands; its `$` skills arrive
-   * on the first turn.
+   * drafts offer them before the first turn. Codex's only one is Sillage's `/review`; its `$`
+   * skills arrive on the first turn.
    */
   draftCommands: boolean
   /**
@@ -66,7 +66,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     cliSessions: false,
     stopBackgroundTask: false,
     readBackgroundOutput: false,
-    draftCommands: false,
+    draftCommands: true,
     nativeFork: true,
   },
   // `steer` is true, probed on opencode 1.18.25 and 2.4.1: a prompt sent during a turn is consumed

@@ -84,6 +84,21 @@ paused`, `origin: user`). A resumed thread reads its goal with `thread/goal/get`
 every resume. Resuming or clearing a goal, or setting one from the composer, is
 left to the agent.
 
+## Code review
+
+Sillage offers `/review` in Codex conversations, drafts included. The message
+goes through the ordinary send path and the runner calls `review/start` instead
+of `turn/start`: `/review` reviews uncommitted changes, `/review branch <name>`
+the diff against a base branch, `/review commit <sha>` one commit, and any other
+text is passed as review instructions. A message with attachments is an
+ordinary message.
+
+Probed on 0.172.0 (inline delivery, throwaway repository): the response carries
+the review's turn; the CLI then announces a turn with another id whose
+`rootTurnId` is that one, runs its commands, and ends with `exitedReviewMode`
+plus an `agentMessage` holding the same text, so the review reads as an answer.
+`turn/completed` carries the root id, so the runner tracks turns by `rootTurnId`.
+
 ## Activities
 
 Messages, proposed plans, work steps, commands, file changes, MCP and dynamic tools,
