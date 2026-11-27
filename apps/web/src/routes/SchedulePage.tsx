@@ -1,4 +1,4 @@
-import { ArrowUpRight, CalendarClock, ChevronRight, FlaskConical, Pause, Pencil, Play, Plus, ShieldAlert, SlidersHorizontal, Trash2, Webhook, Zap } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, TriangleAlert, ChevronRight, FlaskConical, Pause, Pencil, Play, Plus, ShieldAlert, SlidersHorizontal, Trash2, Webhook, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sillage/protocol'
@@ -156,6 +156,8 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
   const error = update.error ?? run.error ?? remove.error
   const check = task.webhook ? null : task.check
   const webhook = task.webhook
+  // Newest first: the latest move is the one in effect. It stays up while its run is in the history.
+  const moved = task.runs.find((entry) => entry.modelAliasMoved)
 
   return (
     <li className="surface flex min-w-0 flex-col gap-3 rounded-lg border border-line p-4" data-schedule={task.name}>
@@ -198,6 +200,18 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
       {webhook?.trippedAt ? (
         <Banner tone="caution">
           {t('automation.tripped', { max: webhook.maxRunsPerHour, date: formatDateTime(webhook.trippedAt) })}
+        </Banner>
+      ) : null}
+      {moved?.modelAliasMoved ? (
+        <Banner tone="caution">
+          <span data-model-alias-banner={moved.modelAliasMoved.alias}>
+            {t('schedule.modelAliasMoved', {
+              date: formatDateTime(moved.startedAt),
+              alias: moved.modelAliasMoved.alias,
+              model: moved.modelAliasMoved.model,
+              previous: moved.modelAliasMoved.previous,
+            })}
+          </span>
         </Banner>
       ) : null}
       {check && !check.approved ? (
@@ -334,9 +348,18 @@ function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string })
     </>
   )
   const className = 'flex min-h-9 min-w-0 items-center gap-2 rounded px-1 text-xs text-ink-faint'
+  const moved = run.modelAliasMoved
 
   return (
     <li>
+      {/* Written out rather than behind a tooltip: it happens once per alias and generation, and
+          touch screens have no hover to reveal it. */}
+      {moved ? (
+        <p className="flex items-start gap-2 px-1 pt-1.5 text-xs text-caution" data-model-alias-moved={moved.alias}>
+          <TriangleAlert size={13} aria-hidden className="mt-px shrink-0" />
+          <span className="min-w-0 break-words">{t('activity.modelAliasMoved', { alias: moved.alias, model: moved.model, previous: moved.previous })}</span>
+        </p>
+      ) : null}
       {run.conversationId ? (
         <Link
           to={`/p/${projectId}/c/${run.conversationId}`}

@@ -17,6 +17,7 @@ import {
   scheduleCadenceSchema,
   type AgentConfig,
   type AgentKind,
+  type ModelAliasMove,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
   type ScheduledRunDto,
@@ -58,6 +59,40 @@ export function runToDto(row: ScheduledRunRow): ScheduledRunDto {
   }
 }
 
+/**
+ * What a run's model was configured as and what it resolved to. Claude only: its aliases are the
+ * ones that move between CLI generations (`haiku`, `fable`, `default`), and other CLIs report the
+ * model in ways too uneven to compare. `model` is the thread's latest session: a run whose session
+ * fell back to another model after a refusal reads as resolving there.
+ */
+function resolvedModelOf(thread: { agent: AgentKind; config: string; model: string | null }): { requested: string | null; model: string | null } {
+  if (thread.agent !== 'claude' || !thread.model) return { requested: null, model: null }
+  let requested: string
+  try {
+    requested = parseAgentConfig(thread.config).model || 'default'
+  } catch {
+    return { requested: null, model: null }
+  }
+  return { requested, model: thread.model }
+}
+
+/**
+ * Runs, newest first, whose configured model resolved elsewhere than the previous run under the
+ * same value: each task freezes its config, so the model only changes there when the CLI moves an
+ * alias. Only the first run after the move is marked; runs without a thread are skipped over.
+ */
+export function aliasMoves(runs: { id: string; requested: string | null; model: string | null }[]): Map<string, ModelAliasMove> {
+  const moves = new Map<string, ModelAliasMove>()
+  const last = new Map<string, string>()
+  for (const run of [...runs].reverse()) {
+    if (!run.requested || !run.model) continue
+    const previous = last.get(run.requested)
+    if (previous && previous !== run.model) moves.set(run.id, { alias: run.requested, model: run.model, previous })
+    last.set(run.requested, run.model)
+  }
+  return moves
+}
+
 export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string): ScheduledTaskDto[] {
   if (rows.length === 0) return []
   const hooks = new Map(
@@ -81,16 +116,20 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string):
     // Deleted conversations must not leave broken history links:
     // retain runs without their conversations.
     const threadIds = runs.flatMap((run) => (run.conversationId ? [run.conversationId] : []))
-    const alive = new Set(
+    const threads = new Map(
       threadIds.length > 0
         ? db
-            .select({ id: conversations.id })
+            .select({ id: conversations.id, agent: conversations.agent, config: conversations.config, model: conversations.model })
             .from(conversations)
             .where(inArray(conversations.id, threadIds))
             .all()
-            .map((thread) => thread.id)
+            .map((thread) => [thread.id, thread])
         : [],
     )
+    const moves = aliasMoves(runs.map((run) => {
+      const thread = run.conversationId ? threads.get(run.conversationId) : undefined
+      return { id: run.id, ...(thread ? resolvedModelOf(thread) : { requested: null, model: null }) }
+    }))
     return {
       id: row.id,
       projectId: row.projectId,
@@ -112,7 +151,8 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[], publicUrl: string):
       updatedAt: row.updatedAt,
       runs: runs.map((run) => ({
         ...runToDto(run),
-        conversationId: run.conversationId && alive.has(run.conversationId) ? run.conversationId : null,
+        conversationId: run.conversationId && threads.has(run.conversationId) ? run.conversationId : null,
+        modelAliasMoved: moves.get(run.id) ?? null,
       })),
       webhook: hooks.has(row.id) ? webhookToDto(hooks.get(row.id)!, publicUrl) : null,
       check: row.checkScript

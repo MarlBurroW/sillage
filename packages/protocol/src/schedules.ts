@@ -196,6 +196,18 @@ export interface ScheduledRunDto {
   error: string | null
   /** Null if the run performed no check. */
   check: ScheduledRunCheckDto | null
+  /**
+   * Set on the run where the configured alias first resolved to another model than the previous
+   * run under the same alias: the task changed model with nobody choosing it. Absent otherwise.
+   */
+  modelAliasMoved?: ModelAliasMove | null
+}
+
+/** A configured model alias (`haiku`) resolving to another model than it did before. */
+export interface ModelAliasMove {
+  alias: string
+  model: string
+  previous: string
 }
 
 /** Task check as displayed and submitted for approval by the UI. */

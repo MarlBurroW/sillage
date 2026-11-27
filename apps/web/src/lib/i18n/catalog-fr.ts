@@ -3144,6 +3144,7 @@ export const fr: Catalog = {
   'activity.toolRunning': '{name} en cours',
   'activity.turn.noMessage': 'Sans message',
   'activity.modelChanged': 'Modèle passé à {model}',
+  'activity.modelAliasMoved': '{alias} désigne désormais {model} et non plus {previous} : taille de contexte, niveaux d’effort et tarif peuvent changer',
   'activity.configRestartDeferred': 'Réglage appliqué à la fin du tour',
 
   // Board and cards
@@ -4618,6 +4619,7 @@ export const fr: Catalog = {
   "schedule.check.inlinePending": "Le script de vérification de « {name} » ne tournera qu’une fois validé par toi. D’ici là, les tirs sont écartés.",
   "schedule.check.inlineApproved": "Script de vérification de « {name} » validé.",
   "schedule.run.manual": "· à la main",
+  "schedule.modelAliasMoved": "Depuis l’exécution du {date}, {alias} désigne {model} et non plus {previous} : taille de contexte, niveaux d’effort et tarif peuvent changer. Pour garder {previous}, choisis-le dans Modifier.",
   "schedule.fact.cadence": "Cadence",
   "schedule.fact.next": "Prochain tir",
   "schedule.fact.last": "Dernier tir",

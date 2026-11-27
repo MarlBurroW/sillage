@@ -266,6 +266,13 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
      * and only this field says so. Absent from older CLIs and from CLIs that do not report it.
      */
     cliVersion: z.string().nullish(),
+    /**
+     * Model as configured when the CLI resolved `model`: an alias (`haiku`, `default`) or a full
+     * id. Pairs the two so a later session can tell that the same alias now resolves elsewhere
+     * (Claude Code 2.1.293 moved `haiku` from Haiku 4.5 to 5.5 without a word). Claude only;
+     * absent from older journals.
+     */
+    requestedModel: z.string().nullish(),
   }),
   z.object({
     type: z.literal('session.ended'),

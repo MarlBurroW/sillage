@@ -195,6 +195,11 @@ export class ClaudeRunner implements AgentRunner {
   /** Last init `plugin_errors`, reported only on change. */
   private pluginErrorsSignature = '[]'
   /**
+   * The CLI swapped the session model after a refusal: init then names the fallback, which says
+   * nothing about where the configured alias resolves. Cleared when the user picks a model again.
+   */
+  private modelSwapped = false
+  /**
    * Protocol capabilities from the latest init. The CLI asks hosts to feature-detect rather than
    * sniff versions, and a strict host refuses a whole answer carrying a field it does not know.
    */
@@ -633,6 +638,9 @@ export class ClaudeRunner implements AgentRunner {
                 // Init repeats per turn, but the version cannot change within one process: the
                 // first init of each process (a new runner) is enough to carry it.
                 cliVersion: message.claude_code_version ?? null,
+                // What `model` was resolved from ('' is the CLI default, which the catalog calls
+                // `default`), so the thread can tell an alias that moved from a chosen switch.
+                requestedModel: this.modelSwapped ? null : this.config.model || 'default',
               },
               message,
             )
@@ -647,6 +655,9 @@ export class ClaudeRunner implements AgentRunner {
           }
           return
         }
+        // A session-wide swap persists until the model is set again; 'local' (a subagent, a side
+        // question) leaves the session model alone. Older CLIs omit the scope: session.
+        if (message.subtype === 'model_refusal_fallback' && message.scope !== 'local') this.modelSwapped = true
         // Other system messages are signals or noise; `signals.ts` decides.
         this.emitSignal(message)
         return
@@ -1438,6 +1449,7 @@ export class ClaudeRunner implements AgentRunner {
     // The CLI default is stored as '': 2.1.312 rejects it as an unknown model id, which made every
     // live change fail and fall back to a restart. Undefined is the SDK's way to ask for the default.
     await this.session.setModel(this.cliModel(config.model) || undefined)
+    this.modelSwapped = false
     await this.session.applyFlagSettings(liveFlagSettings(this.config, config))
     // Since 2.1.332 the answer names the mode now in effect, which the CLI may adjust (an auto mode
     // the model refuses, for instance); older CLIs answer with no payload.

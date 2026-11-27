@@ -144,6 +144,7 @@ export interface NoticeItem {
   code?: string
   translation?:
     | { key: 'activity.modelChanged'; model: string }
+    | { key: 'activity.modelAliasMoved'; alias: string; model: string; previous: string }
     | { key: 'checkpoint.restored.notice'; written: number; deleted: number }
     | { key: 'checkpoint.restored.partial'; written: number; deleted: number; skipped: number }
     | { key: 'checkpoint.undone.notice'; written: number; deleted: number }
@@ -322,6 +323,12 @@ export interface ChatState {
    * spares rebuilding every stored projection for a detail.
    */
   cliVersion?: string | null
+  /**
+   * Last model each configured value resolved to (`haiku` → `claude-haiku-5-5`), so a session that
+   * resolves the same alias to another model is reported as such rather than as a switch someone
+   * chose. Optional for the same reason as `cliVersion`.
+   */
+  resolvedModels?: Record<string, string>
   rateLimit: RateLimitState | null
   context: ContextState | null
   /** Track turn completion to display a reliable activity indicator. */
@@ -756,13 +763,27 @@ export function applyEvent(
     case 'session.started': {
       // The CLI re-emits initialization when the model changes during a session: the only reliable
       // signal for marking the switch in the thread.
-      if (state.model && state.model !== event.model && state.items.length > 0) {
+      const requested = event.requestedModel
+      const previous = requested ? state.resolvedModels?.[requested] : undefined
+      if (requested && previous && previous !== event.model) {
+        // Same configured value, another model: the CLI moved the alias (an update, a new
+        // generation). Context, effort levels and price can change with it, so say so plainly.
+        // No level, like a switch: leveled notices fold behind a summary, and this one must show.
+        appendItem(state, {
+          kind: 'notice',
+          id: `model-${seq}`,
+          text: '',
+          translation: { key: 'activity.modelAliasMoved', alias: requested, model: event.model, previous },
+        })
+      } else if (state.model && state.model !== event.model && state.items.length > 0) {
         appendItem(state, {
           kind: 'notice',
           id: `model-${seq}`,
           text: '', translation: { key: 'activity.modelChanged', model: event.model },
         })
       }
+      // Replaced, not mutated: folded states may share this object with an earlier snapshot.
+      if (requested) state.resolvedModels = { ...state.resolvedModels, [requested]: event.model }
       state.model = event.model
       // Replaced rather than kept: a later process that does not report its version must not
       // inherit the previous one's.

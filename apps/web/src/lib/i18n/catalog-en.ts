@@ -3152,6 +3152,7 @@ export const en = {
   'activity.toolRunning': '{name} running',
   'activity.turn.noMessage': 'No message',
   'activity.modelChanged': 'Model switched to {model}',
+  'activity.modelAliasMoved': '{alias} now runs {model} instead of {previous}: context size, effort levels and pricing may differ',
   'activity.configRestartDeferred': 'Setting applied at the end of the turn',
 
   // Board and cards
@@ -4627,6 +4628,7 @@ export const en = {
   'schedule.check.inlinePending': "The check script of “{name}” only runs once you approve it. Until then, runs are skipped.",
   'schedule.check.inlineApproved': "Check script of “{name}” approved.",
   'schedule.run.manual': "· manual",
+  'schedule.modelAliasMoved': "Since the run of {date}, {alias} runs {model} instead of {previous}: context size, effort levels and pricing may differ. To keep {previous}, pick it under Edit.",
   'schedule.fact.cadence': "Runs",
   'schedule.fact.next': "Next",
   'schedule.fact.last': "Last",
