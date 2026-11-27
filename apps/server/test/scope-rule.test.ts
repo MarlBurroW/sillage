@@ -27,6 +27,7 @@ import type { CloneJobs } from '../src/clone-jobs.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { registerSecretRoutes } from '../src/http/routes/secrets.js'
 import { registerClaudeAccountRoutes } from '../src/http/routes/claude-accounts.js'
+import { registerOpencodeProviderRoutes } from '../src/http/routes/opencode-providers.js'
 import { registerConsumptionRoutes } from '../src/http/routes/consumption.js'
 import { TurnUsageRecorder } from '../src/consumption/recorder.js'
 import { PriceCatalog } from '../src/pricing/catalog.js'
@@ -83,6 +84,8 @@ async function harness(t: TestContext) {
     read: async () => ({ state: 'connected', loginExpiresAt: '2026-12-11T20:53:03.641Z', checkedAt: 1 }),
     check: async () => {},
   })
+  // OpenCode is never started: what is checked is who may reach it.
+  registerOpencodeProviderRoutes(app, { list: async () => [], connectKey: async () => {}, disconnect: async () => {} })
   // Prices never leave the test: what is checked is who may ask for them.
   registerConsumptionRoutes(app, ctx, new PriceCatalog(db, async () => { throw new Error('offline') }), new TurnUsageRecorder(db))
   t.after(() => app.close())
@@ -121,6 +124,16 @@ test('consumption is read by every account; the instance price list is refreshed
   assert.equal((await call('admin', 'POST', '/api/consumption/prices/refresh')).status, 200)
   for (const user of ['owner', 'member']) {
     assert.deepEqual(await call(user, 'POST', '/api/consumption/prices/refresh').then(({ status, code }) => [status, code]), [403, 'admin_only'])
+  }
+})
+
+test('OpenCode providers serve the whole machine: administrators only, even to read', async (t) => {
+  const { call } = await harness(t)
+  const routes = [['GET', '/api/opencode/providers'], ['POST', '/api/opencode/providers/anthropic/key'], ['DELETE', '/api/opencode/credentials/cred_1']] as const
+  for (const [method, url] of routes) {
+    const payload = method === 'POST' ? { key: 'sk-typed' } : undefined
+    assert.ok([200, 204].includes((await call('admin', method, url, payload)).status), url)
+    for (const user of ['owner', 'member']) assert.equal((await call(user, method, url, payload)).code, 'admin_only', `${user} ${url}`)
   }
 })
 

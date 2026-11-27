@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Deterministic fake OpenCode 2 `opencode serve` (2.4.1 shapes): no models, networking or database.
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createServer } from 'node:http'
 
@@ -68,6 +68,14 @@ const nativeHistory = [
     content: [{ type: 'tool', id: 'call_b', name: 'shell', time: { created: 15, ran: 15, completed: 16 }, state: { status: 'error', input: { command: 'false' }, error: { type: 'ShellError', message: 'exit 1' } } }] },
   { id: 'msg_09', type: 'idle', time: { created: 17 }, outcome: 'interrupted' },
 ]
+
+/** Integrations become known once listed, as on a fresh 2.4.2 server. */
+let integrationsLoaded = false
+
+/** Credentials saved through `connect/key`, kept across servers like OpenCode's database. */
+const credentialsFile = join(dirname(process.argv[1]), 'credentials.json')
+let credentials = existsSync(credentialsFile) ? JSON.parse(readFileSync(credentialsFile, 'utf8')) : []
+const saveCredentials = () => writeFileSync(credentialsFile, JSON.stringify(credentials))
 
 /** Captured shell output, set by scenarios: `{ "sh_1": "…" }`. */
 let shells = {}
@@ -137,6 +145,34 @@ const server = createServer((request, response) => {
       // OpenCode titles sessions after their first answer: a fresh one has none yet.
       const untitled = { ...session('ses_untitled'), time: { created: 1, updated: 18 } }
       return json(response, 200, { data: query.get('directory') === process.cwd() ? [untitled, root] : [], cursor: {} })
+    }
+    // Providers, in 2.4.2 shapes: saved credentials appear as connections, without their key.
+    if (route === 'GET /api/integration') {
+      // Loaded lazily like 2.4.2: the first read is empty and starts the load.
+      if (!integrationsLoaded) {
+        integrationsLoaded = true
+        return json(response, 200, located([]))
+      }
+      const connections = (id) => credentials.filter((credential) => credential.integrationID === id)
+        .map((credential) => ({ type: 'credential', id: credential.id, label: credential.label, method: 'key' }))
+      return json(response, 200, located([
+        { id: 'zeta', name: 'Zeta AI', methods: [{ type: 'key' }, { type: 'env', names: ['ZETA_API_KEY'] }], connections: connections('zeta') },
+        { id: 'anthropic', name: 'Anthropic', methods: [{ type: 'key' }], connections: connections('anthropic') },
+        { id: 'vertex', name: 'Vertex', methods: [{ type: 'external' }], connections: [{ type: 'env', name: 'GOOGLE_CLOUD_PROJECT' }] },
+      ]))
+    }
+    const connect = /^\/api\/integration\/([^/]+)\/connect\/key$/.exec(pathname)
+    if (request.method === 'POST' && connect) {
+      if (!integrationsLoaded) return json(response, 400, { _tag: 'InvalidRequestError', message: `Integration not found: ${connect[1]}` })
+      credentials.push({ id: `cred_${credentials.length + 1}`, integrationID: connect[1], label: body.label ?? connect[1], key: body.key })
+      saveCredentials()
+      return response.writeHead(204).end()
+    }
+    const credential = /^\/api\/credential\/([^/]+)$/.exec(pathname)
+    if (request.method === 'DELETE' && credential) {
+      credentials = credentials.filter((entry) => entry.id !== credential[1])
+      saveCredentials()
+      return response.writeHead(204).end()
     }
     if (route === 'GET /api/agent') {
       return json(response, 200, located([

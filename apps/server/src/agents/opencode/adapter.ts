@@ -21,6 +21,7 @@ import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } 
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { OpencodeCatalog } from './model-catalog.js'
 import { withProbeServer } from './probe.js'
+import { OpencodeProviders } from './providers.js'
 import type { OpencodeServer } from './server.js'
 import { OpencodeRunnerSwitch } from './runner-switch.js'
 import { describeEdit } from './tools.js'
@@ -65,11 +66,14 @@ export class OpencodeAdapter implements AgentAdapter {
 
   private readonly catalog: OpencodeCatalog
   readonly cli: CliBinary
+  /** Model providers connected to OpenCode 2 (Settings › OpenCode providers). */
+  readonly providers: OpencodeProviders
 
   constructor(config: Config) {
     this.binary = configuredBinary(config.agents.opencode.binary, config.paths.agents)
     this.cli = new CliBinary('opencode', this.label, this.binary, config.agents.opencode.enabled, config.paths.agents)
     this.catalog = new OpencodeCatalog(() => this.cli.executable())
+    this.providers = new OpencodeProviders(() => this.cli.executable(), () => this.invalidateCatalogs())
   }
 
   invalidateCatalogs(): void { this.catalog.invalidate() }

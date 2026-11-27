@@ -29,6 +29,7 @@
     "test:claude-login-expiry-ui": "node scripts/claude-login-expiry-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:opencode-agents-ui": "node scripts/opencode-agents-ui-check.mjs",
+    "test:opencode-providers-ui": "node scripts/opencode-providers-ui-check.mjs",
     "test:grok-ui": "node scripts/grok-ui-check.mjs",
     "test:grok-accounts-ui": "node scripts/grok-accounts-ui-check.mjs",
     "test:antigravity-ui": "node scripts/antigravity-ui-check.mjs",

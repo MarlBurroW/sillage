@@ -11,6 +11,7 @@ import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { SessionRelay } from '../sessions/session-relay.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import type { OpencodeAdapter } from '../agents/opencode/adapter.js'
 import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import type { EventLog } from '../events/event-log.js'
@@ -81,6 +82,7 @@ import type { CopilotAccountHomes } from '../copilot-accounts/homes.js'
 import type { CopilotLoginService } from '../copilot-accounts/login.js'
 import type { CopilotAccountStore } from '../copilot-accounts/store.js'
 import { registerCopilotAccountRoutes } from './routes/copilot-accounts.js'
+import { registerOpencodeProviderRoutes } from './routes/opencode-providers.js'
 import type { AntigravityAccountStore } from '../antigravity-accounts/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
@@ -321,6 +323,7 @@ export async function buildApp(
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerAntigravityAccountRoutes(app, antigravityAccounts.store, antigravityLogin)
   registerCopilotAccountRoutes(app, copilotAccounts.store, copilotLogin)
+  registerOpencodeProviderRoutes(app, (registry.adapter('opencode') as OpencodeAdapter).providers)
   registerWorktreeRoutes(app, ctx, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments, board)
   registerBoardLinkRoutes(app, ctx, board)

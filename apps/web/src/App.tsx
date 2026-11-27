@@ -58,6 +58,7 @@ const GitCredentialsSettingsPage = lazyWithReload(() => import('./routes/GitCred
 const ClaudeAccountsSettingsPage = lazyWithReload(() => import('./routes/ClaudeAccountsSettingsPage').then((module) => ({ default: module.ClaudeAccountsSettingsPage })))
 const CodexAccountsSettingsPage = lazyWithReload(() => import('./routes/CodexAccountsSettingsPage').then((module) => ({ default: module.CodexAccountsSettingsPage })))
 const GrokAccountsSettingsPage = lazyWithReload(() => import('./routes/GrokAccountsSettingsPage').then((module) => ({ default: module.GrokAccountsSettingsPage })))
+const OpencodeProvidersSettingsPage = lazyWithReload(() => import('./routes/OpencodeProvidersSettingsPage').then((module) => ({ default: module.OpencodeProvidersSettingsPage })))
 const CopilotAccountsSettingsPage = lazyWithReload(() => import('./routes/CopilotAccountsSettingsPage').then((module) => ({ default: module.CopilotAccountsSettingsPage })))
 const AntigravityAccountsSettingsPage = lazyWithReload(() => import('./routes/AntigravityAccountsSettingsPage').then((module) => ({ default: module.AntigravityAccountsSettingsPage })))
 const SecretsSettingsPage = lazyWithReload(() => import('./routes/SecretsSettingsPage').then((module) => ({ default: module.SecretsSettingsPage })))
@@ -198,6 +199,7 @@ export function App() {
             <Route path="comptes-codex" element={<Suspense fallback={null}><CodexAccountsSettingsPage /></Suspense>} />
             <Route path="comptes-grok" element={<Suspense fallback={null}><GrokAccountsSettingsPage /></Suspense>} />
             <Route path="comptes-copilot" element={<Suspense fallback={null}><CopilotAccountsSettingsPage /></Suspense>} />
+            <Route path="fournisseurs-opencode" element={<Suspense fallback={null}><OpencodeProvidersSettingsPage /></Suspense>} />
             <Route path="comptes-antigravity" element={<Suspense fallback={null}><AntigravityAccountsSettingsPage /></Suspense>} />
             <Route path="secrets" element={<Suspense fallback={null}><SecretsSettingsPage /></Suspense>} />
             <Route path="dictee" element={<Suspense fallback={null}><DictationSettingsPage /></Suspense>} />

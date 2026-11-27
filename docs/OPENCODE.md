@@ -193,10 +193,25 @@ Probed on 2.4.1, data directories isolated.
 - **Images and mentioned files**, directories included: `files: [{uri, name}]` with
   `file://` URIs, read and inlined by opencode.
 
+## Providers
+
+On 2.x, Settings › OpenCode providers (administrators: a connection serves the
+whole machine) lists the providers (`GET /api/integration`, connected first, an
+environment variable counting), connects one with an API key
+(`POST /api/integration/{id}/connect/key`) and disconnects a saved credential
+(`DELETE /api/credential/{id}`), on a disposable server like the catalogs, which
+are then read again. OpenCode keeps the credential in its database for the
+machine's user. Sillage relays the key once and never reads
+`GET /api/credential`, which returns keys in clear text (probed 2.4.2). A fresh
+server knows no integration until its list has loaded ("Integration not found"):
+the list is read first. OAuth and device-code methods (ChatGPT, Copilot, OpenCode
+account) and per-account isolation are not offered yet; 1.x keeps
+`opencode auth login`.
+
 ## Outside the scope so far
 
-Signing in to providers from the interface (use `opencode auth login`) and
-cumulative cost, on both majors. On 1.x: MCP elicitations, background tasks and
+Signing in to providers by OAuth or device code, and cumulative cost, on both
+majors. On 1.x: MCP elicitations, background tasks and
 importing native sessions. On 2.x: tool titles (the stream carries none), the plan
 panel (2.x has no todo tool), and calls made inside Code Mode's `execute`, shown as
 one call.

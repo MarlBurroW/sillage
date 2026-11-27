@@ -176,6 +176,14 @@ const SECTIONS: Section[] = [
     icon: <AgentIcon agent="copilot" size={16} />,
   },
   {
+    to: 'fournisseurs-opencode',
+    group: 'agents',
+    labelKey: 'settings.section.opencodeProviders',
+    descriptionKey: 'settings.section.opencodeProviders.description',
+    icon: <AgentIcon agent="opencode" size={16} />,
+    adminOnly: true,
+  },
+  {
     to: 'comptes-antigravity',
     group: 'agents',
     labelKey: 'settings.section.antigravityAccounts',
