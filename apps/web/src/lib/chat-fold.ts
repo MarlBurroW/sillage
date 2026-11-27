@@ -1,6 +1,6 @@
 export * from '@sillage/protocol/chat-state'
 import { isAwaitingUser, type ChatState, type ChatItem, type NoticeItem } from '@sillage/protocol/chat-state'
-import { USAGE_LIMIT_RESUMED_NOTICE, USAGE_LIMIT_STOP_NOTICE } from '@sillage/protocol'
+import { DETACHED_WORK_EVICTED_NOTICE, USAGE_LIMIT_RESUMED_NOTICE, USAGE_LIMIT_STOP_NOTICE } from '@sillage/protocol'
 import { locale, translate } from './i18n'
 import { describeUsageLimitStop, readUsageLimitDetails } from './usage-limit'
 
@@ -122,6 +122,10 @@ export function noticeText(item: NoticeItem): string {
   if (item.code === 'additional_directories_unsupported') return translate('antigravity.directories.notice')
   if (item.code === 'antigravity_sandbox_unavailable') return translate('antigravity.sandbox.notice')
   if (item.code === USAGE_LIMIT_RESUMED_NOTICE) return translate('usageLimit.notice.resumed')
+  if (item.code === DETACHED_WORK_EVICTED_NOTICE) {
+    const details = item.details as { limit?: number } | null
+    return translate('session.notice.detachedWorkEvicted', { limit: String(details?.limit ?? '') })
+  }
   if (item.code === USAGE_LIMIT_STOP_NOTICE) {
     const details = readUsageLimitDetails(item.details)
     return details ? `${translate('usageLimit.notice.title')} · ${describeUsageLimitStop(details)}` : item.text

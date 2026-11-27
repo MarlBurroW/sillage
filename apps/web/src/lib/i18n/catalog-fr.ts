@@ -3576,6 +3576,7 @@ export const fr: Catalog = {
   'push.prefs.scheduleFailed.hint': "Une tâche planifiée ou une automatisation n'a pas pu démarrer, sa vérification a échoué, ou son exécution a échoué ou dépassé sa durée. Seul le premier échec d'une série est annoncé.",
   'usageLimit.notice.title': "Limite d'usage atteinte",
   'usageLimit.notice.resumed': "Sillage a repris la session après la levée de la limite d'usage",
+  'session.notice.detachedWorkEvicted': 'La limite de {limit} sessions simultanées était atteinte : Sillage a arrêté ce CLI et ses tâches de fond',
   'usageLimit.stop.resume': 'levée à {reset} · Sillage reprend cette session à {resume}',
   'usageLimit.stop.noResume': 'levée à {reset} · pas de reprise automatique : {reason}',
   'usageLimit.stop.unknown': 'pas de reprise automatique : {reason}',

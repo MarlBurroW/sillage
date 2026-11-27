@@ -268,6 +268,41 @@ test('at the session limit the oldest quiet CLI without detached work makes room
   assert.equal(h.sessions.isWarm('old') && h.sessions.isWarm('next'), true)
 })
 
+test('transcript resync never stops a quiet CLI that still hosts background work', async (t) => {
+  const h = await harness(t, { build: 'idle' })
+  await h.run('build', 'a')
+  h.runners.get('build')!.ctx.emit({ type: 'background.updated', tasks: [{ id: 'stage', kind: 'local_bash', description: 'release build' }] })
+  h.runners.get('build')!.ctx.setStatus('idle')
+
+  // Between turns the CLI looks idle, but stopping it would kill the build it carries.
+  assert.equal(await h.sessions.releaseRunner('build'), false)
+  assert.equal(h.sessions.isWarm('build'), true)
+  assert.equal(h.runners.get('build')!.stops, 0)
+
+  h.runners.get('build')!.ctx.emit({ type: 'background.updated', tasks: [] })
+  assert.equal(await h.sessions.releaseRunner('build'), true)
+  assert.equal(h.sessions.isWarm('build'), false)
+})
+
+test('evicting a CLI with background work at the session limit says so in its thread', async (t) => {
+  const h = await harness(t, { old: 'idle', next: 'idle' }, { limit: 1 })
+  await h.run('old', 'a')
+  h.runners.get('old')!.ctx.emit({ type: 'background.updated', tasks: [{ id: 'dev', kind: 'shell', description: 'npm run dev' }] })
+  h.runners.get('old')!.ctx.setStatus('idle')
+
+  await h.run('next', 'b')
+  assert.equal(h.sessions.isWarm('old'), false)
+  const tail = h.events('old').slice(-3)
+  assert.equal(tail[0]?.type, 'task.completed')
+  assert.deepEqual(tail.at(-1), {
+    type: 'agent.notice',
+    code: 'detached_work_evicted',
+    message: 'The concurrent session limit (1) was reached: Sillage stopped this CLI and its background tasks.',
+    level: 'warning',
+    details: { limit: 1 },
+  })
+})
+
 test('Stop closes a turn left open when no CLI can answer it', async (t) => {
   const h = await harness(t, { orphan: 'running', dying: 'idle' })
   // A turn whose CLI went away without closing it.

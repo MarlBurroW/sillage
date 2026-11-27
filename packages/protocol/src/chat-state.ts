@@ -1,3 +1,4 @@
+import { DETACHED_WORK_EVICTED_NOTICE } from './events.js'
 import { USAGE_LIMIT_RESUMED_NOTICE, USAGE_LIMIT_STOP_NOTICE } from './usage-limit-resume.js'
 import type {
   AgentQuestion,
@@ -701,7 +702,7 @@ const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
 ])
 
 /** Notice codes rendered inline rather than grouped under a collapsed “warnings” row. */
-const PROMINENT_NOTICES = new Set<string>([USAGE_LIMIT_STOP_NOTICE, USAGE_LIMIT_RESUMED_NOTICE])
+const PROMINENT_NOTICES = new Set<string>([USAGE_LIMIT_STOP_NOTICE, USAGE_LIMIT_RESUMED_NOTICE, DETACHED_WORK_EVICTED_NOTICE])
 
 /**
  * Apply an event. Mutate state, then return it in a new object: deep-copying on every event is too

@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs'
 import type { ConversationRow, Db } from '@sillage/db'
-import type { AgentKind, ConversationStatus } from '@sillage/protocol'
+import { DETACHED_WORK_EVICTED_NOTICE, type AgentKind, type ConversationStatus } from '@sillage/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import type { AgentRunner, RunnerContext } from '../agents/types.js'
 import type { Config } from '../config.js'
@@ -90,7 +90,19 @@ export class RunnerPool {
         )
       }
 
+      // Every quiet CLI hosts detached work: the oldest one goes anyway, but its thread must say
+      // why its background tasks stopped, or the cut looks like a silent crash.
+      const evictedWork = this.hasDetachedWork(oldest[0])
       await this.stop(oldest[0])
+      if (evictedWork) {
+        this.log.append(oldest[0], {
+          type: 'agent.notice',
+          code: DETACHED_WORK_EVICTED_NOTICE,
+          message: `The concurrent session limit (${limit}) was reached: Sillage stopped this CLI and its background tasks.`,
+          level: 'warning',
+          details: { limit },
+        })
+      }
     }
   }
 

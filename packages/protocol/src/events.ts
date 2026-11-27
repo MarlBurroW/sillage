@@ -881,3 +881,6 @@ export interface JournalEntry {
   ts: number
   event: SillageEvent
 }
+
+/** Notice journaled when the session limit stops a CLI that still hosted background tasks or loops. */
+export const DETACHED_WORK_EVICTED_NOTICE = 'detached_work_evicted'

@@ -3584,6 +3584,7 @@ export const en = {
   'push.prefs.scheduleFailed.hint': 'A scheduled task or automation could not start, its check failed, or its run failed or ran out of time. Only the first failure in a row is announced.',
   'usageLimit.notice.title': 'Usage limit reached',
   'usageLimit.notice.resumed': 'Sillage resumed the session after the usage limit lifted',
+  'session.notice.detachedWorkEvicted': 'The limit of {limit} concurrent sessions was reached: Sillage stopped this CLI and its background tasks',
   'usageLimit.stop.resume': 'lifts at {reset} · Sillage resumes this session at {resume}',
   'usageLimit.stop.noResume': 'lifts at {reset} · no automatic resume: {reason}',
   'usageLimit.stop.unknown': 'no automatic resume: {reason}',

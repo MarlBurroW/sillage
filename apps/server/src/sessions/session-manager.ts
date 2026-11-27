@@ -814,9 +814,10 @@ export class SessionManager {
     this.liveConfig.reloadMcpServer(serverId, formerProjectId)
   }
 
-  /** Stops running conversation runners and reports release. Transcript resynchronization needs this because warm context ignores external CLI turns, while resume loads complete files. Refuse active turns: although callers check before reading, turns may start meanwhile; interruption loses work and adds `[Request interrupted by user]` messages later reimported. Live activity takes precedence. */
+  /** Stops running conversation runners and reports release. Transcript resynchronization needs this because warm context ignores external CLI turns, while resume loads complete files. Refuse active turns: although callers check before reading, turns may start meanwhile; interruption loses work and adds `[Request interrupted by user]` messages later reimported. Live activity takes precedence. Detached work too: between turns a CLI hosting background shells or monitors looks idle, and stopping it killed a release build mid-run when the owner merely opened the thread. The import waits for an opening without such work. */
   async releaseRunner(conversationId: string): Promise<boolean> {
     if (this.isBusy(conversationId) || this.phase(conversationId) === 'starting') return false
+    if (this.hasDetachedWork(conversationId)) return false
 
     await this.pool.stop(conversationId)
     return true
