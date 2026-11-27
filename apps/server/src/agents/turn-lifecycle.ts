@@ -6,6 +6,9 @@ export interface TurnUsage {
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+  /** See `turn.completed`. */
+  model?: string
+  aiCredits?: number
 }
 
 const NO_USAGE: TurnUsage = { costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }

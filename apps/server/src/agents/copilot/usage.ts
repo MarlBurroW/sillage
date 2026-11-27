@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { AgentUsage, UsageWindow } from '@sillage/protocol'
 import { fields } from '../acp/content.js'
 
@@ -75,6 +77,30 @@ export function refusedLimit(errorType: string, last: CopilotLimit | null): Copi
 }
 
 export interface ObservedQuota { quota: CopilotQuota; credits: boolean; at: number }
+
+/**
+ * The last reading per `COPILOT_HOME` (empty for the machine's sign-in), kept on disk: the
+ * gauge would otherwise stay empty after a server restart until each account's next turn. A
+ * missing or unreadable file is no reading yet.
+ */
+export function readObservedQuotas(file: string): Map<string, ObservedQuota> {
+  try {
+    const stored = fields(JSON.parse(readFileSync(file, 'utf8')))
+    return new Map(Object.entries(stored).flatMap(([home, value]) => {
+      const entry = fields(value)
+      const quota = fields(entry.quota)
+      return typeof entry.at === 'number' && Object.keys(quota).length ? [[home, { quota, credits: entry.credits === true, at: entry.at }] as const] : []
+    }))
+  } catch { return new Map() }
+}
+
+export function saveObservedQuotas(file: string, observed: Map<string, ObservedQuota>): void {
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+  // Renamed into place: a crash mid-write leaves the previous reading rather than half a file.
+  const partial = `${file}.${process.pid}.tmp`
+  writeFileSync(partial, JSON.stringify(Object.fromEntries(observed)), { mode: 0o600 })
+  renameSync(partial, file)
+}
 
 /** No snapshot yet (no turn since the server started), or a plan without quotas: nothing to show, not a failure. */
 export function copilotUsage(observed: ObservedQuota | null): AgentUsage {

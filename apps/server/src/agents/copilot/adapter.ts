@@ -7,7 +7,7 @@ import { ForkError, type AgentAdapter, type DescribeEditArgs } from '../registry
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { CopilotCatalog } from './catalog.js'
 import { CopilotRunner } from './runner.js'
-import { copilotUsage, type ObservedQuota } from './usage.js'
+import { copilotUsage, readObservedQuotas, saveObservedQuotas, type ObservedQuota } from './usage.js'
 
 export class CopilotAdapter implements AgentAdapter {
   readonly kind = 'copilot' as const
@@ -24,19 +24,28 @@ export class CopilotAdapter implements AgentAdapter {
   private readonly catalog: CopilotCatalog
   private readonly stateDir: string
   /** Quota as the last model call reported it, per `COPILOT_HOME` (empty for the machine's sign-in); see `usage.ts`. */
-  private readonly observed = new Map<string, ObservedQuota>()
+  private readonly observed: Map<string, ObservedQuota>
+  private readonly observedFile: string
 
   constructor(config: Config) {
     this.binary = config.agents.copilot.binary
     this.cli = new CliBinary(this.kind, this.label, this.binary, config.agents.copilot.enabled, config.paths.agents)
     this.stateDir = config.paths.copilot
     this.catalog = new CopilotCatalog(() => this.cli.executable(), join(this.stateDir, 'catalog'))
+    this.observedFile = join(this.stateDir, 'quota.json')
+    this.observed = readObservedQuotas(this.observedFile)
   }
 
   invalidateCatalogs(): void { this.catalog.invalidate() }
 
   createRunner(ctx: RunnerContext): AgentRunner {
-    return new CopilotRunner(ctx, { stateDir: this.stateDir, onQuota: (quota, credits, home) => { this.observed.set(home, { quota, credits, at: Date.now() }) } })
+    return new CopilotRunner(ctx, {
+      stateDir: this.stateDir,
+      onQuota: (quota, credits, home) => {
+        this.observed.set(home, { quota, credits, at: Date.now() })
+        try { saveObservedQuotas(this.observedFile, this.observed) } catch { /* Kept in memory: only a restart would lose it. */ }
+      },
+    })
   }
 
   forkCut(): never { throw new ForkError('GitHub Copilot uses a portable history fork.') }
@@ -54,7 +63,8 @@ export class CopilotAdapter implements AgentAdapter {
 
   /**
    * Copilot's ACP exposes no quota call in 1.0.116, and `/usage` reports the session only: the
-   * gauge is what the last turn reported, and nothing (rather than a failure) before any turn.
+   * gauge is what the last turn reported, kept across restarts, and nothing (rather than a
+   * failure) before any turn.
    */
   async usage(): Promise<AgentUsage> {
     return copilotUsage(this.observed.get('') ?? null)

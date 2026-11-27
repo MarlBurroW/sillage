@@ -127,8 +127,8 @@ export function claudeTurnTokens(result: {
 const consumed = (row: TokenCounts): boolean => row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens + row.cacheWrite1hTokens > 0
 
 /**
- * Per-model consumption of a completed turn. Every CLI but Claude reports one total for the
- * model the session runs; turns closed by a watchdog or an import consumed nothing and give no
+ * Per-model consumption of a completed turn. Every CLI but Claude reports one total, for the
+ * model the turn names or else the one the session runs; turns closed by a watchdog or an import consumed nothing and give no
  * row.
  */
 export function turnUsageOf(
@@ -140,7 +140,8 @@ export function turnUsageOf(
   const native = agent === 'claude' ? claudeTurnUsage(raw, state.claude) : null
   if (native) return { rows: native.rows.filter(consumed), claude: native.cumulative }
   const row: ModelTurnUsage = {
-    model: state.model ?? '',
+    // Copilot's Auto names the model it routed the turn to; the session only says `auto`.
+    model: event.model ?? state.model ?? '',
     inputTokens: event.inputTokens,
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens,

@@ -134,6 +134,8 @@ test('other CLIs give one row for the session model, and empty turns none', () =
   ])
   assert.equal(turnUsageOf('grok', completed(5, 7, 0, 0, 0.02), null, state).rows[0]?.reportedCostUsd, 0.02)
   assert.deepEqual(turnUsageOf('codex', completed(0, 0), null, state).rows, [])
+  // Copilot's Auto session says `auto`; the turn names the model it was routed to.
+  assert.deepEqual(turnUsageOf('copilot', { ...completed(5, 7), model: 'gpt-6-luna', aiCredits: 0.17 }, null, { model: 'auto', claude: null }).rows.map((row) => row.model), ['gpt-6-luna'])
   // A Claude turn without its result: tokens from the journal, and no trust in its cost.
   assert.deepEqual(turnUsageOf('claude', completed(5, 7, 0, 0, 40), null, { model: null, claude: null }).rows, [
     { model: '', inputTokens: 5, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0, reportedCostUsd: null },

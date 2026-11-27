@@ -292,12 +292,19 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
      */
     cacheCreationTokens: z.number().default(0),
     cacheReadTokens: z.number().default(0),
+    /**
+     * Model that consumed these totals, when the CLI said and it may differ from the session's:
+     * GitHub Copilot's Auto routes every request to a model of its choice. Absent otherwise.
+     */
+    model: z.string().optional(),
+    /** AI credits the plan charged for these totals (GitHub Copilot), when the CLI said. */
+    aiCredits: z.number().optional(),
   }),
   /**
    * Consumption billed outside the main turn's totals: Codex sub-agents report usage on their
-   * own thread, and may finish after the turn that spawned them. Same counters as
-   * `turn.completed`, with `inputTokens` excluding cache. `model` is the sub-agent's own, null
-   * when the CLI did not say.
+   * own thread, and may finish after the turn that spawned them; Copilot reports the models of
+   * a turn other than the one `turn.completed` names. Same counters as `turn.completed`, with
+   * `inputTokens` excluding cache. `model` is the one that ran, null when the CLI did not say.
    */
   z.object({
     type: z.literal('usage.consumed'),
@@ -307,6 +314,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     outputTokens: z.number(),
     cacheCreationTokens: z.number(),
     cacheReadTokens: z.number(),
+    aiCredits: z.number().optional(),
   }),
 
   // Content

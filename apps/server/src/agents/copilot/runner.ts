@@ -26,6 +26,8 @@ type Fields = Record<string, unknown>
 interface ToolTrack { update: Fields; name: string; input: string; output: string; diffs: AcpDiff[]; parent: string | null }
 interface OpenText { id: string; kind: 'text' | 'thinking'; text: string; native: string | null }
 interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
+/** What one model consumed during a turn; `nanoAiu` is null when Copilot billed no AI credits for it. */
+interface ModelSpend { tokens: Tokens; nanoAiu: number | null }
 
 /** Session state `session/load` announces along with the history it replays. */
 const STATE_UPDATES = new Set(['available_commands_update', 'config_option_update', 'current_mode_update'])
@@ -47,6 +49,9 @@ const ERROR_CODES: Record<string, string> = {
 /** What a permission request calls an edit, which the row already says. */
 const PLAIN_REASONS = new Set(['Edit file', 'Update file', 'Create file', 'Delete file'])
 const NO_TOKENS: Tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+const addTokens = (a: Tokens, b: Tokens): Tokens => ({ input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite })
+/** `copilotUsage.totalNanoAiu` counts billionths of an AI credit. */
+const credits = (nanoAiu: number | null) => (nanoAiu === null ? {} : { aiCredits: nanoAiu / 1e9 })
 
 function text(value: unknown): string | null { return typeof value === 'string' && value.trim() ? value : null }
 
@@ -127,6 +132,10 @@ export class CopilotRunner implements AgentRunner {
   private counted: Tokens = NO_TOKENS
   /** Tokens of the model calls of the turn in progress, sub-agents included. */
   private spent: Tokens | null = null
+  /** The same calls per model: Auto routes each one, and a sub-agent may run another model. */
+  private byModel = new Map<string, ModelSpend>()
+  /** Model of the turn's last main-thread call, the one `turn.completed` is charged to. */
+  private turnModel: string | null = null
   private failed = false
   private denied = false
   private routed: string | null = null
@@ -480,7 +489,16 @@ export class CopilotRunner implements AgentRunner {
   /** One model call: its tokens count for the turn, and it is the only place Copilot reports the account's quota. */
   private modelCall(data: Fields, agentId: string | null): void {
     const call = tokens(data, 'cacheReadTokens', 'cacheWriteTokens')
-    if (this.spent) this.spent = { input: this.spent.input + call.input, output: this.spent.output + call.output, cacheRead: this.spent.cacheRead + call.cacheRead, cacheWrite: this.spent.cacheWrite + call.cacheWrite }
+    if (this.spent) {
+      this.spent = addTokens(this.spent, call)
+      const model = text(data.model) ?? ''
+      const before = this.byModel.get(model) ?? { tokens: NO_TOKENS, nanoAiu: null }
+      // Each call's exact charge; only a plan billed in AI credits reports one.
+      const nanoAiu = fields(data.copilotUsage).totalNanoAiu
+      const charged = typeof nanoAiu === 'number' && Number.isFinite(nanoAiu) && nanoAiu >= 0
+      this.byModel.set(model, { tokens: addTokens(before.tokens, call), nanoAiu: charged ? (before.nanoAiu ?? 0) + nanoAiu : before.nanoAiu })
+      if (!agentId && model) this.turnModel = model
+    }
     const quota = fields(data.quotaSnapshots)
     if (Object.keys(quota).length) {
       this.runnerOptions.onQuota?.(quota as CopilotQuota, typeof fields(data.copilotUsage).totalNanoAiu === 'number', this.ctx.processEnv?.COPILOT_HOME ?? '')
@@ -543,6 +561,8 @@ export class CopilotRunner implements AgentRunner {
     if (parent !== null || this.turn.open || this.replaying || !this.events || this.compacting) return
     this.wake = this.turn.begin()
     this.spent = NO_TOKENS
+    this.byModel = new Map()
+    this.turnModel = null
     this.failed = false
     this.denied = false
   }
@@ -712,6 +732,8 @@ export class CopilotRunner implements AgentRunner {
     const token = this.turn.begin()
     this.wake = null
     this.spent = NO_TOKENS
+    this.byModel = new Map()
+    this.turnModel = null
     this.failed = false
     this.denied = false
     const client = this.client!
@@ -730,15 +752,23 @@ export class CopilotRunner implements AgentRunner {
     // Model calls reported as events are exact, and the only source for a turn Copilot opened.
     const total = response.usage === undefined ? null : tokens(fields(response.usage), 'cachedReadTokens', 'cachedWriteTokens')
     const since = total ? { input: total.input - this.counted.input, output: total.output - this.counted.output, cacheRead: total.cacheRead - this.counted.cacheRead, cacheWrite: total.cacheWrite - this.counted.cacheWrite } : NO_TOKENS
-    const spent = this.spent && (this.spent.input || this.spent.output) ? this.spent : since
+    const exact = Boolean(this.spent && (this.spent.input || this.spent.output))
+    const spent = exact ? this.spent! : since
+    const clamp = (counts: Tokens): Tokens => ({ input: Math.max(0, counts.input), output: Math.max(0, counts.output), cacheRead: Math.max(0, counts.cacheRead), cacheWrite: Math.max(0, counts.cacheWrite) })
+    // The turn is charged to its main-thread model, as Auto routed it; any other model the turn
+    // ran (a sub-agent's, an earlier routing) is consumption of its own.
+    const main = exact && this.byModel.size ? (this.turnModel ?? [...this.byModel.keys()][0]!) : null
+    const own = main === null ? null : this.byModel.get(main)!
+    const others = main === null ? [] : [...this.byModel].filter(([model]) => model !== main)
     const reason = response.stopReason === 'cancelled' ? 'interrupted'
       : response.stopReason !== 'end_turn' ? String(response.stopReason ?? 'completed')
       : this.failed ? 'failed' : this.denied ? 'permission_denied' : 'completed'
     const closed = this.turn.end({
       stopReason: reason,
-      usage: turnUsage({ input: Math.max(0, spent.input), output: Math.max(0, spent.output), cacheRead: Math.max(0, spent.cacheRead), cacheWrite: Math.max(0, spent.cacheWrite) }),
+      usage: own ? { ...turnUsage(own.tokens), ...(main ? { model: main } : {}), ...credits(own.nanoAiu) } : turnUsage(clamp(spent)),
       raw,
       close: () => {
+        for (const [model, spend] of others) this.ctx.emit({ type: 'usage.consumed', model: model || null, ...turnUsage(spend.tokens), ...credits(spend.nanoAiu) })
         this.closeText()
         for (const id of this.tools.keys()) {
           this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution interrupted', isError: true, durationMs: this.durations.stop(id) })

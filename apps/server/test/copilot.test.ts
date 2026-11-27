@@ -7,14 +7,16 @@ import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { AGENT_CAPABILITIES, DEFAULT_COPILOT_CONFIG, isPermissiveConfig, sillageEventSchema, type CopilotConfig, type McpServer, type SillageEvent } from '@sillage/protocol'
 import { describeEdit } from '../src/agents/acp/content.js'
+import { CopilotAdapter } from '../src/agents/copilot/adapter.js'
 import { CopilotCatalog, forgetProbeSession } from '../src/agents/copilot/catalog.js'
 import { COPILOT_SESSION_EVENTS, copilotLaunch, modeOf, skillDirs } from '../src/agents/copilot/launch.js'
 import { askUserQuestions } from '../src/agents/copilot/questions.js'
 import { CopilotRunner } from '../src/agents/copilot/runner.js'
 import { listCopilotSessions } from '../src/agents/copilot/sessions.js'
 import { describeCopilotTool, outputOf, shellExit } from '../src/agents/copilot/tools.js'
-import { copilotUsage, quotaLimit, refusedLimit, type CopilotQuota } from '../src/agents/copilot/usage.js'
+import { copilotUsage, quotaLimit, readObservedQuotas, refusedLimit, saveObservedQuotas, type CopilotQuota } from '../src/agents/copilot/usage.js'
 import type { RunnerContext } from '../src/agents/types.js'
+import type { Config } from '../src/config.js'
 
 type Of<T extends SillageEvent['type']> = Extract<SillageEvent, { type: T }>
 
@@ -215,6 +217,29 @@ test('Copilot counts the tokens of each turn, not of the session so far', async 
     chunk('Three', 'r3'),
   ], { usage: { inputTokens: 380, outputTokens: 24, cachedReadTokens: 100 } })
   assert.deepEqual([third.inputTokens, third.outputTokens, third.cacheReadTokens], [280, 24, 100])
+})
+
+test('Copilot charges a turn to the model Auto routed it to, apart from other models, with its AI credits', async (t) => {
+  const f = await fixture(t)
+  const call = (model: string, inputTokens: number, outputTokens: number, nanoAiu?: number) => ({ model, isAuto: true, inputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0, ...(nanoAiu === undefined ? {} : { copilotUsage: { totalNanoAiu: nanoAiu } }) })
+  const routed = await f.turn([
+    { event: { type: 'assistant.usage', data: call('mai-code-2-flash', 17445, 5, 174_700_000) } },
+    // The sub-agent picked its own model.
+    { event: { type: 'assistant.usage', data: call('gpt-6-luna', 900, 40, 27_406_000) }, agentId: 'agent-1' },
+    { event: { type: 'assistant.usage', data: call('mai-code-2-flash', 706, 69, 25_000_000) } },
+    chunk('Done', 'r1'),
+  ], { usage: { inputTokens: 19051, outputTokens: 114 } })
+  assert.deepEqual([routed.model, routed.inputTokens, routed.outputTokens, routed.aiCredits], ['mai-code-2-flash', 18151, 74, 0.1997])
+  const consumed = f.of('usage.consumed')
+  assert.deepEqual(consumed.map((event) => [event.model, event.inputTokens, event.outputTokens, event.aiCredits]), [['gpt-6-luna', 900, 40, 0.027406]])
+  // Charged before the turn closes, so that it belongs to it.
+  assert.ok(f.events.indexOf(consumed[0]!) < f.events.indexOf(routed))
+  // A plan without AI credits says nothing of them, and a turn without events keeps its totals.
+  const plain = await f.turn([{ event: { type: 'assistant.usage', data: call('gpt-test', 10, 1) } }, chunk('Two', 'r2')])
+  assert.deepEqual([plain.model, plain.aiCredits], ['gpt-test', undefined])
+  const silent = await f.turn([chunk('Three', 'r3')], { usage: { inputTokens: 100, outputTokens: 2 } })
+  assert.deepEqual([silent.model, silent.inputTokens], [undefined, 100])
+  assert.equal(f.of('usage.consumed').length, 1)
 })
 
 test('Copilot applies model, effort, permissions and mode as session options, live', async (t) => {
@@ -562,6 +587,18 @@ test('Copilot quota comes from what each model call reports', async (t) => {
     chunk('Done', 'r1'),
   ])
   assert.deepEqual(f.quotas, [[quota, false], [quota, true]])
+  // The last reading per home outlives a server restart; an unreadable file is no reading.
+  const file = join(f.root, 'state', 'quota.json')
+  saveObservedQuotas(file, new Map([['', { quota, credits: true, at: 7 }], ['/homes/b', { quota: credits, credits: true, at: 8 }]]))
+  assert.equal((await stat(file)).mode & 0o777, 0o600)
+  assert.deepEqual([...readObservedQuotas(file)], [['', { quota, credits: true, at: 7 }], ['/homes/b', { quota: credits, credits: true, at: 8 }]])
+  await writeFile(file, '{oops')
+  assert.equal(readObservedQuotas(file).size, 0)
+  assert.equal(readObservedQuotas(join(f.root, 'missing.json')).size, 0)
+  // A server started later shows the gauge before any turn.
+  saveObservedQuotas(file, new Map([['', { quota: credits, credits: true, at: 9 }]]))
+  const adapter = new CopilotAdapter({ agents: { copilot: { binary: f.binary, enabled: true } }, paths: { agents: join(f.root, 'agents'), copilot: join(f.root, 'state') } } as unknown as Config)
+  assert.deepEqual((await adapter.usage()).windows.map((window) => [window.label, window.utilization]), [['AI credits', 0.003]])
   // The same reading twice is journaled once.
   assert.deepEqual(f.of('usage.updated').filter((event) => event.rateLimit).map((event) => [event.rateLimit!.type, event.rateLimit!.status, event.rateLimit!.utilization]), [['premium_interactions', 'allowed_warning', 0.95]])
   // Auto routes each request: the model that answered is named once.
