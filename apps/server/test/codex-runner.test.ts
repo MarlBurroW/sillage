@@ -378,3 +378,48 @@ for (const [restored, wanted] of [['plan', 'default'], ['default', 'plan']] as c
     assert.equal(state.events.some(event => event.type === 'agent.notice'), false)
   })
 }
+
+test('a Codex sub-agent carries its model and effort on its Agent call, nested ones under their parent', async (t) => {
+  const f = await runnerFixture(t)
+  const activity = (id: string, kind: string, agentThreadId: string, agentPath: string, threadId: string, model: string | null = null, reasoningEffort: string | null = null) =>
+    itemEvent({ type: 'subAgentActivity', id, kind, agentThreadId, agentPath, model, reasoningEffort }, 'item/completed', threadId)
+  // Sequence probed on Codex 0.172.0: `started` names the resolved model and effort, the grandchild
+  // is announced on its parent's thread, `completed` carries null for both.
+  await f.emit([
+    activity('a1', 'started', 'relay', '/root/relay', 'root', 'gpt-6.1-terra', 'medium'),
+    { method: 'turn/started', params: { threadId: 'relay', turn: { id: 'relay-turn' } } },
+    activity('a2', 'started', 'pong', '/root/relay/pong', 'relay', 'gpt-6.2-sol', 'low'),
+    activity('a3', 'completed', 'pong', '/root/relay/pong', 'relay'),
+    activity('a4', 'completed', 'relay', '/root/relay', 'root'),
+  ])
+  const agents = f.events.filter((event) => event.type === 'tool.started' && event.name === 'Agent')
+  assert.deepEqual(agents.map((event) => event.type === 'tool.started' && event.input), [
+    { description: '/root/relay', prompt: '/root/relay', model: 'gpt-6.1-terra', effort: 'medium' },
+    { description: '/root/relay/pong', prompt: '/root/relay/pong', model: 'gpt-6.2-sol', effort: 'low' },
+  ])
+  const [relay, pong] = agents
+  assert.ok(relay?.type === 'tool.started' && pong?.type === 'tool.started')
+  assert.equal(relay.parentToolCallId, null)
+  assert.equal(pong.parentToolCallId, relay.toolCallId)
+  // Completion's null model must not wipe what started said.
+  const agentIds = new Set(agents.map((event) => event.type === 'tool.started' && event.toolCallId))
+  assert.ok(!f.events.some((event) => event.type === 'tool.input_updated' && agentIds.has(event.toolCallId)))
+  for (const event of f.events) sillageEventSchema.parse(event)
+})
+
+test('a model named after a Codex sub-agent started updates its Agent call', async (t) => {
+  const f = await runnerFixture(t)
+  await f.emit([
+    // Probed on 0.169.0: the child's thread/started carries no model, the spawning call does.
+    { method: 'thread/started', params: { thread: { id: 'child', parentThreadId: 'root', agentNickname: 'Inspector', preview: 'Inspect', model: null, reasoningEffort: null } } },
+    itemEvent({ type: 'collabAgentToolCall', id: 'spawn', tool: 'spawnAgent', status: 'completed', senderThreadId: 'root',
+      receiverThreadIds: ['child'], prompt: 'Inspect', model: 'gpt-6-luna', reasoningEffort: 'high', agentsStates: {} }),
+  ])
+  const started = f.events.find((event) => event.type === 'tool.started' && event.name === 'Agent')
+  assert.ok(started?.type === 'tool.started')
+  const updated = f.events.filter((event) => event.type === 'tool.input_updated' && event.toolCallId === started.toolCallId)
+  assert.deepEqual(started.input, { description: 'Inspector', prompt: 'Inspect' })
+  assert.deepEqual(updated, [{ type: 'tool.input_updated', toolCallId: started.toolCallId,
+    input: { description: 'Inspector', prompt: 'Inspect', model: 'gpt-6-luna', effort: 'high' } }])
+  for (const event of f.events) sillageEventSchema.parse(event)
+})

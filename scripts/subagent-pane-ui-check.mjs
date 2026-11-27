@@ -9,7 +9,9 @@ import { chromium } from 'playwright'
 
 // Mounts the Agents pane on a subagent thread folded from real-shaped events, with no daemon: a
 // background subagent (model status, activity at the bottom, stop button, report of a command it
-// launched) and a foreground one (no stop button), on a wide screen and a phone.
+// launched) and a foreground one (no stop button), then Codex sub-agents as Codex 0.172.0 reports
+// them (model and effort on the Agent call, a grandchild under its parent), on a wide screen and a
+// phone.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
@@ -71,6 +73,17 @@ async function mount(page, selected) {
       { type: 'task.started', taskId: 'task-fg', toolCallId: 'call-fg', kind: 'local_agent', description: 'Relire les tests' },
       tool('grep-1', 'call-fg', 'Grep', { pattern: 'bibliotheque' }),
     ]
+    // Codex 0.172.0: the runner turns each subAgentActivity into an Agent call carrying the
+    // resolved model and effort; the grandchild is announced on its parent's thread.
+    const codex = [
+      tool('codex-relay', null, 'Agent', { description: '/root/relay', prompt: 'Relaie la question', model: 'gpt-6.1-terra', effort: 'medium' }),
+      { type: 'task.started', taskId: 'relay', toolCallId: 'codex-relay', kind: 'agent', description: '/root/relay' },
+      tool('codex-pong', 'codex-relay', 'Agent', { description: '/root/relay/pong', prompt: 'Réponds PONG', model: 'gpt-6.2-sol', effort: 'low' }),
+      { type: 'task.started', taskId: 'pong', toolCallId: 'codex-pong', kind: 'agent', description: '/root/relay/pong' },
+      tool('codex-read', 'codex-pong', 'Read', { file_path: '/srv/studio/pong.txt' }),
+    ]
+    const isCodex = selected.startsWith('codex-')
+    if (isCodex) events.splice(0, events.length, ...codex)
     let state = emptyChatState()
     events.forEach((event, index) => { state = applyEvent(state, index + 1, 1795545600000 + index * 1000, sillageEventSchema.parse(event)) })
     window.mainThreadTasks = state.items.filter((item) => item.kind === 'task' && item.parentToolCallId === null).length
@@ -79,9 +92,11 @@ async function mount(page, selected) {
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client: new QueryClient() },
       React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null,
         React.createElement('aside', { id: 'pane', className: 'flex h-dvh min-h-0 flex-col border border-line', style: { width: wide ? 420 : '100%' } },
-          React.createElement(AgentsPane, { conversationId: 'fixture', agent: 'claude', agents, background: [], selectedId: selected }))))))
+          React.createElement(AgentsPane, { conversationId: 'fixture', agent: isCodex ? 'codex' : 'claude', agents, background: [],
+            workflows: new Map(), selectedId: selected === 'codex-list' ? null : selected }))))))
   }, selected)
-  await page.locator('#pane').getByText(selected === 'call-bg' ? 'Construire le bibliothécaire' : 'Relire les tests').first().waitFor()
+  const heading = { 'call-bg': 'Construire le bibliothécaire', 'call-fg': 'Relire les tests' }[selected] ?? '/root/relay'
+  await page.locator('#pane').getByText(heading).first().waitFor()
 }
 
 async function context(width, height, stops) {
@@ -126,8 +141,32 @@ try {
     assert.equal(await fg.page.getByRole('button', { name: 'Arrêter ce sous-agent' }).count(), 0)
     await fg.page.screenshot({ path: `${output}/${name}-foreground.png`, fullPage: true })
     await fg.context.close()
+
+    // Codex: each row names its model and effort, the grandchild sits indented under its parent.
+    const codex = await context(width, height, [])
+    await mount(codex.page, 'codex-list')
+    const list = codex.page.locator('#pane')
+    const relayRow = list.getByRole('button', { name: /\/root\/relay\b(?!\/)/ })
+    const pongRow = list.getByRole('button', { name: /\/root\/relay\/pong/ })
+    assert.match(await relayRow.innerText(), /Agent · gpt-6\.1-terra · Effort : Moyen/)
+    assert.match(await pongRow.innerText(), /Agent · gpt-6\.2-sol · Effort : Faible/)
+    // The pane cuts the end of a long line: the whole of it stays one hover away.
+    assert.match(await relayRow.locator('[title]').getAttribute('title'), /gpt-6\.1-terra · Effort : Moyen · Agent en cours/)
+    const indent = async (row) => (await row.boundingBox()).x
+    assert.ok(await indent(pongRow) > await indent(relayRow), 'grandchild indented under its parent')
+    // A narrow pane truncates the line rather than wrapping or overflowing it.
+    const overflow = await list.evaluate((pane) => pane.scrollWidth - pane.clientWidth)
+    assert.ok(overflow <= 0, `pane overflows by ${overflow}px`)
+    await codex.page.screenshot({ path: `${output}/${name}-codex-list.png`, fullPage: true })
+    await codex.context.close()
+
+    const thread = await context(width, height, [])
+    await mount(thread.page, 'codex-pong')
+    assert.match(await thread.page.locator('#pane').innerText(), /Agent · gpt-6\.2-sol · Effort : Faible/)
+    await thread.page.screenshot({ path: `${output}/${name}-codex-thread.png`, fullPage: true })
+    await thread.context.close()
   }
   assert.deepEqual(errors, [])
-  console.log(`OK: model status, bottom activity, stop of a background subagent only, report in the subagent thread, wide screen and phone. Screenshots in ${output}`)
+  console.log(`OK: model status, bottom activity, stop of a background subagent only, report in the subagent thread, Codex model and effort with nesting, wide screen and phone. Screenshots in ${output}`)
 } catch (error) { console.error(diagnostics, errors); throw error }
 finally { await browser?.close(); vite.kill('SIGTERM'); await once(vite, 'exit').catch(() => {}) }

@@ -2,7 +2,7 @@ import { Bot, ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import type { SubAgent } from '../../lib/subagents'
-import { subAgentLabel } from '../../lib/subagents'
+import { subAgentLabel, subAgentSubtitle } from '../../lib/subagents'
 import { cx } from '../ui'
 import { ToolStatusIcon, formatDuration } from './ToolCall'
 
@@ -33,6 +33,7 @@ export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: ()
   const running = agent.status === 'running'
   const elapsed = useElapsed(agent.startedAt, running)
   const t = useTranslate()
+  const subtitle = subAgentSubtitle(agent, agent.summary ?? agent.activity)
 
   return (
     <button
@@ -47,12 +48,13 @@ export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: ()
 
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium text-ink">{subAgentLabel(agent)}</span>
-        <span className="truncate text-[0.6875rem] text-ink-faint">
-          {/*
-           * Type identifies the working agent; the model's status, or else the activity, says what
-           * it is doing now. Both fit and complement each other.
-           */}
-          {agent.summary ?? agent.activity ? `${agent.type} · ${agent.summary ?? agent.activity}` : agent.type}
+        {/*
+         * Type, model and effort identify the working agent; the model's status, or else the
+         * activity, says what it is doing now. A narrow pane cuts the end: hovering shows it all,
+         * and the thread the row opens repeats it.
+         */}
+        <span className="truncate text-[0.6875rem] text-ink-faint" title={subtitle}>
+          {subtitle}
         </span>
       </span>
 

@@ -1,5 +1,7 @@
 import { isSpawnTool } from '@sillage/protocol'
 import { activityOf, threadOf, type ChatItem, type ChatState, type TaskState, type ToolItem } from './chat-fold'
+import { EFFORT_KEYS } from './effort-labels'
+import { translate } from './i18n'
 
 /**
  * Conversation subagents derived solely from the log (invariant I2). A subagent has no independent
@@ -14,6 +16,16 @@ export interface SubAgent {
   type: string
   /** What the call says it is seeking. Empty if omitted by the CLI. */
   description: string
+  /**
+   * Model it runs on, null when the call names none. Codex reports the resolved one (the parent's
+   * when the spawn chose none); Claude only the override passed to its Agent tool.
+   */
+  model: string | null
+  /**
+   * Reasoning effort it runs at, null when unknown: Codex reports the resolved one, Claude the
+   * `effort` override of its Agent tool.
+   */
+  effort: string | null
   status: ToolItem['status']
   startedAt: number
   /** Known only after call completion: the CLI does not provide it earlier. */
@@ -77,6 +89,8 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
       id: item.id,
       type: field(item.input, 'subagent_type') || item.name,
       description: field(item.input, 'description'),
+      model: field(item.input, 'model') || null,
+      effort: field(item.input, 'effort') || null,
       status: backgrounded ? 'running' : cutShort ? 'interrupted' : item.status,
       startedAt: item.ts,
       // Call duration equals task duration only while the call is waiting for it.
@@ -111,6 +125,17 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
     agent.activity = byToolCall.get(agent.id)?.activity ?? activityOf(agent.items, agent.id)
   }
   return agents
+}
+
+/**
+ * Secondary line of a subagent: who works (type, model, effort), then what it is doing when known.
+ * Model and effort explain cost and speed differences between agents of the same type.
+ */
+export function subAgentSubtitle(agent: SubAgent, now: string | null): string {
+  // Same wording as the effort pill of the spawning call, so both places name the level alike.
+  const key = agent.effort ? EFFORT_KEYS[agent.effort] : undefined
+  const effort = agent.effort ? translate('tool.qualifier.effort', { level: key ? translate(key) : agent.effort }) : null
+  return [agent.type, agent.model, effort, now].filter(Boolean).join(' · ')
 }
 
 /** Shortest meaningful subagent label for a list. */

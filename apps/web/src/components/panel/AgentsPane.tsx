@@ -14,7 +14,7 @@ import {
 } from '../../lib/background'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, parseAgentsSelection, showSubAgent, showWorkflow, showWorkflowAgent } from '../../lib/panel'
-import { subAgentLabel, type SubAgent } from '../../lib/subagents'
+import { subAgentLabel, subAgentSubtitle, type SubAgent } from '../../lib/subagents'
 import { formatTokens } from '../../lib/tokens'
 import { currentPhase, findWorkflowAgent, useWorkflowAgentThread, type LocatedWorkflowAgent } from '../../lib/workflows'
 import { workflowAgentThread, type TaskState } from '../../lib/chat-fold'
@@ -316,7 +316,7 @@ function SubAgentThread({
         icon={<Bot size={14} className={cx('shrink-0', running ? 'text-accent' : 'text-ink-faint')} />}
         title={subAgentLabel(agent)}
         // The model's own status says what it is after; the mechanical activity sits at the bottom of the thread.
-        subtitle={agent.summary ? `${agent.type} · ${agent.summary}` : agent.type}
+        subtitle={subAgentSubtitle(agent, agent.summary)}
         subtitleTitle={agent.summary}
       >
         {/* Subagent tokens appear nowhere else: turn usage includes only the main agent. */}

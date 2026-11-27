@@ -106,6 +106,41 @@ type ExperimentalTurnStartParams = TurnStartParams & {
 }
 
 /**
+ * Input of the synthetic `Agent` call standing for a Codex sub-agent. Model and effort use the
+ * keys of Claude's Agent tool input (`model`, `effort`), so both CLIs show them the same way; they
+ * stay absent until Codex names them rather than reading as null.
+ */
+interface SubAgentInput {
+  description: string
+  prompt: string
+  model?: string
+  effort?: string
+}
+
+interface ChildThread {
+  toolId: string
+  parent: string | null
+  description: string
+  input: SubAgentInput
+  startedAt: number
+  running: boolean
+}
+
+/** What a sub-agent runs on, as far as one Codex record knows. */
+interface SubAgentRunsOn {
+  model?: string
+  reasoningEffort?: string
+}
+
+function runsOn(source: { model?: string | null; reasoningEffort?: string | null }): SubAgentRunsOn {
+  return { model: source.model ?? undefined, reasoningEffort: source.reasoningEffort ?? undefined }
+}
+
+function subAgentInput(description: string, prompt: string, { model, reasoningEffort }: SubAgentRunsOn): SubAgentInput {
+  return { description, prompt, ...(model ? { model } : {}), ...(reasoningEffort ? { effort: reasoningEffort } : {}) }
+}
+
+/**
  * Deliberately ignored internal or redundant notifications already covered by item/completed. Keep
  * a named list rather than silent default branches so unknown notifications remain visible.
  */
@@ -196,7 +231,7 @@ export class CodexRunner implements AgentRunner {
   private readonly asyncQuestions: CodexAsyncQuestions
   private readonly serverRequests = new Map<RequestId, string>()
   private readonly requestScopes = new Map<RequestId, { threadId: string | null; turnId: string | null }>()
-  private readonly childThreads = new Map<string, { toolId: string; parent: string | null; description: string; startedAt: number; running: boolean }>()
+  private readonly childThreads = new Map<string, ChildThread>()
   private readonly turnUsage = new CodexTurnUsage()
   private readonly subAgentUsage = new CodexSubAgentUsage()
   private readonly startedItems = new Set<string>()
@@ -528,7 +563,7 @@ export class CodexRunner implements AgentRunner {
       if (thread.parentThreadId) {
         this.subAgentUsage.setModel(thread.id, thread.model)
         const parent = this.childThreads.get(thread.parentThreadId)?.toolId ?? null
-        this.ensureSubAgent(thread.id, thread.agentNickname ?? thread.name ?? 'Codex', parent, thread.preview)
+        this.ensureSubAgent(thread.id, thread.agentNickname ?? thread.name ?? 'Codex', parent, thread.preview, runsOn(thread))
       }
       return
     }
@@ -894,17 +929,34 @@ export class CodexRunner implements AgentRunner {
     if (usage) this.ctx.emit({ type: 'usage.consumed', costUsd: 0, ...usage })
   }
 
-  private ensureSubAgent(threadId: string, label: string, parent: string | null, prompt = ''): string {
+  private ensureSubAgent(threadId: string, label: string, parent: string | null, prompt = '', known: SubAgentRunsOn = {}): string {
     const previous = this.childThreads.get(threadId)
-    if (previous?.running) return previous.toolId
+    if (previous?.running) {
+      this.describeSubAgent(previous, known)
+      return previous.toolId
+    }
     // consumption/codex-subagent-history.ts reads the thread back from this id: keep its shape.
     const toolId = `codex-agent-${threadId}-${randomUUID()}`
-    this.childThreads.set(threadId, { toolId, parent, description: label, startedAt: Date.now(), running: true })
-    this.ctx.emit({ type: 'tool.started', toolCallId: toolId, name: 'Agent',
-      input: { description: label, prompt: prompt || label }, parentToolCallId: parent })
+    // A restarted agent keeps the model it was created with: later activities carry none.
+    const input = subAgentInput(label, prompt || label, { model: known.model ?? previous?.input.model,
+      reasoningEffort: known.reasoningEffort ?? previous?.input.effort })
+    this.childThreads.set(threadId, { toolId, parent, description: label, input, startedAt: Date.now(), running: true })
+    this.ctx.emit({ type: 'tool.started', toolCallId: toolId, name: 'Agent', input, parentToolCallId: parent })
     this.ctx.emit({ type: 'task.started', taskId: threadId, toolCallId: toolId, kind: 'agent', description: label, workflowName: null })
     this.publishSubAgents()
     return toolId
+  }
+
+  /**
+   * Model and effort learned after the call started (a spawning call seen after the agent's first
+   * event) reach the row through its input, the journal's only per-call record.
+   */
+  private describeSubAgent(agent: ChildThread, known: SubAgentRunsOn): void {
+    const model = known.model ?? agent.input.model
+    const reasoningEffort = known.reasoningEffort ?? agent.input.effort
+    if (model === agent.input.model && reasoningEffort === agent.input.effort) return
+    agent.input = subAgentInput(agent.input.description, agent.input.prompt, { model, reasoningEffort })
+    this.ctx.emit({ type: 'tool.input_updated', toolCallId: agent.toolId, input: agent.input })
   }
 
   private completeSubAgent(threadId: string, output: unknown, isError = false): void {
@@ -933,7 +985,9 @@ export class CodexRunner implements AgentRunner {
     if (item.kind === 'interacted' || item.agentThreadId === this.threadId) return
     this.subAgentUsage.setModel(item.agentThreadId, item.model)
     if (item.kind === 'started') {
-      this.ensureSubAgent(item.agentThreadId, item.agentPath, parent)
+      // Probed on 0.172.0: `started` carries the resolved model and effort (the parent's when the
+      // spawn named none), `completed` carries null for both.
+      this.ensureSubAgent(item.agentThreadId, item.agentPath, parent, '', runsOn(item))
     } else {
       this.completeSubAgent(item.agentThreadId, { agent: item.agentPath, status: item.kind })
     }
@@ -1042,7 +1096,7 @@ export class CodexRunner implements AgentRunner {
         if (item.tool === 'spawnAgent') this.subAgentUsage.setModel(threadId, item.model)
         const state = item.agentsStates[threadId]
         if (['spawnAgent', 'resumeAgent', 'sendInput', 'followupTask'].includes(item.tool) && item.status !== 'failed') {
-          this.ensureSubAgent(threadId, threadId, parent, item.prompt ?? '')
+          this.ensureSubAgent(threadId, threadId, parent, item.prompt ?? '', item.tool === 'spawnAgent' ? runsOn(item) : {})
         }
         if (state && ['completed', 'errored', 'shutdown', 'interrupted', 'notFound'].includes(state.status)) {
           this.completeSubAgent(threadId, state.message ?? state.status, state.status === 'errored' || state.status === 'notFound')
