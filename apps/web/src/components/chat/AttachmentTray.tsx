@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Loader, X } from 'lucide-react'
+import { FileText, Loader, TextCursorInput, X } from 'lucide-react'
 import type { AttachmentDto } from '@sillage/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { ImageViewer } from './ImageViewer'
@@ -14,10 +14,15 @@ export function AttachmentTray({
   attachments,
   uploading,
   onRemove,
+  inlineable,
+  onInline,
 }: {
   attachments: AttachmentDto[]
   uploading: number
   onRemove: (id: string) => void
+  /** Attachments that can go back into the field as text: long pastes. */
+  inlineable?: ReadonlySet<string>
+  onInline?: (id: string) => void
 }) {
   const t = useTranslate()
   const [previewId, setPreviewId] = useState<string | null>(null)
@@ -52,11 +57,29 @@ export function AttachmentTray({
                 <AttachmentLabel attachment={attachment} />
               </button>
             ) : (
-              <>
+              // Opens in a new tab: the server shows plain text inline, so a paste can be checked.
+              <a
+                href={`/api/attachments/${attachment.id}`}
+                target="_blank"
+                rel="noreferrer"
+                title={t('composer.attachments.open', { name: attachment.filename })}
+                className="flex min-w-0 items-center gap-2 rounded focus-visible:outline-accent"
+              >
                 <FileText size={14} className="shrink-0 text-ink-faint" />
                 <AttachmentLabel attachment={attachment} />
-              </>
+              </a>
             )}
+
+            {onInline && inlineable?.has(attachment.id) ? (
+              <IconButton
+                type="button"
+                label={t('composer.paste.inline')}
+                size="sm"
+                onClick={() => onInline(attachment.id)}
+              >
+                <TextCursorInput size={13} />
+              </IconButton>
+            ) : null}
 
             <IconButton
               type="button"

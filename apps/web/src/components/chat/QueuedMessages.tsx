@@ -1,8 +1,9 @@
-import { Clock, FastForward, Paperclip, X } from 'lucide-react'
+import { Clock, FastForward, Paperclip, Pencil, X } from 'lucide-react'
 import { useState } from 'react'
 import { parseSessionMessage } from '@sillage/protocol'
 import type { QueuedMessage } from '../../lib/chat-fold'
 import { cancelQueuedMessage, steerQueuedMessage } from '../../lib/conversations'
+import { prefillComposer } from '../../lib/composer-ref'
 import { IconButton, cx } from '../ui'
 import { useTranslate } from '../../lib/i18n'
 
@@ -91,6 +92,28 @@ export function QueuedMessages({
               className="text-accent hover:bg-accent-wash hover:text-accent"
             >
               <FastForward size={15} />
+            </IconButton>
+          ) : null}
+
+          {/* Back to the composer to rework it. Not with attachments: the queue keeps only their count, so they would be lost. */}
+          {canCancel && message.attachmentCount === 0 && !parseSessionMessage(message.text) ? (
+            <IconButton
+              label={t('queued.edit')}
+              size="sm"
+              disabled={busy !== null}
+              onClick={() =>
+                void run(
+                  message.queueId,
+                  async () => {
+                    await cancelQueuedMessage(conversationId, message.queueId)
+                    prefillComposer(message.text)
+                  },
+                  t('queued.edit.failed'),
+                )
+              }
+              className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+            >
+              <Pencil size={13} />
             </IconButton>
           ) : null}
 

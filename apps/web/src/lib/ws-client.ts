@@ -8,6 +8,7 @@ import {
   type ServerMessage,
   type SillageEvent,
   type InAppNotification,
+  type NotificationKind,
 } from '@sillage/protocol'
 import { decodeScope, encodeScope, type WorkspaceScope } from './workspace-scope'
 
@@ -84,6 +85,7 @@ class WsClient {
   /** Server-pushed toasts for this browser tab while visible. */
   private readonly notifyListeners = new Set<(notification: InAppNotification) => void>()
   private readonly decisionListeners = new Set<() => void>()
+  private readonly chimeListeners = new Set<(kind: NotificationKind, conversationId: string | null) => void>()
   private readonly connectionListeners = new Set<(connected: boolean) => void>()
   /** This device's push subscription, sent to the server with visibility state. */
   private pushEndpoint: string | null = null
@@ -150,6 +152,12 @@ class WsClient {
   onNotify(listener: (notification: InAppNotification) => void): () => void {
     this.notifyListeners.add(listener)
     return () => this.notifyListeners.delete(listener)
+  }
+
+  /** Sent to hidden tabs too: see `lib/sounds.ts`. */
+  onChime(listener: (kind: NotificationKind, conversationId: string | null) => void): () => void {
+    this.chimeListeners.add(listener)
+    return () => this.chimeListeners.delete(listener)
   }
 
   onDecisionsChanged(listener: () => void): () => void {
@@ -375,6 +383,11 @@ class WsClient {
 
     if (message.t === 'notify') {
       for (const listener of this.notifyListeners) listener(message.notification)
+      return
+    }
+
+    if (message.t === 'chime') {
+      for (const listener of this.chimeListeners) listener(message.kind, message.conversationId)
       return
     }
 

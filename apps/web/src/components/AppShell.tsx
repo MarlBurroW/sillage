@@ -5,6 +5,7 @@ import { useAppearanceSync } from '../lib/appearance-sync'
 import { useConcentration } from '../lib/concentration'
 import { useRevalidateLists } from '../lib/conversation-status'
 import { useDecisionsLive } from '../lib/decisions'
+import { useChimes } from '../lib/sounds'
 import { useFileDropGuard } from '../lib/file-drop'
 import { useTranslate } from '../lib/i18n'
 import { useCapability } from '../lib/instance'
@@ -38,6 +39,7 @@ const CommandPalette = lazyWithReload(loadPalette)
  */
 export function AppShell() {
   useDecisionsLive()
+  useChimes()
   const t = useTranslate()
   const location = useLocation()
   useAppearanceSync()

@@ -344,6 +344,11 @@ export async function registerWebSocketHub(
         if (connection.belongsTo(userId)) connection.send({ t: 'decisions-changed' })
       }
     },
+    chime: (userId, kind, conversationId) => {
+      for (const connection of connections) {
+        if (connection.belongsTo(userId)) connection.send({ t: 'chime', kind, conversationId })
+      }
+    },
   })
   sessions.setNotifier(notifications)
 

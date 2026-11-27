@@ -66,6 +66,7 @@ const PreviewSettingsPage = lazyWithReload(() => import('./routes/PreviewSetting
 const UsageLimitsSettingsPage = lazyWithReload(() => import('./routes/UsageLimitsSettingsPage').then((module) => ({ default: module.UsageLimitsSettingsPage })))
 const UsersSettingsPage = lazyWithReload(() => import('./routes/UsersSettingsPage').then((module) => ({ default: module.UsersSettingsPage })))
 const NewsSettingsPage = lazyWithReload(() => import('./routes/NewsSettingsPage').then((module) => ({ default: module.NewsSettingsPage })))
+const SoundsSettingsPage = lazyWithReload(() => import('./routes/SoundsSettingsPage').then((module) => ({ default: module.SoundsSettingsPage })))
 const RadioSettingsPage = lazyWithReload(() => import('./routes/RadioSettingsPage').then((module) => ({ default: module.RadioSettingsPage })))
 import { AgentToolsSettingsPage } from './components/agent-tools/AgentTools'
 import { SettingsLayout } from './routes/SettingsPage'
@@ -181,6 +182,7 @@ export function App() {
             <Route path="compte" element={<Suspense fallback={null}><AccountSection /></Suspense>} />
             <Route path="apparence" element={<Suspense fallback={null}><AppearanceSection /></Suspense>} />
             <Route path="veille" element={<Suspense fallback={null}><NewsSettingsPage /></Suspense>} />
+            <Route path="sons" element={<Suspense fallback={null}><SoundsSettingsPage /></Suspense>} />
             <Route path="radio" element={<Suspense fallback={null}><RadioSettingsPage /></Suspense>} />
             <Route path="notifications" element={<Suspense fallback={null}><NotificationsSection /></Suspense>} />
             <Route path="cli" element={<Suspense fallback={null}><CliDefaultsSettingsPage /></Suspense>} />
