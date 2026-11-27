@@ -101,7 +101,7 @@ export class OpencodeServer<E = Event> {
     })
 
     // The free port is released before opencode binds it, so another process can take it in
-    // between (seen under load: EADDRINUSE). Only that failure is worth another port.
+    // between (seen under load). Only that failure is worth another port.
     let child = serve(await freePort())
     let baseUrl: string
     for (let attempt = 1; ; attempt++) {
@@ -110,7 +110,7 @@ export class OpencodeServer<E = Event> {
         break
       } catch (err) {
         child.kill()
-        if (attempt >= PORT_ATTEMPTS || !/EADDRINUSE|address already in use/i.test(String(err))) throw err
+        if (attempt >= PORT_ATTEMPTS || !isPortClash(err instanceof StartupError ? err.output : String(err))) throw err
         child = serve(await freePort())
       }
     }
@@ -304,6 +304,22 @@ export class OpencodeServer<E = Event> {
 const PORT_ATTEMPTS = 3
 
 /**
+ * opencode could not bind its port. 2.x says `Failed to start server. Is port N in use?` inside
+ * a ServeError, 1.19 only `Unexpected error` and `ServeError` (probed 2.4.2 and 1.19.3, port
+ * already taken); Node's own wording covers the test fixtures.
+ */
+export function isPortClash(output: string): boolean {
+  return /EADDRINUSE|address already in use|Is port \d+ in use|ServeError/i.test(output)
+}
+
+/** Startup failure keeping all the output, which the message shortens. */
+class StartupError extends Error {
+  constructor(message: string, readonly output: string) {
+    super(message)
+  }
+}
+
+/**
  * Free port requested from system then released, not reserved: if another process takes it,
  * opencode startup fails visibly.
  */
@@ -341,7 +357,7 @@ function listeningUrl(child: ChildProcessWithoutNullStreams): Promise<string> {
     }
     const onExit = (code: number | null) => {
       cleanup()
-      reject(new Error(`opencode serve s'est arrêté au démarrage (code ${code ?? 'inconnu'}). ${output.trim().slice(-400)}`))
+      reject(new StartupError(`opencode serve s'est arrêté au démarrage (code ${code ?? 'inconnu'}). ${output.trim().slice(-400)}`, output))
     }
     const onError = (error: Error) => {
       cleanup()

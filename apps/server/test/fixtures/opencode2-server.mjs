@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Deterministic fake OpenCode 2 `opencode serve` (2.4.1 shapes): no models, networking or database.
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createServer } from 'node:http'
 
@@ -11,6 +11,17 @@ if (process.argv.includes('--version')) {
 
 // Beside the script rather than cwd, like the 1.x fixture.
 const here = dirname(process.argv[1])
+
+// The port taken between Sillage's choice and the bind, once: the real binaries' words
+// (probed with a taken port), 2.4.2 by default, 1.19.3 with FIXTURE_PORT_TAKEN_TEXT=1.
+if (process.env.FIXTURE_PORT_TAKEN && !existsSync(process.env.FIXTURE_PORT_TAKEN)) {
+  writeFileSync(process.env.FIXTURE_PORT_TAKEN, '')
+  const port = process.argv[process.argv.indexOf('--port') + 1]
+  process.stderr.write(process.env.FIXTURE_PORT_TAKEN_TEXT === '1'
+    ? 'Error: Unexpected error\n\nServeError\n'
+    : `ServeError: \n    at O (/$bunfs/root/chunk.js:52:10092)\n  [cause]: Error: Failed to start server. Is port ${port} in use?\n      at serve (unknown)\n}\n`)
+  process.exit(1)
+}
 writeFileSync(join(here, 'launch.json'), JSON.stringify({
   config: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? '{}'),
   disableProjectConfig: process.env.OPENCODE_DISABLE_PROJECT_CONFIG ?? null,
