@@ -3,7 +3,7 @@ import { claimSystemSkills, releaseSystemSkills } from './system-skills.js'
 import { randomUUID } from 'node:crypto'
 import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ContentBlock as AcpContent, RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import { antigravityPermissionModeSchema, parseSlashCommand, type AgentConfig, type AntigravityConfig, type ContentBlock, type McpServerStatus } from '@sillage/protocol'
@@ -43,6 +43,16 @@ function outputOf(update: Record<string, unknown>): string {
 }
 
 /** The content a view_file showed the model, read again from disk; null when unreadable, binary, or when the requested lines lie beyond the scanned prefix. Antigravity's line bounds are 1-based and inclusive. */
+/**
+ * The path a pre-tool hook refused, when it is not this read's own: Google closes every open
+ * frame with one parallel call's refusal (`Access to path "X" is denied…`).
+ */
+function deniedElsewhere(output: unknown, input: unknown): string | null {
+  const refused = typeof output === 'string' ? /^Access to path "([^"]+)" is denied/.exec(output)?.[1] : undefined
+  const own = fields(input).file_path
+  return refused && typeof own === 'string' && resolve(refused) !== resolve(own) ? refused : null
+}
+
 function mirrorRead(raw: unknown): string | null {
   const input = fields(raw)
   if (typeof input.file_path !== 'string') return null
@@ -319,9 +329,17 @@ export class AntigravityRunner implements AgentRunner {
       const content = fields(fields(item).content)
       if (content.type === 'image') this.richContent(content)
     }
-    const isError = update.status === 'failed'
-    const mirrored = !isError && !output && !track.output && described.name === 'Read' ? mirrorRead(described.input) : null
-    this.completeTool(id, track, isError, output || update.rawOutput || track.output || mirrored || '', { update: merged, diffs: track.diffs })
+    const denied = update.status === 'failed' && described.name === 'Read' ? deniedElsewhere(update.rawOutput, described.input) : null
+    if (denied) {
+      // Google closed this read with the refusal of a parallel one, which it never announced
+      // (probed on 1.4.3): this file was read, and the refused one gets a row of its own.
+      const refused = `${id}:denied`
+      this.ctx.emit({ type: 'tool.started', toolCallId: refused, name: 'Read', input: { file_path: denied }, title: null, parentToolCallId: null })
+      this.ctx.emit({ type: 'tool.completed', toolCallId: refused, output: String(update.rawOutput), isError: true, durationMs: 0 })
+    }
+    const isError = update.status === 'failed' && !denied
+    const mirrored = !isError && (denied || (!output && !track.output)) && described.name === 'Read' ? mirrorRead(described.input) : null
+    this.completeTool(id, track, isError, denied ? mirrored ?? '' : output || update.rawOutput || track.output || mirrored || '', { update: merged, diffs: track.diffs })
   }
 
   private completeTool(id: string, track: ToolTrack, isError: boolean, output: unknown, raw: unknown): void {

@@ -186,6 +186,28 @@ test('Background command output arrives after the turn without a false interrupt
   assert.deepEqual(f.events.filter((event) => event.type === 'background.updated').at(-1)?.tasks, [])
 })
 
+test('A read closed by the refusal of a parallel, unannounced read succeeds, and the refused path gets its own failed row', async (t) => {
+  const f = await fixture(t)
+  await writeFile(join(f.root, 'notes.txt'), 'The secret word is heliotrope.\n')
+  const refusal = 'Access to path "/elsewhere/other.txt" is denied. It is outside the allowed workspace directories: [/ws]'
+  // 1.4.3 as probed: one frame announced, closed with the other call's refusal.
+  await f.turn([
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'notes', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(f.root, 'notes.txt') } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'notes', status: 'failed', rawOutput: refusal } },
+    // Its own path refused: a real failure.
+    { update: { sessionUpdate: 'tool_call', toolCallId: 'own', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: '/elsewhere/other.txt' } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: 'own', status: 'failed', rawOutput: refusal } },
+  ])
+  const completed = Object.fromEntries(f.events.filter((event) => event.type === 'tool.completed').map((event) => [event.toolCallId, [event.isError, event.output]]))
+  assert.deepEqual(completed, {
+    'notes:denied': [true, refusal],
+    notes: [false, 'The secret word is heliotrope.\n'],
+    own: [true, refusal],
+  })
+  const refused = f.events.find((event) => event.type === 'tool.started' && event.toolCallId === 'notes:denied')
+  assert.deepEqual(refused?.type === 'tool.started' && refused.input, { file_path: '/elsewhere/other.txt' })
+})
+
 test('A frame failed by the hook broadcast and re-announced keeps one row that ends successfully', async (t) => {
   const f = await fixture(t)
   const start = { sessionUpdate: 'tool_call', toolCallId: 'ls', title: 'ls', kind: 'execute', status: 'in_progress', rawInput: { command_line: 'ls', working_dir: f.root } }

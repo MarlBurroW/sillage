@@ -145,13 +145,23 @@ try {
       assert.equal(inboundSession.handoffFromId, claudeSource.id)
       const inboundHistory = await (await context.request.get(base + `/api/conversations/${inboundSession.id}/handoff`)).json()
       assert.ok(inboundHistory.text.length > 50)
-      const text = 'fixture:' + JSON.stringify({ steps: [{ update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Native Antigravity response' } } }] })
+      // A read closed by the refusal of a parallel one (1.4.3): shown read, the refused path failed apart.
+      await writeFile(join(project.workspacePath, 'notes.txt'), 'The secret word is heliotrope.\n')
+      const refusal = 'Access to path "/elsewhere/other.txt" is denied. It is outside the allowed workspace directories.'
+      const text = 'fixture:' + JSON.stringify({ steps: [
+        { update: { sessionUpdate: 'tool_call', toolCallId: 'notes', title: 'Running view_file', kind: 'read', status: 'in_progress', rawInput: { AbsolutePath: join(project.workspacePath, 'notes.txt') } } },
+        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'notes', status: 'failed', rawOutput: refusal } },
+        { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Native Antigravity response' } } },
+      ] })
       const response = await context.request.post(base + `/api/projects/${project.id}/conversations`, { data: { agent: 'antigravity', config: agentConfig, title: 'Google integration check', firstMessage: { clientMessageId: randomUUID(), text } } })
       assert.ok(response.ok(), await response.text())
       const conversation = await response.json()
       await page.goto(base + `/p/${project.id}/c/${conversation.id}`)
       await page.getByText('Native Antigravity response', { exact: true }).waitFor()
-      await page.getByText('Native Antigravity response', { exact: true }).waitFor()
+      await page.getByText('2 outils', { exact: true }).click()
+      await page.getByText('notes.txt').first().waitFor()
+      await page.getByText('other.txt').first().waitFor()
+      await page.screenshot({ path: '/var/tmp/sillage-antigravity-server-denied-read.png' })
       // Model catalogues and command discovery reject another user's account IDs.
       assert.equal((await context.request.get(base + `/api/agents/antigravity/models?account=${randomUUID()}`)).status(), 404)
       const latest = await (await context.request.get(base + `/api/conversations/${conversation.id}`)).json()
