@@ -121,7 +121,7 @@ try {
     const agents = await json(await context.request.get(base + '/api/agents'))
     const copilot = agents.agents.find((entry) => entry.agent === 'copilot')
     assert.equal(copilot.installed, true, JSON.stringify(copilot))
-    assert.equal(copilot.version, '1.0.116')
+    assert.equal(copilot.version, '1.0.117')
     const models = await json(await context.request.get(base + '/api/agents/copilot/models'))
     assert.deepEqual(models.models.map((model) => model.value), ['auto', 'gpt-test'])
     await page.goto(base + '/settings/cli')

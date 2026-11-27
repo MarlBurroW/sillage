@@ -14,7 +14,7 @@ import { chromium } from 'playwright'
 // the account choice in CLI defaults and on the new-session screen, a conversation launched on
 // the account's home without the server's GitHub tokens, sign-out, phone width. Real components
 // and API, temporary database; the CLI is the test fake (`apps/server/test/fixtures/copilot-agent.mjs`),
-// speaking like Copilot CLI 1.0.116 without contacting GitHub.
+// speaking like Copilot CLI 1.0.117 without contacting GitHub.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')

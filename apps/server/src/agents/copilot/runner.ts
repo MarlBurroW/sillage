@@ -31,6 +31,12 @@ interface ModelSpend { tokens: Tokens; nanoAiu: number | null }
 
 /** Session state `session/load` announces along with the history it replays. */
 const STATE_UPDATES = new Set(['available_commands_update', 'config_option_update', 'current_mode_update'])
+/**
+ * Option state sent while the session opens: older than the response, and than what
+ * `applyOptions` set since. 1.0.117 sends one before answering `session/new`, with the defaults
+ * (permissions on Manual, an empty mode); replayed, it would flip the settings for a moment.
+ */
+const OPENING_OPTIONS = new Set(['config_option_update', 'current_mode_update'])
 /** Lines Copilot writes into the reply for an event it also sends as data. */
 const ECHO_PREFIX: Record<string, string> = { 'session.info': 'Info', 'session.warning': 'Warning', 'session.error': 'Error' }
 /** Information the journal already shows: a cancellation, a created file, a retry (`assistant.turn_retry`). */
@@ -80,7 +86,7 @@ export interface CopilotRunnerOptions {
 }
 
 /**
- * GitHub Copilot CLI over ACP (`copilot --acp`), probed on 1.0.116 against a scripted model
+ * GitHub Copilot CLI over ACP (`copilot --acp`), probed on 1.0.116 and 1.0.117 against a scripted model
  * provider. One process per conversation; a turn is a `session/prompt` request answered when
  * Copilot has finished acting on it, background work it is attached to included. Plain ACP is
  * completed by the session events subscribed at `initialize`; see `launch.ts`.
@@ -285,7 +291,10 @@ export class CopilotRunner implements AgentRunner {
     this.publishSkills()
     const early = this.early
     this.early = null
-    for (const [method, params] of early) this.notification(method, params)
+    for (const [method, params] of early) {
+      if (method === 'session/update' && OPENING_OPTIONS.has(String(fields(fields(params).update).sessionUpdate))) continue
+      this.notification(method, params)
+    }
     this.syncOptions()
   }
 

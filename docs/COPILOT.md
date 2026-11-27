@@ -1,6 +1,6 @@
 # GitHub Copilot CLI integration
 
-Sillage installs `@github/copilot` from npm (pinned to **1.0.116**), starts one
+Sillage installs `@github/copilot` from npm (pinned to **1.0.117**), starts one
 `copilot --acp` per conversation and speaks **ACP** (Agent Client Protocol) over stdio,
 through the same handwritten client as Grok and Antigravity
 (`apps/server/src/agents/acp/client.ts`). Plain ACP is completed by Copilot's own
@@ -8,7 +8,8 @@ through the same handwritten client as Grok and Antigravity
 `apps/server/src/agents/copilot/`.
 
 Everything below was observed on the real **1.0.116** binary, in two ways that do not
-cover the same ground:
+cover the same ground; **1.0.117** was then compared with it on the scripted provider
+only (see [1.0.117](#10117)):
 
 - **A scripted model provider.** Copilot accepts a model provider of your own
   (`COPILOT_PROVIDER_BASE_URL`), which needs no GitHub sign-in. A local server that
@@ -157,7 +158,7 @@ code decides whether the row failed.
 
 ## Observed behavior
 
-Quirks of 1.0.116 the next maintainer must know.
+Quirks of 1.0.116 the next maintainer must know, still true of 1.0.117 unless said.
 
 - **The prompt response counts tokens since the process started**, sub-agents
   included, not the turn's. The counter restarts with the process. A turn's tokens are
@@ -307,6 +308,25 @@ overage; only a refused request marks the account as stopped.
 - Windows and macOS, Desktop included: the npm `copilot` shim follows the generic
   npm launch path.
 - `/fleet`, `/delegate`, workflows (`run_dynamic_workflow`), `/remote`.
+
+## 1.0.117
+
+Compared with 1.0.116 on the scripted provider (27 Nov 2026); the host's signed-in
+account was not used with it. The `initialize` answer, `copilot help acp` and
+`copilot help environment`, the three session options, the 29 commands and every launch
+option Sillage uses are unchanged. What differs:
+
+- **A `config_option_update` arrives before the `session/new` answer**, with the
+  defaults and an empty mode. Sillage drops option updates received while the session
+  opens: the answer and `applyOptions` are newer, and replaying it flipped the
+  permissions to Manual for a moment.
+- Session approvals ("for the session") and background sub-agents survive a resume;
+  `subagent.started.resumable` means it now.
+- `assistant.turn_start` gains `toolTurnBudget` and `maxToolTurns`.
+
+Re-checked on 1.0.117 through the runner: MCP servers in `--additional-mcp-config`
+(and the dollar-sign escape), `assistant.idle` with an attached shell, `/after`
+schedules, hooks, repository skills and sub-agent models.
 
 ## Sources
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `copilot --acp` as GitHub Copilot CLI 1.0.116 speaks it: wire shapes captured from the real
+// `copilot --acp` as GitHub Copilot CLI 1.0.117 speaks it: wire shapes captured from the real
 // binary driven by a scripted model provider. No network, no model, no sign-in.
 //
 // A prompt starting with `fixture:{…}` (JSON on its first line) plays its `steps` in order:
@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
 if (process.argv.includes('--version') || process.argv[2] === 'version') {
-  console.log('GitHub Copilot CLI 1.0.116.')
+  console.log('GitHub Copilot CLI 1.0.117.')
   process.exit(0)
 }
 
@@ -152,11 +152,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   record(message)
   const reply = (result) => write({ id: message.id, result })
   switch (message.method) {
-    case 'initialize': return reply({ protocolVersion: 1, agentInfo: { name: 'Copilot', title: 'Copilot', version: '1.0.116' }, agentCapabilities: { loadSession: true, auth: { logout: {} }, mcpCapabilities: { http: true, sse: true }, promptCapabilities: { image: true, audio: false, embeddedContext: true }, sessionCapabilities: { close: {}, list: {} } }, authMethods: [] })
+    case 'initialize': return reply({ protocolVersion: 1, agentInfo: { name: 'Copilot', title: 'Copilot', version: '1.0.117' }, agentCapabilities: { loadSession: true, auth: { logout: {} }, mcpCapabilities: { http: true, sse: true }, promptCapabilities: { image: true, audio: false, embeddedContext: true }, sessionCapabilities: { close: {}, list: {} } }, authMethods: [] })
     case 'session/new':
       // What Copilot answers without a sign-in, and all it says.
       if (process.env.COPILOT_FIXTURE_SIGNED_OUT) return write({ id: message.id, error: { code: -32000, message: 'Authentication required' } })
       mcpServers(message.params.mcpServers)
+      // 1.0.117 announces the options before answering, with the defaults and an empty mode.
+      update({ sessionUpdate: 'config_option_update', configOptions: options().map((option) => (option.id === 'mode' ? { ...option, currentValue: '' } : option)) })
       setTimeout(() => { commands(); commands() }, 5)
       return reply({ sessionId, ...state() })
     case 'session/list':

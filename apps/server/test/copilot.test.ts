@@ -263,6 +263,13 @@ test('Copilot applies model, effort, permissions and mode as session options, li
   assert.equal(isPermissiveConfig(DEFAULT_COPILOT_CONFIG), false)
 })
 
+test('Copilot options announced before session/new answers do not flip the settings back to the defaults', async (t) => {
+  // 1.0.117 sends the defaults (Manual permissions, an empty mode) before its answer.
+  const f = await fixture(t, {}, { model: 'gpt-test', allowAll: 'on', mode: 'agent' })
+  assert.deepEqual(f.configs.map((config) => config.allowAll), f.configs.map(() => 'on'))
+  assert.deepEqual([(f.runner.appliedConfig as CopilotConfig).allowAll, (f.runner.appliedConfig as CopilotConfig).mode], ['on', 'agent'])
+})
+
 test('Copilot nests a sub-agent under the call that spawned it', async (t) => {
   const f = await fixture(t)
   const child = { 'github.com/copilot': { agentId: 'agent-1' } }
