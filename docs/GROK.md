@@ -81,15 +81,36 @@ Live permissions use the `_x.ai/yolo_mode_changed` notification (`yolo_mode`,
 - **Interruption**: `session/cancel`. The active `session/prompt` responds `cancelled`.
 - **Compaction**: `_x.ai/compact_conversation`, completion announced by
   `auto_compact_completed` (before and after sizes) under `_x.ai/session_notification`.
+- **Wake-up turns**: background work reporting back while the session is idle (a
+  sub-agent, a background shell, a monitor, a `/loop`) makes Grok run a turn with no
+  prompt (`prompt_id` `subagent-completed-…`/`task-completed-…`), ended by a
+  `turn_completed` under `_x.ai/session_notification`. The runner opens a turn on its
+  first content and closes it there; `session/cancel` interrupts it.
 - **Fork**: `_x.ai/session/fork` with `targetPromptIndex`, the index of the last prompt
-  to keep (zero-based). Each Sillage turn is one prompt.
-- **Usage**: in the `session/prompt` response's `_meta.usage`. `inputTokens` includes
-  cache; `costUsdTicks` is one ten-billionth of a dollar. Context size travels in
-  each `session/update`'s `_meta.totalTokens`.
+  to keep (zero-based). Each Sillage turn is one prompt, wake-up turns included: they
+  take an index too.
+- **Usage**: `_x.ai/session/usage` gives totals since the process started, sub-agents
+  and wake-ups included; it restarts from zero after `session/resume`. The runner reads
+  it when each prompt answers and at every `turn_completed` between prompts, and counts
+  the difference: the prompt's own `_meta.usage` lacks its cost while a background
+  sub-agent runs (`usageIsIncomplete`). Consumption between prompts becomes
+  `usage.consumed`. `inputTokens` includes cache; `costUsdTicks` is one ten-billionth
+  of a dollar. Context size travels in each `session/update`'s `_meta.totalTokens`.
+- **Sub-agents**: `subagent_spawned` (`child_session_id`, `subagent_type`, `model`) on
+  the parent's session, then the sub-agent's thread under `child_session_id`, then
+  `subagent_finished` (`status`, `tokens_used`, `output`). The runner puts the thread
+  under the spawning call (named by `subagent_id: <id>` in a background spawn's
+  result, or still open for a foreground one) and starts a task for the agents pane.
+- **Models**: `session/set_config_option` refuses (`-32602`) a model the account no
+  longer offers or an effort the model does not list; `session/new` falls back on the
+  default model without a word. The runner keeps Grok's value with a notice.
 - **Images**: Grok reports `image: false` but reads image blocks sent by its TUI.
   Mentioned files are sent as `file://` links, expanded like an `@path`.
 - **Catalog**: the `initialize` response contains the signed-in account's models
-  (`_meta.modelState`) and built-in commands without opening a session.
+  (`_meta.modelState`) and built-in commands without opening a session. On a stale
+  `models_cache.json` it holds the list built into the binary instead, without
+  `contextWindows`; the account's follows in `_x.ai/models/update`, which the catalog
+  waits for.
 
 ## Sign-in, accounts, and usage
 
@@ -109,8 +130,7 @@ read in a disposable process for both the CLI sign-in and every account.
 
 ## Out of scope
 
-Subagent threads (their `session/update` events arrive under their own session ID),
-background jobs, importing sessions started in the TUI.
+Background jobs (shells, monitors) as tasks, importing sessions started in the TUI.
 
 ## Verification
 
