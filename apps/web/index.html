@@ -83,19 +83,28 @@
          Startup mark, shown while the bundle loads and the session is checked; the app removes it
          with its first screen (src/lib/boot-mark.ts). A browser waits before showing it: most
          loads end sooner, and a mark that only flashes distracts more than a blank page. Same
-         mark, size and place as Sillage Desktop's startup page (apps/desktop/public/splash.html),
+         mark and place as Sillage Desktop's startup page (apps/desktop/public/splash.html), larger there,
          which this page replaces: keep the two in step.
     -->
     <style>
       #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
       /* The margin stands for the title under the startup page's mark. */
       #boot svg { width: 72px; height: 72px; margin-bottom: 40px; fill: var(--sg-accent, #535cda); opacity: 0; animation: boot-breathe 1.6s ease-in-out 0.6s infinite; }
-      /* In Sillage Desktop, in the colours of the startup page too: the mark must not change on the way. */
-      :root[data-boot='now'] #boot svg { animation-delay: 0s; fill: #535cda; }
-      @media (prefers-color-scheme: dark) { :root[data-boot='now'] #boot svg { fill: #8f9bff; } }
+      /* In Sillage Desktop, in the colours, halo and echo of the startup page too: the mark must not change on the way. */
+      :root[data-boot='now'] #boot { background: radial-gradient(640px 460px at 50% calc(50% - 20px), rgb(83 92 218 / 0.13), transparent 72%); }
+      :root[data-boot='now'] #boot svg { width: 104px; height: 104px; opacity: 1; animation: none; fill: #535cda; }
+      :root[data-boot='now'] #boot path { opacity: 0.4; animation: boot-echo 1.8s ease-in-out infinite; }
+      :root[data-boot='now'] #boot path:nth-child(2) { animation-delay: 0.18s; }
+      :root[data-boot='now'] #boot path:nth-child(3) { animation-delay: 0.36s; }
+      @media (prefers-color-scheme: dark) {
+        :root[data-boot='now'] #boot { background: radial-gradient(640px 460px at 50% calc(50% - 20px), rgb(143 155 255 / 0.16), transparent 72%); }
+        :root[data-boot='now'] #boot svg { fill: #8f9bff; }
+      }
       @keyframes boot-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+      @keyframes boot-echo { 0%, 100% { opacity: 0.4; } 35% { opacity: 1; } }
       @keyframes boot-still { to { opacity: 1; } }
       @media (prefers-reduced-motion: reduce) { #boot svg { animation-name: boot-still; animation-duration: 1ms; animation-iteration-count: 1; animation-fill-mode: forwards; } }
+      @media (prefers-reduced-motion: reduce) { :root[data-boot='now'] #boot path { animation: none; opacity: 1; } }
     </style>
   </head>
   <body>

@@ -4,38 +4,148 @@
     <meta charset="utf-8" />
     <!-- Startup page: shown while bundled Node boots the server, before the interface
          can be loaded. Same background as the window and the interface's first paint.
-         The interface then shows the same mark at the same place until its first screen
-         (apps/web/index.html): keep the two in step.
+         The interface then shows the same mark at the same place, with the same echo,
+         until its first screen (apps/web/index.html): keep the two in step.
          The main process passes the localized title as ?title=. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
     <style>
       /* Favicon colours: the interface's own theme is not known before it loads. */
-      :root { --background: #f7f7fb; --text: #5b5f78; --mark: #535cda; }
-      @media (prefers-color-scheme: dark) { :root { --background: #0b0d1c; --text: #a9adc4; --mark: #8f9bff; } }
+      :root { --background: #f7f7fb; --text: #5b5f78; --name: #23263b; --mark: #535cda; --halo: rgb(83 92 218 / 0.13); --water: #535cda; }
+      @media (prefers-color-scheme: dark) {
+        :root { --background: #0b0d1c; --text: #8f93ab; --name: #e6e8f5; --mark: #8f9bff; --halo: rgb(143 155 255 / 0.16); --water: #8f9bff; }
+      }
       html, body { height: 100%; margin: 0; background: var(--background); color: var(--text); overflow: hidden; }
-      body { display: flex; align-items: center; justify-content: center; font: 14px system-ui, sans-serif; user-select: none; }
+      body { font: 13px system-ui, sans-serif; user-select: none; -webkit-font-smoothing: antialiased; }
       /* Keeps the frameless window draggable, like the interface's title bar. */
-      .bar { position: fixed; inset: 0 0 auto 0; height: 36px; -webkit-app-region: drag; }
-      .mark { width: 72px; height: 72px; fill: var(--mark); animation: breathe 1.6s ease-in-out infinite; }
-      .stack { display: flex; flex-direction: column; align-items: center; gap: 20px; }
-      /* A fixed height under the mark, which the interface reserves too. */
-      #title { margin: 0; line-height: 20px; white-space: nowrap; }
-      @keyframes breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
-      @media (prefers-reduced-motion: reduce) { .mark { animation: none; } }
+      .bar { position: fixed; inset: 0 0 auto 0; height: 36px; -webkit-app-region: drag; z-index: 2; }
+
+      /* A soft light behind the mark, the only colour on the page besides it. */
+      .halo { position: fixed; inset: 0; background: radial-gradient(640px 460px at 50% calc(50% - 20px), var(--halo), transparent 72%); animation: rise 1.2s ease-out both; }
+
+      /* The mark sits where the interface's boot mark sits (centred, 40px of margin
+         below), so nothing moves when the interface takes over. The text hangs under it. */
+      .center { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+      .mark { width: 104px; height: 104px; margin-bottom: 40px; fill: var(--mark); overflow: visible; }
+      /* Each wave lights up after the one before it: an echo running through the mark. */
+      .mark path { opacity: 0.4; animation: echo 1.8s ease-in-out infinite; }
+      .mark path:nth-child(2) { animation-delay: 0.18s; }
+      .mark path:nth-child(3) { animation-delay: 0.36s; }
+
+      .caption { position: absolute; top: calc(50% + 36px); left: 0; right: 0; display: flex; flex-direction: column; align-items: center; animation: rise 0.9s 0.15s ease-out both; }
+      .name { margin: 0; color: var(--name); font-size: 28px; font-weight: 600; letter-spacing: 0.05em; line-height: 34px; }
+      #title { margin: 8px 0 0; line-height: 18px; white-space: nowrap; }
+      /* Indeterminate progress: a gleam crossing a hairline, like light along a wake. */
+      .track { position: relative; width: 112px; height: 2px; margin-top: 18px; overflow: hidden; background: color-mix(in srgb, var(--mark) 14%, transparent); }
+      .track::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 40%; background: linear-gradient(90deg, transparent, var(--mark), transparent); animation: glide 1.6s cubic-bezier(0.45, 0, 0.35, 1) infinite; }
+
+      /* Still water across the bottom of the window, drawn by the script below. */
+      /* Stops short of the caption in a small window; the mask melts its horizon and sides away. */
+      canvas { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: min(32vh, 50vh - 136px); animation: rise 1.6s 0.2s ease-out both;
+        -webkit-mask-image: radial-gradient(75% 130% at 50% 100%, #000 40%, transparent 100%); mask-image: radial-gradient(75% 130% at 50% 100%, #000 40%, transparent 100%); }
+
+      @keyframes echo { 0%, 100% { opacity: 0.4; } 35% { opacity: 1; } }
+      @keyframes glide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @keyframes rise { from { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) {
+        .mark path { animation: none; opacity: 1; }
+        .track::after { animation: none; left: 30%; }
+        .halo, .caption, canvas { animation: none; }
+      }
     </style>
   </head>
   <body>
     <div class="bar"></div>
-    <div class="stack">
+    <div class="halo"></div>
+    <canvas aria-hidden="true"></canvas>
+    <div class="center">
       <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
         <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z" />
         <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z" />
         <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z" />
       </svg>
+    </div>
+    <div class="caption">
+      <p class="name">Sillage</p>
       <p id="title"></p>
+      <div class="track"></div>
     </div>
     <script>
       document.getElementById('title').textContent = new URLSearchParams(location.search).get('title') || 'Sillage'
+
+      // Rows of water seen in perspective: closer rows are further apart, more visible and
+      // swell more. A path of short glints under the mark catches its light, as on the
+      // sign-in page. Purely decorative, and only lives for the few seconds of startup.
+      ;(() => {
+        const canvas = document.querySelector('canvas')
+        const context = canvas.getContext('2d')
+        const ROWS = 15
+        const STEP = 6 // px between samples along a row
+        const still = matchMedia('(prefers-reduced-motion: reduce)')
+        let width = 0
+        let height = 0
+        let colour = ''
+
+        function resize() {
+          const ratio = devicePixelRatio || 1
+          width = canvas.clientWidth
+          height = canvas.clientHeight
+          canvas.width = Math.round(width * ratio)
+          canvas.height = Math.round(height * ratio)
+          context.setTransform(ratio, 0, 0, ratio, 0, 0)
+          colour = getComputedStyle(document.documentElement).getPropertyValue('--water').trim()
+        }
+
+        function draw(time) {
+          const t = time / 1000
+          context.clearRect(0, 0, width, height)
+          context.strokeStyle = colour
+          context.lineCap = 'round'
+          for (let r = 0; r < ROWS; r++) {
+            const depth = (r + 1) / ROWS // 0 far away, 1 at the bottom edge
+            const y = height * depth ** 2.2
+            const swell = 0.6 + depth * 3.2
+            const wave = (x) =>
+              Math.sin(x / (60 + depth * 90) + t * 0.9 + r * 1.7) * swell * 0.6 +
+              Math.sin(x / (23 + depth * 40) - t * 1.3 + r * 0.6) * swell * 0.4
+            context.globalAlpha = 0.05 + depth * 0.22
+            context.lineWidth = 0.6 + depth * 0.8
+            context.beginPath()
+            for (let x = 0; x <= width + STEP; x += STEP) {
+              const yy = y + wave(x)
+              if (x === 0) context.moveTo(x, yy)
+              else context.lineTo(x, yy)
+            }
+            context.stroke()
+
+            // The reflection path: glints narrow towards the horizon, flicker with the swell.
+            const spread = 14 + depth * 120
+            const glints = 3 + Math.round(depth * 6)
+            context.lineWidth = 1.2 + depth * 1.8
+            for (let g = 0; g < glints; g++) {
+              const seed = Math.sin(r * 12.9898 + g * 78.233) * 43758.5453
+              const offset = ((seed - Math.floor(seed)) * 2 - 1) * spread
+              const x = width / 2 + offset
+              const flicker = 0.5 + 0.5 * Math.sin(t * 2.2 + seed)
+              const length = (5 + depth * 22) * (0.4 + flicker * 0.6)
+              context.globalAlpha = Math.min(1, (0.45 + depth * 0.6) * flicker * (1 - Math.abs(offset) / (spread * 1.1)))
+              context.beginPath()
+              context.moveTo(x - length / 2, y + wave(x - length / 2))
+              context.lineTo(x + length / 2, y + wave(x + length / 2))
+              context.stroke()
+            }
+          }
+          context.globalAlpha = 1
+        }
+
+        function frame(time) {
+          draw(time)
+          if (!still.matches) requestAnimationFrame(frame)
+        }
+
+        resize()
+        addEventListener('resize', () => { resize(); if (still.matches) draw(0) })
+        requestAnimationFrame(frame)
+      })()
     </script>
   </body>
 </html>
