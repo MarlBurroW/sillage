@@ -1,5 +1,5 @@
 export * from '@sillage/protocol/chat-state'
-import { isAwaitingUser, type ChatState, type ChatItem, type NoticeItem } from '@sillage/protocol/chat-state'
+import { isAwaitingUser, type ChatState, type ChatItem, type NoticeItem, type ToolItem } from '@sillage/protocol/chat-state'
 import { DETACHED_WORK_EVICTED_NOTICE, USAGE_LIMIT_RESUMED_NOTICE, USAGE_LIMIT_STOP_NOTICE } from '@sillage/protocol'
 import { formatCount, locale, translate, type MessageKey } from './i18n'
 import { describeUsageLimitStop, readUsageLimitDetails } from './usage-limit'
@@ -39,7 +39,7 @@ function describeCompaction(preTokens: number | null, postTokens: number | null)
  * like the rest of the display, so it remains accurate after reload without parallel state. A
  * pending permission request returns nothing because the request itself provides the information.
  */
-export function describeActivity(state: ChatState): string | null {
+export function describeActivity(state: ChatState, runningTool?: (tool: ToolItem) => string): string | null {
   // Check compaction before the turn: menu-triggered compaction does not always open a turn, and
   // takes precedence when both coexist. The reported size is the pre-compaction size, the only one
   // known until completion.
@@ -57,15 +57,16 @@ export function describeActivity(state: ChatState): string | null {
     return translate('activity.thinking.tokens', { tokens: exactTokens(state.thinkingTokens) })
   }
 
-  return activityOf(state.items, null)
+  return activityOf(state.items, null, runningTool)
 }
 
 /**
  * The thread author's activity inferred from its latest item. `thread` identifies the author:
  * `null` for the main agent, the spawning call for a subagent. Without this filter a busy subagent
  * would make the main thread claim to search files while it is waiting for the report.
+ * `runningTool` words a running call; by default the label names the tool.
  */
-export function activityOf(items: ChatItem[], thread: string | null): string | null {
+export function activityOf(items: ChatItem[], thread: string | null, runningTool?: (tool: ToolItem) => string): string | null {
   for (let i = items.length - 1; i >= 0; i -= 1) {
     const item = items[i]
     if (!item) continue
@@ -84,7 +85,7 @@ export function activityOf(items: ChatItem[], thread: string | null): string | n
     }
     if (item.kind === 'tool') {
       return item.status === 'running'
-        ? translate('activity.toolRunning', { name: item.name })
+        ? runningTool?.(item) ?? translate('activity.toolRunning', { name: item.name })
         : translate('message.thinking.label')
     }
     if (item.kind === 'message') {

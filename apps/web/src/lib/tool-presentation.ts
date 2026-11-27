@@ -129,7 +129,36 @@ export function toolIntent(tool: ToolItem): ToolIntent {
   if (['Edit','Write','ApplyPatch','NotebookEdit'].includes(tool.name)) return 'change'
   // Une commande arbitraire n’est pas une vérification.
   if (tool.name === 'Bash' && /(?:^|[\s:])(?:test|typecheck|lint|check)(?:$|[\s:])/.test(String((tool.input as { command?: unknown } | null)?.command ?? ''))) return 'verify'
+  // Codex reads the project through its shell and parses each command: one that only reads, lists
+  // or searches explores, like Read or Grep would.
+  if (tool.name === 'Bash' && onlyExplores((tool.input as { commandActions?: unknown } | null)?.commandActions)) return 'inspect'
   return 'other'
+}
+const EXPLORING_ACTIONS = new Set(['read', 'listFiles', 'search'])
+function onlyExplores(actions: unknown): boolean {
+  return Array.isArray(actions) && actions.length > 0
+    && actions.every((action) => EXPLORING_ACTIONS.has(String(fields(action)?.type)))
+}
+
+/** The kinds of work in a sequence, in order of appearance. "Other actions" would say nothing. */
+export function sequenceIntents(tools: ToolItem[]): string {
+  return [...new Set(tools.map(toolIntent))]
+    .filter((intent) => intent !== 'other')
+    .map((intent) => translate(INTENT_LABELS[intent]))
+    .join(' · ')
+}
+
+const ACTIVITY_LABELS: Record<ToolIntent, MessageKey> = {
+  context: 'toolStyle.activity.context', inspect: 'toolStyle.activity.inspect', change: 'toolStyle.activity.change',
+  verify: 'toolStyle.activity.verify', other: 'toolStyle.activity.other',
+}
+
+/**
+ * What a running call is doing, for the Minimal style: its readers do not know `Bash` or `Grep`,
+ * and a raw MCP name such as `mcp__github__search_issues` reads as an error.
+ */
+export function toolActivity(tool: ToolItem): string {
+  return translate(ACTIVITY_LABELS[toolIntent(tool)])
 }
 
 /** Aperçu borné, sans charger les sorties complètes ni sérialiser des objets volumineux. */

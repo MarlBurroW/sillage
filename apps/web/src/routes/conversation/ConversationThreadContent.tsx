@@ -31,6 +31,7 @@ export function ConversationThreadContent({
   showEarlier,
   workflowTasks,
   mayCollapseTools,
+  revealTools,
   isOwner,
   canSteer,
   forking,
@@ -53,6 +54,7 @@ export function ConversationThreadContent({
   showEarlier: () => void
   workflowTasks: ReturnType<typeof workflowTasksByToolCall>
   mayCollapseTools: boolean
+  revealTools: boolean
   isOwner: boolean
   canSteer: boolean
   forking: boolean
@@ -110,6 +112,7 @@ export function ConversationThreadContent({
         <ChatThread
           rows={view.rows}
           mayCollapseTools={mayCollapseTools}
+          revealTools={revealTools}
           conversationId={conversationId}
           canDecide={isOwner}
           onFork={isOwner && !forking ? onFork : undefined}

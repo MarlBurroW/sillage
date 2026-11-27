@@ -133,3 +133,23 @@ late names, status-only completion, body references and persisted projection reb
 checks cover six styles on desktop/mobile, raw command access behind descriptions, all existing
 scroll/grouping rules and deferred output fetching. The normalized events and renderer are shared
 by Server and Desktop; authentication, permissions and Electron behavior are unchanged.
+
+## Minimal style (November 2026)
+
+For readers who never open the calls, typically non-developers, Appearance › Tools offers a seventh
+choice, Minimal (`sober`). It changes what the thread shows, not how a call looks:
+
+- Every tool sequence is one line from its first call: “N actions” followed by the kinds of work it
+  contains (the `toolIntent` categories, “other” left out). New calls change the count, never the
+  height, so nothing stacks or jumps during a turn. A click opens the line, and the opened calls
+  use the default look. Thread search opens every line while it is up, as in concentration mode.
+- Failures stay out of the line, in its tooltip and the opened calls: the agent says in its reply
+  what went wrong, and a red count its readers cannot interpret would only worry them.
+- Activity lines word a running call by its kind of work (“Reading and exploring”, “Running checks”)
+  instead of the tool name, in the thread, wall tiles and sub-agent fallbacks. Codex shell commands
+  that only read, list or search count as exploring, in every style.
+- Calls kept apart from sequences (sub-agent launches, schedules awaiting approval) keep their row.
+
+The preference is the account's existing `appearance.toolStyle` string: no server or schema change,
+and a client predating it falls back to the default style. `pnpm test:tool-styles-ui` covers it at
+desktop and phone widths.

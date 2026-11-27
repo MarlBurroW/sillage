@@ -9,6 +9,7 @@ import { openDecision } from '../../lib/decisions'
 import { useTranslate } from '../../lib/i18n'
 import { useTrackRead } from '../../lib/reads'
 import { buildRows, threadTail } from '../../lib/tool-rows'
+import { useRunningToolLabel } from '../../lib/tool-style'
 import { useChatStream } from '../../lib/use-chat-stream'
 import { AgentIcon, AGENT_LABELS } from '../AgentIcon'
 import { ChatThread } from '../chat/ChatThread'
@@ -51,7 +52,8 @@ export const WallTile = memo(function WallTile({ conversation, facts, projectNam
 
   const { items, turnRunning } = stream.state
   const rows = useMemo(() => buildRows(threadTail(items, TAIL_ITEMS), null, turnRunning), [items, turnRunning])
-  const activity = facts.state === 'running' ? describeActivity(stream.state) ?? t('wall.tile.working') : null
+  const runningTool = useRunningToolLabel()
+  const activity = facts.state === 'running' ? describeActivity(stream.state, runningTool) ?? t('wall.tile.working') : null
 
   const scroller = useRef<HTMLDivElement>(null)
   const body = useRef<HTMLDivElement>(null)

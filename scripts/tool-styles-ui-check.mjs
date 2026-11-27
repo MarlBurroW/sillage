@@ -106,6 +106,8 @@ async function mount(page) {
       useAppearanceSync()
       const [items, setItems] = React.useState(window.makeItems('running'))
       const [following, setFollowing] = React.useState(true)
+      const [reveal, setReveal] = React.useState(false)
+      window.setReveal = setReveal
       const scroller = React.useRef(null)
       const lastTop = React.useRef(0)
       window.threadLastTop = lastTop
@@ -120,7 +122,7 @@ async function mount(page) {
           if(node.scrollHeight-top-node.clientHeight<48)setFollowing(true)
           else if(top<lastTop.current-1)setFollowing(false)
           lastTop.current=top
-        }},React.createElement('div',{className:'flex flex-col gap-3 p-3'},React.createElement(ChatThread,{rows,conversationId:'fixture',mayCollapseTools:following}))))
+        }},React.createElement('div',{className:'flex flex-col gap-3 p-3'},React.createElement(ChatThread,{rows,conversationId:'fixture',mayCollapseTools:following,revealTools:reveal}))))
     }
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider,{client:new QueryClient({defaultOptions:{queries:{retry:false}}})},React.createElement(MemoryRouter,null,React.createElement(TooltipProvider,null,React.createElement(Screen)))))
   })
@@ -151,7 +153,7 @@ try {
     await mount(page)
     await page.locator('#settings > summary').click()
     const choices=page.getByRole('group',{name:'Outils dans les conversations'})
-    assert.equal(await choices.locator('button').count(),6)
+    assert.equal(await choices.locator('button').count(),7)
     let webBodyRequests = 0
     await page.route('**/api/conversations/fixture/events/321/body/output', route => {
       webBodyRequests++
@@ -257,6 +259,59 @@ try {
     await page.locator('#thread [data-tool-id="opencode-patch"] .sg-tool-heading').click()
     await delay(650)
     assert.equal(appearance.toolStyle,'classic','Preference sent to account')
+    // Minimal: each sequence is one line from its first call, whatever the reader does, and the
+    // activity line says what kind of work runs rather than which tool.
+    await choices.getByRole('button',{name:/^Sobre/}).click()
+    await page.locator('[data-tool-style-preview] .sg-tools-sober[data-folded="true"]').waitFor()
+    assert.match(await page.locator('[data-tool-style-preview]').innerText(),/3 actions[\s\S]*Contexte du projet · Explorer et lire[\s\S]*Lecture et exploration/)
+    await page.screenshot({path:`${output}/sober-settings-${width}.png`})
+    await page.locator('#settings > summary').click()
+    await page.evaluate(()=>window.setItems(window.makeItems('running')));await settle()
+    await page.evaluate(()=>window.follow());await settle()
+    const sequence=page.locator('#thread [data-tool-sequence]')
+    assert.equal(await sequence.count(),1)
+    assert.equal(await sequence.getAttribute('data-folded'),'true','A running sequence is already one line')
+    assert.equal(await page.locator('#thread .sg-tool').count(),0,'No call row while folded')
+    assert.match(await sequence.innerText(),/^19 actions\s*Contexte du projet · Explorer et lire$/)
+    const oneLine=await sequence.evaluate(e=>e.getBoundingClientRect().height)
+    assert.ok(oneLine<=32,`One quiet line (${oneLine}px)`)
+    const grow=(id,name,status)=>page.evaluate(([id,name,status])=>window.setItems(items=>[...items.map(item=>item.status==='running'?{...item,status:'done',durationMs:80}:item),{kind:'tool',id,name,ts:0,input:{command:'pnpm test'},output:null,outputBytes:null,status,durationMs:null,parentToolCallId:null}]),[id,name,status])
+    await grow('more-1','Bash','running');await settle()
+    await grow('more-2','Edit','running');await settle()
+    assert.match(await sequence.innerText(),/^21 actions\s*Contexte du projet · Explorer et lire · Vérifier · Modifier$/)
+    assert.equal(await sequence.evaluate(e=>e.getBoundingClientRect().height),oneLine,'New calls do not grow the thread')
+    assert.ok(await page.locator('#thread').evaluate(n=>n.scrollHeight-n.clientHeight-n.scrollTop<2),'Still at the bottom')
+    await page.screenshot({path:`${output}/sober-running-${width}.png`})
+    // Reading further up must not unfold anything, unlike the detailed styles' held folds.
+    await page.locator('#thread').evaluate(node=>{node.scrollTop-=300});await settle()
+    await page.evaluate(()=>window.setItems(window.makeItems('text')));await settle()
+    assert.equal(await sequence.getAttribute('data-folded'),'true','Text resuming leaves the line as it was')
+    assert.equal(await page.locator('#thread .sg-tool').count(),0)
+    await page.evaluate(()=>window.follow());await settle()
+    // The calls stay one click away, drawn like the default style.
+    await sequence.locator('.sg-tool-group-heading').click()
+    assert.equal(await sequence.getAttribute('data-folded'),'false')
+    assert.equal(await page.locator('#thread .sg-tool.sg-tools-inline').count(),19)
+    await page.locator('#thread [data-tool-id="sillage"] .sg-tool-heading').click()
+    assert.match(await page.locator('#thread [data-tool-id="sillage"] .sg-tool-detail').innerText(),/sillage\/read_memory/)
+    await page.screenshot({path:`${output}/sober-open-${width}.png`})
+    await sequence.locator('.sg-tool-group-heading').click()
+    assert.equal(await sequence.getAttribute('data-folded'),'true')
+    // Thread search needs every call on the page, and gives the line back afterwards.
+    await page.evaluate(()=>window.setReveal(true));await settle()
+    assert.equal(await sequence.getAttribute('data-folded'),'false','Search reveals the calls')
+    await page.evaluate(()=>window.setReveal(false));await settle()
+    assert.equal(await sequence.getAttribute('data-folded'),'true')
+    // Calls kept apart (a sub-agent launch) keep their row, in the default look.
+    await page.evaluate(()=>window.setItems(window.presentationCases));await settle()
+    assert.equal(await page.locator('#thread [data-tool-sequence][data-folded="false"]').count(),0)
+    assert.equal(await page.locator('#thread .sg-tool').count(),1)
+    assert.ok(await page.locator('#thread [data-tool-id="agent-effort"].sg-tools-inline').isVisible())
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+    await page.screenshot({path:`${output}/sober-${width}.png`})
+    await delay(650)
+    assert.equal(appearance.toolStyle,'sober','Minimal saved on the account')
+    await page.locator('#settings > summary').click()
     await choices.getByRole('button',{name:'Lignes discrètes Par défaut'}).click()
     await page.locator('#settings > summary').click()
     await page.evaluate(()=>window.setItems(window.makeItems('running')));await settle()
@@ -317,6 +372,6 @@ try {
   await fresh.page.locator('#thread .sg-tools-timeline').first().waitFor()
   await fresh.context.close()
   assert.deepEqual(errors,[])
-  console.log('OK: six styles, human metadata, tool summaries, call qualifiers, web inputs, lazy bodies, settings sync, grouping, scroll, mobile and reduced motion.')
+  console.log('OK: six styles and Minimal, human metadata, tool summaries, call qualifiers, web inputs, lazy bodies, settings sync, grouping, scroll, mobile and reduced motion.')
 } catch(error){console.error(diagnostics);throw error}
 finally{await browser?.close();vite.kill('SIGTERM');await once(vite,'exit').catch(()=>{})}

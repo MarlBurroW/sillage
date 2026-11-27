@@ -1,8 +1,8 @@
 import { Logo } from '../Logo'
 import { toolEdits } from '../../lib/tool-edits'
 import { toolWebInput } from '../../lib/tool-web-input'
-import { useToolStyle, type ToolStyle } from '../../lib/tool-style'
-import { toolLabel, toolOrigin, toolPreview, toolIntent, toolSummary, toolQualifiers, INTENT_LABELS } from '../../lib/tool-presentation'
+import { callLook, useToolStyle, type ToolStyle } from '../../lib/tool-style'
+import { toolLabel, toolOrigin, toolPreview, toolIntent, toolSummary, toolQualifiers, sequenceIntents, INTENT_LABELS } from '../../lib/tool-presentation'
 import {
   Bot,
   ChevronRight,
@@ -168,7 +168,7 @@ export const ToolCall = memo(function ToolCall({
     ? tool.status === 'running' ? 'tool.write.countsPlanned' : 'tool.write.counts'
     : tool.status === 'running' ? 'tool.edit.countsPlanned' : edits?.scope === 'replacement' ? 'tool.edit.countsReplacement' : edits?.scope === 'fragment' ? 'tool.edit.countsFragment' : 'tool.edit.counts', counts) : ''
   const [preferredStyle] = useToolStyle()
-  const style = variant ?? preferredStyle
+  const style = callLook(variant ?? preferredStyle)
   const origin = toolOrigin(tool.name, tool.presentation)
   const label = toolLabel(tool.name, tool.presentation)
   const statusLabel = t(tool.status === 'running' ? 'toolStyle.pending' : tool.status === 'done' ? 'toolStyle.done' : tool.status === 'failed' ? 'toolStyle.failed' : 'toolStyle.stopped')
@@ -370,13 +370,18 @@ function summarizeNames(tools: ToolItem[]): string {
  * errors. Compare array contents rather than identity: buildRows creates new grouping arrays each
  * delta batch, causing reference-based memoization to miss and redraw every group sixteen times per
  * second.
+ *
+ * A quiet group (concentration mode, Minimal style) is one line from its first call and opens only
+ * when the reader asks, or while thread search needs every call on the page (`reveal`). It never
+ * folds or unfolds by itself, so the reader's position needs no protecting.
  */
 export const ToolCallGroup = memo(function ToolCallGroup({
-  tools, conversationId, complete = true, mayCollapse = true, variant, quiet = false,
+  tools, conversationId, complete = true, mayCollapse = true, variant, quiet = false, reveal = false,
 }: {
   tools: ToolItem[]
   conversationId: string
   quiet?: boolean
+  reveal?: boolean
   complete?: boolean
   mayCollapse?: boolean
   variant?: ToolStyle
@@ -384,6 +389,9 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   const t = useTranslate()
   const [preferredStyle] = useToolStyle()
   const style = variant ?? preferredStyle
+  const sober = style === 'sober'
+  const look = callLook(style)
+  const calm = quiet || sober
   const eligible = complete && tools.length >= 2
   const [collapsed, setCollapsed] = useState(eligible && mayCollapse)
   const [manual, setManual] = useState(false)
@@ -417,8 +425,8 @@ export const ToolCallGroup = memo(function ToolCallGroup({
     if (eligible && mayCollapse && (fresh || offscreen) && !manual && !pinnedIntent && opened.size === 0) setCollapsed(true)
   }, [eligible, mayCollapse, offscreen, manual, pinnedIntent, opened.size])
   const [quietExpanded, setQuietExpanded] = useState(false)
-  const folded = quiet ? mayCollapse && !quietExpanded : eligible && collapsed
-  const header = quiet || folded || manual
+  const folded = calm ? !reveal && !quietExpanded : eligible && collapsed
+  const header = calm || folded || manual
   const failed = tools.filter((tool) => tool.status === 'failed').length
   const interrupted = tools.filter((tool) => tool.status === 'interrupted').length
   const total = tools.reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0)
@@ -426,9 +434,23 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   const external = tools.filter((tool) => toolOrigin(tool.name, tool.presentation).kind === 'mcp').length
   const servers = [...new Set(tools.map((tool) => toolOrigin(tool.name, tool.presentation)).filter((origin) => origin.kind === 'mcp').map((origin) => origin.server))].join(', ')
 
+  // Minimal says how much was done and what kind of work, nothing to decode. Failures stay in the
+  // tooltip: the agent says in its reply what went wrong, and a red count on a line its readers
+  // never open would worry them without telling them anything.
+  const soberLine = sober ? {
+    count: t(tools.length > 1 ? 'toolStyle.sober.count.other' : 'toolStyle.sober.count.one', { count: tools.length }),
+    intents: sequenceIntents(tools),
+    failures: failed > 0 ? t(failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one', { count: failed }) : '',
+  } : null
+
   return <div ref={node} className={`sg-tool-sequence sg-tools-${style}`} data-thread-anchor={`tools-${tools[0]?.id}`} data-tool-sequence data-folded={folded}>
-    {header ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}
-      onClick={() => { if (quiet) setQuietExpanded(folded); else { setManual(true); setCollapsed(!folded) } }}>
+    {soberLine ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}
+      title={[soberLine.count, soberLine.intents, soberLine.failures].filter(Boolean).join(' · ')} onClick={() => setQuietExpanded(folded)}>
+      <ChevronRight size={14} className={cx('shrink-0', !folded && 'rotate-90')} />
+      <span className="shrink-0">{soberLine.count}</span>
+      <span className="min-w-0 flex-1 truncate">{soberLine.intents}</span>
+    </button> : header ? <button type="button" className="sg-tool-group-heading" aria-expanded={!folded}
+      onClick={() => { if (calm) setQuietExpanded(folded); else { setManual(true); setCollapsed(!folded) } }}>
       <ChevronRight size={14} className={cx('shrink-0 text-ink-faint', !folded && 'rotate-90')} />
       <span className="shrink-0 font-medium">{t(tools.length > 1 ? 'toolcall.group.count.other' : 'toolcall.group.count.one', { count: tools.length })}</span>
       <span className="min-w-0 flex-1 truncate text-xs text-ink-faint" title={summarizeNames(tools)}>{summarizeNames(tools)}</span>
@@ -439,12 +461,12 @@ export const ToolCallGroup = memo(function ToolCallGroup({
       {total > 0 && !quiet ? <span className="sg-tool-duration text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span> : null}
     </button> : null}
     {!folded ? <div className="sg-tool-list">
-      {style === 'intent' ? intentSections(tools).map((section) => <IntentSection key={section[0]!.id} label={t(INTENT_LABELS[toolIntent(section[0]!)])} count={section.length} onInteract={() => setPinnedIntent(true)}>
-        {section.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={style} onOpenChange={onOpenChange} />)}
-      </IntentSection>) : tools.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={style} onOpenChange={onOpenChange} />)}
+      {look === 'intent' ? intentSections(tools).map((section) => <IntentSection key={section[0]!.id} label={t(INTENT_LABELS[toolIntent(section[0]!)])} count={section.length} onInteract={() => setPinnedIntent(true)}>
+        {section.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={look} onOpenChange={onOpenChange} />)}
+      </IntentSection>) : tools.map((tool) => <ToolCall key={tool.id} tool={tool} conversationId={conversationId} variant={look} onOpenChange={onOpenChange} />)}
     </div> : null}
   </div>
-}, (previous, next) => previous.conversationId === next.conversationId && previous.complete === next.complete && previous.quiet === next.quiet && previous.mayCollapse === next.mayCollapse && previous.variant === next.variant && previous.tools.length === next.tools.length && previous.tools.every((tool, index) => tool === next.tools[index]))
+}, (previous, next) => previous.conversationId === next.conversationId && previous.complete === next.complete && previous.quiet === next.quiet && previous.reveal === next.reveal && previous.mayCollapse === next.mayCollapse && previous.variant === next.variant && previous.tools.length === next.tools.length && previous.tools.every((tool, index) => tool === next.tools[index]))
 
 /** Des catégories locales, sans générer de titres ni prétendre connaître l’intention du modèle. */
 function intentSections(tools: ToolItem[]): ToolItem[][] {

@@ -62,7 +62,7 @@ function field(input: unknown, key: string): string {
  * several seconds can pass before the first event, and omitting them would make the banner appear
  * then flicker.
  */
-export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): SubAgent[] {
+export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks'], runningTool?: (tool: ToolItem) => string): SubAgent[] {
   const byId = new Map<string, SubAgent>()
   // The CLI identifies tasks by their own IDs; the thread knows only the tool call, which links the two views.
   const byToolCall = new Map<string, TaskState>()
@@ -122,7 +122,7 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
     if (agent.status !== 'running') continue
     // The CLI describes its agent's activity, including reasoning without tool calls. Log fallback
     // covers the seconds before the first report and CLIs that never report.
-    agent.activity = byToolCall.get(agent.id)?.activity ?? activityOf(agent.items, agent.id)
+    agent.activity = byToolCall.get(agent.id)?.activity ?? activityOf(agent.items, agent.id, runningTool)
   }
   return agents
 }

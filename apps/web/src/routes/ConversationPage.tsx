@@ -31,6 +31,7 @@ import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
 import { describeActivity } from '../lib/chat-fold'
+import { useRunningToolLabel } from '../lib/tool-style'
 import { messageHistory } from '../lib/turns'
 import { SignalRow } from '../components/chat/Signals'
 import { useChatStream } from '../lib/use-chat-stream'
@@ -121,7 +122,8 @@ export function ConversationPage() {
     scroller, conversationId, conversation, stream, placement, growWindowTo, syncVisibleTurns, setFlashed,
   })
 
-  const activity = describeActivity(stream.state)
+  const runningTool = useRunningToolLabel()
+  const activity = describeActivity(stream.state, runningTool)
   const concentration = useConcentration()
   const statusBar = useStatusBar()
   // Context on the status line takes the composer gauge's place, except in concentration mode,
@@ -382,7 +384,8 @@ export function ConversationPage() {
               view={view}
               showEarlier={showEarlier}
               workflowTasks={workflowTasks}
-              mayCollapseTools={concentration ? !findOpen : !placed || stuckToBottom}
+              mayCollapseTools={!placed || stuckToBottom}
+              revealTools={findOpen}
               isOwner={isOwner}
               canSteer={canSteer}
               forking={actions.forking}

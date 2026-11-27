@@ -8,6 +8,7 @@ import { buildLoops, type ArmedLoop } from '../../lib/loops'
 import { buildSignals } from '../../lib/signals'
 import { buildSubAgents, type SubAgent } from '../../lib/subagents'
 import { buildRows } from '../../lib/tool-rows'
+import { useRunningToolLabel } from '../../lib/tool-style'
 import { buildTurns } from '../../lib/turns'
 import { usageAccountOf } from '../../lib/usage'
 import type { ChatStream } from '../../lib/use-chat-stream'
@@ -37,9 +38,10 @@ function useTicker(active: boolean): number {
 export function useThreadModel(stream: ChatStream) {
   const turns = useMemo(() => buildTurns(stream.state.items), [stream.state.items])
   const rows = useMemo(() => buildRows(stream.state.items, null, stream.state.turnRunning), [stream.state.items, stream.state.turnRunning])
+  const runningTool = useRunningToolLabel()
   const subAgents = useMemo(
-    () => buildSubAgents(stream.state.items, stream.state.tasks),
-    [stream.state.items, stream.state.tasks],
+    () => buildSubAgents(stream.state.items, stream.state.tasks, runningTool),
+    [stream.state.items, stream.state.tasks, runningTool],
   )
   /**
    * Same caveat as background work below: a cold session runs nothing, so a workflow the journal
