@@ -1,0 +1,9 @@
+/* The app's own stylesheet, so the mockup uses the real tokens, prose and composer rules. */
+@import '../../../apps/web/src/styles/index.css';
+
+@source './';
+@source '../../../apps/web/src/components';
+
+#root {
+  height: 100%;
+}

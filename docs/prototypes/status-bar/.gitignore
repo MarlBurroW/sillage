@@ -1,0 +1,2 @@
+# serve.mjs links node_modules to apps/web: a symlink is a file, which the root `node_modules/` rule skips.
+node_modules
