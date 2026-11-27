@@ -21,6 +21,8 @@ import type { CodexAccountStore } from '../codex-accounts/store.js'
 import type { GrokAccountHomes } from '../grok-accounts/homes.js'
 import type { AntigravityAccountHomes } from '../antigravity-accounts/homes.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
+import type { CopilotAccountHomes } from '../copilot-accounts/homes.js'
+import type { CopilotAccountStore } from '../copilot-accounts/store.js'
 import type { AntigravityAccountStore } from '../antigravity-accounts/store.js'
 import type {
   ElicitationAnswer,
@@ -110,12 +112,13 @@ export class SessionManager {
     codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
     grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
     antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
+    copilotAccounts: { store: CopilotAccountStore; homes: CopilotAccountHomes },
     /** Absent in tests that do not look at consumption. */
     usage: TurnUsageRecorder | null = null,
   ) {
     this.statusBus.setMaxListeners(200)
     this.cliGate = new CliGate(registry)
-    this.accounts = new SessionAccounts(log, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts)
+    this.accounts = new SessionAccounts(log, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts, copilotAccounts)
     this.queue = new MessageQueue(log)
     this.pool = new RunnerPool(db, log, config, registry, usage, {
       isQuiescent: (conversationId) => this.isQuiescent(conversationId),

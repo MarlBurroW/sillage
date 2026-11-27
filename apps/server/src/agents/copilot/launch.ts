@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CopilotConfig } from '@sillage/protocol'
+import { agentProcessEnv } from '../process-env.js'
 
 /** How Sillage launches `copilot --acp` and its environment. All claims probed on GitHub Copilot CLI 1.0.116. */
 
@@ -14,6 +15,21 @@ export const COPILOT_ISOLATION_ENV: Record<string, string> = {
   COPILOT_AUTO_UPDATE: 'false',
   COPILOT_PLUGIN_DIR_ONLY: 'true',
   COPILOT_DISABLE_DESKTOP_NOTIFICATIONS: '1',
+}
+
+/** Tokens Copilot takes ahead of any stored sign-in, in this order (`copilot help environment`). */
+const TOKEN_VARIABLES = ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN']
+
+/**
+ * Environment of a Copilot process. `COPILOT_HOME` among the overrides is an extra account's
+ * home: the server's tokens are then removed, since any of them would silently answer in that
+ * account's place, and a `GH_TOKEN` set for the GitHub CLI would decide which plan pays. The
+ * agent's own shell commands lose them too in that session.
+ */
+export function copilotProcessEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
+  const env = agentProcessEnv(overrides)
+  if (overrides.COPILOT_HOME) for (const name of TOKEN_VARIABLES) delete env[name]
+  return env
 }
 
 /** Key of Copilot's extensions in ACP `_meta`, and prefix of its extension methods. */
@@ -48,12 +64,14 @@ export const COPILOT_CLIENT_CAPABILITIES: Record<string, unknown> = {
 
 /**
  * Copilot refuses to open a session without a sign-in and only answers "Authentication
- * required": say what to do instead. Any other failure passes through.
+ * required": say what to do instead. Any other failure passes through. `account`: the process ran
+ * on an extra account's home rather than the machine's sign-in.
  */
-export function explainSignIn(error: unknown): unknown {
-  return error instanceof Error && /authentication required/i.test(error.message)
-    ? new Error('GitHub Copilot is not signed in on this machine. Run `copilot login` in a terminal there, or give the server a token in COPILOT_GITHUB_TOKEN.')
-    : error
+export function explainSignIn(error: unknown, account = false): unknown {
+  if (!(error instanceof Error && /authentication required/i.test(error.message))) return error
+  return new Error(account
+    ? 'The GitHub Copilot account chosen for this conversation is no longer signed in. Sign it in again in Settings › Copilot accounts.'
+    : 'GitHub Copilot is not signed in on this machine. Run `copilot login` in a terminal there, or give the server a token in COPILOT_GITHUB_TOKEN.')
 }
 
 /** Routing profiles documented by `copilot help config` for `autoTier`; the server may advertise others. */
@@ -104,12 +122,16 @@ export function copilotLaunch(config: CopilotConfig, input: CopilotLaunchInput):
   return { args, env }
 }
 
-/** Launch of a process that only reads Copilot's state (catalog, native sessions): no skills, directories or instructions. */
-export function copilotProbeLaunch(): CopilotLaunch {
-  return copilotLaunch(
-    { agent: 'copilot', model: '', reasoningEffort: '', autoTier: '', mode: 'agent', allowAll: 'off', additionalDirectories: [], mcpServers: [], sillageMcp: false, skillLibrary: false },
+/**
+ * Launch of a process that only reads Copilot's state (catalog, native sessions): no skills,
+ * directories or instructions. `home` is an extra account's `COPILOT_HOME`.
+ */
+export function copilotProbeLaunch(home?: string): CopilotLaunch {
+  const launch = copilotLaunch(
+    { agent: 'copilot', model: '', reasoningEffort: '', autoTier: '', mode: 'agent', allowAll: 'off', additionalDirectories: [], mcpServers: [], sillageMcp: false, skillLibrary: false, account: null },
     { skillRoots: [], directories: [], instructionsDir: null },
   )
+  return home ? { ...launch, env: { ...launch.env, COPILOT_HOME: home } } : launch
 }
 
 export function sameLaunch(a: CopilotLaunch, b: CopilotLaunch): boolean {

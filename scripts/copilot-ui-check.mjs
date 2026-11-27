@@ -117,7 +117,7 @@ try {
     // Complete the tour through its API to focus this check on the integration.
     await context.request.patch(base + '/api/me/settings', { data: { onboarding: { completedAt: Date.now(), pending: false } } })
 
-    // 1. The CLI is offered with the catalog its session reports, and no account choice.
+    // 1. The CLI is offered with the catalog its session reports, and no account choice without extra accounts.
     const agents = await json(await context.request.get(base + '/api/agents'))
     const copilot = agents.agents.find((entry) => entry.agent === 'copilot')
     assert.equal(copilot.installed, true, JSON.stringify(copilot))
@@ -136,7 +136,7 @@ try {
     await delay(500)
     const settings = await json(await context.request.get(base + '/api/me/settings'))
     assert.equal(settings.agentDefaults.copilot.model, 'gpt-test')
-    assert.equal(await page.getByRole('combobox', { name: 'Compte', exact: true }).count(), 0, 'Copilot has no extra accounts')
+    assert.equal(await page.getByRole('combobox', { name: 'Compte', exact: true }).count(), 0, 'No account choice before an extra Copilot account exists')
     await page.screenshot({ path: `/var/tmp/sillage-copilot-${profile}-defaults.png` })
 
     let project

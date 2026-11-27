@@ -12,14 +12,13 @@ import { PendingInteractions } from '../interactions.js'
 import { failedStatuses } from '../mcp-registry.js'
 import { describeOutgoingMessage } from '../outgoing.js'
 import { toWorkspacePath } from '../paths.js'
-import { agentProcessEnv } from '../process-env.js'
 import { journalDeath } from '../session-close.js'
 import { parseSkillMarkdown } from '../../skill-library/frontmatter.js'
 import { ToolDurations } from '../tool-durations.js'
 import { TurnLifecycle, type TurnUsage } from '../turn-lifecycle.js'
 import type { AgentRunner, ElicitationAnswer, OutgoingAttachment, OutgoingMention, PermissionDecision, PlanReview, QuestionAnswer, RunnerContext } from '../types.js'
 import { configOption, copilotCommands, effortOption } from './catalog.js'
-import { COPILOT_CLIENT_CAPABILITIES, COPILOT_EVENT_METHOD, COPILOT_META, copilotLaunch, explainSignIn, instructionsFile, modeOf, modeValue, sameLaunch, skillDirs, type CopilotLaunch } from './launch.js'
+import { COPILOT_CLIENT_CAPABILITIES, COPILOT_EVENT_METHOD, COPILOT_META, copilotLaunch, copilotProcessEnv, explainSignIn, instructionsFile, modeOf, modeValue, sameLaunch, skillDirs, type CopilotLaunch } from './launch.js'
 import { askUserQuestions } from './questions.js'
 import { backgroundAgent, backgroundShell, describeCopilotTool, nativeToolRequest, outputOf, shellExit, type NativeToolRequest } from './tools.js'
 import { quotaLimit, refusedLimit, type CopilotLimit, type CopilotQuota } from './usage.js'
@@ -72,7 +71,8 @@ export interface CopilotRunnerOptions {
    * Receives the account quota each model call reports, the only place Copilot's ACP gives it,
    * and whether that call was billed in AI credits.
    */
-  onQuota?: (quota: CopilotQuota, credits: boolean) => void
+  /** `home`: the extra account's `COPILOT_HOME`, empty for the machine's sign-in. */
+  onQuota?: (quota: CopilotQuota, credits: boolean, home: string) => void
 }
 
 /**
@@ -202,7 +202,7 @@ export class CopilotRunner implements AgentRunner {
     this.launchedMcp = JSON.stringify(resolved.servers)
     const client = new AcpClient({
       label: 'copilot', binary: this.ctx.binary, args: launch.args, cwd: this.ctx.cwd,
-      env: agentProcessEnv({ ...launch.env, ...this.ctx.processEnv }),
+      env: copilotProcessEnv({ ...launch.env, ...this.ctx.processEnv }),
       onNotification: (method, params) => this.notification(method, params),
       onRequest: (method, params) => {
         if (method === 'session/request_permission') return this.permission(params as RequestPermissionRequest)
@@ -223,7 +223,7 @@ export class CopilotRunner implements AgentRunner {
     const mcpServers = resolved.servers.map(toAcpMcpServer)
     const open = async (method: string, params: Fields): Promise<Fields> => {
       try { return fields(await client.request(method, { ...params, cwd: this.ctx.cwd, mcpServers }, 90_000)) }
-      catch (error) { throw explainSignIn(error) }
+      catch (error) { throw explainSignIn(error, Boolean(this.ctx.processEnv?.COPILOT_HOME)) }
     }
     let session: Fields
     if (this.sessionId) {
@@ -467,7 +467,7 @@ export class CopilotRunner implements AgentRunner {
     if (this.spent) this.spent = { input: this.spent.input + call.input, output: this.spent.output + call.output, cacheRead: this.spent.cacheRead + call.cacheRead, cacheWrite: this.spent.cacheWrite + call.cacheWrite }
     const quota = fields(data.quotaSnapshots)
     if (Object.keys(quota).length) {
-      this.runnerOptions.onQuota?.(quota as CopilotQuota, typeof fields(data.copilotUsage).totalNanoAiu === 'number')
+      this.runnerOptions.onQuota?.(quota as CopilotQuota, typeof fields(data.copilotUsage).totalNanoAiu === 'number', this.ctx.processEnv?.COPILOT_HOME ?? '')
       const limit = quotaLimit(quota as CopilotQuota)
       // Every model call repeats it: journal a reading only when it moved.
       if (limit && JSON.stringify(limit) !== JSON.stringify(this.limit)) { this.limit = limit; this.ctx.emit({ type: 'usage.updated', costUsd: 0, inputTokens: 0, outputTokens: 0, context: null, rateLimit: limit }) }
@@ -752,6 +752,8 @@ export class CopilotRunner implements AgentRunner {
     if (config.agent !== 'copilot' || !this.client || this.turn.open || !this.launched) return false
     const launch = this.launchFor(config, this.ctx.projectOverview(config) ? this.instructionsRoot : null)
     if (!sameLaunch(launch, this.launched) || JSON.stringify(this.ctx.resolveMcpServers(config).servers) !== this.launchedMcp) return false
+    // The account is the process's `COPILOT_HOME`, read at launch.
+    if (config.account !== this.config.account) return false
     await this.applyOptions(config)
     this.config = config
     this.syncOptions()

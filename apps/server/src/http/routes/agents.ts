@@ -14,6 +14,8 @@ import type { CodexAccountStore } from '../../codex-accounts/store.js'
 import type { GrokAccountHomes } from '../../grok-accounts/homes.js'
 import type { AntigravityAccountHomes } from '../../antigravity-accounts/homes.js'
 import type { GrokAccountStore } from '../../grok-accounts/store.js'
+import type { CopilotAccountHomes } from '../../copilot-accounts/homes.js'
+import type { CopilotAccountStore } from '../../copilot-accounts/store.js'
 import type { AntigravityAccountStore } from '../../antigravity-accounts/store.js'
 import { assertWorkingDirectory, projectCwd } from '../../workspace.js'
 import type { AppContext } from '../context.js'
@@ -49,6 +51,7 @@ export function registerAgentRoutes(
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
+  copilotAccounts: { store: CopilotAccountStore; homes: CopilotAccountHomes },
   /** Absent in tests that do not look at prices: models are then listed as the CLI reports them. */
   prices: PriceCatalog | null = null,
 ): void {
@@ -67,6 +70,10 @@ export function registerAgentRoutes(
     if (agent === 'grok') {
       const account = grokAccounts.store.find(userId, accountId)
       return account && account.status === 'ready' ? grokAccounts.homes.ensure(accountId) : null
+    }
+    if (agent === 'copilot') {
+      const account = copilotAccounts.store.find(userId, accountId)
+      return account && account.status === 'ready' ? copilotAccounts.homes.ensure(accountId) : null
     }
     if (agent === 'antigravity') {
       const account = antigravityAccounts.store.find(userId, accountId)

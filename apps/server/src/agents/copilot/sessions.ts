@@ -3,8 +3,7 @@ import { AcpClient } from '../acp/client.js'
 import { fields } from '../acp/content.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { samePath } from '../paths.js'
-import { agentProcessEnv } from '../process-env.js'
-import { copilotProbeLaunch } from './launch.js'
+import { copilotProbeLaunch, copilotProcessEnv } from './launch.js'
 
 /** Sessions offered for import at once, newest first. */
 const LISTED = 40
@@ -16,7 +15,7 @@ const LISTED = 40
  */
 export async function listCopilotSessions(binary: string, cwd: string): Promise<ClaudeSessionsDto> {
   const launch = copilotProbeLaunch()
-  const client = new AcpClient({ label: 'copilot-sessions', binary, args: launch.args, cwd, env: agentProcessEnv(launch.env), onStderr: () => {} })
+  const client = new AcpClient({ label: 'copilot-sessions', binary, args: launch.args, cwd, env: copilotProcessEnv(launch.env), onStderr: () => {} })
   try {
     await client.initialize(CLIENT_INFO)
     const response = fields(await client.request('session/list', { cwd }))

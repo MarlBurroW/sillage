@@ -75,6 +75,10 @@ import type { AntigravityAccountHomes } from '../antigravity-accounts/homes.js'
 import type { GrokLoginService } from '../grok-accounts/login.js'
 import type { AntigravityLoginService } from '../antigravity-accounts/login.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
+import type { CopilotAccountHomes } from '../copilot-accounts/homes.js'
+import type { CopilotLoginService } from '../copilot-accounts/login.js'
+import type { CopilotAccountStore } from '../copilot-accounts/store.js'
+import { registerCopilotAccountRoutes } from './routes/copilot-accounts.js'
 import type { AntigravityAccountStore } from '../antigravity-accounts/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
@@ -152,6 +156,8 @@ export async function buildApp(
   antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
   grokLogin: GrokLoginService,
   antigravityLogin: AntigravityLoginService,
+  copilotAccounts: { store: CopilotAccountStore; homes: CopilotAccountHomes },
+  copilotLogin: CopilotLoginService,
   webhooks: WebhookService,
   scheduler: Scheduler,
   relay: SessionRelay,
@@ -283,6 +289,7 @@ export async function buildApp(
     codexAccounts,
     grokAccounts,
     antigravityAccounts,
+    copilotAccounts,
     prices,
   )
   registerMcpRoutes(app, ctx, (serverId, formerProjectId) => sessions.reloadMcpServer(serverId, formerProjectId), { log, secrets, sessions })
@@ -309,6 +316,7 @@ export async function buildApp(
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerAntigravityAccountRoutes(app, antigravityAccounts.store, antigravityLogin)
+  registerCopilotAccountRoutes(app, copilotAccounts.store, copilotLogin)
   registerWorktreeRoutes(app, ctx, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments, board)
   registerBoardLinkRoutes(app, ctx, board)

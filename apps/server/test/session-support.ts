@@ -56,7 +56,7 @@ export function makeSessionManager(deps: {
   return new SessionManager(
     deps.db, deps.log, deps.config, 'registry' in deps ? deps.registry : new AgentRegistry(deps.adapters),
     deps.secrets ?? ({} as never), deps.claudeAccounts ?? ({} as never), deps.codexAccounts ?? ({} as never),
-    deps.grokAccounts ?? ({} as never), deps.antigravityAccounts ?? ({} as never), deps.usage ?? null,
+    deps.grokAccounts ?? ({} as never), deps.antigravityAccounts ?? ({} as never), deps.copilotAccounts ?? ({} as never), deps.usage ?? null,
   )
 }
 
@@ -67,5 +67,6 @@ interface SessionManagerDeps {
   codexAccounts: Params[6]
   grokAccounts: Params[7]
   antigravityAccounts: Params[8]
-  usage: Params[9]
+  copilotAccounts: Params[9]
+  usage: Params[10]
 }

@@ -1856,6 +1856,32 @@ export const grokAccounts = sqliteTable(
   (t) => [uniqueIndex('idx_grok_accounts_owner_label').on(t.ownerId, t.label)],
 )
 
+/**
+ * Additional GitHub Copilot CLI accounts per user.
+ *
+ * Same approach as Grok accounts: no secret here. The sign-in lives under the account's
+ * Sillage-assigned `COPILOT_HOME` (`<data>/copilot-accounts/<id>`), in its `config.json` or the
+ * system keychain, written and refreshed by Copilot. The row keeps the GitHub login Copilot
+ * reported so listing does not require launching a process.
+ */
+export const copilotAccounts = sqliteTable(
+  'copilot_accounts',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    /** GitHub login Copilot signed in with; NULL until a sign-in succeeds. */
+    login: text('login'),
+    /** GitHub host of that login (`https://github.com`, or a data-residency host). */
+    host: text('host'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_copilot_accounts_owner_label').on(t.ownerId, t.label)],
+)
+
 /** Google accounts; credentials stay in their private CLI homes. */
 export const antigravityAccounts = sqliteTable(
   'antigravity_accounts',
@@ -2020,6 +2046,7 @@ export type GitCredentialRow = typeof gitCredentials.$inferSelect
 export type ClaudeAccountRow = typeof claudeAccounts.$inferSelect
 export type CodexAccountRow = typeof codexAccounts.$inferSelect
 export type GrokAccountRow = typeof grokAccounts.$inferSelect
+export type CopilotAccountRow = typeof copilotAccounts.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
 
 /** Shared cache per URL; subscriptions remain private in account settings. */

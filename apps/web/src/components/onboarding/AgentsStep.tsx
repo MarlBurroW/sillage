@@ -9,6 +9,7 @@ import { useAgentUsage } from '../../lib/usage'
 import { AddAccountCard as ClaudeAddAccountCard } from '../../routes/ClaudeAccountsSettingsPage'
 import { LoginControls as CodexLoginControls } from '../../routes/CodexAccountsSettingsPage'
 import { LoginControls as GrokLoginControls } from '../../routes/GrokAccountsSettingsPage'
+import { LoginControls as CopilotLoginControls } from '../../routes/CopilotAccountsSettingsPage'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { AgentInstallProgress } from '../AgentInstallProgress'
 import { InstanceAgentTools } from '../agent-tools/AgentTools'
@@ -31,6 +32,7 @@ const EXTRA_LABEL: Record<ExtraAccountAgent, MessageKey> = {
   codex: 'onboarding.agents.codexLabel',
   grok: 'onboarding.agents.grokLabel',
   antigravity: 'onboarding.agents.antigravityLabel',
+  copilot: 'onboarding.agents.copilotLabel',
 }
 
 /**
@@ -196,7 +198,7 @@ function AgentRow({ entry }: { entry: AgentAvailabilityDto }) {
           </Section>
 
           {/* Then optional accounts for those needing them. */}
-          {entry.agent !== 'opencode' && entry.agent !== 'copilot' ? <ExtraAccounts agent={entry.agent} cliConnected={plan !== null} /> : null}
+          {entry.agent !== 'opencode' ? <ExtraAccounts agent={entry.agent} cliConnected={plan !== null} /> : null}
         </div>
       ) : null}
     </Card>
@@ -230,7 +232,7 @@ function ExtraAccounts({ agent, cliConnected }: { agent: ExtraAccountAgent; cliC
         : null
       : agent === 'codex'
         ? extra.codexOpened && <CodexLoginControls account={extra.codexOpened} />
-        : extra.grokOpened ? <GrokLoginControls account={extra.grokOpened} /> : extra.antigravityOpened && <AntigravityLoginControls account={extra.antigravityOpened} />
+        : extra.grokOpened ? <GrokLoginControls account={extra.grokOpened} /> : extra.copilotOpened ? <CopilotLoginControls account={extra.copilotOpened} /> : extra.antigravityOpened && <AntigravityLoginControls account={extra.antigravityOpened} />
   const add = agent === 'claude' ? () => setClaudeAdding(true) : extra.begin
 
   return (

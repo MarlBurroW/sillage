@@ -162,6 +162,13 @@ const SECTIONS: Section[] = [
     icon: <AgentIcon agent="grok" size={16} />,
   },
   {
+    to: 'comptes-copilot',
+    group: 'agents',
+    labelKey: 'settings.section.copilotAccounts',
+    descriptionKey: 'settings.section.copilotAccounts.description',
+    icon: <AgentIcon agent="copilot" size={16} />,
+  },
+  {
     to: 'comptes-antigravity',
     group: 'agents',
     labelKey: 'settings.section.antigravityAccounts',

@@ -29,6 +29,7 @@
     "test:grok-accounts-ui": "node scripts/grok-accounts-ui-check.mjs",
     "test:antigravity-ui": "node scripts/antigravity-ui-check.mjs",
     "test:copilot-ui": "node scripts/copilot-ui-check.mjs",
+    "test:copilot-accounts-ui": "node scripts/copilot-accounts-ui-check.mjs",
     "test:card-relations-ui": "node scripts/card-relations-ui-check.mjs",
     "test:card-tags-ui": "node scripts/card-tags-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",

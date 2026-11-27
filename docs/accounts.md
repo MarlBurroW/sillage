@@ -13,9 +13,7 @@ chosen account no longer exists, the session starts on the CLI's own sign-in and
 so in the thread. Antigravity requires choosing another connected account explicitly,
 so an unavailable Google account never silently changes who pays for the request.
 
-OpenCode and GitHub Copilot CLI have no extra accounts: OpenCode signs in to each
-provider itself, and Copilot works on the machine's own sign-in, shared by every
-account of the instance. See [GitHub Copilot CLI](#github-copilot-cli).
+OpenCode has no extra accounts: it signs in to each provider itself.
 
 On the new-session screen, an **Account** choice sits right under the CLI choice as
 soon as an extra account exists. Each option shows where its account stands: the two
@@ -210,7 +208,39 @@ See [the integration inventory and validation limits](antigravity-integration.md
 
 ## GitHub Copilot CLI
 
-No extra accounts yet. Copilot uses the sign-in of the machine Sillage runs on:
+Settings › **Copilot accounts**. Same design as Grok: Copilot keeps one sign-in per
+`COPILOT_HOME`, in its `config.json` (or the system keychain, under the login
+`config.json` names).
+
+- Each extra account gets its own home under `<data>/copilot-accounts/<id>`. Every
+  entry of the user's `~/.copilot` is linked into it except `config.json`,
+  `settings.json` and `logs/`. Sessions are shared, so a conversation resumes
+  whichever account opened it. On Windows without the right to create symbolic
+  links, the session index `session-store.db` is not linked (a hard link would give
+  SQLite two journals for one database): sessions still resume, but Copilot's own
+  session list in that home only shows the account's sessions.
+- `settings.json` is the user's, rewritten at each launch with
+  `"storeTokenPlaintext": true`: a server without a keychain can then keep the
+  token, in the home's `config.json`, readable by the server's user only.
+- Sign-in runs `copilot login --device-code` in that home. Open
+  `github.com/login/device` signed in to the GitHub account you want and enter the
+  code Sillage shows; the card then shows that account's login. The browser flow is
+  absent for the same reason as Codex's: its callback lands on the server.
+- Signing out removes the home's `config.json`; Copilot has no logout command to
+  call. Deleting the account removes the home.
+- The session receives `COPILOT_HOME`, and none of `COPILOT_GITHUB_TOKEN`,
+  `GH_TOKEN` or `GITHUB_TOKEN`: any of them would answer in the account's place.
+  Commands the agent runs in that session do not see them either. An account whose
+  home is no longer signed in falls back to the machine's sign-in and says so.
+  Changing the account restarts the process.
+- Models and the usage gauge are per account. The gauge is the plan budget the
+  account's last turn reported, so it stays empty until its first turn.
+- Probed on GitHub Copilot CLI 1.0.116, with a scripted model provider for the
+  shared sessions. A real second GitHub account has not been signed in yet.
+
+### The machine's sign-in
+
+Without an extra account, Copilot uses the sign-in of the machine Sillage runs on:
 
 - `copilot login` in a terminal on that machine. On a server it prints a link and a
   code to enter on GitHub from any browser. Copilot keeps the token in the system

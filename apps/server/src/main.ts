@@ -46,6 +46,9 @@ import { GrokLoginService } from './grok-accounts/login.js'
 import { AntigravityLoginService } from './antigravity-accounts/login.js'
 import { GrokAccountStore } from './grok-accounts/store.js'
 import { AntigravityAccountStore } from './antigravity-accounts/store.js'
+import { CopilotAccountHomes } from './copilot-accounts/homes.js'
+import { CopilotLoginService } from './copilot-accounts/login.js'
+import { CopilotAccountStore } from './copilot-accounts/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
@@ -104,10 +107,12 @@ async function main(): Promise<void> {
   const antigravityStore = new AntigravityAccountStore(db)
   const antigravityAccounts = { store: antigravityStore, homes: new AntigravityAccountHomes(config.paths.antigravityAccounts, (id) => antigravityStore.ownerOf(id)) }
   const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
+  const copilotAccounts = { store: new CopilotAccountStore(db), homes: new CopilotAccountHomes(config.paths.copilotAccounts) }
+  const copilotLogin = new CopilotLoginService(copilotAccounts.homes, copilotAccounts.store, () => registry.adapter('copilot').cli.executable())
   // What each turn consumed, and the public prices the dashboard applies to it.
   const turnUsage = new TurnUsageRecorder(db)
   const prices = new PriceCatalog(db)
-  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts, turnUsage)
+  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts, antigravityAccounts, copilotAccounts, turnUsage)
   // Agent browsers (tool family `browser`): launched on the agent's first use, closed when idle.
   const browsers = new BrowserManager(db, config)
   sessions.setBrowsers(browsers)
@@ -173,6 +178,8 @@ async function main(): Promise<void> {
     antigravityAccounts,
     grokLogin,
     antigravityLogin,
+    copilotAccounts,
+    copilotLogin,
     webhooks,
     scheduler,
     relay,
@@ -287,6 +294,7 @@ async function main(): Promise<void> {
       await step(name, () => service.stop())
     }
     await step('antigravityLogin', () => antigravityLogin.closeAll())
+    await step('copilotLogin', () => copilotLogin.closeAll())
     await step('sessions', () => sessions.stopAll())
     await step('terminals', () => terminals.shutdown())
     await step('browsers', () => browsers.shutdown())

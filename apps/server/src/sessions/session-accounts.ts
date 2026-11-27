@@ -10,6 +10,8 @@ import type { GrokAccountHomes } from '../grok-accounts/homes.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
 import type { AntigravityAccountHomes } from '../antigravity-accounts/homes.js'
 import type { AntigravityAccountStore } from '../antigravity-accounts/store.js'
+import type { CopilotAccountHomes } from '../copilot-accounts/homes.js'
+import type { CopilotAccountStore } from '../copilot-accounts/store.js'
 
 /** Which account a session runs on: the environment its CLI starts with and the home each CLI keeps per account. */
 export class SessionAccounts {
@@ -19,6 +21,7 @@ export class SessionAccounts {
     private readonly codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
     readonly antigravityAccounts: { store: AntigravityAccountStore; homes: AntigravityAccountHomes },
+    private readonly copilotAccounts: { store: CopilotAccountStore; homes: CopilotAccountHomes },
   ) {}
 
   /** Selected Claude account tokens placed in variables taking precedence over stored CLI authentication (probed 2.1.296). Nothing for CLI-default authentication or other agents. Missing/deleted/foreign shared-project account references do not block startup: fall back to CLI login and disclose it in history because a different subscription pays. */
@@ -27,7 +30,7 @@ export class SessionAccounts {
       const home = this.antigravityHome(conversation.userId, config.account)
       return { ...(home ? { GEMINI_HOME: home } : {}), SILLAGE_ANTIGRAVITY_SESSION_ROOT: this.antigravityAccounts.homes.sessions(conversation.userId) }
     }
-    if (config.agent === 'opencode' || config.agent === 'copilot' || !config.account) return {}
+    if (config.agent === 'opencode' || !config.account) return {}
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}
@@ -59,6 +62,20 @@ export class SessionAccounts {
         )
       }
       return { GROK_HOME: this.grokAccounts.homes.ensure(account.id) }
+    }
+    // Copilot follows Grok. The home is checked as well as the row: a home without a sign-in
+    // would let the GitHub CLI's login answer for it.
+    if (config.agent === 'copilot') {
+      const account = this.copilotAccounts.store.find(conversation.userId, config.account)
+      if (!account || account.status !== 'ready' || !this.copilotAccounts.homes.connected(account.id)) {
+        return missing(
+          'copilot_account_missing',
+          account
+            ? "Le compte Copilot choisi pour cette conversation n'est pas connecté : la session repart sur la connexion de la machine."
+            : "Le compte Copilot choisi pour cette conversation n'existe plus : la session repart sur la connexion de la machine.",
+        )
+      }
+      return { COPILOT_HOME: this.copilotAccounts.homes.ensure(account.id) }
     }
     // Codex account home, where only auth.json is account-specific. Accounts never
     // connected count as absent: without auth.json, app-servers reject turns.
@@ -95,12 +112,20 @@ export class SessionAccounts {
     return this.grokAccounts.homes.ensure(account.id)
   }
 
+  copilotHome(userId: string, accountId: string | null): string | undefined {
+    if (!accountId) return undefined
+    const account = this.copilotAccounts.store.find(userId, accountId)
+    if (!account || account.status !== 'ready') throw notFound('agent_account_not_found', 'Unknown connected Copilot account.')
+    return this.copilotAccounts.homes.ensure(account.id)
+  }
+
   /** Credential handed to an adapter's model catalog for the account the configuration names: plans differ in which models they list. */
   catalogCredential(userId: string, config: AgentConfig): string | undefined {
     let credential: string | undefined
     if (config.agent === 'antigravity') credential = this.antigravityHome(userId, config.account)
     else if (config.agent === 'codex') credential = this.codexHome(userId, config.account)
     else if (config.agent === 'grok') credential = this.grokHome(userId, config.account)
+    else if (config.agent === 'copilot') credential = this.copilotHome(userId, config.account)
     else if (config.agent === 'claude' && config.account) {
       const resolved = this.claudeAccounts.resolveToken(userId, config.account)
       if (!resolved) throw notFound('agent_account_not_found', 'Unknown Claude account.')

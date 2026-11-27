@@ -4,6 +4,7 @@ import { configAccount, type AgentConfig, type AgentUsage } from '@sillage/proto
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
+import { useCopilotAccounts } from '../../lib/copilot-accounts'
 import { useTranslate } from '../../lib/i18n'
 import { busiestWindows, useAccountsUsage } from '../../lib/usage'
 import { ChoiceList, type Choice } from '../ui'
@@ -24,6 +25,8 @@ type Account = { id: string; label: string; kind: 'apiKey' | 'chatgpt' | 'grok' 
 /** Most loaded window first, then the next: the data determining selection. */
 function summarize(usage: AgentUsage | undefined, t: ReturnType<typeof useTranslate>): string | undefined {
   if (!usage) return undefined
+  // Copilot reports its budget only with a model call: no reading yet is not "no limits".
+  if (usage.agent === 'copilot' && !usage.limitsAvailable) return t('draft.account.copilotUnread')
   if (!usage.limitsAvailable || usage.windows.length === 0) return t('draft.account.noGauge')
   const ranked = busiestWindows(usage)
   if (ranked.length === 0) return undefined
@@ -48,6 +51,8 @@ export function AccountChoice({
   const { data: claudeList } = useClaudeAccounts(isClaude)
   const { data: codexList } = useCodexAccounts(isCodex)
   const { data: grokList } = useGrokAccounts(isGrok)
+  const isCopilot = config.agent === 'copilot'
+  const { data: copilotList } = useCopilotAccounts(isCopilot)
 
   const accounts: Account[] = isClaude
     ? (claudeList?.accounts ?? []).map((account) => ({
@@ -74,6 +79,9 @@ export function AccountChoice({
               label: account.label,
               kind: account.authMode === 'apiKey' ? ('apiKey' as const) : ('grok' as const),
             }))
+        : isCopilot
+          // Every Copilot account has a plan budget, read from its own last turn.
+          ? (copilotList?.accounts ?? []).filter((account) => account.status === 'ready').map((account) => ({ id: account.id, label: account.label, kind: 'gauged' as const }))
         : isAntigravity ? (antigravityList?.accounts ?? []).filter((account) => account.status === 'ready').map((account) => ({ id: account.id, label: account.label, kind: account.authMode?.startsWith('oauth-') ? ('gauged' as const) : ('apiKey' as const) })) : []
 
   const chosen = configAccount(config)
@@ -85,7 +93,7 @@ export function AccountChoice({
   const usages = useAccountsUsage(config.agent, probed, enabled && accounts.length > 0)
   const usageOf = (account: string | null) => usages[probed.indexOf(account)]
 
-  if (config.agent === 'opencode' || config.agent === 'copilot' || accounts.length === 0) return null
+  if (config.agent === 'opencode' || accounts.length === 0) return null
 
   const hintFor = (account: Account | null): string | undefined => {
     if (account?.kind === 'apiKey') return t('draft.account.apiKey')

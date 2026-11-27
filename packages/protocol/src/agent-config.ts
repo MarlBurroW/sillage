@@ -327,6 +327,11 @@ export const copilotConfigSchema = z.object({
   mcpServers: z.array(z.string()).default([]),
   sillageMcp: sillageMcpSchema,
   skillLibrary: skillLibrarySchema,
+  /**
+   * Sillage Copilot account whose home is passed to the session (`COPILOT_HOME`); `null` uses the
+   * machine's own sign-in. Changing it restarts the process, which reads its home only at launch.
+   */
+  account: z.string().nullable().default(null),
 })
 export type CopilotConfig = z.infer<typeof copilotConfigSchema>
 
@@ -458,7 +463,7 @@ export const DEFAULT_COPILOT_CONFIG: CopilotConfig = {
   agent: 'copilot', model: CLI_DEFAULT, reasoningEffort: CLI_DEFAULT, autoTier: CLI_DEFAULT,
   // Asks before tools, matching the other CLIs' defaults.
   mode: 'agent', allowAll: 'off', additionalDirectories: [], mcpServers: [],
-  sillageMcp: true, skillLibrary: true,
+  sillageMcp: true, skillLibrary: true, account: null,
 }
 
 export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
@@ -470,7 +475,7 @@ export const DEFAULT_CONFIGS: Record<AgentConfig['agent'], AgentConfig> = {
   copilot: DEFAULT_COPILOT_CONFIG,
 }
 
-/** Sillage account chosen for the conversation; null for the CLI login and for CLIs without extra accounts (opencode, Copilot). */
+/** Sillage account chosen for the conversation; null for the CLI login and for CLIs without extra accounts (opencode). */
 export function configAccount(config: AgentConfig): string | null {
   return 'account' in config ? config.account : null
 }

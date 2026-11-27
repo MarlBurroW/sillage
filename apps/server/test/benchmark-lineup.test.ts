@@ -323,7 +323,7 @@ test('model catalogs carry list prices and public names, aliases through the mod
     const app = Fastify()
     registerErrorHandler(app)
     app.addHook('preHandler', async (request) => { Object.assign(request, { user: { id: 'owner' } }) })
-    registerAgentRoutes(app, ctx, registry as never, {} as never, {} as never, {} as never, {} as never, {} as never, catalog)
+    registerAgentRoutes(app, ctx, registry as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, catalog)
     t.after(() => app.close())
     return app
   }

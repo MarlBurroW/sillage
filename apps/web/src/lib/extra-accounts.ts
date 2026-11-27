@@ -1,9 +1,10 @@
 import { useAntigravityAccounts, useCreateAntigravityAccount } from './antigravity-accounts'
 import { useEffect, useState } from 'react'
-import type { CodexAccount, GrokAccount, AntigravityAccount } from '@sillage/protocol'
+import type { CodexAccount, CopilotAccount, GrokAccount, AntigravityAccount } from '@sillage/protocol'
 import { useClaudeAccounts } from './claude-accounts'
 import { useCodexAccounts, useCreateCodexAccount } from './codex-accounts'
 import { useCreateGrokAccount, useGrokAccounts } from './grok-accounts'
+import { useCopilotAccounts, useCreateCopilotAccount } from './copilot-accounts'
 import { useUpdateAgentDefault, useUserSettings } from './user-settings'
 
 /**
@@ -13,7 +14,7 @@ import { useUpdateAgentDefault, useUserSettings } from './user-settings'
  * cards. Addition differs: Claude creates accounts after its form (pasted token or guided login),
  * while the other CLIs create them first and log in within their private home.
  */
-export type ExtraAccountAgent = 'claude' | 'codex' | 'grok' | 'antigravity'
+export type ExtraAccountAgent = 'claude' | 'codex' | 'grok' | 'antigravity' | 'copilot'
 
 export interface ExtraAccountSummary {
   id: string
@@ -45,11 +46,13 @@ export function useExtraAccounts(
   const antigravity = useAntigravityAccounts(agent === 'antigravity')
   const createAntigravity = useCreateAntigravityAccount()
   const createGrok = useCreateGrokAccount()
+  const copilot = useCopilotAccounts(agent === 'copilot')
+  const createCopilot = useCreateCopilotAccount()
   const { data: settings } = useUserSettings()
   const updateDefault = useUpdateAgentDefault()
 
   const defaults = settings?.agentDefaults[agent]
-  const raw = agent === 'claude' ? claude.data?.accounts : agent === 'codex' ? codex.data?.accounts : agent === 'grok' ? grok.data?.accounts : antigravity.data?.accounts
+  const raw = agent === 'claude' ? claude.data?.accounts : agent === 'codex' ? codex.data?.accounts : agent === 'grok' ? grok.data?.accounts : agent === 'copilot' ? copilot.data?.accounts : antigravity.data?.accounts
   const accounts: ExtraAccountSummary[] = (raw ?? []).map((account) => ({
     id: account.id,
     label: account.label,
@@ -73,12 +76,14 @@ export function useExtraAccounts(
   const codexOpened: CodexAccount | null = agent === 'codex' ? (codex.data?.accounts.find((account) => account.id === openedId) ?? null) : null
   const grokOpened: GrokAccount | null = agent === 'grok' ? (grok.data?.accounts.find((account) => account.id === openedId) ?? null) : null
 
+  const copilotOpened: CopilotAccount | null = agent === 'copilot' ? (copilot.data?.accounts.find((account) => account.id === openedId) ?? null) : null
   const antigravityOpened: AntigravityAccount | null = agent === 'antigravity' ? (antigravity.data?.accounts.find((account) => account.id === openedId) ?? null) : null
 
   const begin = () => {
     if (agent === 'antigravity') createAntigravity.mutate({ label: options.defaultLabel }, { onSuccess: (account) => setOpenedId(account.id) })
     if (agent === 'codex') createCodex.mutate({ label: options.defaultLabel }, { onSuccess: (account) => setOpenedId(account.id) })
     if (agent === 'grok') createGrok.mutate({ label: options.defaultLabel }, { onSuccess: (account) => setOpenedId(account.id) })
+    if (agent === 'copilot') createCopilot.mutate({ label: options.defaultLabel }, { onSuccess: (account) => setOpenedId(account.id) })
   }
 
   return {
@@ -88,9 +93,10 @@ export function useExtraAccounts(
     codexOpened,
     grokOpened,
     antigravityOpened,
+    copilotOpened,
     /** Create the account to connect. Claude uses its own form. */
     begin,
-    creating: createCodex.isPending || createGrok.isPending || createAntigravity.isPending,
+    creating: createCodex.isPending || createGrok.isPending || createAntigravity.isPending || createCopilot.isPending,
     close: () => setOpenedId(null),
   }
 }

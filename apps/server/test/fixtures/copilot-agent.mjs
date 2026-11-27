@@ -21,6 +21,24 @@ if (process.argv.includes('--version') || process.argv[2] === 'version') {
   process.exit(0)
 }
 
+// `copilot login --device-code` as probed on 1.0.116 without a terminal: the URL and code, then
+// the login written to `$COPILOT_HOME/config.json`. `FIXTURE_LOGIN=fail` simulates a refusal,
+// `FIXTURE_LOGIN_DELAY` the time the user takes to confirm.
+if (process.argv[2] === 'login') {
+  const home = process.env.COPILOT_HOME ?? process.cwd()
+  process.stdout.write('To authenticate, visit https://github.com/login/device and enter code B2E9-F9F7\nWaiting for authorization...\n')
+  process.stderr.write('Failed to open browser. Please visit https://github.com/login/device and enter the code B2E9-F9F7 manually.\n')
+  setTimeout(() => {
+    if (process.env.FIXTURE_LOGIN === 'fail') {
+      process.stderr.write('Error: access_denied: the user cancelled the authorization\n')
+      process.exit(1)
+    }
+    writeFileSync(join(home, 'config.json'), '// User settings belong in settings.json.\n// This file is managed automatically.\n' + JSON.stringify({ loggedInUsers: [{ host: 'https://github.com', login: 'octo-fixture', kind: 'githubDotCom' }], lastLoggedInUser: { host: 'https://github.com', login: 'octo-fixture' } }, null, 2))
+    process.stdout.write('Signed in successfully as octo-fixture.\n')
+    process.exit(0)
+  }, Number(process.env.FIXTURE_LOGIN_DELAY ?? 50))
+} else {
+
 // Traces go next to the fixture, never into the working directory or a home.
 const root = dirname(process.argv[1])
 const record = (entry) => appendFileSync(join(root, 'rpc.jsonl'), JSON.stringify(entry) + '\n')
@@ -35,7 +53,7 @@ let mode = MODE + 'agent'
 let allowAll = 'off'
 let active = null
 const spent = { inputTokens: 0, outputTokens: 0, totalTokens: 0, thoughtTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 }
-writeFileSync(join(root, 'launch.json'), JSON.stringify({ args: process.argv.slice(2), instructions: process.env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS ?? null, autoUpdate: process.env.COPILOT_AUTO_UPDATE, cwd: process.cwd() }))
+writeFileSync(join(root, 'launch.json'), JSON.stringify({ args: process.argv.slice(2), instructions: process.env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS ?? null, autoUpdate: process.env.COPILOT_AUTO_UPDATE, cwd: process.cwd(), home: process.env.COPILOT_HOME ?? null, tokens: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'].filter((name) => process.env[name]) }))
 
 // Auto is listed twice, as Copilot does; only the GPT model has efforts.
 const options = () => [
@@ -170,3 +188,4 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     default: return write({ id: message.id, error: { code: -32601, message: `"Method not found": ${message.method}`, data: { method: message.method } } })
   }
 })
+}

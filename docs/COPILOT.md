@@ -51,7 +51,7 @@ requests) is listed under [Not yet verified](#not-yet-verified).
 | Instructions | SILLAGE.md and the overview go to an instruction file in a private folder named by `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, reread on every launch. | Scripted (the text reaches the system prompt) and signed in. Repository `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` are **not masked**. |
 | Memory | Reachable through Copilot's file tools (`--add-dir`). | Not tried on a real turn. |
 | Errors | Copilot's errors, warnings and retries are journaled as such, with shared codes for rejected sign-in, rate limit, exhausted quota and context overflow. A refused request for quota or rate limit also marks the account as stopped, which is what lets Sillage offer to resume later. | Scripted: provider 401 and 429. Real quota and rate-limit refusals not seen. |
-| Accounts | None beyond the machine's sign-in. | See [Sign-in, accounts and usage](#sign-in-accounts-and-usage). |
+| Accounts | Extra accounts, one `COPILOT_HOME` each, signed in by device code from Settings › Copilot accounts. | Scripted: device-code output, sign-in written to `config.json`, a session resumed from another home through links. A real sign-in of a second GitHub account not tried yet. See [Sign-in, accounts and usage](#sign-in-accounts-and-usage). |
 | Usage | Per-turn tokens. The plan gauge shows the quota the last model call reported: the monthly budget in AI credits, or premium requests. | Tokens and the AI-credit budget signed in. Premium requests read from Copilot's schema only. |
 | Forks / transfers | No fork call: a fork starts a new Copilot session with the conversation up to the chosen turn as portable context. Transfers to and from the other CLIs go through the instruction channel. | UI check, both directions. |
 | Editions | Server and Desktop behave alike: one sign-in for the machine, nothing to configure. | UI check on both profiles, 1440×900 and 390×844, with the fixture; one signed-in turn through a Server on Linux. Windows and macOS launches not tried. |
@@ -184,7 +184,6 @@ Quirks of 1.0.116 the next maintainer must know.
 
 ## Deliberate differences
 
-- **No account choice.** See below.
 - **Steering is off**: a message sent during a turn waits in Sillage's queue.
 - **`/cwd`, `/add-dir`, `/session`** are not offered.
 - **Repository instructions are not masked**: `--no-custom-instructions` is ignored
@@ -198,18 +197,37 @@ Quirks of 1.0.116 the next maintainer must know.
 
 ## Sign-in, accounts and usage
 
-Copilot uses the sign-in of the machine: `copilot login`, or a token in the server's
-environment. On a Server every account of the instance therefore works on the same
-GitHub Copilot plan, like OpenCode's providers; Desktop has a single account anyway.
-A token in `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` wins over a stored
-login without saying so: a `GH_TOKEN` exported for the GitHub CLI also decides which
-plan pays.
+By default Copilot uses the sign-in of the machine: `copilot login`, or a token in the
+server's environment. A token in `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`
+wins over a stored login without saying so: a `GH_TOKEN` exported for the GitHub CLI
+also decides which plan pays. Without either, Copilot falls back to the GitHub CLI's
+login (`gh auth login`); its error message lists that method.
 
-Extra Sillage accounts are **deferred**. The pieces exist in Copilot
-(`COPILOT_HOME` moves its state, `copilot login --device-code` prints a link and a
-code a remote browser can use), but an account needs its own table, a login that was
-tried against GitHub, and a way to keep the machine's token and the GitHub CLI login
-from answering in its place.
+**Extra accounts** follow Grok's design (see [accounts](accounts.md#github-copilot-cli)):
+
+- Each gets a `COPILOT_HOME` under `<data>/copilot-accounts/<id>`. Its `config.json`
+  (sign-in plus state Copilot manages), `settings.json` and `logs/` are its own; every
+  other entry of the user's home is linked, `session-state/` and `session-store.db`
+  included. A session started in one home resumed from another through those links
+  (probed on 1.0.116 with the scripted provider), SQLite's side files landing next to
+  the real database.
+- `settings.json` is rewritten at each launch from the user's, plus
+  `"storeTokenPlaintext": true`, so a sign-in without a terminal is stored on a server
+  without a keychain. Where a keychain exists, Copilot still prefers it.
+- Sign-in runs `copilot login --device-code` in the home with `BROWSER=true`. Without
+  a terminal it prints `To authenticate, visit https://github.com/login/device and
+  enter code XXXX-XXXX`; Sillage shows them and reads the login from
+  `lastLoggedInUser` in `config.json` once the command exits.
+- Copilot has no logout command outside its interactive `/logout`: signing out
+  removes the home's `config.json`. A token Copilot put in a keychain stays there,
+  unreachable from that home.
+- A process on an account's home gets none of the three token variables, so neither
+  the server's token nor a `GH_TOKEN` meant for the GitHub CLI answers in the
+  account's place. The agent's shell commands lose them too in that session. A home
+  whose `config.json` names no login starts on the machine's sign-in with a notice
+  instead, so the GitHub CLI's login never answers for it.
+- Models and the usage gauge are read per home: the catalog probe runs in the
+  account's home, and the gauge keeps the last quota each home's turns reported.
 
 `copilot login` stores its token in the system keychain. A server usually has none:
 Copilot then only writes the token to `config.json` in its home when

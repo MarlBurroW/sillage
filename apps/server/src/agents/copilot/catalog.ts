@@ -5,10 +5,9 @@ import type { AgentModelDto, AgentModelsDto, SlashCommandDto } from '@sillage/pr
 import { AcpClient } from '../acp/client.js'
 import { fields } from '../acp/content.js'
 import { toSlashCommands } from '../acp/commands.js'
-import { CachedProbe } from '../cached-probe.js'
+import { CachedProbeMap } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
-import { agentProcessEnv } from '../process-env.js'
-import { COPILOT_AUTO_MODEL, copilotProbeLaunch, explainSignIn } from './launch.js'
+import { COPILOT_AUTO_MODEL, copilotProbeLaunch, copilotProcessEnv, explainSignIn } from './launch.js'
 
 /**
  * Copilot's models follow the signed-in plan (a Free plan lists only Auto) and arrive only with a
@@ -98,28 +97,29 @@ export function forgetProbeSession(sessionId: unknown, home = process.env.COPILO
   rmSync(dir, { recursive: true, force: true })
 }
 
+/** Models follow the plan: extra accounts probe inside their own `COPILOT_HOME`, one cache entry per home (empty for the machine's sign-in). */
 export class CopilotCatalog {
-  private readonly probe = new CachedProbe<CopilotListing>(TTL_MS, () => this.read())
+  private readonly probes = new CachedProbeMap<CopilotListing>(TTL_MS, (home) => this.read(home || undefined))
 
   /** `cwd` is an empty folder of Sillage's own: the user's home would make Copilot index it and read its AGENTS.md. */
   constructor(private readonly executable: () => Promise<string>, private readonly cwd: string) {}
 
-  invalidate(): void { this.probe.invalidate() }
+  invalidate(): void { this.probes.invalidate() }
 
-  list(force = false): Promise<CopilotListing & { fetchedAt: number }> {
-    return this.probe.read(force)
+  list(force = false, home?: string): Promise<CopilotListing & { fetchedAt: number }> {
+    return this.probes.read(home ?? '', force)
   }
 
-  private async read(): Promise<CopilotListing> {
+  private async read(home?: string): Promise<CopilotListing> {
     const cwd = this.cwd
     mkdirSync(cwd, { recursive: true, mode: 0o700 })
     let commands: SlashCommandDto[] | null = null
     let announced: () => void = () => {}
     const commandsSeen = new Promise<void>((resolve) => { announced = resolve })
-    const launch = copilotProbeLaunch()
+    const launch = copilotProbeLaunch(home)
     const client = new AcpClient({
       label: 'copilot-catalog', binary: await this.executable(), args: launch.args, cwd,
-      env: agentProcessEnv(launch.env), onStderr: () => {},
+      env: copilotProcessEnv(launch.env), onStderr: () => {},
       onNotification: (method, params) => {
         const update = fields(fields(params).update)
         if (method === 'session/update' && update.sessionUpdate === 'available_commands_update') { commands = copilotCommands(update.availableCommands); announced() }
@@ -130,7 +130,7 @@ export class CopilotCatalog {
     try {
       await client.initialize(CLIENT_INFO)
       // The models follow the plan: without a sign-in there is no catalog, and the composer says why.
-      const session = await client.request<{ sessionId: string }>('session/new', { cwd, mcpServers: [] }, PROBE_TIMEOUT_MS).catch((error: unknown) => { throw explainSignIn(error) })
+      const session = await client.request<{ sessionId: string }>('session/new', { cwd, mcpServers: [] }, PROBE_TIMEOUT_MS).catch((error: unknown) => { throw explainSignIn(error, Boolean(home)) })
       opened = session.sessionId
       const models = modelCatalog(session)
       // Efforts are per model and only advertised for the selected one.
@@ -145,7 +145,7 @@ export class CopilotCatalog {
     } finally {
       clearTimeout(timeout)
       await client.closeAndWait()
-      forgetProbeSession(opened)
+      forgetProbeSession(opened, home)
     }
   }
 }

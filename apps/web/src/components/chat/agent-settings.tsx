@@ -23,6 +23,7 @@ import { catalogModel, effortLabel, effortsFor, modelsAccount, supportsFastMode,
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
+import { useCopilotAccounts } from '../../lib/copilot-accounts'
 import { serversForProject, useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
@@ -650,15 +651,17 @@ export function useAgentSettings({
   // Grok follows Codex: one home per account, connected or not.
   const { data: grokAccountList } = useGrokAccounts(grok !== null)
   const { data: antigravityAccountList } = useAntigravityAccounts(antigravity !== null)
+  const { data: copilotAccountList } = useCopilotAccounts(copilot !== null)
   const accountOptions = useMemo((): SettingChoice<string>[] => {
-    const chosen = claude?.account ?? codex?.account ?? grok?.account ?? antigravity?.account ?? null
+    const chosen = claude?.account ?? codex?.account ?? grok?.account ?? antigravity?.account ?? copilot?.account ?? null
     const accounts = claude
       ? (claudeAccountList?.accounts ?? [])
       : codex
         ? (codexAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
         : grok
           ? (grokAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
-          : antigravity ? (antigravityAccountList?.accounts ?? []).filter((account) => account.status === 'ready') : null
+          : antigravity ? (antigravityAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
+          : copilot ? (copilotAccountList?.accounts ?? []).filter((account) => account.status === 'ready') : null
     if (accounts === null) return []
     if (accounts.length === 0 && !chosen) return []
     const known: SettingChoice<string>[] = [
@@ -671,7 +674,7 @@ export function useAgentSettings({
       known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
     return known
-  }, [claudeAccountList, codexAccountList, grokAccountList, antigravityAccountList, claude, codex, grok, antigravity, t])
+  }, [claudeAccountList, codexAccountList, grokAccountList, antigravityAccountList, copilotAccountList, claude, codex, grok, antigravity, copilot, t])
   const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
 
   const permissionOptionList = permissionOptions(t)
@@ -1367,6 +1370,24 @@ export function useAgentSettings({
               onChange: (choice) => onConfigChange({ ...copilot, autoTier: choice === CLI_DEFAULT_CHOICE ? '' : choice }),
               // ACP has no option for it: Copilot reads it at launch.
               notice: notice(appliedLabel(applied ? tierChoice(applied.autoTier) : undefined, tierChoice(copilot.autoTier), tierList), t),
+            }),
+          ]
+        : []),
+      ...(accountOptions.length > 0
+        ? [
+            setting({
+              key: 'account',
+              label: t('composer.setting.account'),
+              icon: <IdCard size={15} />,
+              options: accountOptions,
+              value: accountChoice(copilot.account),
+              onChange: (choice) =>
+                onConfigChange({ ...copilot, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+              // The account is the process's COPILOT_HOME: a change waits for the session to restart.
+              notice: notice(
+                appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(copilot.account), accountOptions),
+                t,
+              ),
             }),
           ]
         : []),

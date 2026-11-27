@@ -23,8 +23,8 @@ export class CopilotAdapter implements AgentAdapter {
   readonly cli: CliBinary
   private readonly catalog: CopilotCatalog
   private readonly stateDir: string
-  /** Quota of the machine's Copilot login as the last model call reported it; see `usage.ts`. */
-  private observed: ObservedQuota | null = null
+  /** Quota as the last model call reported it, per `COPILOT_HOME` (empty for the machine's sign-in); see `usage.ts`. */
+  private readonly observed = new Map<string, ObservedQuota>()
 
   constructor(config: Config) {
     this.binary = config.agents.copilot.binary
@@ -36,18 +36,19 @@ export class CopilotAdapter implements AgentAdapter {
   invalidateCatalogs(): void { this.catalog.invalidate() }
 
   createRunner(ctx: RunnerContext): AgentRunner {
-    return new CopilotRunner(ctx, { stateDir: this.stateDir, onQuota: (quota, credits) => { this.observed = { quota, credits, at: Date.now() } } })
+    return new CopilotRunner(ctx, { stateDir: this.stateDir, onQuota: (quota, credits, home) => { this.observed.set(home, { quota, credits, at: Date.now() }) } })
   }
 
   forkCut(): never { throw new ForkError('GitHub Copilot uses a portable history fork.') }
   async fork(): Promise<string> { throw new ForkError('GitHub Copilot has no native fork RPC. Use the portable history fork.') }
 
-  async models(_credential?: string, force = false): Promise<AgentModelsDto> {
-    return (await this.catalog.list(force)).models
+  /** `home` is an extra account's `COPILOT_HOME`; see CopilotAccountHomes. */
+  async models(home?: string, force = false): Promise<AgentModelsDto> {
+    return (await this.catalog.list(force, home)).models
   }
 
-  async commands(_cwd: string, force: boolean): Promise<ProjectCommandsDto> {
-    const listing = await this.catalog.list(force)
+  async commands(_cwd: string, force: boolean, home?: string): Promise<ProjectCommandsDto> {
+    const listing = await this.catalog.list(force, home)
     return { commands: listing.commands, fetchedAt: listing.fetchedAt }
   }
 
@@ -56,7 +57,12 @@ export class CopilotAdapter implements AgentAdapter {
    * gauge is what the last turn reported, and nothing (rather than a failure) before any turn.
    */
   async usage(): Promise<AgentUsage> {
-    return copilotUsage(this.observed)
+    return copilotUsage(this.observed.get('') ?? null)
+  }
+
+  /** `home` is the account's `COPILOT_HOME`: its gauge is what its own last turn reported. */
+  async usageForAccount(_accountId: string, home: string): Promise<AgentUsage> {
+    return copilotUsage(this.observed.get(home) ?? null)
   }
 
   /** The catalog decides; if unreachable, keep the sentinel so Copilot applies its own default. */

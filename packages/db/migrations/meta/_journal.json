@@ -561,6 +561,13 @@
       "when": 1795735791566,
       "tag": "0079_tired_nebula",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1795790960435,
+      "tag": "0080_orange_steel_serpent",
+      "breakpoints": true
     }
   ]
 }

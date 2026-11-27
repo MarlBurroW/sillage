@@ -115,7 +115,7 @@ test('Installation routes require admin rights and refuse disabled, custom and n
   const app = Fastify()
   app.addHook('preHandler', async (request) => { request.user = { isAdmin: request.headers['x-admin'] === '1' } as never })
   registerErrorHandler(app)
-  registerAgentRoutes(app, {} as never, new AgentRegistry([adapter]), installer, {} as never, {} as never, {} as never, {} as never)
+  registerAgentRoutes(app, {} as never, new AgentRegistry([adapter]), installer, {} as never, {} as never, {} as never, {} as never, {} as never)
   t.after(async () => { installer.close(); await app.close() })
   const install = (admin = true) => app.inject({ method: 'POST', url: '/api/agents/codex/install', headers: admin ? { 'x-admin': '1' } : {} })
   assert.equal((await install(false)).statusCode, 403)
