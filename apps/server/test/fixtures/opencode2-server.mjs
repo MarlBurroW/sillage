@@ -63,6 +63,23 @@ let shells = {}
 /** Messages returned by `GET /api/session/:id/message`, newest first like the real server. */
 let messages = ['msg_4', 'msg_3', 'msg_2', 'msg_1'].map((id) => ({ id, type: 'assistant', time: { created: 1 } }))
 
+/** A session longer than the default page and than one page of 200 (`msg_001` … `msg_250`), newest first. */
+const longHistory = Array.from({ length: 250 }, (_, i) => ({ id: `msg_${String(250 - i).padStart(3, '0')}`, type: 'assistant', time: { created: 1 } }))
+
+/**
+ * Pages like 2.4.2: 50 messages newest first unless `order`/`limit` say otherwise, the cursor
+ * carrying its own order and refused alongside one.
+ */
+function paged(newestFirst, query) {
+  const cursor = query.has('cursor') ? JSON.parse(Buffer.from(query.get('cursor'), 'base64url').toString()) : null
+  const order = cursor?.order ?? query.get('order') ?? 'desc'
+  const list = order === 'asc' ? [...newestFirst].reverse() : newestFirst
+  const offset = cursor?.offset ?? 0
+  const end = offset + Number(query.get('limit') ?? 50)
+  const next = end < list.length ? Buffer.from(JSON.stringify({ order, offset: end })).toString('base64url') : null
+  return { data: list.slice(offset, end), cursor: { next } }
+}
+
 const json = (response, status, body) => {
   response.writeHead(status, { 'content-type': 'application/json' })
   response.end(JSON.stringify(body))
@@ -144,10 +161,10 @@ const server = createServer((request, response) => {
       }
       if (request.method === 'GET' && action === 'message') {
         if (id === 'ses_untitled') return json(response, 200, { data: [{ id: 'msg_u', type: 'user', time: { created: 1 }, text: '  Draft the release notes  ' }], cursor: {} })
-        if (id !== NATIVE) return json(response, 200, { data: messages, cursor: {} })
-        // Two pages, to exercise the cursor. Like 2.4.1, a cursor carries its own order.
         const query = new URL(request.url, 'http://fixture').searchParams
         if (query.has('cursor') && query.has('order')) return json(response, 400, { _tag: 'InvalidCursorError', message: 'Cursor cannot be combined with order' })
+        if (id !== NATIVE) return json(response, 200, paged(id === 'ses_long' ? longHistory : messages, query))
+        // Two pages, to exercise the cursor. Like 2.4.1, a cursor carries its own order.
         return query.get('cursor') === 'page2'
           ? json(response, 200, { data: nativeHistory.slice(5), cursor: { next: null } })
           : json(response, 200, { data: nativeHistory.slice(0, 5), cursor: { next: 'page2' } })

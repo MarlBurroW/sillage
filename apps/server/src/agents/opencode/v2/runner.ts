@@ -46,7 +46,7 @@ import { parseModel } from '../model.js'
 import { readCommands2, readModels2, readSkills2, toAgentSkills, toSlashCommands2 } from './catalog.js'
 import { OpencodeServer } from '../server.js'
 import { fromOpencode2McpStatus, toOpencode2Config, type Opencode2Config } from './config.js'
-import { historyEvents } from './history.js'
+import { historyEvents, historyPages } from './history.js'
 import { SessionGrants } from './permissions.js'
 import { elicitationAnswer, formElicitation, formQuestions, isQuestionForm, questionAnswer } from './forms.js'
 import {
@@ -85,9 +85,6 @@ const INTERRUPT_GRACE_MS = 15_000
 /** Wait at start for a fresh server's model list; beyond it the session starts without gauge. */
 const START_MODELS_FILL_MS = 3_000
 
-/** Stored-history pages read at most when importing (200 messages each). */
-const MAX_HISTORY_PAGES = 100
-
 /** Live shell output: reading interval while a shell call runs. */
 const SHELL_POLL_MS = 400
 
@@ -124,11 +121,6 @@ interface ToolTrack {
   input: unknown
   inputJson: string
   startedAt: number
-}
-
-interface HistoryPage {
-  data: MessageInfo[]
-  cursor: { next?: string | null }
 }
 
 interface ShellOutput {
@@ -257,16 +249,7 @@ export class Opencode2Runner implements AgentRunner {
       const server = this.server!
       const sessionId = this.sessionId!
       const messages: MessageInfo[] = []
-      // Oldest first, page by page: long sessions exceed the default page.
-      let cursor: string | null = null
-      for (let pages = 0; pages < MAX_HISTORY_PAGES; pages++) {
-        // The order is the first page's: 2.x rejects it alongside a cursor (InvalidCursorError).
-        const query: URLSearchParams = new URLSearchParams(cursor ? { cursor, limit: '200' } : { order: 'asc', limit: '200' })
-        const page: HistoryPage = await server.get<HistoryPage>(`/api/session/${sessionId}/message?${query}`)
-        messages.push(...page.data)
-        cursor = page.cursor.next ?? null
-        if (!cursor || page.data.length === 0) break
-      }
+      for await (const page of historyPages((path) => server.get(path), sessionId)) messages.push(...page)
       for (const { event, raw } of historyEvents(sessionId, messages, this.ctx.cwd, this.mcpServers.map((server) => server.name))) {
         this.ctx.emit(event, raw)
       }

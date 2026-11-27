@@ -24,6 +24,7 @@ import { withProbeServer } from './probe.js'
 import type { OpencodeServer } from './server.js'
 import { OpencodeRunnerSwitch } from './runner-switch.js'
 import { describeEdit } from './tools.js'
+import { historyPages } from './v2/history.js'
 import { describeEdit as describeEdit2 } from './v2/tools.js'
 
 /** Fork cut: last retained opencode message, null when no agent output precedes requested point. */
@@ -108,8 +109,12 @@ export class OpencodeAdapter implements AgentAdapter {
     try {
       return await withProbeServer(await this.cli.executable(), target.cwd, async (server, generation) => {
         if (generation === 2) {
-          const { data } = await server.get<{ data: MessageInfo[] }>(`/api/session/${target.agentSessionId}/message`)
-          const next = data.map((message) => message.id).sort().find((id) => id > lastMessageId)
+          // Read oldest first until the cut is passed: one unpaged read only sees the last 50.
+          let next: string | undefined
+          for await (const page of historyPages((path) => server.get(path), target.agentSessionId)) {
+            next = page.map((message) => message.id).sort().find((id) => id > lastMessageId)
+            if (next) break
+          }
           const forked = await server.post<{ data: SessionInfo }>(`/api/session/${target.agentSessionId}/fork`, next ? { before: next } : {})
           return forked.data.id
         }

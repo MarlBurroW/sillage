@@ -170,7 +170,9 @@ Probed on 2.4.1, data directories isolated.
   the history (`v2/history.ts`) without any model request, then the
   conversation continues the same session.
 - **Fork**: `POST /api/session/{id}/fork {before}`, same exclusive cut as 1.x.
-  Message IDs sort chronologically and survive the 1.x migration.
+  Message IDs sort chronologically and survive the 1.x migration. The message list
+  answers 50 messages newest first by default, so the cut is looked up page by page,
+  oldest first, like the import (probed 2.4.2).
 - **Steering**: a prompt sent during an execution steers it by default.
 - **Compaction**: `POST /api/session/{id}/compact` answers at once; the stream
   reports `session.compaction.*`.

@@ -13,6 +13,33 @@ import { contentText, describeTool, fileEdits, QUESTION_TOOL, type CompletedCall
  * their call keeps its result. Model and agent switches have no journal counterpart.
  */
 
+/** Stored-history pages read at most (200 messages each), against a cursor that never ends. */
+const MAX_HISTORY_PAGES = 100
+
+interface HistoryPage {
+  data: MessageInfo[]
+  cursor: { next?: string | null }
+}
+
+/**
+ * A session's stored messages, oldest first, page by page. The route answers 50 messages newest
+ * first by default (probed 2.4.2), so a single unpaged read misses the start of long sessions.
+ */
+export async function* historyPages(
+  get: <T>(path: string) => Promise<T>,
+  sessionId: string,
+): AsyncGenerator<MessageInfo[]> {
+  let cursor: string | null = null
+  for (let pages = 0; pages < MAX_HISTORY_PAGES; pages++) {
+    // The order is the first page's: 2.x rejects it alongside a cursor (InvalidCursorError).
+    const query: URLSearchParams = new URLSearchParams(cursor ? { cursor, limit: '200' } : { order: 'asc', limit: '200' })
+    const page: HistoryPage = await get<HistoryPage>(`/api/session/${sessionId}/message?${query}`)
+    yield page.data
+    cursor = page.cursor.next ?? null
+    if (!cursor || page.data.length === 0) return
+  }
+}
+
 export interface HistoryEntry {
   event: SillageEvent
   raw?: unknown

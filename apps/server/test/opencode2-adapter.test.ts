@@ -57,6 +57,17 @@ test('OpenCode 2 : fork au message qui suit le dernier gardé, coupe lue dans le
   assert.deepEqual(forks.map((record) => [record.path, record.body]), [['/api/session/ses_root/fork', { before: 'msg_3' }], ['/api/session/ses_root/fork', {}]])
 })
 
+test('OpenCode 2 : la coupe d’un fork se cherche au-delà de la première page d’historique', async (t) => {
+  const { adapter, cwd, records } = await adapterFixture(t)
+  const target = { agentSessionId: 'ses_long', cwd }
+  // 250 messages: the default page only holds the last 50, and a page of 200 the first 200.
+  assert.equal(await adapter.fork(target, { lastMessageId: 'msg_010' }), 'ses_fork')
+  assert.equal(await adapter.fork(target, { lastMessageId: 'msg_229' }), 'ses_fork')
+  assert.equal(await adapter.fork(target, { lastMessageId: 'msg_250' }), 'ses_fork')
+  const forks = (await records()).filter((record) => record.path.endsWith('/fork')).map((record) => record.body)
+  assert.deepEqual(forks, [{ before: 'msg_011' }, { before: 'msg_230' }, {}])
+})
+
 test('OpenCode 2 : outils renommés et diff des éditions journalisées', async (t) => {
   assert.deepEqual(describeTool('shell', { command: 'ls', workdir: '/w' }, []), { name: 'Bash', input: { command: 'ls', cwd: '/w' } })
   assert.deepEqual(describeTool('read', { path: '/a', offset: 2 }, []), { name: 'Read', input: { file_path: '/a', offset: 2 } })
