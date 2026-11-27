@@ -24,10 +24,27 @@ export interface GrokListing {
   models: GrokModel[]
   current: string | null
   commands: SlashCommandDto[]
+  /** Grok's built-in list, the account's never having come: kept a minute only. */
+  provisional?: boolean
 }
 
 const TTL_MS = 60 * 60 * 1000
+const PROVISIONAL_TTL_MS = 60 * 1000
 const PROBE_TIMEOUT_MS = 30_000
+/** The account's list follows a built-in one by ~150 ms (probed on 1.0.62); this leaves room for a slow network. */
+export const MODELS_UPDATE_WAIT_MS = 3_000
+
+/**
+ * On a stale or missing `models_cache.json`, `initialize` gives the list built into the binary
+ * (`grok-4.6`, `grok-4.5`, 500,000-token windows on 1.0.62) and the account's own arrives later
+ * in `_x.ai/models/update` (`grok-4.7` as default, 256,000 tokens). Only the account's lists carry
+ * `contextWindows` (1.0.62 and 1.0.94): the sign to wait rather than cache a list missing the
+ * account's default model for an hour.
+ */
+export function builtInModels(state: Record<string, unknown>): boolean {
+  const models = Array.isArray(state.availableModels) ? state.availableModels : []
+  return models.length > 0 && models.every((model) => !Array.isArray(fields(fields(model)._meta).contextWindows))
+}
 
 /** Models follow the subscription: additional accounts probe inside their own `GROK_HOME`, one cache entry per home (empty for the CLI's own login). */
 export class GrokCatalog {
@@ -37,22 +54,39 @@ export class GrokCatalog {
 
   invalidate(): void { this.probes.invalidate() }
 
-  list(home?: string, force = false): Promise<GrokListing & { fetchedAt: number }> {
-    return this.probes.read(home ?? '', force)
+  async list(home?: string, force = false): Promise<GrokListing & { fetchedAt: number }> {
+    const listing = await this.probes.read(home ?? '', force)
+    if (!force && listing.provisional && Date.now() - listing.fetchedAt >= PROVISIONAL_TTL_MS) return this.probes.read(home ?? '', true)
+    return listing
   }
 
   private async read(home?: string): Promise<GrokListing> {
+    let update: Record<string, unknown> | null = null
+    let updated = () => {}
+    const arrived = new Promise<void>((resolve) => { updated = resolve })
     const client = new AcpClient({
       label: 'grok',
       binary: await this.executable(),
       args: ['agent', '--no-leader', 'stdio'],
       cwd: home ?? homedir(),
       env: agentProcessEnv({ ...GROK_ISOLATION_ENV, ...(home ? { GROK_HOME: home } : {}) }),
+      onNotification: (method, params) => {
+        if (method !== '_x.ai/models/update') return
+        update = fields(params)
+        updated()
+      },
     })
     const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
     try {
       const meta = fields((await client.initialize(CLIENT_INFO))._meta)
-      return { ...readModels(fields(meta.modelState)), commands: toSlashCommands(meta.availableCommands) }
+      let state = fields(meta.modelState)
+      if (builtInModels(state)) {
+        let waited: NodeJS.Timeout | undefined
+        await Promise.race([arrived, new Promise<void>((resolve) => { waited = setTimeout(resolve, MODELS_UPDATE_WAIT_MS) })])
+        clearTimeout(waited)
+        state = update ?? state
+      }
+      return { ...readModels(state), commands: toSlashCommands(meta.availableCommands), provisional: builtInModels(state) }
     } finally {
       clearTimeout(timeout)
       client.close()

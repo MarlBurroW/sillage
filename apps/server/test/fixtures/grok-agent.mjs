@@ -55,15 +55,27 @@ const record = (entry) => appendFileSync(join(here, 'rpc.jsonl'), `${JSON.string
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params })
 
+// The account's list: only those carry `contextWindows` (probed on 1.0.62 and 1.0.94).
 const MODELS = {
   currentModelId: 'grok-test',
   availableModels: [
-    { modelId: 'grok-test', name: 'Grok Test', description: 'fixture', _meta: { totalContextTokens: 1000, reasoningEffort: 'high', reasoningEfforts: [
+    { modelId: 'grok-test', name: 'Grok Test', description: 'fixture', _meta: { totalContextTokens: 1000, contextWindows: [1000], reasoningEffort: 'high', reasoningEfforts: [
       { id: 'high', value: 'high', label: 'High', default: true }, { id: 'low', value: 'low', label: 'Low', default: false },
     ] } },
-    { modelId: 'grok-fast', name: 'Grok Fast', _meta: { totalContextTokens: 2000, reasoningEfforts: [] } },
+    { modelId: 'grok-fast', name: 'Grok Fast', _meta: { totalContextTokens: 2000, contextWindows: [2000], reasoningEfforts: [] } },
   ],
 }
+
+// `FIXTURE_STALE_MODELS=1`: a stale `models_cache.json`. `initialize` gives the list built into the
+// binary, and the account's arrives 50 ms later in `_x.ai/models/update`. Until then, sessions
+// only know the built-in models: `session/new` falls back to its default for any other, and
+// `session/set_config_option` refuses them with -32602, as Grok does.
+const BUILT_IN = {
+  currentModelId: 'grok-builtin',
+  availableModels: [{ modelId: 'grok-builtin', name: 'Grok Built-in', _meta: { totalContextTokens: 5000, reasoningEfforts: [] } }],
+}
+let listing = process.env.FIXTURE_STALE_MODELS ? BUILT_IN : MODELS
+const known = (id) => listing.availableModels.find((entry) => entry.modelId === id)
 
 const configOptions = (model, effort) => [
   { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: model, options: [] },
@@ -71,7 +83,7 @@ const configOptions = (model, effort) => [
 ]
 
 let sessionId = null
-let model = 'grok-test'
+let model = listing.currentModelId
 let effort = 'high'
 let nextRequest = 0
 const pendingRequests = new Map()
@@ -130,24 +142,30 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   const reply = (result) => send({ jsonrpc: '2.0', id: message.id, result })
   switch (message.method) {
     case 'initialize':
+      if (listing === BUILT_IN) setTimeout(() => { listing = MODELS; notify('_x.ai/models/update', MODELS) }, 50)
       return reply({
         protocolVersion: 1,
         agentCapabilities: { loadSession: true, sessionCapabilities: { resume: {}, close: {} } },
         authMethods: [],
-        _meta: { modelState: MODELS, availableCommands: [{ name: 'compact', description: 'Compact', input: null }, { name: 'goal', description: 'Goal', input: { hint: '<objective>' } }] },
+        _meta: { modelState: listing, availableCommands: [{ name: 'compact', description: 'Compact', input: null }, { name: 'goal', description: 'Goal', input: { hint: '<objective>' } }] },
       })
     case 'session/new':
     case 'session/resume':
       sessionId = message.params.sessionId ?? 'ses_fixture'
-      model = message.params._meta?.modelId ?? model
+      model = known(message.params._meta?.modelId) ? message.params._meta.modelId : listing.currentModelId
       effort = message.params._meta?.reasoningEffort ?? effort
       notify('session/update', { sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact', description: 'Compact' }] } })
       notify('_x.ai/mcp/server_status', { sessionId, name: 'declared', source: 'local', status: 'ready', reason: 'initialized', tools: null })
-      return reply({ ...(message.method === 'session/new' ? { sessionId } : {}), models: MODELS, configOptions: configOptions(model, effort) })
-    case 'session/set_config_option':
-      if (message.params.configId === 'model') model = message.params.value
-      if (message.params.configId === 'reasoning_effort') effort = message.params.value
+      return reply({ ...(message.method === 'session/new' ? { sessionId } : {}), models: listing, configOptions: configOptions(model, effort) })
+    case 'session/set_config_option': {
+      const { configId, value } = message.params
+      const efforts = (known(model)?._meta.reasoningEfforts ?? []).map((entry) => entry.id)
+      const refused = configId === 'model' ? !known(value) : configId === 'reasoning_effort' && efforts.length > 0 && !efforts.includes(value)
+      if (refused) return send({ jsonrpc: '2.0', id: message.id, error: { code: -32602, message: 'Invalid params', data: configId === 'model' ? 'unknown model id' : 'unknown reasoning_effort value' } })
+      if (configId === 'model') model = value
+      if (configId === 'reasoning_effort') effort = value
       return reply({ configOptions: configOptions(model, effort) })
+    }
     case 'session/prompt': {
       const text = message.params.prompt.map((block) => block.text ?? '').join('\n')
       const marker = text.indexOf('fixture:')

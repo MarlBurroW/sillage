@@ -47,6 +47,15 @@ test('catalogue : modèles, efforts du plus bas au plus haut, défauts et comman
   assert.deepEqual(usage.windows.map((window) => [window.id, window.utilization]), [['credits', 0.08]])
 })
 
+test('catalog: on a stale model cache, the account’s list replaces the one built into Grok', async (t) => {
+  process.env.FIXTURE_STALE_MODELS = '1'
+  t.after(() => { delete process.env.FIXTURE_STALE_MODELS })
+  const { adapter } = await adapterFixture(t)
+  const listing = await adapter.models()
+  assert.deepEqual(listing.models.map((model) => model.value), ['grok-test', 'grok-fast'])
+  assert.deepEqual(await adapter.resolveDefaults(DEFAULT_GROK_CONFIG), { ...DEFAULT_GROK_CONFIG, model: 'grok-test', reasoningEffort: 'high' })
+})
+
 test('fork : rang du dernier tour gardé, ou toute la session', async (t) => {
   const { adapter, cwd, rpc } = await adapterFixture(t)
   const target = { agentSessionId: 'ses_root', cwd }

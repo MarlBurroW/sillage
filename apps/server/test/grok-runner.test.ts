@@ -503,3 +503,39 @@ test('wake-up: interrupting it cancels Grok’s turn, and an empty wake-up still
   await new Promise((resolve) => setTimeout(resolve, 50))
   assert.equal(f.count('turn.completed'), 4, 'a sub-agent completing under its own session opens no turn')
 })
+
+test('models: a model the account no longer offers, or an effort the model does not, leaves the session on Grok’s own', async (t) => {
+  const saved: unknown[] = []
+  const f = await runnerFixture(t, {
+    config: { ...DEFAULT_GROK_CONFIG, model: 'grok-gone' },
+    updateConfig: (config) => { saved.push(config) },
+  })
+  const codes = () => f.events.flatMap((event) => event.type === 'agent.notice' && event.code.startsWith('grok_') && event.code.endsWith('_unavailable') ? [event.code] : [])
+  // `session/new` fell back on the default model in silence, `set_config_option` refused the model.
+  assert.equal((f.events.find((event) => event.type === 'session.started') as { model: string }).model, 'grok-test')
+  assert.deepEqual(codes(), ['grok_model_unavailable'])
+  assert.deepEqual(saved.at(-1), { ...DEFAULT_GROK_CONFIG, model: 'grok-test' })
+  await f.turn({ usage: {} })
+  assert.equal(f.count('turn.completed'), 1)
+
+  // Live: `grok-test` lists high and low only, so xhigh is not even asked for. (`session/new` takes
+  // any effort without complaint, probed: only later changes are refused.)
+  assert.equal(await f.runner.applyConfig({ ...DEFAULT_GROK_CONFIG, model: 'grok-test', reasoningEffort: 'xhigh' }), true)
+  assert.deepEqual(codes(), ['grok_model_unavailable', 'grok_effort_unavailable'])
+  assert.deepEqual(saved.at(-1), { ...DEFAULT_GROK_CONFIG, model: 'grok-test', reasoningEffort: 'high' })
+  assert.deepEqual(f.runner.appliedConfig, saved.at(-1))
+  assert.deepEqual((await f.rpc()).filter((entry) => entry.method === 'session/set_config_option').map((entry) => entry.params.value), ['grok-gone'])
+})
+
+test('models: started on a stale model cache, the session waits for the account’s list and takes its model and windows', async (t) => {
+  const f = await runnerFixture(t, {
+    config: { ...DEFAULT_GROK_CONFIG, model: 'grok-fast' },
+    processEnv: { FIXTURE_STALE_MODELS: '1' },
+  })
+  const asked = (await f.rpc()).filter((entry) => entry.method === 'session/set_config_option').map((entry) => entry.params.value)
+  assert.deepEqual(asked, ['grok-fast', 'grok-fast'], 'refused before `_x.ai/models/update`, taken after')
+  assert.equal(f.events.filter((event) => event.type === 'agent.notice' && event.code === 'grok_model_unavailable').length, 0)
+  assert.equal((f.events.find((event) => event.type === 'session.started') as { model: string }).model, 'grok-fast')
+  await f.turn({ steps: [update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }, { totalTokens: 500 })], usage: {} })
+  assert.deepEqual(f.events.find((event) => event.type === 'usage.updated')?.context, { usedTokens: 500, maxTokens: 2000, ratio: 0.25 })
+})

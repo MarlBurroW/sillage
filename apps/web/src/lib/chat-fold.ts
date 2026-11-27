@@ -145,6 +145,14 @@ export function noticeText(item: NoticeItem): string {
   }
   if (item.code === 'antigravity_model_adjusted') return translate('antigravity.modelAdjusted.notice')
   if (item.code === 'copilot_model_adjusted') return translate('copilot.modelAdjusted.notice')
+  if (item.code === 'grok_model_unavailable' || item.code === 'grok_effort_unavailable') {
+    const details = item.details as { requested?: string; model?: string | null; effort?: string | null } | null
+    if (details?.requested && details.model && (item.code === 'grok_model_unavailable' || details.effort)) {
+      return item.code === 'grok_model_unavailable'
+        ? translate('grok.modelUnavailable.notice', { requested: details.requested, model: details.model })
+        : translate('grok.effortUnavailable.notice', { requested: details.requested, model: details.model, effort: details.effort ?? '' })
+    }
+  }
   if (item.code === 'copilot_retry') return translate('copilot.retry.notice')
   if (item.code === 'copilot_auto_model') {
     const details = item.details as { model?: string } | null

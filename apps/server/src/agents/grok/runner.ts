@@ -12,6 +12,7 @@ import type {
   SessionNotification,
 } from '@agentclientprotocol/sdk'
 import {
+  CLI_DEFAULT,
   grokPermissionModeSchema,
   toolPresentation,
   type ToolPresentation,
@@ -45,7 +46,7 @@ import type {
   QuestionAnswer,
   RunnerContext,
 } from '../types.js'
-import { toSlashCommands } from './catalog.js'
+import { builtInModels, MODELS_UPDATE_WAIT_MS, toSlashCommands } from './catalog.js'
 import { consumedAnything, parseSessionUsage, toTurnUsage, usageSince, type SessionUsage } from './session-usage.js'
 import { grokLaunch, sameLaunch, toAcpMcpServer, type GrokLaunch } from './launch.js'
 import {
@@ -64,7 +65,7 @@ import { detach } from '../../detach.js'
 
 /** `_x.ai/…` notifications unrelated to journal content. */
 const NOISE = new Set([
-  '_x.ai/session/setup', '_x.ai/announcements/update', '_x.ai/settings/update', '_x.ai/models/update',
+  '_x.ai/session/setup', '_x.ai/announcements/update', '_x.ai/settings/update',
   '_x.ai/sessions/changed', '_x.ai/queue/changed', '_x.ai/session/prompt_complete', '_x.ai/mcp/init_progress',
   '_x.ai/mcp_initialized', '_x.ai/mcp/servers_updated', '_x.ai/mcp/tools_changed', '_x.ai/git_head_changed',
   '_x.ai/fs_notify', '_x.ai/fs/index', '_x.ai/fs/index/delta', '_x.ai/session/interjection', '_x.ai/hooks/event',
@@ -152,6 +153,10 @@ export class GrokRunner implements AgentRunner {
   private compacting: 'manual' | 'auto' | null = null
   /** Per-model context windows from session catalogs. */
   private readonly contextLimits = new Map<string, number>()
+  /** Per-model reasoning efforts: Grok refuses (`-32602`) an effort the current model does not offer. */
+  private readonly efforts = new Map<string, string[]>()
+  /** Started on its built-in model list: settles when the account's arrives (`_x.ai/models/update`). */
+  private accountModels: { arrived: Promise<void>; settle: () => void } | null = null
   private currentModel: string | null = null
   private currentEffort: string | null = null
   private sessionMode = 'default'
@@ -209,7 +214,13 @@ export class GrokRunner implements AgentRunner {
     })
 
     const init = await this.client.initialize(CLIENT_INFO)
-    this.readModels(fields(fields(init._meta).modelState))
+    const modelState = fields(fields(init._meta).modelState)
+    if (builtInModels(modelState)) {
+      let settle = () => {}
+      const arrived = new Promise<void>((resolve) => { settle = resolve })
+      this.accountModels = { arrived, settle }
+    }
+    this.readModels(modelState)
 
     const flags = permissionFlags(this.config.permissionMode)
     // Disable repository instructions through agent profiles: `agentsMd: false` is
@@ -261,7 +272,7 @@ export class GrokRunner implements AgentRunner {
 
     this.readModels(fields((session as { models?: unknown }).models))
     this.readOptions(session.configOptions ?? [])
-    await this.applySessionOptions(this.config)
+    this.adopt(await this.applySessionOptions(this.config))
     await this.applyPermissionMode(this.config.permissionMode, true)
     // Totals count from this process's start, resumed sessions included (probed: zero after
     // `session/resume`); read rather than assumed so that a CLI keeping them stays right.
@@ -283,13 +294,17 @@ export class GrokRunner implements AgentRunner {
   }
 
   /** Context windows and current model in `_meta.modelState` or `models`. */
-  private readModels(models: Record<string, unknown>): void {
+  private readModels(models: Record<string, unknown>, options: { current?: boolean } = {}): void {
     for (const entry of Array.isArray(models.availableModels) ? models.availableModels : []) {
       const model = fields(entry)
-      const limit = fields(model._meta).totalContextTokens
-      if (typeof model.modelId === 'string' && typeof limit === 'number') this.contextLimits.set(model.modelId, limit)
+      if (typeof model.modelId !== 'string') continue
+      const meta = fields(model._meta)
+      if (typeof meta.totalContextTokens === 'number') this.contextLimits.set(model.modelId, meta.totalContextTokens)
+      if (Array.isArray(meta.reasoningEfforts)) {
+        this.efforts.set(model.modelId, meta.reasoningEfforts.map((effort) => fields(effort).id).filter((id): id is string => typeof id === 'string'))
+      }
     }
-    if (typeof models.currentModelId === 'string') this.currentModel = models.currentModelId
+    if (options.current !== false && typeof models.currentModelId === 'string') this.currentModel = models.currentModelId
   }
 
   private readOptions(options: SessionConfigOption[]): void {
@@ -301,20 +316,62 @@ export class GrokRunner implements AgentRunner {
     }
   }
 
-  /** Apply configured model/effort when differing from announced session settings. `CLI_DEFAULT` preserves Grok values. */
-  private async applySessionOptions(config: GrokConfig): Promise<void> {
-    const wanted: [string, string, string | null][] = [
-      ['model', config.model, this.currentModel],
-      ['reasoning_effort', config.reasoningEffort, this.currentEffort],
-    ]
-    for (const [configId, value, current] of wanted) {
-      if (!value || current === value) continue
+  /**
+   * Apply configured model/effort when differing from announced session settings. `CLI_DEFAULT`
+   * preserves Grok values. A model the account no longer offers, or an effort the model does not,
+   * is refused with `-32602` (probed on 1.0.62 and 1.0.94; `session/new` instead switches to the
+   * default model without a word): the session keeps Grok's value rather than failing to start,
+   * and the returned configuration says which. Effort comes after the model, against its list.
+   */
+  private async applySessionOptions(config: GrokConfig): Promise<GrokConfig> {
+    let applied = config
+    if (config.model && config.model !== this.currentModel && !(await this.setModel(config.model))) {
+      applied = { ...applied, model: this.currentModel ?? CLI_DEFAULT }
+      this.notice('grok_model_unavailable', `Grok no longer offers ${config.model}: the session continues on ${this.currentModel ?? 'its default model'}.`, 'warning', { requested: config.model, model: this.currentModel })
+    }
+    const effort = config.reasoningEffort
+    if (effort && effort !== this.currentEffort) {
+      const offered = this.currentModel ? this.efforts.get(this.currentModel) : undefined
+      if ((offered?.length && !offered.includes(effort)) || !(await this.setOption('reasoning_effort', effort))) {
+        applied = { ...applied, reasoningEffort: this.currentEffort ?? CLI_DEFAULT }
+        this.notice('grok_effort_unavailable', `${this.currentModel ?? 'This model'} does not offer the ${effort} effort: the session continues on ${this.currentEffort ?? 'its default effort'}.`, 'warning', { requested: effort, effort: this.currentEffort, model: this.currentModel })
+      }
+    }
+    return applied
+  }
+
+  /** A process started on its built-in list refuses the account's models until that list arrives: wait for it, then ask again. */
+  private async setModel(model: string): Promise<boolean> {
+    if (await this.setOption('model', model)) return true
+    const pending = this.accountModels
+    if (!pending) return false
+    let waited: NodeJS.Timeout | undefined
+    await Promise.race([pending.arrived, new Promise<void>((resolve) => { waited = setTimeout(resolve, MODELS_UPDATE_WAIT_MS) })])
+    clearTimeout(waited)
+    this.accountModels = null
+    return this.setOption('model', model)
+  }
+
+  /** Whether Grok took the value; false when it refused it as unknown. */
+  private async setOption(configId: string, value: string): Promise<boolean> {
+    try {
       const result = await this.client!.request<{ configOptions?: SessionConfigOption[] }>(
         'session/set_config_option',
         { sessionId: this.sessionId, configId, value },
       )
       this.readOptions(result.configOptions ?? [])
+      return true
+    } catch (error) {
+      if (error instanceof AcpRpcError && error.code === -32602) return false
+      throw error
     }
+  }
+
+  /** Keeps the conversation's settings on what Grok actually runs, so the composer shows it and later starts do not ask again. */
+  private adopt(config: GrokConfig): void {
+    if (config === this.config) return
+    this.config = config
+    this.ctx.updateConfig(config)
   }
 
   /** Live permission modes. Notify `_x.ai/yolo_mode_changed` for `yoloMode`/`autoMode`, affecting all process sessions, of which there is one. Plan mode uses `session/set_mode`. */
@@ -353,6 +410,15 @@ export class GrokRunner implements AgentRunner {
   // ─── Incoming stream ────────────────────────────────────────────────────────────
 
   private onNotification(method: string, params: unknown): void {
+    if (method === '_x.ai/models/update') {
+      // The account's catalog, sent when Grok started on a stale cache with its built-in list
+      // (probed on 1.0.62: 500,000-token windows instead of 256,000). Its `currentModelId` is the
+      // account default, not this session's model, which `config_option_update` reports. Read at
+      // once, even before the session exists: `start()` may be waiting for it.
+      this.readModels(fields(params), { current: false })
+      this.accountModels?.settle()
+      return
+    }
     if (this.early) {
       this.early.push([method, params])
       return
@@ -1009,12 +1075,13 @@ export class GrokRunner implements AgentRunner {
     // Accounts are process `GROK_HOME` and require restarting to change.
     if (config.account !== this.config.account) return false
     try {
-      await this.applySessionOptions(config)
+      const applied = await this.applySessionOptions(config)
       if (config.permissionMode !== this.config.permissionMode) await this.applyPermissionMode(config.permissionMode)
+      this.config = config
+      this.adopt(applied)
     } catch {
       return false
     }
-    this.config = config
     return true
   }
 
