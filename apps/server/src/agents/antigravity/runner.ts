@@ -200,7 +200,14 @@ export class AntigravityRunner implements AgentRunner {
       ...(this.sessionId ? { sessionId: this.sessionId } : {}), cwd: this.ctx.cwd,
       mcpServers: resolved.servers.map(toAcpMcpServer),
       additionalDirectories: this.config.additionalDirectories,
-      _meta: { antigravity: { ...(overview ? { systemPrompt: { append: overview } } : {}) } },
+      _meta: { antigravity: {
+        ...(overview ? { systemPrompt: { append: overview } } : {}),
+        // Without it Antigravity declares MCP tools lazily: the model first reads each tool's schema
+        // with a shell `cat` under its brain folder (a command, so a permission prompt and the
+        // sandbox), then calls it. Eager tools are called directly, as every other CLI does
+        // (probed 27 Nov 2026 on 1.4.3; same option in 1.5.2). Not persisted: sent on every start.
+        ...(resolved.servers.length ? { eagerMcpServers: resolved.servers.map((server) => server.name) } : {}),
+      } },
     }, 90_000)
     this.sessionId = this.sessionId ?? session.sessionId ?? null
     if (!this.sessionId) throw new Error('Antigravity did not return a session ID.')

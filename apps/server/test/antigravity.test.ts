@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { applyEvent, emptyChatState } from '@sillage/protocol/chat-state'
-import { DEFAULT_ANTIGRAVITY_CONFIG, sillageEventSchema, type SillageEvent } from '@sillage/protocol'
+import { DEFAULT_ANTIGRAVITY_CONFIG, sillageEventSchema, type McpServer, type SillageEvent } from '@sillage/protocol'
 import { AntigravityRunner } from '../src/agents/antigravity/runner.js'
 import { AntigravityCatalog, antigravityProbeFolder, parseUsage } from '../src/agents/antigravity/catalog.js'
 import { AntigravityAccountHomes, antigravityEnv, antigravitySessionHome, writeAntigravityCredentials } from '../src/antigravity-accounts/homes.js'
@@ -472,4 +472,17 @@ test('Antigravity 1.5.2: a view_file closed with its summary shows the file, and
   const current = new AntigravityRunner({ ...f.ctx, config: extra })
   await current.start(); await current.stop()
   assert.equal(notices(), 1)
+})
+
+test('Antigravity loads the tools of every MCP server Sillage passes eagerly, on new sessions and resumes alike', async (t) => {
+  const server = (name: string): McpServer => ({ id: name, name, enabled: true, projectId: null, createdAt: 0, updatedAt: 0, transport: { type: 'stdio', command: 'node', args: ['server.mjs'], env: {} } })
+  const f = await fixture(t, { resolveMcpServers: () => ({ servers: [server('sillage'), server('declared')], failures: [] }) })
+  const resumed = new AntigravityRunner({ ...f.ctx, resumeSessionId: 'existing' })
+  t.after(() => resumed.stop())
+  await resumed.start()
+  const sessions = (await f.rpc()).filter((entry) => entry.method === 'session/new' || entry.method === 'session/resume')
+  assert.deepEqual(sessions.map((entry) => [entry.method, entry.params._meta.antigravity.eagerMcpServers]), [['session/new', ['sillage', 'declared']], ['session/resume', ['sillage', 'declared']]])
+  // Without servers, nothing to name.
+  const bare = await fixture(t)
+  assert.equal((await bare.rpc()).find((entry) => entry.method === 'session/new').params._meta.antigravity.eagerMcpServers, undefined)
 })
