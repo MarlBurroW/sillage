@@ -6,7 +6,7 @@ const NAMES: Record<string, string> = {
   write_to_file: 'Write', write_file: 'Write', create_file: 'Write', client_create_file: 'Write',
   run_command: 'Bash', shell: 'Bash', command_status: 'TaskOutput', send_command_input: 'TaskOutput',
   grep_search: 'Grep', find_by_name: 'Glob', find_file: 'Glob', list_dir: 'LS', list_directory: 'LS',
-  search_web: 'WebSearch', read_url_content: 'WebFetch', start_subagent: 'Agent',
+  search_web: 'WebSearch', read_url_content: 'WebFetch', start_subagent: 'Agent', invoke_subagent: 'Agent',
   generate_image: 'GenerateImage', task_boundary: 'TaskUpdate',
 }
 const KEYS: Record<string, string> = {

@@ -401,3 +401,46 @@ test('Antigravity sub-agents settle their own tokens at each turn end, once, nes
   await until(() => f.events.filter((event) => event.type === 'turn.completed').length > ended)
   assert.equal(consumed().length, before)
 })
+
+test('Antigravity sub-agent calls hang under the invoke_subagent that started them, shown as an Agent that runs until the turn ends', async (t) => {
+  const f = await fixture(t)
+  const session = f.events.find((event) => event.type === 'session.started')!.agentSessionId
+  const brain = join(antigravitySessionHome(f.home, 'conversation', []), 'antigravity-acp', 'brain')
+  const transcript = async (id: string, steps: Record<string, unknown>[]) => {
+    await mkdir(join(brain, id, '.system_generated', 'logs'), { recursive: true })
+    await writeFile(join(brain, id, '.system_generated', 'logs', 'transcript_full.jsonl'), steps.map((step) => JSON.stringify(step) + '\n').join(''))
+  }
+  const invoke = (step_index: number, ...ids: string[]) => ({ step_index, type: 'INVOKE_SUBAGENT', content: ids.map((id) => `{ "conversationId":  "${id}" }`).join('\n') })
+  // Step order on disk is not theirs; the calls' own numbers are not the steps' either.
+  await transcript(session, [invoke(9, 'beta'), invoke(6, 'alpha')])
+  await transcript('beta', [invoke(4, 'gamma')])
+  await transcript('alpha', [{ step_index: 1, type: 'PLANNER_RESPONSE', input_tokens: 100, cache_read_tokens: 50, output_tokens: 10 }])
+  const spawn = (id: string, summary: string) => [
+    { update: { sessionUpdate: 'tool_call', toolCallId: id, title: 'Running invoke_subagent', kind: 'other', status: 'in_progress', rawInput: {} } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed', rawOutput: summary } },
+  ]
+  const run = (id: string) => [
+    { update: { sessionUpdate: 'tool_call', toolCallId: id, title: 'ls', kind: 'execute', status: 'in_progress', rawInput: { command_line: 'ls', working_dir: f.root } } },
+    { update: { sessionUpdate: 'tool_call_update', toolCallId: id, status: 'completed', rawOutput: { commandLine: 'ls', exitCode: 0, combinedOutput: 'a.txt' } } },
+  ]
+  await f.turn([
+    ...spawn(`${session}:3`, 'List directory files'), ...spawn(`${session}:4`, 'Review the tests'),
+    ...run('beta:1'), ...run('alpha:1'), ...spawn('beta:2', 'Dig deeper'), ...run('gamma:1'), ...run('call_123'),
+  ])
+  const started = f.events.filter((event) => event.type === 'tool.started')
+  assert.deepEqual(Object.fromEntries(started.map((event) => [event.toolCallId, [event.name, event.parentToolCallId]])), {
+    [`${session}:3`]: ['Agent', null], [`${session}:4`]: ['Agent', null],
+    'beta:1': ['Bash', `${session}:4`], 'alpha:1': ['Bash', `${session}:3`],
+    'beta:2': ['Agent', `${session}:4`], 'gamma:1': ['Bash', 'beta:2'], call_123: ['Bash', null],
+  })
+  const described = f.events.find((event) => event.type === 'tool.input_updated' && event.toolCallId === `${session}:3`)
+  assert.deepEqual(described?.type === 'tool.input_updated' && described.input, { description: 'List directory files' })
+  // Running after their call returned, done with the turn; alpha's tokens reach its spawn.
+  const turnEnd = f.events.findIndex((event) => event.type === 'turn.completed')
+  assert.deepEqual(f.events.filter((event) => event.type === 'task.started').map((event) => event.taskId), [`${session}:3`, `${session}:4`, 'beta:2'])
+  const done = f.events.filter((event) => event.type === 'task.completed')
+  assert.deepEqual(done.map((event) => [event.taskId, event.status]), [[`${session}:3`, 'completed'], [`${session}:4`, 'completed'], ['beta:2', 'completed']])
+  assert.ok(f.events.indexOf(done.at(-1)!) < turnEnd)
+  const progress = f.events.find((event) => event.type === 'task.progress')
+  assert.deepEqual(progress?.type === 'task.progress' && [progress.taskId, progress.totalTokens, progress.toolUses], [`${session}:3`, 160, 1])
+})

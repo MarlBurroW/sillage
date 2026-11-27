@@ -168,6 +168,23 @@ try {
       const futureText = 'fixture:' + JSON.stringify({ steps: [{ update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Future native response' } } }] })
       assert.ok((await context.request.post(base + `/api/conversations/${conversation.id}/messages`, { data: { clientMessageId: randomUUID(), text: futureText } })).ok())
       await page.getByText('Future native response', { exact: true }).first().waitFor()
+      // A sub-agent spawned by invoke_subagent: an Agent row, its own call nested under it.
+      const spawnText = 'fixture:' + JSON.stringify({ steps: [
+        { update: { sessionUpdate: 'tool_call', toolCallId: 'main-trajectory:3', title: 'Running invoke_subagent', kind: 'other', status: 'in_progress', rawInput: {} } },
+        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'main-trajectory:3', status: 'completed', rawOutput: 'List directory files' } },
+        { update: { sessionUpdate: 'tool_call', toolCallId: 'feedc0de:1', title: 'ls -la', kind: 'execute', status: 'in_progress', rawInput: { command_line: 'ls -la', working_dir: project.workspacePath } } },
+        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'feedc0de:1', status: 'completed', rawOutput: { commandLine: 'ls -la', exitCode: 0, combinedOutput: 'notes.txt' } } },
+        { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Sub-agent listed notes.txt' } } },
+      ] })
+      assert.ok((await context.request.post(base + `/api/conversations/${conversation.id}/messages`, { data: { clientMessageId: randomUUID(), text: spawnText } })).ok())
+      await page.getByText('Sub-agent listed notes.txt', { exact: true }).first().waitFor()
+      await page.getByText('List directory files').first().waitFor()
+      await page.getByText('Voir le fil du sous-agent').first().click()
+      const pane = page.locator('[data-panel="workspace"]')
+      await pane.getByText('List directory files').waitFor()
+      await pane.getByText('ls -la').waitFor()
+      await page.screenshot({ path: '/var/tmp/sillage-antigravity-server-subagent.png' })
+      await page.getByRole('button', { name: 'Fermer le panneau' }).first().click()
       const forkResponse = await context.request.post(base + `/api/conversations/${conversation.id}/fork`, { data: { throughSeq: latest.lastSeq } })
       assert.ok(forkResponse.ok(), await forkResponse.text())
       const fork = await forkResponse.json()

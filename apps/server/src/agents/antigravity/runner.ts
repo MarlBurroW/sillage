@@ -25,7 +25,7 @@ import { antigravityArgs } from './launch.js'
 import { configOption, optionsOf } from './catalog.js'
 import { describeAntigravityTool } from './tools.js'
 import { antigravityTurnTokens } from './usage.js'
-import { AntigravitySubAgentUsage } from './subagent-usage.js'
+import { AntigravitySubAgentUsage, parseTranscriptLine, transcriptPath } from './subagent-usage.js'
 import { TurnLifecycle } from '../turn-lifecycle.js'
 
 interface ToolTrack { update: Record<string, unknown>; input: string; output: string; diffs: AcpDiff[]; settle: NodeJS.Timeout | null }
@@ -43,6 +43,11 @@ function outputOf(update: Record<string, unknown>): string {
 }
 
 /** The content a view_file showed the model, read again from disk; null when unreadable, binary, or when the requested lines lie beyond the scanned prefix. Antigravity's line bounds are 1-based and inclusive. */
+/** The trajectory a tool call id names (`<trajectory>:<n>`), null for ids without one. */
+function trajectoryOf(toolCallId: string): string | null {
+  return /^([\w-]+):\d+$/.exec(toolCallId)?.[1] ?? null
+}
+
 /**
  * The path a pre-tool hook refused, when it is not this read's own: Google closes every open
  * frame with one parallel call's refusal (`Access to path "X" is denied…`).
@@ -122,6 +127,12 @@ export class AntigravityRunner implements AgentRunner {
   private readonly background = new Map<string, string>()
   /** Sub-agents' tokens, which the prompt's usage leaves out; null until the session is known. */
   private subAgents: AntigravitySubAgentUsage | null = null
+  /** `invoke_subagent` calls in launch order, with the trajectory (session or sub-agent) that made them. */
+  private readonly invokes: { id: string; trajectory: string }[] = []
+  /** Sub-agent trajectory → the `invoke_subagent` call that started it. */
+  private readonly lanes = new Map<string, string>()
+  /** Spawns whose sub-agents may still work after their call returned: settled at turn end. */
+  private readonly spawns = new Map<string, { startedAt: number; toolUses: number }>()
 
   async importHistory(): Promise<void> {
     this.replaying = true
@@ -304,7 +315,12 @@ export class AntigravityRunner implements AgentRunner {
       // failed, then the SDK re-announces those still running under the same id. Keep
       // the row the user already has instead of appending a duplicate.
       if (earlier) { this.closed.delete(id); this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, input: described.input, title: described.title }, raw) }
-      else this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, parentToolCallId: null }, raw)
+      else {
+        const parent = this.parentOf(id)
+        if (parent) { const spawn = this.spawns.get(parent); if (spawn) spawn.toolUses += 1 }
+        if (described.name === 'Agent') this.invokes.push({ id, trajectory: trajectoryOf(id) ?? this.sessionId ?? '' })
+        this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, parentToolCallId: parent }, raw)
+      }
     } else if (input !== track.input) {
       this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, input: described.input, title: described.title }, raw)
       track.input = input
@@ -339,7 +355,50 @@ export class AntigravityRunner implements AgentRunner {
     }
     const isError = update.status === 'failed' && !denied
     const mirrored = !isError && (denied || (!output && !track.output)) && described.name === 'Read' ? mirrorRead(described.input) : null
+    const summary = described.name === 'Agent' && typeof update.rawOutput === 'string' ? update.rawOutput.trim() : ''
+    // `invoke_subagent` announces nothing; its result is the call's summary ("List directory files").
+    if (summary && !fields(described.input).description) this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, input: { ...fields(described.input), description: summary }, title: described.title })
     this.completeTool(id, track, isError, denied ? mirrored ?? '' : output || update.rawOutput || track.output || mirrored || '', { update: merged, diffs: track.diffs })
+    // The call returns once its sub-agents exist, and they work on: a task keeps it running.
+    if (described.name === 'Agent' && !isError && !this.spawns.has(id)) {
+      this.spawns.set(id, { startedAt: Date.now(), toolUses: 0 })
+      this.ctx.emit({ type: 'task.started', taskId: id, toolCallId: id, kind: 'agent', description: summary, workflowName: null })
+    }
+  }
+
+  /**
+   * The `invoke_subagent` call a tool call belongs to, null on the main thread. Tool call ids read
+   * `<trajectory>:<n>`: the session's id on the main thread, the sub-agent's own conversation id in
+   * it (probed on 1.4.3 and 1.5.2; 1.4.3's `call_…` reads carry none and stay on the main thread).
+   * The spawning call does not name its sub-agents: the parent's transcript does, in the
+   * `INVOKE_SUBAGENT` step. Those steps are aligned from the end with the calls this runner saw
+   * from that trajectory, as a resumed session only sees its latest ones. Without a transcript,
+   * the latest spawn is the best guess.
+   */
+  private parentOf(toolCallId: string): string | null {
+    const lane = trajectoryOf(toolCallId)
+    if (!lane || lane === this.sessionId) return null
+    const known = this.lanes.get(lane)
+    if (known) return known
+    let parent: string | null = null
+    const brain = join(this.home, 'antigravity-acp', 'brain')
+    for (const trajectory of [this.sessionId, ...this.lanes.keys()]) {
+      if (!trajectory) continue
+      let text: string
+      try { text = readFileSync(transcriptPath(brain, trajectory), 'utf8') } catch { continue }
+      const steps = text.split('\n').flatMap((line) => {
+        const step = line.trim() ? parseTranscriptLine(line) : null
+        return step && step.children.length ? [step] : []
+      }).sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+      const at = steps.findIndex((step) => step.children.includes(lane))
+      if (at < 0) continue
+      const calls = this.invokes.filter((call) => call.trajectory === trajectory)
+      parent = calls[calls.length - (steps.length - at)]?.id ?? calls.at(-1)?.id ?? null
+      break
+    }
+    parent ??= this.invokes.at(-1)?.id ?? null
+    if (parent) this.lanes.set(lane, parent)
+    return parent
   }
 
   private completeTool(id: string, track: ToolTrack, isError: boolean, output: unknown, raw: unknown): void {
@@ -475,11 +534,24 @@ export class AntigravityRunner implements AgentRunner {
   private endTurn(response: Record<string, unknown>, raw: unknown, token?: number): void {
     const usage = fields(response.usage)
     // Before the turn closes, so benchmarks bounded at settlement include them.
+    const spawned = new Map<string, number>()
     if (this.subAgents && this.sessionId && !this.replaying) {
       let used: ReturnType<AntigravitySubAgentUsage['settle']> = []
       try { used = this.subAgents.settle(this.sessionId) } catch { /* a transcript read must not keep the turn open */ }
-      for (const { id, tokens } of used) this.ctx.emit({ type: 'usage.consumed', model: null, costUsd: 0, ...tokens }, { antigravitySubAgent: id })
+      for (const { id, tokens } of used) {
+        this.ctx.emit({ type: 'usage.consumed', model: null, costUsd: 0, ...tokens }, { antigravitySubAgent: id })
+        const spawn = this.lanes.get(id)
+        if (spawn) spawned.set(spawn, (spawned.get(spawn) ?? 0) + tokens.inputTokens + tokens.outputTokens + tokens.cacheReadTokens + tokens.cacheCreationTokens)
+      }
     }
+    // The parent waits for its sub-agents' reports before ending its turn: their work is over.
+    for (const [id, spawn] of this.spawns) {
+      const durationMs = Date.now() - spawn.startedAt
+      const totalTokens = spawned.get(id)
+      if (totalTokens) this.ctx.emit({ type: 'task.progress', taskId: id, activity: '', lastTool: null, toolUses: spawn.toolUses, totalTokens, durationMs, summary: null, workflow: null })
+      this.ctx.emit({ type: 'task.completed', taskId: id, status: response.stopReason === 'cancelled' ? 'stopped' : 'completed', summary: '', durationMs, ambient: false })
+    }
+    this.spawns.clear()
     this.turn.end({
       stopReason: response.stopReason === 'end_turn' ? 'completed' : response.stopReason === 'cancelled' ? 'interrupted' : String(response.stopReason ?? 'completed'),
       usage: { costUsd: 0, ...antigravityTurnTokens(usage) },
