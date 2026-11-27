@@ -1,5 +1,5 @@
 import { useAntigravityAccounts } from '../../lib/antigravity-accounts'
-import { BookOpen, Box, Brain, Compass, FilePen, Globe, IdCard, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Wallet, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Compass, FilePen, Globe, IdCard, Lightbulb, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Wallet, Zap } from 'lucide-react'
 import { cloneElement, useCallback, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -225,6 +225,21 @@ function skillLibraryOptions(t: Translate): SettingChoice<LibraryChoice>[] {
 }
 
 const libraryChoice = (enabled: boolean): LibraryChoice => (enabled ? 'on' : 'off')
+
+/**
+ * Claude's next-message suggestions. Two choices like ultracode; enabled is not a caution tone,
+ * but its hint names the extra request each turn costs.
+ */
+type SuggestionChoice = 'off' | 'on'
+
+function suggestionOptions(t: Translate): SettingChoice<SuggestionChoice>[] {
+  return [
+    { value: 'off', label: t('composer.suggestions.off'), hint: t('composer.suggestions.off.hint') },
+    { value: 'on', label: t('composer.suggestions.on'), hint: t('composer.suggestions.on.hint') },
+  ]
+}
+
+const suggestionChoice = (enabled: boolean): SuggestionChoice => (enabled ? 'on' : 'off')
 
 function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']>[] {
   return [
@@ -681,6 +696,7 @@ export function useAgentSettings({
   const sandboxOptionList = codexSandboxOptions(t)
   const speedOptionList = speedOptions(t)
   const ultracodeOptionList = ultracodeOptions(t)
+  const suggestionOptionList = suggestionOptions(t)
   const opencodePermissionList = opencodePermissionOptions(t)
   const grokPermissionList = grokPermissionOptions(t)
   const antigravityPermissionList: SettingChoice<AntigravityConfig['permissionMode']>[] = [
@@ -756,6 +772,24 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      setting({
+        key: 'promptSuggestions',
+        label: t('composer.setting.suggestions'),
+        icon: <Lightbulb size={15} />,
+        options: suggestionOptionList,
+        active: 'on',
+        value: suggestionChoice(claude.promptSuggestions),
+        onChange: (choice) => onConfigChange({ ...claude, promptSuggestions: choice === 'on' }),
+        // A launch-only SDK option: the change waits for the next session start, like the library.
+        notice: notice(
+          appliedLabel(
+            appliedConfig?.agent === 'claude' ? suggestionChoice(appliedConfig.promptSuggestions) : undefined,
+            suggestionChoice(claude.promptSuggestions),
+            suggestionOptionList,
+          ),
+          t,
+        ),
+      }),
       ...(accountOptions.length > 0
         ? [
             setting({

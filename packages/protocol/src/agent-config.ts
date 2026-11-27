@@ -79,6 +79,13 @@ export const claudeConfigSchema = z.object({
    */
   ultracode: z.boolean().default(false),
   /**
+   * Claude Code's next-message suggestion after each turn. Each one is an extra model request
+   * that rereads the whole context from cache, so its cost grows with the conversation (measured
+   * 27 Nov 2026: one ~33k-token cache read per turn on a small session). The interactive CLI shows
+   * none by default, hence off. Launch-only: the SDK takes it as a query option.
+   */
+  promptSuggestions: z.boolean().default(false),
+  /**
    * CLI output style (`Concise`, `Explanatory`, etc.) from the catalog. Empty leaves the
    * default style.
    */
@@ -366,6 +373,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   strictMcp: false,
   fastMode: false,
   ultracode: false,
+  promptSuggestions: false,
   outputStyle: CLI_DEFAULT,
   advisorModel: CLI_DEFAULT,
   maxBudgetUsd: null,

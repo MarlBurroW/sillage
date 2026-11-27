@@ -298,10 +298,10 @@ export class ClaudeRunner implements AgentRunner {
         // `applyConfig`.
         ...(config.maxBudgetUsd === null ? {} : { maxBudgetUsd: config.maxBudgetUsd }),
         ...(config.maxTurns === null ? {} : { maxTurns: config.maxTurns }),
-        // One next-message suggestion per turn after `result`, nearly free through conversation
-        // cache. Without option CLI emits none in SDK mode; with it, machine
-        // `promptSuggestionEnabled: false` still disables them.
-        promptSuggestions: true,
+        // One next-message suggestion per turn after `result`, only when the conversation asks
+        // for it: each is an extra request rereading the context. Without the option the CLI
+        // emits none in SDK mode; with it, machine `promptSuggestionEnabled: false` still wins.
+        promptSuggestions: config.promptSuggestions,
         includePartialMessages: true,
         // Otherwise SDK forwards only subagent tools, enough for counters but not threads: no
         // reasoning or intermediate messages. Sillage displays full conversations and needs
@@ -1334,6 +1334,9 @@ export class ClaudeRunner implements AgentRunner {
     if (config.maxBudgetUsd !== this.config.maxBudgetUsd || config.maxTurns !== this.config.maxTurns) {
       return false
     }
+
+    // Suggestions are a query option too, read only at launch.
+    if (config.promptSuggestions !== this.config.promptSuggestions) return false
 
     // Account too: token comes through process environment read at launch.
     if (config.account !== this.config.account) return false

@@ -72,6 +72,13 @@ test('MCP additions, updates and removal of a dynamically added server stay live
   assert.deepEqual(mutations.at(-1)?.request.servers, {})
 })
 
+test('toggling prompt suggestions waits for a restart: the SDK reads them only at launch', async (t) => {
+  const f = await setup(t)
+  assert.equal(f.config.promptSuggestions, false)
+  assert.equal(await f.runner.applyConfig({ ...f.config, promptSuggestions: true }), false)
+  assert.deepEqual(f.runner.appliedConfig, f.config)
+})
+
 test('a rejected flag update propagates and does not claim the config was applied', async (t) => {
   const f = await setup(t)
   await assert.rejects(f.runner.applyConfig({ ...f.config, outputStyle: 'fixture-reject' }), /Invalid flag settings/)

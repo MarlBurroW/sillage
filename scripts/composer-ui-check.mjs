@@ -83,7 +83,8 @@ async function mount(page) {
         key: id, config: settings.config, draftKey: `composer-test-${id}`, status: running ? 'running' : 'idle', disabled,
         commands: catalog ? [{ name: 'review', aliases: [], description: 'Review the draft', argumentHint: '' }] : [],
         skills: catalog ? [{ name: 'writing', description: 'Edit prose', path: '/skills/writing' }] : [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
-        appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual' } : null,
+        // Permission mode and suggestions are launch-only: the running session keeps the old values.
+        appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual', promptSuggestions: false } : null,
         onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
         onSend: async (text) => { await settings.flush(); await api.post(`/api/conversations/${id}/messages`, { text }) },
         onInterrupt: () => { window.interrupted = true },
@@ -499,12 +500,20 @@ try {
     await openAll()
     await pick('Permissions', /^Tout autoriser/)
     await dialog.getByText('En vigueur : Demander', { exact: true }).waitFor()
+    // Claude's next-message suggestions: off by default like the interactive CLI, and like the
+    // permission mode they wait for the next launch.
+    const suggestions = dialog.getByRole('switch', { name: /^Suggestions :/ })
+    assert.equal(await suggestions.getAttribute('aria-checked'), 'false')
+    await suggestions.click()
+    await dialog.getByRole('switch', { name: 'Suggestions : Suggérées', exact: true }).waitFor()
+    await dialog.getByText('En vigueur : Coupées', { exact: true }).waitFor()
     await mcpView()
     await page.getByRole('switch', { name: /^N'utiliser que les serveurs/ }).click()
     assert.equal(await page.getByRole('switch', { name: /^Mémoire et coordination/ }).isDisabled(), true)
     await close()
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.claude.strictMcp, true)
+    assert.equal(stored.claude.promptSuggestions, true)
     assert.match(await status().getAttribute('aria-label'), /Tout autoriser/)
     if (viewport.width >= 700) {
       await full.hover()
