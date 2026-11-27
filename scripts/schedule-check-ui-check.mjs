@@ -165,7 +165,7 @@ try {
   const threadEvents = [
     { type: 'message.completed', messageId: 'u1', role: 'user', blocks: [{ type: 'text', text: 'Vérifie chaque jour la version de Codex.' }], parentToolCallId: null },
     { type: 'tool.started', toolCallId: 'call-1', name: 'mcp__sillage__schedule_task', input: { name: task.name, prompt: 'Analyse', cron: '0 9 * * *', check_script: script }, parentToolCallId: null },
-    { type: 'tool.completed', toolCallId: 'call-1', output: [{ type: 'text', text: `Tâche planifiée « ${task.name} » créée, id ${task.id}.` }], isError: false, durationMs: 800 },
+    { type: 'tool.completed', toolCallId: 'call-1', output: [{ type: 'text', text: `Scheduled task “${task.name}” created, id ${task.id}.` }], isError: false, durationMs: 800 },
     { type: 'message.completed', messageId: 'a1', role: 'assistant', blocks: [{ type: 'text', text: 'C’est planifié. Le script attend ta validation.' }], parentToolCallId: null },
   ]
   db.prepare(`INSERT INTO conversations (id, project_id, user_id, title, agent, config, status, last_seq, last_notable_seq, position, created_at, updated_at)

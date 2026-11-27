@@ -30,7 +30,8 @@ import { ActionDialog } from './ActionDialog'
 /**
  * Project actions in settings-list style. Each offers one named primary action matching state:
  * launch idle, stop services, view active task output, or review agent-proposed commands. Logs,
- * restart, and editing remain in menus. Shared by panel tab and header launcher.
+ * restart, and editing remain in menus. Shared by panel tab and header launcher. Launching keeps
+ * the list in place (see `useRunAction`): the row's state follows the run.
  */
 export interface ActionHandlers {
   onReview: (action: ProjectActionDto) => void
@@ -208,7 +209,7 @@ function ActionRow({
               view.live ? 'bg-positive/15 text-positive' : 'bg-accent-wash text-accent',
             )}
           >
-            {isService ? <Server size={15} /> : <Zap size={15} />}
+            {isService ? <Server size={15} /> : view.live ? <Loader size={15} className="animate-spin" /> : <Zap size={15} />}
           </span>
 
           <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -255,12 +256,13 @@ function ActionRow({
                   {t('actions.restart')}
                 </MenuItem>
               ) : null}
-              {isService && (view.live || view.failed) ? (
+              {action.service && (view.live || view.failed) ? (
                 <MenuItem icon={<ScrollText size={15} />} onSelect={() => onRun('logs')}>
                   {t('actions.logs')}
                 </MenuItem>
               ) : null}
-              {!isService && action.lastRun ? (
+              {/* Tasks, and services without systemd: their output is a terminal, not a journal. */}
+              {!action.service && action.lastRun ? (
                 <MenuItem icon={<SquareTerminal size={15} />} onSelect={() => showTerminal(action.lastRun!.terminalId)}>
                   {t('actions.showOutput')}
                 </MenuItem>

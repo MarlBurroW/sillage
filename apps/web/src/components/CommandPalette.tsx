@@ -205,9 +205,9 @@ export function CommandPalette({
   const { mutate: archiveConversation } = useArchiveConversation()
   const { mutate: favoriteConversation } = useToggleFavorite()
   const { mutate: linkCard } = useSetConversationCard()
-  // Current-project actions run in the current conversation worktree; other projects navigate first
-  // and show terminal output in their panel. Review opens Actions to inspect commands before
-  // execution.
+  // Current-project actions run in the current conversation worktree; other projects navigate first.
+  // A launch opens nothing (a notice reports its end); review opens Actions to inspect commands
+  // before execution.
   const runAction = useCallback(
     (action: ProjectActionDto, op: PaletteActionOp) => {
       if (op === 'open') {

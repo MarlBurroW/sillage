@@ -250,7 +250,7 @@ function runItems(sources: PaletteSources, names: Map<string, string>): PaletteI
     const view = actionView(action)
     const ops: PaletteActionOp[] =
       view.primary === 'review' ? ['review']
-        : view.primary === 'stop' ? [...(view.href ? ['open' as const] : []), 'stop', 'restart']
+        : view.primary === 'stop' ? [...(view.href ? ['open' as const] : []), 'stop', 'restart', ...(action.service ? [] : ['output' as const])]
           : view.primary === 'output' ? ['output']
             : ['run']
     const state = describeActionState(action, t)

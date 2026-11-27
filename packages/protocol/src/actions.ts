@@ -26,6 +26,15 @@ export const MAX_ACTION_URL_CHARS = 500
 /** Beyond this, it is a Makefile rather than a button bar. */
 export const MAX_ACTIONS_PER_PROJECT = 30
 
+/**
+ * `read_action_output` bounds. The wait stays under the 60 s per-call MCP timeout some CLIs apply
+ * by default (Codex), with room for the daemon's reply; an agent waits longer by calling again.
+ */
+export const DEFAULT_ACTION_OUTPUT_LINES = 100
+export const MAX_ACTION_OUTPUT_LINES = 500
+export const MAX_ACTION_OUTPUT_CHARS = 20_000
+export const MAX_ACTION_OUTPUT_WAIT_SECONDS = 45
+
 export const projectActionKindSchema = z.enum(['task', 'service'])
 export type ProjectActionKind = z.infer<typeof projectActionKindSchema>
 

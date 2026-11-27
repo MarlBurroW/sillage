@@ -32,9 +32,9 @@ export function buildRows(items: ChatItem[], thread: string | null = null, turnR
 
       // Subagent launches retain a row: the only sign that a whole part of the work happened
       // elsewhere, indistinguishable from a `Read` if buried in a five-tool group. Likewise,
-      // scheduled tasks containing a check script retain their row because it carries requested
-      // approval that collapsing would hide.
-      if (isSpawnTool(item.name) || proposesCheck(item)) {
+      // scheduled tasks containing a check script and proposed actions retain their row because
+      // it carries requested approval that collapsing would hide.
+      if (isSpawnTool(item.name) || proposesCheck(item) || isSillageTool(item.name, 'register_action')) {
         flush()
         rows.push({ kind: 'tool', key: item.id, tool: item })
       } else {

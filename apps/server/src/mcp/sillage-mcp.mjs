@@ -113,6 +113,13 @@ const CARD_EXCERPT_CHARS = 160
 /** Maximum inter-session message length. Messages enter recipients' context unsolicited during their own work: brief colleague notes rather than reports. Longer content belongs in files or `read_conversation`. */
 const MAX_PEER_MESSAGE_CHARS = 4000
 
+/** Project action limits matching protocol `MAX_ACTION_LABEL_CHARS`, `MAX_ACTION_COMMAND_CHARS`, `DEFAULT_ACTION_OUTPUT_LINES`, `MAX_ACTION_OUTPUT_LINES` and `MAX_ACTION_OUTPUT_WAIT_SECONDS` (`packages/protocol/src/actions.ts`). The daemon revalidates; these inform tool descriptions and the request deadline. */
+const MAX_ACTION_LABEL_CHARS = 60
+const MAX_ACTION_COMMAND_CHARS = 4000
+const DEFAULT_ACTION_OUTPUT_LINES = 100
+const MAX_ACTION_OUTPUT_LINES = 500
+const MAX_ACTION_OUTPUT_WAIT_SECONDS = 45
+
 /** How long tools wait for daemon request processing. Session starts launch CLIs and sometimes worktrees, usually seconds but longer under load. After this timeout, report that processing continues rather than remain suspended. */
 const REQUEST_WAIT_MS = {
   rename_session: 15000,
@@ -139,6 +146,8 @@ const REQUEST_WAIT_MS = {
   remove_action: 20000,
   // Start a systemd unit, then wait to confirm it stays running.
   run_action: 30000,
+  // Covers the longest `wait` plus the reply.
+  read_action_output: (MAX_ACTION_OUTPUT_WAIT_SECONDS + 10) * 1000,
   create_automation: 30000,
   request_decision: 15000,
   withdraw_decision: 15000,
@@ -160,9 +169,6 @@ const REQUEST_WAIT_MS = {
 const MAX_WAIT_SECONDS = 100
 const WAIT_POLL_MS = 1000
 
-/** Project action limits matching protocol `MAX_ACTION_LABEL_CHARS` and `MAX_ACTION_COMMAND_CHARS` (`packages/protocol/src/actions.ts`). The daemon revalidates; these only inform tool descriptions. */
-const MAX_ACTION_LABEL_CHARS = 60
-const MAX_ACTION_COMMAND_CHARS = 4000
 const REQUEST_POLL_MS = 200
 /** Tests shorten every wait to exercise what happens when the caller gives up. */
 const REQUEST_WAIT_OVERRIDE_MS = Number(process.env.SILLAGE_MCP_REQUEST_WAIT_MS) || null
@@ -608,7 +614,7 @@ const TOOLS = [
   {
     name: 'register_action',
     description:
-      `Create or update a project action: a button the user runs from Sillage in the worktree of the conversation where they click. Use at their request, or when setting up a command they will reuse: development server, tests, debug script or database seed. Not for one-off commands. Two kinds: \`service\` runs continuously in a sillage-app-* systemd unit, visible on Services and surviving this session; \`task\` finishes in a panel terminal with an exit code. Nothing is written to the repository. New actions, or changes to their command, kind or directory, require user approval before their first one-click launch. Supply \`id\` to update an existing action; only supplied fields change.`,
+      `Create or update a project action: a one-click button in Sillage's Actions menu that runs a command in the worktree of the conversation where the user clicks. Users rarely write one themselves: propose one without waiting to be asked when your work shows a command they will want to rerun (development server, test suite, type check or lint, database seed, debug script), using the project's real commands rather than one-off ones. Check list_actions first and update an existing action instead of duplicating it. Then tell the user in one sentence what the button does: they review its command in the conversation before the first run. Two kinds: \`service\` runs continuously, in a sillage-app-* systemd unit visible on Services and surviving this session where user systemd exists (Linux), otherwise in a panel terminal; \`task\` finishes in a panel terminal with an exit code. Nothing is written to the repository. New actions, or changes to their command, kind or directory, require user approval before their first one-click launch. Supply \`id\` to update an existing action; only supplied fields change.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -641,10 +647,27 @@ const TOOLS = [
   {
     name: 'run_action',
     description:
-      "Run a project action in this conversation's worktree, as a user click would. A `service` starts its systemd unit; the result reports whether it stayed up, its ports and how to read logs. A `task` opens in a panel terminal visible to the user, but you cannot read its output: run the command in your shell if you need the result yourself. An already running action is not duplicated.",
+      "Run a project action in this conversation's worktree, as a user click would. A `task` runs in a panel terminal the user can open; a `service` starts its systemd unit on Linux (the result reports whether it stayed up and its ports), or a panel terminal elsewhere. Read the output with read_action_output. An already running action is not duplicated.",
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: "Action ID (see list_actions)." } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'read_action_output',
+    description:
+      `Read the latest run of a project action, whether the user or an agent started it: state, exit code, directory and the end of its output (colors removed; for a systemd service, its journal). Use it when the user says they ran an action, or after run_action. The terminal keeps only recent output, so a long run may have lost its start.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: "Action ID (see list_actions)." },
+        lines: { type: 'integer', description: `Lines to return from the end. Defaults to ${DEFAULT_ACTION_OUTPUT_LINES}, at most ${MAX_ACTION_OUTPUT_LINES}.` },
+        wait: {
+          type: 'integer',
+          description: `Seconds to wait for a still-running task to finish before reading, at most ${MAX_ACTION_OUTPUT_WAIT_SECONDS}. Defaults to 0. Call again to wait longer.`,
+        },
+      },
       required: ['id'],
     },
   },
@@ -1328,7 +1351,7 @@ const CROSS_PROJECTS_OFF =
 const CROSS_TOOLS = new Set([
   'work_log', 'search_history', 'read_conversation', 'list_sessions', 'find_file_edits',
   'list_cards', 'read_card', 'add_card_note', 'move_card', 'update_card', 'create_card', 'link_cards', 'unlink_cards', 'update_issue',
-  'list_actions', 'run_action', 'start_session', 'list_worktrees', 'schedule_task', 'list_models',
+  'list_actions', 'run_action', 'read_action_output', 'start_session', 'list_worktrees', 'schedule_task', 'list_models',
   'send_session_message', 'notify_when_done', 'read_instructions', 'read_memory',
 ])
 
@@ -3344,6 +3367,7 @@ async function callTool(name, args) {
     name === 'register_action' ||
     name === 'remove_action' ||
     name === 'run_action' ||
+    name === 'read_action_output' ||
     name === 'create_automation' ||
     name === 'request_decision' ||
     name === 'withdraw_decision' ||
@@ -3429,7 +3453,7 @@ async function callTool(name, args) {
     if (name === 'create_automation' && !(typeof args?.name === 'string' && args.name.trim())) {
       return { ...text('The `name` parameter is required.'), isError: true }
     }
-    if ((name === 'remove_action' || name === 'run_action') && !(typeof args?.id === 'string' && args.id.trim())) {
+    if ((name === 'remove_action' || name === 'run_action' || name === 'read_action_output') && !(typeof args?.id === 'string' && args.id.trim())) {
       return { ...text('The `id` parameter is required (see list_actions).'), isError: true }
     }
     return requestDaemon(name, args ?? {})

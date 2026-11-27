@@ -89,8 +89,11 @@ The periodic cleanup removes expired, revoked and orphaned files.
 - **Project actions.** Save a test command, a dev server or a debug script as a
   button, available from the project header, the workspace panel and the command
   palette. Tasks keep their output and exit code; services run as persistent user
-  units on Linux with systemd, with a terminal fallback elsewhere. Agents can
-  propose actions for you to review before their first launch from the interface.
+  units on Linux with systemd, with a terminal fallback elsewhere. A launch keeps
+  you where you are: the button shows the run's state and a notice reports how it
+  ended, with its output one click away. Agents can propose actions for you to
+  review before their first launch from the interface, and read the output of the
+  latest run, yours included.
   Definitions stay in Sillage, without adding files to your repository.
 - **Worktrees, followed to the end.** Start a conversation on the project root, on
   an existing worktree, or on a branch Sillage creates for it. The project page lists

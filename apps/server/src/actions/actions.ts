@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { and, asc, count, eq, inArray } from 'drizzle-orm'
 import { conversations, projectActions, type Db, type ProjectActionRow } from '@sillage/db'
 import {
+  MAX_ACTION_OUTPUT_CHARS,
   MAX_ACTIONS_PER_PROJECT,
   type CreateProjectActionBody,
   type ProjectActionDto,
@@ -18,11 +19,13 @@ import { HttpError, conflict, notFound } from '../http/errors.js'
 import {
   controlServiceApp,
   scanServiceApps,
+  serviceAppJournal,
   serviceAppsAvailable,
   startServiceApp,
 } from '../services/apps.js'
 import { processOrigins } from '../services/origins.js'
-import type { TerminalManager } from '../terminals/terminal-manager.js'
+import { screenText, tailLines } from '../terminals/screen-text.js'
+import { TerminalError, type TerminalManager } from '../terminals/terminal-manager.js'
 
 /** Project action storage and execution in terminals or systemd units. Shared by routes and agent requests (`register_action`, `run_action`) so both reject identical cases and agents cannot mark newly written commands reviewed. */
 
@@ -156,6 +159,29 @@ function toDto(
   }
 }
 
+/** Latest run of an action as text, for agents (`read_action_output`). */
+export interface ActionOutput {
+  /** A panel terminal, the unit's systemd journal, or nothing to read yet. */
+  source: 'terminal' | 'journal' | 'none'
+  /** `running`, `exited` or `interrupted` (daemon restart) for terminals; systemd ActiveState for units. */
+  state: string
+  exitCode: number | null
+  startedAt: number | null
+  cwd: string | null
+  ports: number[]
+  text: string
+  /** Earlier lines left out by the line limit. */
+  omitted: number
+  /** The terminal buffer had already dropped the oldest output. */
+  bufferTruncated: boolean
+}
+
+/** Directory a run's `cwd` was derived from, before the action's subdirectory was appended. */
+export function worktreeOf(cwd: string, subdir: string | null): string {
+  const depth = subdir ? subdir.split(/[\\/]/).filter((part) => part && part !== '.').length : 0
+  return depth === 0 ? cwd : resolve(cwd, ...Array<string>(depth).fill('..'))
+}
+
 export class ActionRunner {
   constructor(
     private readonly db: Db,
@@ -283,7 +309,9 @@ export class ActionRunner {
     const previous = this.terminals.latestForAction(row.projectId, row.id)
     if (previous) this.terminals.close(previous.id)
     if (op === 'stop') return { terminal: null, service: null, alreadyRunning: false }
-    return this.run(row, previous?.cwd ?? base, null)
+    // Restart in the worktree of the previous run. Its directory already includes the
+    // subdirectory, which `run` adds again.
+    return this.run(row, previous ? worktreeOf(previous.cwd, row.subdir) : base, null)
   }
 
   /** Service journal followed in a panel terminal. */
@@ -300,6 +328,62 @@ export class ActionRunner {
       actionId: key,
     })
     return { terminal, service: null, alreadyRunning: false }
+  }
+
+  /**
+   * Latest run's output. Tasks, and services without systemd, are read from their terminal's
+   * buffer, which is what the user sees in the panel; a still-running one can be waited on so an
+   * agent gets the result in one call. systemd services are read from their journal.
+   */
+  async output(row: ProjectActionRow, lines: number, waitMs: number): Promise<ActionOutput> {
+    if (row.kind === 'service' && (await serviceAppsAvailable())) {
+      const service = (await this.serviceStates([row])).get(row.id)!
+      // A journal the user cannot read (no persistent storage) reads as empty, not as a failure.
+      const journal = await serviceAppJournal(service.unit, lines).catch(() => '')
+      const { text } = tailLines(screenText(journal), lines, MAX_ACTION_OUTPUT_CHARS)
+      return {
+        source: text ? 'journal' : 'none',
+        state: service.state,
+        exitCode: null,
+        startedAt: service.startedAt,
+        cwd: service.cwd,
+        ports: service.ports,
+        text,
+        omitted: 0,
+        bufferTruncated: false,
+      }
+    }
+
+    const latest = this.terminals.latestForAction(row.projectId, row.id)
+    if (latest?.alive && waitMs > 0) await this.terminals.waitForExit(row.projectId, latest.id, waitMs)
+    // Read again after the wait: a click may have replaced the run meanwhile.
+    const terminal = this.terminals.latestForAction(row.projectId, row.id)
+    const screen = terminal ? this.screen(row.projectId, terminal.id) : null
+    if (!terminal || !screen) {
+      return { source: 'none', state: 'never', exitCode: null, startedAt: null, cwd: null, ports: [], text: '', omitted: 0, bufferTruncated: false }
+    }
+    const { text, omitted } = tailLines(screen.text, lines, MAX_ACTION_OUTPUT_CHARS)
+    return {
+      source: 'terminal',
+      state: terminal.alive ? 'running' : terminal.interrupted ? 'interrupted' : 'exited',
+      exitCode: terminal.exitCode,
+      startedAt: terminal.createdAt,
+      cwd: terminal.cwd,
+      ports: [],
+      text,
+      omitted,
+      bufferTruncated: screen.truncated,
+    }
+  }
+
+  /** Null when the terminal was closed between finding and reading it. */
+  private screen(projectId: string, terminalId: string) {
+    try {
+      return this.terminals.output(projectId, terminalId)
+    } catch (err) {
+      if (err instanceof TerminalError) return null
+      throw err
+    }
   }
 
   /** On deletion, stop units that would otherwise run without a stop button. */

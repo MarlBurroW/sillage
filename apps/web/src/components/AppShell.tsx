@@ -22,6 +22,7 @@ import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigat
 import { Navigation } from './nav/Navigation'
 import { RadioPlayer } from './RadioPlayer'
 import { Toaster } from './Toaster'
+import { ActionRunNotices } from './actions/ActionRunNotices'
 import { UpdatePrompt } from './UpdatePrompt'
 import { cx } from './ui'
 import { InterfaceTour } from './tour/InterfaceTour'
@@ -208,6 +209,7 @@ export function AppShell() {
       <RadioPlayer />
       <InterfaceTour />
       <Toaster />
+      <ActionRunNotices />
     </div>
     </MobileNavigationContext.Provider>
   )

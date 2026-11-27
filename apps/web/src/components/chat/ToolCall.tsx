@@ -35,6 +35,7 @@ import { WorkflowStrip } from './WorkflowStrip'
 import { cx } from '../ui'
 import { HighlightedCode } from './HighlightedCode'
 import { ScheduleApprovalStrip } from './ScheduleApprovalStrip'
+import { ActionProposalStrip } from './ActionProposalStrip'
 import { isSillageTool } from '../../lib/sillage-tools'
 
 /**
@@ -264,6 +265,7 @@ export const ToolCall = memo(function ToolCall({
       {tool.name === 'Workflow' ? <WorkflowStrip toolCallId={tool.id} /> : null}
 
       {tool.status === 'done' && isSillageTool(tool.name, 'schedule_task') ? <ScheduleApprovalStrip tool={tool} /> : null}
+      {tool.status === 'done' && isSillageTool(tool.name, 'register_action') ? <ActionProposalStrip tool={tool} conversationId={conversationId} /> : null}
     </div>
   )
 })

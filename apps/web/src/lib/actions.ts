@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSyncExternalStore } from 'react'
 import {
   resolveActionUrl,
   type CreateProjectActionBody,
@@ -14,6 +15,44 @@ import { showTerminal } from './panel'
 export const ACTIONS_KEY = ['actions']
 
 /**
+ * A run this tab launched, followed until it ends so a notice can say how (`ActionRunNotices`).
+ * Launching leaves the reader where they are; without this, a task finishing behind a closed
+ * panel would go unnoticed.
+ */
+export interface WatchedRun {
+  actionId: string
+  /** Terminal of a task, or of a service without systemd; null for a systemd unit. */
+  terminalId: string | null
+  startedAt: number
+}
+
+let watched: WatchedRun[] = []
+const watchListeners = new Set<() => void>()
+
+function setWatched(next: WatchedRun[]): void {
+  watched = next
+  for (const listener of watchListeners) listener()
+}
+
+export function unwatchRun(actionId: string): void {
+  if (watched.some((run) => run.actionId === actionId)) setWatched(watched.filter((run) => run.actionId !== actionId))
+}
+
+export function useWatchedRuns(): WatchedRun[] {
+  return useSyncExternalStore(
+    (listener) => {
+      watchListeners.add(listener)
+      return () => watchListeners.delete(listener)
+    },
+    () => watched,
+    () => watched,
+  )
+}
+
+/** Poll faster while a launched run is followed, so its end is reported within seconds. */
+const WATCH_POLL_MS = 2_000
+
+/**
  * All visible actions across projects: the panel filters its project while the palette offers
  * everything. Poll because agents propose actions without a socket-signaled route and service
  * states change independently.
@@ -23,7 +62,7 @@ export function useActions() {
     queryKey: ACTIONS_KEY,
     queryFn: () => api.get<ProjectActionDto[]>('/api/actions'),
     staleTime: 5_000,
-    refetchInterval: 10_000,
+    refetchInterval: () => (watched.length > 0 ? WATCH_POLL_MS : 10_000),
   })
 }
 
@@ -70,8 +109,9 @@ export function useDeleteAction() {
 }
 
 /**
- * Launch, control a service, or follow its logs. Bring newly opened terminals forward: clicking
- * without seeing output would appear to do nothing.
+ * Launch, control a service, or follow its logs. Only following the logs opens the panel: a launch
+ * keeps the reader where they are, so several can follow one another. The row shows the run's state
+ * and a notice reports how it ended, with its output one click away.
  */
 export function useRunAction() {
   const invalidate = useInvalidate()
@@ -89,9 +129,20 @@ export function useRunAction() {
         op === 'run' ? `/api/actions/${action.id}/run` : `/api/actions/${action.id}/service/${op}`,
         conversationId ? { conversationId } : {},
       ),
-    onSuccess: (result, { action }) => {
+    onSuccess: (result, { action, op = 'run' }) => {
       invalidate(action.projectId)
-      if (result.terminal) showTerminal(result.terminal.id)
+      if (op === 'logs') {
+        if (result.terminal) showTerminal(result.terminal.id)
+        return
+      }
+      // A run already followed stays followed.
+      if (result.alreadyRunning) return
+      // A stop the user asked for is not an ending to report.
+      unwatchRun(action.id)
+      if (op === 'stop') return
+      if (result.terminal || result.service) {
+        setWatched([...watched, { actionId: action.id, terminalId: result.terminal?.id ?? null, startedAt: Date.now() }])
+      }
     },
   })
 }
@@ -118,9 +169,11 @@ export function actionView(action: ProjectActionDto): ActionView {
   const failed = service
     ? service.state === 'failed'
     : lastRun !== null && !lastRun.alive && lastRun.exitCode !== null && lastRun.exitCode !== 0
+  // A service without systemd (Windows, macOS) runs in a terminal, and stops like any other.
+  const runningService = action.kind === 'service' && live
   const primary =
-    action.status === 'proposed' ? 'review' : service && live ? 'stop' : live ? 'output' : 'run'
-  return { live, failed, primary, href: service && live ? resolveActionUrl(action.url, service.ports) : null }
+    action.status === 'proposed' ? 'review' : runningService ? 'stop' : live ? 'output' : 'run'
+  return { live, failed, primary, href: runningService ? resolveActionUrl(action.url, service?.ports ?? []) : null }
 }
 
 /** Action status sentence beneath its label. */
