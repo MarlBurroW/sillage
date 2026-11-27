@@ -86,7 +86,7 @@ try {
     const port = await freePort(), base = 'http://127.0.0.1:' + port
     const config = join(data, profile + '.toml')
     await writeFile(config, '[server]\npublicUrl = "https://shared.example.test"\n' +
-      ['claude', 'codex', 'opencode', 'grok', 'antigravity'].map(agent => '[agents.' + agent + ']\nenabled = false\n').join(''))
+      ['claude', 'codex', 'opencode', 'grok', 'antigravity', 'copilot'].map(agent => '[agents.' + agent + ']\nenabled = false\n').join(''))
     const env = { ...process.env, NODE_ENV: 'development', SILLAGE_CONFIG: config, SILLAGE_DATA_DIR: join(data, profile),
       SILLAGE_PORT: String(port), SILLAGE_HOST: '127.0.0.1', SILLAGE_WEB_ROOT: join(root, 'apps/web/dist') }
     delete env.SILLAGE_PROFILE

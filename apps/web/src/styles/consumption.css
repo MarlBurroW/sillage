@@ -1,7 +1,8 @@
 /*
- * One color per CLI, in a fixed order (codex, claude, opencode, grok, antigravity): the first five
- * slots of the data-visualization reference palette, checked for color-blind separation between
- * neighbors in the stack, with its own steps on dark surfaces.
+ * One color per CLI, in a fixed order (codex, claude, opencode, grok, antigravity, copilot): the
+ * first six slots of the data-visualization reference palette, checked for color-blind separation
+ * between neighbors in the stack, with its own steps on dark surfaces. A new CLI takes the next
+ * slot: without a variable here its share of the chart is transparent.
  */
 .consumption-viz {
   --series-codex: #2a78d6;
@@ -9,6 +10,7 @@
   --series-opencode: #1baf7a;
   --series-grok: #eda100;
   --series-antigravity: #e87ba4;
+  --series-copilot: #008300;
 }
 
 [data-theme='dark'] .consumption-viz,
@@ -18,6 +20,7 @@
   --series-opencode: #199e70;
   --series-grok: #c98500;
   --series-antigravity: #d55181;
+  --series-copilot: #0ca30c;
 }
 
 /* Marks touch: the surface between them does the separating, not a stroke. */

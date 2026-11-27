@@ -112,6 +112,11 @@ export function noticeText(item: NoticeItem): string {
   }
   if (item.code === 'antigravity_model_adjusted') return translate('antigravity.modelAdjusted.notice')
   if (item.code === 'copilot_model_adjusted') return translate('copilot.modelAdjusted.notice')
+  if (item.code === 'copilot_retry') return translate('copilot.retry.notice')
+  if (item.code === 'copilot_auto_model') {
+    const details = item.details as { model?: string } | null
+    return translate('copilot.autoModel.notice', { model: details?.model ?? '' })
+  }
   if (item.code === 'antigravity_account_signed_out') return translate('antigravity.logout.notice')
   if (item.code === 'portable_fork') return translate('antigravity.fork.notice')
   if (item.code === 'additional_directories_unsupported') return translate('antigravity.directories.notice')

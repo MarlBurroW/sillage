@@ -3339,6 +3339,8 @@ export const fr: Catalog = {
   'composer.autoTier.balance.hint': 'Pèse la vitesse contre la capacité',
   'composer.autoTier.intelligence': 'Intelligence',
   'composer.autoTier.intelligence.hint': 'Privilégie les modèles les plus capables',
+  'copilot.retry.notice': 'GitHub Copilot relance la requête après une erreur passagère.',
+  'copilot.autoModel.notice': 'Auto utilise {model}.',
   'copilot.modelAdjusted.notice': 'Le modèle ou l’effort enregistré n’est pas disponible pour ce compte GitHub Copilot. Copilot en a gardé un disponible, affiché dans le composer.',
   'antigravity.modelAdjusted.notice': 'Le modèle ou le niveau de réflexion enregistré n’est pas disponible pour ce compte. Antigravity a choisi une valeur disponible, affichée dans le composer.',
   'antigravity.directories.notice': 'Antigravity 1.4.3 ignore les dossiers de travail supplémentaires. Ses outils de fichiers restent limités au projet.',

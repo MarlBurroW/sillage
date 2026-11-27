@@ -3347,6 +3347,8 @@ export const en = {
   'composer.autoTier.balance.hint': 'Weighs speed against capability',
   'composer.autoTier.intelligence': 'Intelligence',
   'composer.autoTier.intelligence.hint': 'Favors the most capable models',
+  'copilot.retry.notice': 'GitHub Copilot is retrying the request after a transient error.',
+  'copilot.autoModel.notice': 'Auto is using {model}.',
   'copilot.modelAdjusted.notice': 'The saved model or effort is not available for this GitHub Copilot account. Copilot kept an available one, shown in the composer.',
   'antigravity.modelAdjusted.notice': 'The saved model or thinking level is unavailable for this account. Antigravity selected an available default, shown in the composer.',
   'antigravity.directories.notice': 'Antigravity 1.4.3 ignores additional workspace directories. Its native file tools remain scoped to the project.',

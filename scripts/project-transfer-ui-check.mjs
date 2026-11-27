@@ -50,7 +50,7 @@ async function json(response) {
 try {
   await mkdir(shots, { recursive: true })
   const config = join(data, 'config.toml')
-  await writeFile(config, ['claude', 'codex', 'opencode', 'grok', 'antigravity'].map(agent => '[agents.' + agent + ']\nenabled = false\n').join(''))
+  await writeFile(config, ['claude', 'codex', 'opencode', 'grok', 'antigravity', 'copilot'].map(agent => '[agents.' + agent + ']\nenabled = false\n').join(''))
   browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
   for (const profile of (process.env.TRANSFER_PROFILE ? [process.env.TRANSFER_PROFILE] : ['server', 'desktop'])) {
     const apiPort = await freePort()

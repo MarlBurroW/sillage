@@ -23,7 +23,7 @@ async function start(profile) {
   const port = socket.address().port
   await new Promise((resolve) => socket.close(resolve))
   const config = join(scratch, `${profile}.toml`)
-  await writeFile(config, ['claude', 'codex', 'opencode', 'grok', 'antigravity'].map((agent) => `[agents.${agent}]\nenabled = false`).join('\n'))
+  await writeFile(config, ['claude', 'codex', 'opencode', 'grok', 'antigravity', 'copilot'].map((agent) => `[agents.${agent}]\nenabled = false`).join('\n'))
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     cwd: join(root, 'apps/server'),
     env: { ...process.env, SILLAGE_PROFILE: profile, SILLAGE_HANDSHAKE_FD: '3', SILLAGE_PORT: String(port),

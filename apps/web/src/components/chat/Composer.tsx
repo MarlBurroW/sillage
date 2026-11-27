@@ -494,6 +494,8 @@ export function Composer({
     () => highlightRanges(text, { mentions: mentioned, skills: invoked, commands: commands.map((command) => command.name) }),
     [text, mentioned, invoked, commands],
   )
+  // These CLIs publish their skills among their slash commands: one prefix reaches both.
+  const combinedCommands = config.agent === 'claude' || config.agent === 'grok' || config.agent === 'copilot'
   const offered = useMemo(
     () => (onCommand ? commands : commands.filter((c) => !NATIVE_SLASH_COMMANDS.has(c.name))),
     [commands, onCommand],
@@ -933,7 +935,7 @@ export function Composer({
               {concentration ? <>
                 <ComposerInsert inputRef={textarea} disabled={disabled} project={Boolean(projectId)} compact
                   commands={offered.length > 0} skills={skills.length > 0}
-                  combinedCommands={config.agent === 'claude' || config.agent === 'grok'} onInsert={insertPrefix}
+                  combinedCommands={combinedCommands} onInsert={insertPrefix}
                   onAttach={attachments.length < MAX_ATTACHMENTS_PER_MESSAGE ? () => filePicker.current?.click() : undefined}
                   onDictate={dictation.state === 'idle' ? startDictation : undefined} />
                 <ComposerSettingsButton {...settingsProps} concentration onPinnedChange={undefined} feedback={<>{configFeedback}{context ? <ContextMeter context={context} /> : null}</>} />
@@ -1030,7 +1032,7 @@ export function Composer({
       <div className={cx("mx-auto flex sg-conversation-width items-start gap-2", concentration && "hidden")}>
         <ComposerInsert inputRef={textarea} disabled={disabled} project={Boolean(projectId)}
           commands={offered.length > 0} skills={skills.length > 0}
-          combinedCommands={config.agent === 'claude' || config.agent === 'grok'} onInsert={insertPrefix} />
+          combinedCommands={combinedCommands} onInsert={insertPrefix} />
         {footer ? <div className="min-w-0 flex-1">{footer}</div> : null}
       </div>
     </div>

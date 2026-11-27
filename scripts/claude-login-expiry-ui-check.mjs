@@ -63,7 +63,7 @@ if (process.argv.includes('--version')) console.log('2.1.325 (Claude Code)')
 else if (process.argv.slice(2).join(' ') === 'auth status') process.stdout.write(readFileSync(process.env.SILLAGE_FIXTURE_AUTH_STATUS))
 `, { mode: 0o700 })
   const config = join(dir, 'config.toml')
-  await writeFile(config, `[agents.claude]\nbinary = ${JSON.stringify(binary)}\n` + ['codex', 'opencode', 'grok', 'antigravity'].map((kind) => `[agents.${kind}]\nenabled = false\n`).join(''))
+  await writeFile(config, `[agents.claude]\nbinary = ${JSON.stringify(binary)}\n` + ['codex', 'opencode', 'grok', 'antigravity', 'copilot'].map((kind) => `[agents.${kind}]\nenabled = false\n`).join(''))
   const env = {
     ...process.env, NODE_ENV: 'development', SILLAGE_PORT: String(apiPort), SILLAGE_HOST: '127.0.0.1',
     SILLAGE_CONFIG: config, SILLAGE_DATA_DIR: join(dir, 'data'), SILLAGE_PROFILE: profile,

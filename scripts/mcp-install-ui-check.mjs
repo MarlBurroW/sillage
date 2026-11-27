@@ -62,7 +62,7 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, ['claude', 'codex', 'opencode', 'grok', 'antigravity'].map(agent => `[agents.${agent}]\nenabled = false\n`).join(''))
+  await writeFile(config, ['claude', 'codex', 'opencode', 'grok', 'antigravity', 'copilot'].map(agent => `[agents.${agent}]\nenabled = false\n`).join(''))
   const dataDir = join(data, 'server-data')
   const env = { ...process.env, NODE_ENV: 'development', SILLAGE_PORT: String(apiPort), SILLAGE_HOST: '127.0.0.1', SILLAGE_CONFIG: config, SILLAGE_DATA_DIR: dataDir, SILLAGE_WEB_ROOT: join(data, 'web') }
   delete env.SILLAGE_PROFILE

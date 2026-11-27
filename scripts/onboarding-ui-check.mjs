@@ -102,7 +102,7 @@ try {
   // Welcome asks nothing: it names the CLIs this instance offers (OpenCode and Grok are
   // disabled in this configuration) and says what Sillage is.
   await page.getByText('Tes CLI, tels quels').waitFor()
-  await page.getByText(/Claude Code, Codex et Google Antigravity/).waitFor({ timeout: 30000 })
+  await page.getByText(/Claude Code, Codex, Google Antigravity et GitHub Copilot/).waitFor({ timeout: 30000 })
   await page.getByText('Suivi de partout').waitFor()
   assert.equal(await page.getByRole('checkbox').count(), 0, 'plus de questionnaire à l’accueil')
   await page.screenshot({ path: '/tmp/sillage-onboarding-welcome.png' })
