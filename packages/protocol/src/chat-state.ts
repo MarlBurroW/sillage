@@ -439,6 +439,15 @@ export interface TaskState {
    */
   workflowName?: string | null
   workflow?: WorkflowProgress | null
+  /**
+   * Current run, to discard late frames of an earlier one (see `runIdSchema`). Optional for the
+   * same reason as `workflowName`; null when the CLI sends no run ids.
+   */
+  runId?: string | null
+  /** Task that launched this one, null for the main thread or when the CLI does not say. */
+  parentTaskId?: string | null
+  /** Agent type of a sub-agent task, null for other work and CLIs that do not send it. */
+  subagentType?: string | null
 }
 
 export function emptyChatState(): ChatState {
@@ -643,6 +652,14 @@ function putTask(state: ChatState, task: TaskState): void {
   const tasks = new Map(state.tasks)
   tasks.set(task.id, task)
   state.tasks = tasks
+}
+
+/**
+ * True when a frame names a run older than the one on record. Frames or records without a run id
+ * are never late: older CLIs send none, and Sillage's own closing events carry none.
+ */
+function lateRun(known: TaskState, runId: string | undefined): boolean {
+  return runId !== undefined && known.runId != null && runId < known.runId
 }
 
 /** State of a thread tool call, or null if no record exists. */
@@ -1295,6 +1312,27 @@ export function applyEvent(
     }
 
     case 'task.started': {
+      const known = state.tasks.get(event.taskId)
+      if (known && lateRun(known, event.runId)) break
+      if (known) {
+        // A resumed sub-agent: same task, new run. Its launch is the call that resumed it (Claude's
+        // `SendMessage`), but its thread is still the one under the spawning call (probed on
+        // Claude Code 2.1.332). Taking the new call as its origin detached the task from its
+        // sub-agent, which then looked finished while a duplicate row ran in the background list.
+        putTask(state, {
+          ...known,
+          toolCallId: known.toolCallId ?? event.toolCallId,
+          runId: event.runId ?? null,
+          parentTaskId: known.parentTaskId ?? event.parentTaskId ?? null,
+          subagentType: known.subagentType ?? event.subagentType ?? null,
+          activity: null,
+          summary: null,
+          lastTool: null,
+          done: false,
+          outcome: null,
+        })
+        break
+      }
       putTask(state, {
         id: event.taskId,
         toolCallId: event.toolCallId,
@@ -1303,6 +1341,9 @@ export function applyEvent(
         // Journals written before this field carry none.
         workflowName: event.workflowName ?? null,
         workflow: null,
+        runId: event.runId ?? null,
+        parentTaskId: event.parentTaskId ?? null,
+        subagentType: event.subagentType ?? null,
         activity: null,
         summary: null,
         lastTool: null,
@@ -1320,7 +1361,7 @@ export function applyEvent(
       const known = state.tasks.get(event.taskId)
       // Progress without a known start comes from a retention-truncated log: there is nothing to
       // attach it to, and inventing an entry would create a task with no name or origin.
-      if (!known) break
+      if (!known || lateRun(known, event.runId)) break
       putTask(state, {
         ...known,
         activity: event.activity,
@@ -1336,6 +1377,8 @@ export function applyEvent(
 
     case 'task.completed': {
       const known = state.tasks.get(event.taskId)
+      // The end of an earlier run says nothing about the one now running.
+      if (known && lateRun(known, event.runId)) break
       if (known) {
         putTask(state, {
           ...known,
@@ -1353,7 +1396,8 @@ export function applyEvent(
       if (known?.unattended && !event.ambient) {
         appendItem(state, {
           kind: 'task',
-          id: `task-${event.taskId}`,
+          // Each run of a resumed task reports once: one id per run keeps the reports apart.
+          id: event.runId ? `task-${event.taskId}-${event.runId}` : `task-${event.taskId}`,
           description: known.description,
           status: event.status,
           summary: event.summary,

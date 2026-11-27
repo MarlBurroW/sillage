@@ -134,6 +134,13 @@ export const planFollowUpOptionSchema = z.object({
 export type PlanFollowUpOption = z.infer<typeof planFollowUpOptionSchema>
 
 /**
+ * One run of a task. A resumed sub-agent keeps its task id and gets a new run id; run ids of one
+ * task sort as plain strings in the order the runs opened, so a frame naming an older run than the
+ * one on record is late and must not overwrite it. Absent from CLIs that do not send it.
+ */
+const runIdSchema = z.object({ runId: z.string().optional() })
+
+/**
  * Work continuing outside the turn: a workflow, background sub-agent or command, or service
  * monitoring.
  *
@@ -145,7 +152,15 @@ export const backgroundTaskSchema = z.object({
   id: z.string(),
   kind: z.string(),
   description: z.string(),
-})
+  /**
+   * Task that launched this one (a sub-agent starting a shell or another sub-agent). Absent when
+   * the main thread launched it or the CLI does not say; an id matching no known task means the
+   * same, so the work stays at the root.
+   */
+  parentTaskId: z.string().optional(),
+  /** Agent type of a sub-agent task (`general-purpose`, a custom agent's name). */
+  subagentType: z.string().optional(),
+}).merge(runIdSchema)
 export type BackgroundTask = z.infer<typeof backgroundTaskSchema>
 
 /**
@@ -691,7 +706,10 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     description: z.string(),
     /** Script name (`meta.name`) for workflows, null for other jobs. */
     workflowName: z.string().nullable().default(null),
-  }),
+    /** Same meaning as on `background.updated`. */
+    parentTaskId: z.string().optional(),
+    subagentType: z.string().optional(),
+  }).merge(runIdSchema),
 
   /**
    * A job made progress.
@@ -720,7 +738,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
      * sends a full snapshot, not a delta, but skips it on some reports: null keeps the last one.
      */
     workflow: workflowProgressSchema.nullable().default(null),
-  }),
+  }).merge(runIdSchema),
 
   /**
    * A job stopped, with its outcome.
@@ -737,7 +755,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
     durationMs: z.number().nullable().default(null),
     /** Maintenance work the CLI asks not to display in the thread. */
     ambient: z.boolean().default(false),
-  }),
+  }).merge(runIdSchema),
 
   // Metadata
   z.object({

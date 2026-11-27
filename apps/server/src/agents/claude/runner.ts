@@ -172,6 +172,12 @@ export class ClaudeRunner implements AgentRunner {
   private session: Query | null = null
   /** Incoming message per author: main agent (null) and each subagent. */
   private readonly streamingMessageIds = new Map<string | null, string>()
+  /**
+   * Spawning call of each sub-agent, by the task id its messages carry as `agent_id`. Recorded on
+   * the first run only: a resumed run is launched by the call that resumed it, not the one whose
+   * thread it continues.
+   */
+  private readonly agentSpawns = new Map<string, string>()
   /** Last forwarded thinking count, limiting events to one per `THINKING_TOKENS_STEP`. */
   private thinkingTokensSent = 0
   /** Native ID required to read session summary. */
@@ -442,12 +448,24 @@ export class ClaudeRunner implements AgentRunner {
     this.turnWatchdog = null
   }
 
+  /**
+   * Sub-agent thread a message belongs to: its spawning call, null on the main thread. The CLI
+   * names it with `parent_tool_use_id`, kept across resumes on 2.1.332; `agent_id` (the sub-agent's
+   * task id) recovers it on a message that carries only that.
+   */
+  private threadOf(message: SDKMessage): string | null {
+    const parent = 'parent_tool_use_id' in message ? message.parent_tool_use_id : null
+    if (parent != null) return parent
+    const agentId = 'agent_id' in message && typeof message.agent_id === 'string' ? message.agent_id : null
+    return agentId ? this.agentSpawns.get(agentId) ?? null : null
+  }
+
   private translate(message: SDKMessage): void {
     // A sub-agent speaking says nothing about the main turn: a background agent keeps streaming
     // after the main `result`, and once interrupted a sub-agent can still flush. Opening a turn for
     // it left one that no `result` would close; disarming the watchdog for it kept an interrupted
     // turn open as long as the sub-agent talked.
-    const subAgent = 'parent_tool_use_id' in message && message.parent_tool_use_id != null
+    const subAgent = this.threadOf(message) !== null
     if (!subAgent) {
       this.clearTurnWatchdog()
       // Any CLI work message opens a turn: these three types carry agent text, tools, results.
@@ -511,6 +529,9 @@ export class ClaudeRunner implements AgentRunner {
                 id: task.task_id,
                 kind: task.task_type,
                 description: task.description,
+                parentTaskId: task.parent_task_id,
+                subagentType: task.subagent_type,
+                runId: task.run_id,
               })),
             },
             message,
@@ -518,6 +539,9 @@ export class ClaudeRunner implements AgentRunner {
           return
         }
         if (message.subtype === 'task_started') {
+          if (message.tool_use_id && (message.task_type ?? 'local_agent') === 'local_agent' && !this.agentSpawns.has(message.task_id)) {
+            this.agentSpawns.set(message.task_id, message.tool_use_id)
+          }
           this.ctx.emit(
             {
               type: 'task.started',
@@ -528,6 +552,9 @@ export class ClaudeRunner implements AgentRunner {
               kind: message.task_type ?? 'local_agent',
               description: message.description,
               workflowName: message.workflow_name ?? null,
+              parentTaskId: message.parent_task_id,
+              subagentType: message.subagent_type,
+              runId: message.run_id,
             },
             message,
           )
@@ -546,6 +573,7 @@ export class ClaudeRunner implements AgentRunner {
               summary: message.summary ?? null,
               // Undocumented in the SDK types: read through `unknown`, see parseWorkflowProgress.
               workflow: parseWorkflowProgress((message as { workflow_progress?: unknown }).workflow_progress),
+              runId: message.run_id,
             },
             message,
           )
@@ -560,6 +588,7 @@ export class ClaudeRunner implements AgentRunner {
               summary: message.summary,
               durationMs: message.usage?.duration_ms ?? null,
               ambient: message.skip_transcript ?? false,
+              runId: message.run_id,
             },
             message,
           )
@@ -645,6 +674,7 @@ export class ClaudeRunner implements AgentRunner {
 
       case 'assistant': {
         const blocks: ContentBlock[] = []
+        const parentToolCallId = this.threadOf(message)
 
         for (const block of message.message.content) {
           if (block.type === 'text') {
@@ -666,7 +696,7 @@ export class ClaudeRunner implements AgentRunner {
                 toolCallId: block.id,
                 name: block.name,
                 input: block.input,
-                parentToolCallId: message.parent_tool_use_id,
+                parentToolCallId,
               },
               block,
             )
@@ -680,7 +710,7 @@ export class ClaudeRunner implements AgentRunner {
               messageId: message.message.id,
               role: 'assistant',
               blocks,
-              parentToolCallId: message.parent_tool_use_id,
+              parentToolCallId,
             },
             message,
           )

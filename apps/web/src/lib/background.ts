@@ -28,6 +28,10 @@ export interface BackgroundWork {
   /** Script name and phase/agent snapshot, null for other work and until the first report. */
   workflowName: string | null
   workflow: WorkflowProgress | null
+  /** Task that launched it (a sub-agent), null for the main thread or when the CLI does not say. */
+  parentTaskId: string | null
+  /** Agent type of a backgrounded sub-agent (`general-purpose`, a custom agent), null otherwise. */
+  subagentType: string | null
 }
 
 export function buildBackground(state: ChatState): BackgroundWork[] {
@@ -56,6 +60,8 @@ export function buildBackground(state: ChatState): BackgroundWork[] {
       totalTokens: task?.totalTokens ?? 0,
       workflowName: task?.workflowName ?? null,
       workflow: task?.workflow ?? null,
+      parentTaskId: live.parentTaskId ?? task?.parentTaskId ?? null,
+      subagentType: live.subagentType ?? task?.subagentType ?? null,
     })
   }
 

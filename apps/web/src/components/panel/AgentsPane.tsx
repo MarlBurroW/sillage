@@ -15,6 +15,7 @@ import {
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { clearSubAgent, parseAgentsSelection, showSubAgent, showWorkflow, showWorkflowAgent } from '../../lib/panel'
 import { subAgentLabel, subAgentSubtitle, type SubAgent } from '../../lib/subagents'
+import { buildAgentTree, type AgentNode } from '../../lib/agent-tree'
 import { formatTokens } from '../../lib/tokens'
 import { currentPhase, findWorkflowAgent, useWorkflowAgentThread, type LocatedWorkflowAgent } from '../../lib/workflows'
 import { workflowAgentThread, type TaskState } from '../../lib/chat-fold'
@@ -85,16 +86,7 @@ export function AgentsPane({
     )
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
-      <BackgroundList conversationId={conversationId} agent={agent} tasks={background} />
-      {agents.map((agent) => (
-        <div key={agent.id} className={cx(agent.parentId && 'pl-3')}>
-          <SubAgentRow agent={agent} onSelect={() => showSubAgent(agent.id)} />
-        </div>
-      ))}
-    </div>
-  )
+  return <AgentsList conversationId={conversationId} agent={agent} agents={agents} background={background} />
 }
 
 type BackgroundFamily = 'workflow' | 'shell' | 'subagent' | 'monitor'
@@ -128,111 +120,162 @@ const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
 }
 
 /**
- * Background work above rather than mixed with subagents. Shell rows open onto the output the CLI
- * kept for them; the others stay inert, since the CLI reports their activity but nothing they wrote.
+ * Background work above rather than mixed with subagents, each with what it launched beneath it.
+ * Shell rows open onto the output the CLI kept for them; the others stay inert, since the CLI
+ * reports their activity but nothing they wrote.
  */
-function BackgroundList({
+function AgentsList({
   conversationId,
   agent,
-  tasks,
+  agents,
+  background,
 }: {
   conversationId: string
   agent: AgentKind
-  tasks: BackgroundWork[]
+  agents: SubAgent[]
+  background: BackgroundWork[]
 }) {
   const t = useTranslate()
-  const canStop = AGENT_CAPABILITIES[agent].stopBackgroundTask
-  const canRead = AGENT_CAPABILITIES[agent].readBackgroundOutput
+  const tree = useMemo(() => buildAgentTree(agents, background), [agents, background])
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   const { stopping, stop } = useStopBackgroundTask(conversationId)
-  const toggle = (taskId: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev)
-      if (!next.delete(taskId)) next.add(taskId)
-      return next
-    })
-  if (tasks.length === 0) return null
+  const rows: BackgroundRowContext = {
+    conversationId,
+    canStop: AGENT_CAPABILITIES[agent].stopBackgroundTask,
+    canRead: AGENT_CAPABILITIES[agent].readBackgroundOutput,
+    open,
+    stopping,
+    stop: (taskId) => void stop(taskId),
+    toggle: (taskId) =>
+      setOpen((prev) => {
+        const next = new Set(prev)
+        if (!next.delete(taskId)) next.add(taskId)
+        return next
+      }),
+  }
 
   return (
-    <section className="mb-1 flex flex-col gap-1">
-      <h2 className="px-1 text-[0.6875rem] font-medium uppercase tracking-wide text-ink-faint">
-        {t('panel.background.title')}
-      </h2>
-      {tasks.map((task) => {
-        // Display unknown types unchanged rather than forcing a family because CLI versions add new kinds.
-        const family = KIND_ALIASES[task.kind.replace(/^local_/, '')]
-        const kindLabel = family ? t(KIND_LABELS[family]) : task.kind
-        const phase = task.workflow ? currentPhase(task.workflow) : null
-        // A workflow's CLI activity names whichever agent reported last, so it hops between them:
-        // its script name and phase describe it, and its agents are listed below. CLIs that send no
-        // snapshot keep the activity line.
-        const subtitle = task.workflow
-          ? [kindLabel, task.workflowName, phase ? t('panel.workflow.phase', phase) : null].filter(Boolean).join(' · ')
-          : task.summary ?? task.activity ? `${kindLabel} · ${task.summary ?? task.activity}` : kindLabel
-        const readable = canRead && hasReadableOutput(task.kind)
-        const expanded = readable && open.has(task.id)
-        const heading = (
-          <>
-            <span className="shrink-0 text-accent">
-              {family ? KIND_ICONS[family] : <Waves size={13} />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs text-ink">{task.description}</span>
-              <span className="block truncate text-[0.6875rem] text-ink-faint">{subtitle}</span>
-            </span>
-          </>
-        )
-        return (
-          <div key={task.id} className="flex flex-col gap-1.5 rounded-md border border-line bg-surface-high px-2 py-1.5">
-            <div className="flex items-center gap-2">
-              {readable ? (
-                <button
-                  type="button"
-                  onClick={() => toggle(task.id)}
-                  aria-expanded={expanded}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                >
-                  <ChevronRight
-                    size={12}
-                    className={cx('shrink-0 text-ink-faint transition-transform', expanded && 'rotate-90')}
-                  />
-                  {heading}
-                </button>
-              ) : (
-                heading
-              )}
+    <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
+      {tree.background.length > 0 ? (
+        <section className="mb-1 flex flex-col gap-1">
+          <h2 className="px-1 text-[0.6875rem] font-medium uppercase tracking-wide text-ink-faint">
+            {t('panel.background.title')}
+          </h2>
+          <AgentNodes nodes={tree.background} rows={rows} />
+        </section>
+      ) : null}
+      <AgentNodes nodes={tree.agents} rows={rows} />
+    </div>
+  )
+}
 
-              {task.toolUses > 0 ? (
-                <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
-                  {t(task.toolUses > 1 ? 'panel.background.tools.many' : 'panel.background.tools.one', {
-                    count: task.toolUses,
-                  })}
-                </span>
-              ) : null}
+/** What every background row needs from the list: unfolded rows and pending stops are shared. */
+interface BackgroundRowContext {
+  conversationId: string
+  canStop: boolean
+  canRead: boolean
+  open: ReadonlySet<string>
+  stopping: ReadonlySet<string>
+  stop: (taskId: string) => void
+  toggle: (taskId: string) => void
+}
 
-              {canStop ? (
-                <TooltipButton
-                  type="button"
-                  onClick={() => void stop(task.id)}
-                  disabled={stopping.has(task.id)}
-                  title={t('panel.background.stop')}
-                  aria-label={t('panel.background.stop')}
-                  className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
-                >
-                  <Square size={11} fill="currentColor" />
-                </TooltipButton>
-              ) : null}
-            </div>
-            {task.workflow ? (
-              <div className="border-t border-line pt-1.5">
-                <WorkflowPhases progress={task.workflow} onOpenAgent={showWorkflowAgent} />
-              </div>
-            ) : null}
-            {expanded ? <BackgroundOutput conversationId={conversationId} taskId={task.id} /> : null}
+function AgentNodes({ nodes, rows }: { nodes: AgentNode[]; rows: BackgroundRowContext }) {
+  return nodes.map((node) => {
+    const key = node.kind === 'agent' ? node.agent.id : node.work.id
+    return (
+      <div key={key} className="flex flex-col gap-1">
+        {node.kind === 'agent' ? (
+          <SubAgentRow agent={node.agent} onSelect={() => showSubAgent(node.agent.id)} />
+        ) : (
+          <BackgroundRow task={node.work} rows={rows} />
+        )}
+        {/* Square left rule: the children's thread hangs from the row above. */}
+        {node.children.length > 0 ? (
+          <div className="ml-2 flex flex-col gap-1 border-l border-line pl-2">
+            <AgentNodes nodes={node.children} rows={rows} />
           </div>
-        )
-      })}
-    </section>
+        ) : null}
+      </div>
+    )
+  })
+}
+
+function BackgroundRow({ task, rows }: { task: BackgroundWork; rows: BackgroundRowContext }) {
+  const t = useTranslate()
+  // Display unknown types unchanged rather than forcing a family because CLI versions add new kinds.
+  const family = KIND_ALIASES[task.kind.replace(/^local_/, '')]
+  const familyLabel = family ? t(KIND_LABELS[family]) : task.kind
+  // A backgrounded sub-agent says which agent it is, as its thread row does.
+  const kindLabel = task.subagentType ? `${familyLabel} · ${task.subagentType}` : familyLabel
+  const phase = task.workflow ? currentPhase(task.workflow) : null
+  // A workflow's CLI activity names whichever agent reported last, so it hops between them:
+  // its script name and phase describe it, and its agents are listed below. CLIs that send no
+  // snapshot keep the activity line.
+  const subtitle = task.workflow
+    ? [kindLabel, task.workflowName, phase ? t('panel.workflow.phase', phase) : null].filter(Boolean).join(' · ')
+    : task.summary ?? task.activity ? `${kindLabel} · ${task.summary ?? task.activity}` : kindLabel
+  const readable = rows.canRead && hasReadableOutput(task.kind)
+  const expanded = readable && rows.open.has(task.id)
+  const heading = (
+    <>
+      <span className="shrink-0 text-accent">
+        {family ? KIND_ICONS[family] : <Waves size={13} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs text-ink">{task.description}</span>
+        <span className="block truncate text-[0.6875rem] text-ink-faint">{subtitle}</span>
+      </span>
+    </>
+  )
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-line bg-surface-high px-2 py-1.5">
+      <div className="flex items-center gap-2">
+        {readable ? (
+          <button
+            type="button"
+            onClick={() => rows.toggle(task.id)}
+            aria-expanded={expanded}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <ChevronRight
+              size={12}
+              className={cx('shrink-0 text-ink-faint transition-transform', expanded && 'rotate-90')}
+            />
+            {heading}
+          </button>
+        ) : (
+          heading
+        )}
+
+        {task.toolUses > 0 ? (
+          <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+            {t(task.toolUses > 1 ? 'panel.background.tools.many' : 'panel.background.tools.one', {
+              count: task.toolUses,
+            })}
+          </span>
+        ) : null}
+
+        {rows.canStop ? (
+          <TooltipButton
+            type="button"
+            onClick={() => rows.stop(task.id)}
+            disabled={rows.stopping.has(task.id)}
+            title={t('panel.background.stop')}
+            aria-label={t('panel.background.stop')}
+            className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
+          >
+            <Square size={11} fill="currentColor" />
+          </TooltipButton>
+        ) : null}
+      </div>
+      {task.workflow ? (
+        <div className="border-t border-line pt-1.5">
+          <WorkflowPhases progress={task.workflow} onOpenAgent={showWorkflowAgent} />
+        </div>
+      ) : null}
+      {expanded ? <BackgroundOutput conversationId={rows.conversationId} taskId={task.id} /> : null}
+    </div>
   )
 }
 
