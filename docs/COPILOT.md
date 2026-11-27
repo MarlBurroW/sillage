@@ -1,127 +1,241 @@
 # GitHub Copilot CLI integration
 
-Sillage starts one `copilot --acp` per conversation and speaks plain **ACP** (Agent Client
-Protocol) over stdio, through the same handwritten client as Grok and Antigravity
-(`apps/server/src/agents/acp/client.ts`). The code lives in `apps/server/src/agents/copilot/`.
-Everything below was probed on **GitHub Copilot CLI 1.0.116** (`@github/copilot` on npm), signed
-in with a Copilot Free account, unless stated otherwise.
+Sillage installs `@github/copilot` from npm (pinned to **1.0.116**), starts one
+`copilot --acp` per conversation and speaks **ACP** (Agent Client Protocol) over stdio,
+through the same handwritten client as Grok and Antigravity
+(`apps/server/src/agents/acp/client.ts`). Plain ACP is completed by Copilot's own
+**session events**, subscribed at `initialize`. The code lives in
+`apps/server/src/agents/copilot/`.
 
-## Models and Auto
+Everything below was observed on the real **1.0.116** binary, in two ways that do not
+cover the same ground:
 
-Copilot advertises its models only inside a session, as the ACP `model` config option; `initialize`
-carries none. The catalog (`catalog.ts`) opens a disposable session in an empty folder: a session
-that never receives a prompt is not listed by `session/list`, so it leaves no trace in the user's
-history.
+- **A scripted model provider.** Copilot accepts a model provider of your own
+  (`COPILOT_PROVIDER_BASE_URL`), which needs no GitHub sign-in. A local server that
+  answers with the tool calls a script names drove the real binary through every tool,
+  permission, question, sub-agent, background shell, error and resume, without an
+  account and without spending anything. This is what the tables call **scripted**.
+- **A signed-in account** (Copilot Free, model Auto), two real turns run by the author
+  of the first version: an edit behind a permission, the instruction channel, usage, a
+  resume. This is what the tables call **signed in**.
 
-- **Auto** (`auto`) lets Copilot pick the model for each request. It leads the list, as it does in
-  OpenCode's GitHub Copilot section, because it is a way of choosing rather than one model.
-  Copilot lists it twice (a description entry, then one carrying the premium multiplier in
-  `_meta.copilotUsage`); Sillage shows one row with the multiplier in its hint.
-- The models follow the plan: a Free plan lists only Auto. `copilot help config` names many more
-  (`claude-sonnet-5.5`, `gpt-6.2-sol`…), but `session/set_config_option` rejects any model the
-  session did not list (`Invalid modelId … not one of this session's models`), so Sillage offers
-  only the listed ones.
-- **Auto profile** (`autoTier`): `efficiency`, `balance` or `intelligence`, or a profile the server
-  advertises. ACP has no option for it (`Unknown config option 'auto_tier'`), so it goes through
-  `--auto-tier` at launch, only when the model is Auto, and changing it restarts the process. Empty
-  keeps the CLI's own setting (`autoTier` in Copilot's config, `balance` otherwise).
-- **Effort**: no effort option is advertised on Auto. For other models the catalog reads an option
-  of ACP category `thought_level` after selecting each model. **Not verified**: a plan that lists
-  models other than Auto was not available.
+What only a signed-in plan shows (the model catalog of a paid plan, efforts, quota,
+Auto's routing) is listed under [Not yet verified](#not-yet-verified).
+
+## Coverage inventory
+
+| Area | Implementation | Limits / verification |
+| --- | --- | --- |
+| Installation | npm package `@github/copilot`, a loader that pulls the binary of the platform as an optional dependency (about 220 MB). The version probe reads `copilot --version`. | Installed through npm on Linux x64. On first run the binary unpacks itself into `~/.cache/copilot` (about 320 MB more); `COPILOT_CACHE_HOME` moves it. Windows and macOS not tried. |
+| Updates | Sillage chooses the version (Settings › CLI versions): `--no-auto-update` and `COPILOT_AUTO_UPDATE=false` stop both the download and the launch of a newer cached build. | Read from `copilot help environment`. |
+| Sign-in | The machine's own: `copilot login` (device code on a server), or `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` in the server's environment, which win over a stored login. | Without one, `session/new` answers `Authentication required` and the conversation says how to sign in. Classic tokens (`ghp_…`) are refused by Copilot, a GitHub CLI login made with one included. |
+| Conversation | Streamed text and thinking, title, context meter, per-turn tokens. | Scripted and signed in. |
+| Interrupt | `session/cancel`, then a 15 s watchdog. Calls left open are closed as interrupted. | Scripted. |
+| Resume | `session/load`. Copilot replays the whole history before answering; the runner drops it, already journaled. | Scripted and signed in. |
+| Native history | Sessions started in a terminal are listed for the project folder (`session/list`, no sign-in needed) and adopted from the history `session/load` replays: prompts, calls, replies, a sub-agent's included. | Scripted. Thoughts and to-do lists are not replayed by Copilot. Turns made in a terminal after the adoption are not resynced. |
+| Tools | Named after the native tool and mapped to canonical names and arguments; see [Tools](#tools). A command that exits non-zero shows as failed, a failed call shows its reason. | Scripted, every tool of the table. `apply_patch` (GPT models) signed in. |
+| MCP tools | Named `server/tool` from the call's own metadata. | Scripted with a stdio server. |
+| Sub-agents | `task` is an `Agent` row; its calls, thoughts and replies nest under it, in the foreground and in the background. | Scripted. `/fleet` and `/delegate` not tried. |
+| Background work | A shell left running (`mode: async`) is listed as background work until Copilot reads its exit. When it finishes after the turn, Copilot reads it by itself: that is journaled as a turn of its own. | Scripted, attached and detached shells. Copilot has no client call to stop a shell: only the model can (`stop_bash`). |
+| To-do list | Copilot keeps it in a session database; changes arrive as an ACP `plan` and show as the plan card. | Scripted. |
+| Permissions | Allow once, allow for the session, deny, from `session/request_permission`: tools, paths outside the allowed folders, URLs. A refusal ends Copilot's whole turn, which closes as `permission_denied`. | Scripted. |
+| Questions | `ask_user` arrives as an `elicitation/create` form. A form made only of choices is a question card (a free answer is allowed); anything else is a form. The call itself is not shown as a tool row. | Scripted. Copilot only offers `ask_user` to a client that announces forms, which Sillage does. |
+| Plan review | Not offered over ACP: plan mode exposes no `exit_plan_mode` tool to an ACP client. Plan mode itself works. | Scripted (tool list of plan mode). |
+| Composer | Model, effort when the model has one, Auto profile, mode (Agent, Plan, Autopilot), permissions (Manual, Assisted, Allow all), skill library, MCP servers. | Scripted and signed in. Efforts and a multi-model catalog only with the fixture. |
+| Attachments | Images inline, other files and `@` mentions as resource links, picked skills as embedded Markdown. | Scripted: the image reaches the model, the linked file is named in the prompt, the embedded resource is attached. |
+| Commands | Published live and for drafts. `/model` and `/clear` are hidden like for the other CLIs; `/cwd`, `/add-dir` and `/session` too, which would move the session out of what Sillage tracks. | Scripted: `/usage`, `/context`, `/env`, `/compact` and a skill's own command answer as replies. |
+| Compaction | The compact action sends `/compact`; Copilot's events say when it starts and what it saved. Automatic compaction is reported the same way. | Scripted (manual). |
+| Skills | One `--plugin-dir` per library skill; each is also a slash command. Reload is a restart before the next turn. | Scripted: listed in the model's skills, command expands the skill. |
+| MCP | Servers go in `session/new` and `session/load` (stdio, HTTP, SSE). Health follows Copilot's events: pending, connected, failed with its reason. Servers from Copilot's own files and its built-in GitHub server show as external. | Scripted with one working and one broken stdio server. No per-server reconnect call. |
+| Instructions | SILLAGE.md and the overview go to an instruction file in a private folder named by `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, reread on every launch. | Scripted (the text reaches the system prompt) and signed in. Repository `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` are **not masked**. |
+| Memory | Reachable through Copilot's file tools (`--add-dir`). | Not tried on a real turn. |
+| Errors | Copilot's errors, warnings and retries are journaled as such, with shared codes for rejected sign-in, rate limit, exhausted quota and context overflow. A refused request for quota or rate limit also marks the account as stopped, which is what lets Sillage offer to resume later. | Scripted: provider 401 and 429. Real quota and rate-limit refusals not seen. |
+| Accounts | None beyond the machine's sign-in. | See [Sign-in, accounts and usage](#sign-in-accounts-and-usage). |
+| Usage | Per-turn tokens. The plan gauge shows the quota the last model call reported. | Tokens scripted and signed in. Quota read from Copilot's schema only. |
+| Forks / transfers | No fork call: a fork starts a new Copilot session with the conversation up to the chosen turn as portable context. Transfers to and from the other CLIs go through the instruction channel. | UI check, both directions. |
+| Editions | Server and Desktop behave alike: one sign-in for the machine, nothing to configure. | UI check on both profiles, 1440×900 and 390×844, with the fixture. Windows and macOS launches not tried. |
 
 ## Launch and isolation
 
 | Choice | Why |
 |---|---|
-| `--no-auto-update`, `COPILOT_AUTO_UPDATE=false` | Sillage chooses the version (Settings › CLI versions). The flag alone still lets plugin updates run and a previously downloaded build start. |
+| `--acp` | The protocol. Naming the client at `initialize` marks the session as driven by a person. |
+| `--no-auto-update`, `COPILOT_AUTO_UPDATE=false` | Sillage chooses the version. The flag alone still lets plugin updates run and a previously downloaded build start. |
 | `--disable-client-telemetry` | Copilot-owned telemetry off; server-side telemetry is GitHub's. |
 | `COPILOT_PLUGIN_DIR_ONLY=true` | The user's installed plugins would bring MCP servers and hooks Sillage does not show. |
-| `--plugin-dir <skill>` per library skill | `--plugin-dir` accepts a folder holding a `SKILL.md` and names the command after the skill. A library root would need a `plugin.json` and prefix every command. |
-| `--add-dir` for additional directories, worktrees, memory and attachments | Copilot asks for every path outside cwd otherwise. |
-| `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` | Instruction channel, see below. |
+| `COPILOT_DISABLE_DESKTOP_NOTIFICATIONS=1` | Nobody sits at the server. |
+| `--plugin-dir <skill>` per library skill | It accepts a folder holding a `SKILL.md` and names the command after the skill. A library root would need a `plugin.json` and prefix every command. |
+| `--add-dir` for additional directories, worktrees, memory and attachments | Copilot asks for every path outside the working directory otherwise. |
+| `--auto-tier` | The Auto profile, only when the model is Auto. |
+| `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` | The instruction channel, see below. |
+| Announced at `initialize`: `elicitation.form`, and the session events of `COPILOT_SESSION_EVENTS` | See [Session events](#session-events). |
 
-## Configuration
+What Sillage writes for Copilot lives under `<data>/copilot`: one instruction folder
+per conversation, removed when its session stops, and the empty folder the catalog
+probe runs in. Not in the system temporary directory, which other local accounts can
+write to first.
+
+## Launch settings and live settings
 
 | Sillage setting | In Copilot | Live |
 |---|---|---|
 | Model | `session/set_config_option` `model` | yes |
-| Effort | the `thought_level` option, when the model has one | yes |
-| Auto profile | `--auto-tier` | restart |
-| Mode: Agent, Plan, Autopilot | `mode` option (`https://agentclientprotocol.com/protocol/session-modes#agent`…) | yes |
+| Effort | the option of category `thought_level`, when the model has one | yes |
 | Permissions: Manual, Assisted, Allow all | `allow_all` option `off`, `auto`, `on` | yes |
-| Skills, MCP servers, directories | launch | restart |
+| Mode: Agent, Plan, Autopilot | `mode` option (`https://agentclientprotocol.com/protocol/session-modes#agent`…) | yes |
+| Auto profile | `--auto-tier` (ACP answers `Unknown config option 'auto_tier'`) | restart |
+| Skills, MCP servers, directories, instructions | launch | restart |
 
-Copilot's own names are kept. Changes Copilot makes itself (`config_option_update`,
-`current_mode_update`) are written back to the conversation config. Autopilot and anything other
-than Manual count as permissive for API tokens (`tasks:autonomous`).
+Copilot's own names are kept. What Copilot changes itself (`config_option_update`,
+`current_mode_update`) is written back to the conversation's settings. Autopilot and
+anything other than Manual count as permissive for API tokens (`tasks:autonomous`).
 
-## Conversation
+## Session events
 
-| Feature | Status |
+`copilot help acp` documents three events a client can subscribe to through
+`clientCapabilities._meta["github.com/copilot"].events`. The same subscription accepts
+the other event types of the CLI's `session-events.schema.json`; they arrive as
+`github.com/copilot/sessionEvent` notifications. Sillage subscribes to the ones that
+say what plain ACP leaves out:
+
+| Event | Used for |
 |---|---|
-| Streamed text and thinking (`agent_message_chunk`, `agent_thought_chunk`) | covered, fixture and real turn |
-| Title (`session_info_update`) | covered |
-| Turn tokens (`session/prompt` usage), context meter (`usage_update`) | covered, real turn |
-| Interrupt (`session/cancel`, 15 s watchdog) | covered, fixture |
-| Resume (`session/load`) | covered, real turn. Copilot replays the whole history before answering; Sillage drops the replay, already journaled. |
-| Steer, manual compact | not offered over ACP; `/compact` stays a slash command |
-| Images, mentions, attachments, skills | sent as ACP `image`, `resource_link` and `resource` blocks. Images not verified on a real turn. |
-| Fork | portable history fork: no native fork RPC |
-| Native session import | deferred: `session/list` exists, `session/load` replays history |
+| `assistant.message` | `toolRequests`: the native name of each call, and the server and tool of an MCP call. The ACP frame only has a kind and a prose title. |
+| `assistant.turn_start` | With an `agentId`: `parentToolCallId`, the only link between a sub-agent and the call that spawned it. |
+| `assistant.usage` | Tokens of each model call, the account's quota, the model Auto routed to. |
+| `assistant.turn_retry` | A retry notice. |
+| `session.idle` | The end of a turn Copilot started by itself. |
+| `session.info`, `session.warning`, `session.error` | Notices and errors as data. |
+| `session.compaction_start`, `session.compaction_complete` | Compaction, with tokens before and after. |
+| `session.mcp_server_status_changed`, `session.mcp_servers_loaded` | MCP server health. |
+
+`tool.execution_*`, `subagent.*`, `session.skills_loaded` and
+`session.todos_changed` are not relayed even when asked for.
 
 ## Tools
 
-Copilot sends no native tool name, only the ACP `kind`, a prose `title` and `rawInput`
-(`tools.ts`):
-
-| Copilot | Sillage | Recognized by |
+| Copilot | Sillage | Notes |
 |---|---|---|
-| view | `Read` | `kind: read`, `rawInput.path` |
-| shell | `Bash`, labelled with its `description` | `kind: execute` |
-| `apply_patch` | `Edit`, or `Write` for `*** Add File` / Create file | `kind: edit`; the path comes from the patch header, then `fileName` in the permission request |
-| grep | `Grep` | `pattern` with `output_mode` or a "Searching" title |
-| glob | `Glob` | `pattern` otherwise |
-| web fetch | `WebFetch` | `kind: fetch` |
+| `view` | `Read` | `view_range` becomes `offset` and `limit`. |
+| `create` | `Write` | |
+| `edit` | `Edit` | `old_str` / `new_str` become `old_string` / `new_string`. |
+| `apply_patch` (GPT models) | `Edit`, or `Write` for `*** Add File` | The path comes from the patch header. |
+| `bash` | `Bash`, labelled with its `description` | `mode: async` is a background command. |
+| `grep`, `glob` | `Grep`, `Glob` | |
+| `web_fetch` | `WebFetch` | |
+| `task` | `Agent` | Sub-agent; `mode: background` runs it in the background. |
+| `skill` | `Skill` | |
+| `ask_user` | a question card, no tool row | |
+| `sql`, `read_bash`, `stop_bash`, `read_agent`, `write_agent`… | their own name, with Copilot's title | |
+| MCP tools | `server/tool` | |
 
-Edits close with ACP `diff` blocks: `file.edited` and the diff view come from them. The full tool
-output is `rawOutput.content`.
+Edits close with ACP `diff` blocks: `file.edited` and the diff view come from them.
+The full output of a call is `rawOutput.content`; Copilot's own status line at the end
+of a shell's output (`<shellId: 0 completed with exit code 0>`) is removed, the exit
+code decides whether the row failed.
 
-## Permissions
+## Observed behavior
 
-`session/request_permission` offers `allow_once`, `allow_always` and `reject_once`; Sillage maps
-them onto once, session and deny. Questions through Copilot's `ask_user` tool and plan review were
-not observed over ACP: **not verified**.
+Quirks of 1.0.116 the next maintainer must know.
 
-## Instructions, memory, skills, MCP
+- **The prompt response counts tokens since the process started**, sub-agents
+  included, not the turn's. The counter restarts with the process. A turn's tokens are
+  the model calls reported as `assistant.usage` during it, or the difference with the
+  previous response when no event arrived. Copilot's input includes cache reads and
+  writes, and its output includes reasoning (`copilot help billing`).
+- **Copilot writes its own lines into the reply**: "Info: …" (a created file, a
+  cancellation, a retry), "Warning: …" and "Error: …" arrive as message chunks. Only
+  the model's chunks carry a `messageId`. The runner drops a line that repeats an
+  event it received, and keeps the rest: the output of `/usage` or `/context` has no
+  message ID either, and is the reply.
+- **A failing command closes as `completed`.** Its exit code is in
+  `rawOutput.contents`.
+- **A second `session/prompt` cancels the turn in progress** rather than steering it.
+- **A refused permission ends the whole turn**, with `stopReason: "end_turn"`.
+- **A model error ends the turn with `end_turn` and no usage**, after an "Error: …"
+  line.
+- **The prompt response waits for attached background work.** A detached shell
+  outlives it; when it finishes, Copilot reads its output and answers without a
+  prompt, and nothing but `session.idle` says that turn is over.
+- **Entering Autopilot turns `allow_all` on, leaving it turns it back to Manual**,
+  whatever it was before. The mode is therefore applied after the permissions.
+- **`config_option_update` follows every model change, a sub-agent's included.**
+- **`session/load` replays without session events**: a sub-agent of the history is
+  attached to the spawning call still open, or to the last one started.
+- **The command list is announced three times at startup.**
+- Not found: `session/fork`, `session/resume`, `account.getQuota`, `models.list`.
+  `session/close` and `logout` exist.
+- Unknown slash commands go to the model as text.
 
-- **SILLAGE.md and the project overview** go to
-  `$TMPDIR/sillage-copilot/<conversation>/.github/instructions/sillage.instructions.md`
-  (`applyTo: "**"`), named by `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`. Copilot reads it on every launch,
-  so a resumed session gets the current version. Verified on a real turn.
-- **Repository AGENTS.md / CLAUDE.md are not masked**: `--no-custom-instructions` is ignored under
-  `--acp` in 1.0.116 (a real turn still read the repository's AGENTS.md).
-- **Memory** is reachable through Copilot's file tools (`--add-dir`).
-- **Skills** are listed as slash commands and sent as resources when picked in the composer.
-- **MCP**: servers go in `session/new`/`session/load` (stdio, HTTP, SSE). Without a health
-  notification, a server turns `connected` on its first successful call.
+## Deliberate differences
 
-## Slash commands
+- **No account choice.** See below.
+- **Steering is off**: a message sent during a turn waits in Sillage's queue.
+- **`/cwd`, `/add-dir`, `/session`** are not offered.
+- **Repository instructions are not masked**: `--no-custom-instructions` is ignored
+  under `--acp`, so a repository that holds `AGENTS.md` or `CLAUDE.md` reaches the
+  model twice when SILLAGE.md repeats it.
+- **The instruction file keeps its frontmatter in the prompt.** Only a
+  `*.instructions.md` file with `applyTo: "**"` is read from the extra folder; an
+  `AGENTS.md` or a `copilot-instructions.md` placed there is ignored.
+- **Information lines Copilot repeats** (created file, cancellation, retry) are not
+  shown: the journal already says it.
 
-Live from `available_commands_update`, and for drafts from the catalog session. `/model` and
-`/clear` are hidden like for the other CLIs; `/cwd` and `/add-dir` are hidden because they would
-move the session outside the conversation's settings.
+## Sign-in, accounts and usage
 
-## Not covered yet
+Copilot uses the sign-in of the machine: `copilot login`, or a token in the server's
+environment. On a Server every account of the instance therefore works on the same
+GitHub Copilot plan, like OpenCode's providers; Desktop has a single account anyway.
+A token in `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` wins over a stored
+login without saying so: a `GH_TOKEN` exported for the GitHub CLI also decides which
+plan pays.
 
-- Extra Sillage accounts (`COPILOT_HOME` per account, device-code login): Copilot uses the
-  machine's `copilot login`, or `COPILOT_GITHUB_TOKEN`/`GH_TOKEN` from the server environment.
-- Usage gauge: ACP exposes no quota call; `limitsAvailable: false`.
-- Native session import, subagents (`/fleet`) nested under their parent, background shells.
-- Windows and macOS Desktop launches were not tried; the npm `copilot` shim follows the generic
-  npm path.
+Extra Sillage accounts are **deferred**. The pieces exist in Copilot
+(`COPILOT_HOME` moves its state, `copilot login --device-code` prints a link and a
+code a remote browser can use), but an account needs its own table, a login that was
+tried against GitHub, and a way to keep the machine's token and the GitHub CLI login
+from answering in its place.
 
-## Checking
+Copilot's ACP has no quota call. Each model call reports the account's quota
+(`quotaSnapshots`): the gauge shows the last reading, dated by its turn, and nothing
+before the first turn after a server start. A full quota is a warning, because
+Copilot may go on with included models or paid overage; only a refused request marks
+the account as stopped.
 
-- `apps/server/test/copilot.test.ts` with `test/fixtures/copilot-agent.mjs` (wire shapes from 1.0.116).
-- `npx tsx src/cli/copilot-probe.ts` in `apps/server`: two real turns (edit behind a permission,
-  instructions, usage, resume). It spends requests from the signed-in account.
+## Verification
+
+- `apps/server/test/copilot.test.ts`, 18 tests on
+  `test/fixtures/copilot-agent.mjs`, which speaks the wire shapes captured from the
+  real binary: catalog, launch, tool mapping, events, tokens per turn, options,
+  sub-agents, questions, MCP, errors, shells and the turn Copilot opens itself,
+  compaction, resume, adoption, listing, interrupt, quota.
+- `pnpm test:copilot-ui` (`scripts/copilot-ui-check.mjs`): both editions, 1440×900
+  and 390×844, with the fixture: defaults, adoption of a native session, a turn with
+  tools and a sub-agent, a question, a permission, compaction, fork, transfers both
+  ways, the consumption color.
+- The real binary against a scripted provider: the same journeys through
+  `CopilotRunner`, plus MCP servers, errors, interrupt, Autopilot and adoption.
+- `npx tsx src/cli/copilot-probe.ts` in `apps/server`: two real turns on the
+  signed-in account. It spends requests.
+
+### Not yet verified
+
+- A plan that lists models other than Auto: the catalog, efforts per model, the
+  context-size option.
+- Auto's routing and the notice naming the model that answered.
+- The quota gauge and a real quota or rate-limit refusal.
+- A sign-in made from Sillage: none is offered.
+- Images and documents on a signed-in turn (the scripted provider received the image).
+- The Sillage MCP server and a registry server over HTTP in a real conversation;
+  whether a server Sillage passes can collide with one of the same name in
+  `~/.copilot/mcp-config.json`.
+- Windows and macOS, Desktop included: the npm `copilot` shim follows the generic
+  npm launch path.
+- `/fleet`, `/delegate`, workflows (`run_dynamic_workflow`), `/remote`.
+
+## Sources
+
+- `copilot --help` and `copilot help acp | environment | billing | sessions |
+  skills | mcp | limits` of 1.0.116.
+- `schemas/session-events.schema.json` in the package the binary unpacks.
+- Wire captures of the real binary.

@@ -64,7 +64,7 @@ Changing the default model does not lock clients to it. For example:
 
 Send this to `POST /api/v1/projects/:id/tasks`, or add `projectId` and call
 `create_task` through either tool transport. Existing `config` overrides remain
-supported (`effort` for Claude, `reasoningEffort` for Codex/Grok/Antigravity,
+supported (`effort` for Claude, `reasoningEffort` for Codex/Grok/Antigravity/Copilot,
 `variant` for OpenCode). Top-level `model`/`effort` take precedence. Exact model IDs
 and unambiguous display names are accepted. `effort: "max"` selects the model's
 highest supported level, then checks that level against the key's permissions.

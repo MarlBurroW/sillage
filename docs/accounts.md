@@ -13,6 +13,10 @@ chosen account no longer exists, the session starts on the CLI's own sign-in and
 so in the thread. Antigravity requires choosing another connected account explicitly,
 so an unavailable Google account never silently changes who pays for the request.
 
+OpenCode and GitHub Copilot CLI have no extra accounts: OpenCode signs in to each
+provider itself, and Copilot works on the machine's own sign-in, shared by every
+account of the instance. See [GitHub Copilot CLI](#github-copilot-cli).
+
 On the new-session screen, an **Account** choice sits right under the CLI choice as
 soon as an extra account exists. Each option shows where its account stands: the two
 most loaded usage windows for the CLI's own sign-in, Codex subscriptions and extra
@@ -203,3 +207,20 @@ Quota gauges use the native `/usage` report when available; unsupported gauges
 remain unavailable instead of showing an invented balance.
 
 See [the integration inventory and validation limits](antigravity-integration.md).
+
+## GitHub Copilot CLI
+
+No extra accounts yet. Copilot uses the sign-in of the machine Sillage runs on:
+
+- `copilot login` in a terminal on that machine. On a server it prints a link and a
+  code to enter on GitHub from any browser.
+- Or a token in the server's environment: `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`,
+  then `GITHUB_TOKEN`. One of these wins over a stored login without saying so, so
+  a `GH_TOKEN` set for the GitHub CLI also decides which Copilot plan pays. Classic
+  tokens (`ghp_…`) are refused; a fine-grained token needs the "Copilot Requests"
+  permission.
+
+Without a sign-in, a conversation fails at its first message and says how to sign
+in. The usage gauge shows the plan quota the last turn reported, since Copilot has
+no call to read it between turns. Probed on GitHub Copilot CLI 1.0.116; see
+[the integration inventory](COPILOT.md).

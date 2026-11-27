@@ -63,7 +63,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
   the views you come back to by picking filters, or with a GitHub-style query.
 - **A queue, and steering.** Write while a turn runs. The message waits on the
   server and can be withdrawn, or goes straight into the turn already in flight.
-- **One grammar for every CLI.** Claude Code, Codex, OpenCode, Grok Build and Google Antigravity are translated
+- **One grammar for every CLI.** Claude Code, Codex, OpenCode, Grok Build, Google Antigravity and GitHub Copilot CLI are translated
   into a single event schema, so history, search, the board and the panel behave the
   same way whichever one ran the conversation.
 - **The repository, one panel away.** File explorer, editor, diffs, a branch graph
@@ -195,7 +195,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
 - **Continue a conversation in another CLI.** From Claude Code to Codex, OpenCode or
-  Grok Build or Google Antigravity and back: the new agent receives a budgeted selection of the thread, full messages rather
+  Grok Build, Google Antigravity or GitHub Copilot CLI and back: the new agent receives a budgeted selection of the thread, full messages rather
   than a summary, with references it can read back through the Sillage MCP server.
   [How the handoff is built](cli-handoff.md).
 - **Dev-server previews.** When an agent's dev server listens, the conversation panel's
@@ -224,7 +224,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
   agents step; a project owner overrides any family in the project's **Agents** tab,
   next to "Act on my other projects". A family that is off leaves the session entirely:
   its tools are not listed or callable, and the startup context no longer mentions
-  them. Codex, OpenCode, Grok and Antigravity load every MCP tool description into
+  them. Codex, OpenCode, Grok, Antigravity and Copilot load every MCP tool description into
   context, so this shortens each of their sessions. Session title, project list and
   memory tools always stay. Changes apply when a session next starts its CLI.
 - **A browser for agents, watched live.** Optional, under **Settings › Agent tools**
@@ -295,7 +295,7 @@ The periodic cleanup removes expired, revoked and orphaned files.
   the page is read, so a corrected price also corrects the past. The figure is an
   equivalent, not an invoice: standard list rates, without long-context tiers, priority
   processing or per-request tools. Every account sees the whole instance.
-- **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build and Google Antigravity, with global and
+- **A shared skill library** for Claude Code, Codex, OpenCode, Grok Build, Google Antigravity and GitHub Copilot CLI, with global and
   project skills managed from the interface, with visible progress while searching,
   installing or updating. [Skill library](skill-library.md).
 - **Extra accounts.** Register other Claude subscriptions or API keys, other Codex
@@ -310,6 +310,13 @@ The periodic cleanup removes expired, revoked and orphaned files.
   native fork: Sillage starts a new session with portable context through the selected
   turn. Manual compaction and live steering are unavailable in this protocol.
   [Coverage and limitations](antigravity-integration.md).
+- **GitHub Copilot CLI.** Its models, with Auto and its routing profile, its modes
+  (Agent, Plan, Autopilot) and permissions, native commands, questions, sub-agents,
+  background commands, to-do list, skills, MCP and the adoption of sessions started
+  in a terminal. It works on the machine's own Copilot sign-in: no extra accounts.
+  Copilot has no native fork, so a fork starts a new session with portable context
+  through the selected turn; a message sent during a turn waits in the queue.
+  [Coverage and limitations](COPILOT.md).
 - **A composer you can arrange.** Model and effort sit in one chip under the
   message box, with a slider for supported effort levels; pin the other settings you use next to it: permissions, speed,
   account, advisor or other controls supported by that CLI, and order them. Each

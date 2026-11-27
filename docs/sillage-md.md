@@ -1,4 +1,4 @@
-# SILLAGE.md: shared instructions for Claude, Codex, OpenCode, and Grok Build
+# SILLAGE.md: shared instructions for every CLI
 
 Instructions managed by Sillage and injected into every session's system prompt,
 regardless of its CLI: a **global** section (administrators) and a **project** section
@@ -63,6 +63,19 @@ Probed on 2026-10-17 with Grok Build 1.0.62.
   a `<human_rules>` block. ACP's `systemPrompt` field and the `--rules` option are
   ignored by `grok agent`.
 
+Probed on 2026-11-27 with GitHub Copilot CLI 1.0.116, by reading the system prompt
+it sends to a model provider of its own.
+
+- Copilot reads the repository's `AGENTS.md`, `CLAUDE.md` and
+  `.github/copilot-instructions.md`, each wrapped in a `<custom_instruction>` block.
+- Nothing masks them under `--acp`: `--no-custom-instructions` is ignored there.
+  A repository that holds one of these files reaches the model next to SILLAGE.md.
+- Instructions use a file, `.github/instructions/sillage.instructions.md`, in a
+  private folder named by `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`. It needs an
+  `applyTo: "**"` frontmatter to apply everywhere, which stays in the prompt. An
+  `AGENTS.md` or a `.github/copilot-instructions.md` placed in that folder is
+  ignored.
+
 ## Agents can write to it
 
 The `sillage` MCP server treats SILLAGE.md as a file: `read_instructions` reads it,
@@ -80,7 +93,8 @@ first exchange and replays it unchanged on resume: an already open session keeps
 the received version until its next compaction. OpenCode receives instructions
 with each message and sees changes on the next one. Grok Build receives them at
 session creation and keeps them for its lifetime: resume rereads the saved system
-prompt. The mode itself is read when the runner launches.
+prompt. GitHub Copilot CLI rereads its instruction file on every launch, a resume
+included. The mode itself is read when the runner launches.
 
 ## Giving agents remotely accessible links
 
@@ -118,6 +132,8 @@ all CLIs and all project worktrees.
   message in its system prompt, and it writes through the same MCP tools.
 - **Grok Build** too, except the index arrives once, in session creation `rules`.
   Its own cross-session memory (`~/.grok/memory-v2`) is untouched.
+- **GitHub Copilot CLI** too, through its instruction file. The memory directory is
+  one of its allowed directories, so it reads notes with its file tools.
 - **Interface**: a “Memory” card on the project page lists notes, opens them for
   editing, and deletes them along with their index entries.
 - **Native mode** (`memoryMode = 'native'`, set on the Memory card): Sillage no

@@ -91,6 +91,19 @@ with opencode 1.18.25, added after the batches shipped.
 - Changes restart the ACP process before the next turn, resuming its history.
   There is no native live skill-reload RPC.
 
+**GitHub Copilot CLI, one plugin directory per skill.** Probed on 1.0.116.
+
+- Each library skill is passed on its own with `--plugin-dir`: Copilot accepts a
+  folder that holds a `SKILL.md`, lists the skill for the model and names its slash
+  command after it. A library root would need a `plugin.json` and would prefix
+  every command (`/sillage:name`).
+- `COPILOT_PLUGIN_DIR_ONLY=true` keeps plugins installed in `~/.copilot` out of
+  Sillage's sessions. Repository `.github/skills`, `.agents/skills` and
+  `.claude/skills` remain readable, like `~/.copilot/skills`.
+- A skill picked in the composer is sent as embedded Markdown with the message;
+  typing its command lets Copilot expand it natively.
+- Changes restart the process before the next turn, resuming its history.
+
 ## Model
 
 ### On disk

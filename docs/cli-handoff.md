@@ -1,7 +1,7 @@
 # Continue a conversation in another CLI
 
 From a conversation, “Continue in another CLI…” (the header's `…` menu) opens a new
-conversation with Claude Code, Codex, opencode, Grok Build or Google Antigravity that picks up the thread
+conversation with Claude Code, Codex, opencode, Grok Build, Google Antigravity or GitHub Copilot CLI that picks up the thread
 where it stands. The model is T3 Code's “portable handoffs”: a **budgeted selection of
 history**, with full texts, in order, and with their roles, rather than an agent-written
 summary.
@@ -15,6 +15,8 @@ Grok Build. It stays there for the conversation's lifetime, like an ordinary thr
 history, and is read again whenever the CLI starts because it otherwise loses it on
 resume (Grok keeps it in the system prompt saved with the session).
 Antigravity uses its native `_meta.antigravity.systemPrompt.append` extension.
+GitHub Copilot CLI reads it from an instruction file in a private folder named by
+`COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, reread whenever the CLI starts.
 
 The block contains, in selection priority order:
 
@@ -53,8 +55,8 @@ does not fit, the handoff fails (`handoff_too_large`) instead of sending it trun
 If the source already inherited another conversation, that earlier context is
 included when it fits within half the budget, preserving space for the current
 thread. Otherwise its source and exact cut point are retained as a reference.
-Antigravity's **Fork** uses this same mechanism through the selected turn because
-its native protocol does not implement session forks.
+Antigravity's and Copilot's **Fork** use this same mechanism through the selected
+turn because their native protocols do not implement session forks.
 
 ## Where it lives
 
