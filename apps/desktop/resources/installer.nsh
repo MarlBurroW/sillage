@@ -32,11 +32,13 @@
 # stumbled on a file in use, five tries long.
 #
 # installer-running-app.ps1 does it in one run: it waits for a Sillage that is quitting,
-# asks before closing one that is open, stops the rest and returns once the directory is free.
+# asks before closing one that is open, stops the rest, then what holds the directory from
+# outside (a process installed elsewhere working in it), and returns once it is free.
 !macro customCheckAppRunning
   Push $R0
   Push $R1
   Push $R2
+  Push $R3
   InitPluginsDir
   File /oname=$PLUGINSDIR\installer-running-app.ps1 "${BUILD_RESOURCES_DIR}\installer-running-app.ps1"
   !insertmacro sillageSetupEnv "SILLAGE_SETUP_SCRIPT" "$PLUGINSDIR\installer-running-app.ps1"
@@ -50,10 +52,16 @@
   ${else}
     StrCpy $R1 "ask"
   ${endIf}
+  # The 64-bit PowerShell where there is one: this installer is 32-bit, and a 32-bit
+  # PowerShell cannot read where a 64-bit process works.
+  StrCpy $R3 "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+  ${ifNot} ${FileExists} "$R3"
+    StrCpy $R3 "$PowerShellPath"
+  ${endIf}
   ${Do}
     !insertmacro sillageSetupEnv "SILLAGE_SETUP_MODE" "$R1"
     # The script as a command rather than a file: no execution policy applies to it.
-    nsExec::Exec `"$PowerShellPath" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Invoke-Expression (Get-Content -Raw -LiteralPath $$env:SILLAGE_SETUP_SCRIPT)"`
+    nsExec::Exec `"$R3" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Invoke-Expression (Get-Content -Raw -LiteralPath $$env:SILLAGE_SETUP_SCRIPT)"`
     Pop $R0
     ${if} $R0 == 2
       MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK +2
@@ -69,6 +77,7 @@
       ${ExitDo}
     ${endIf}
   ${Loop}
+  Pop $R3
   Pop $R2
   Pop $R1
   Pop $R0

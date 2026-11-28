@@ -80,6 +80,17 @@ const portFile = join(userData, 'desktop.json')
 /** Read now: the first window opens before anything else, in the user's theme. */
 const windowThemes = windowThemeStore(join(userData, 'window-theme.json'))
 
+// Started from its shortcut, the app works in its installation directory, and so does all
+// it starts. On Windows that directory cannot be removed while anyone works in it: an
+// update then stumbles on a helper of ours that outlived the app by a few seconds.
+if (process.platform === 'win32' && app.isPackaged) {
+  try {
+    process.chdir(app.getPath('home'))
+  } catch {
+    // Stay where we are: only updates are at stake.
+  }
+}
+
 // Packaged apps find server and Node in resources; repository launches use
 // `stage/`, populated by `scripts/desktop-stage.mjs`.
 const resources = app.isPackaged ? process.resourcesPath : join(__dirname, '..', 'stage')

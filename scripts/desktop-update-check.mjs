@@ -13,7 +13,8 @@ import { _electron as electron } from 'playwright'
 /**
  * End-to-end update check: an installed version A discovers version B in a local
  * HTTP feed, downloads it, exposes Restart and update in About, and replaces and
- * relaunches itself after confirmation. On Windows, B's installer is then run by hand
+ * relaunches itself after confirmation, on Windows with processes holding the installation
+ * from outside. On Windows, B's installer is then run by hand
  * over the installation, twice: over the open app, and over what a closed one left running.
  * Usage: node scripts/desktop-update-check.mjs --app <executable of A> --feed <B directory>
  * Use an installed NSIS app on Windows, a writable .app on macOS, or an AppImage /
@@ -142,6 +143,39 @@ function startLeftover() {
 }
 
 /**
+ * Stand-ins for what holds the installation from outside (Windows): processes installed
+ * elsewhere, one working in the directory, one keeping a file of it open. Neither shows
+ * among what runs from the directory, and either made the installer ask to close a Sillage
+ * that was gone: the removal of the old version fails on the file, and a directory someone
+ * works in cannot be deleted for good nor filled again.
+ */
+const outsiders = []
+
+function startOutsiders() {
+  const inside = join(dirname(executable), 'resources', 'sillage')
+  const options = { detached: true, stdio: 'ignore', windowsHide: true }
+  // The Node running this check and the runner's Python: Node shares its files for
+  // deletion, Python's open() does not.
+  const started = {
+    'working directory': spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { ...options, cwd: inside }),
+    'open file': spawn('python', ['-c', 'import sys, time; f = open(sys.argv[1], "rb"); time.sleep(900)', join(inside, 'package.json')], { ...options, cwd: tmpdir() }),
+  }
+  for (const [what, child] of Object.entries(started)) {
+    const outsider = { what, pid: child.pid, exited: false }
+    child.once('error', (err) => {
+      outsider.exited = true
+      outsider.error = err
+    })
+    child.once('exit', () => {
+      outsider.exited = true
+    })
+    child.unref()
+    outsiders.push(outsider)
+    console.log(`process holding the installation from outside by its ${what} (${child.pid})`)
+  }
+}
+
+/**
  * Windows: someone downloads the installer and runs it over their installation. The
  * installer has to free the directory itself then (apps/desktop/resources/installer.nsh):
  * close an open Sillage in order, and stop what a closed one left running rather than
@@ -251,6 +285,7 @@ try {
     // NSIS refuses to replace files a process still holds and asks the user to close it:
     // the app must stop what still runs from its directory before handing over.
     startLeftover()
+    startOutsiders()
   }
   await install.click()
   await page.getByRole('dialog').getByRole('button', { name: /Redémarrer et mettre à jour|Restart and update/ }).click()
@@ -285,6 +320,16 @@ try {
     return fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) })
       .then((response) => response.ok).catch(() => false)
   }, 120_000)
+  if (outsiders.length > 0) {
+    // The update went through with no one to press Retry: the installer freed the directory.
+    const log = readFileSync(join(userData, 'logs', 'installer.log'), 'utf8')
+    for (const outsider of outsiders) {
+      assert.ok(!outsider.error, `${outsider.what}: the stand-in did not start (${outsider.error?.message})`)
+      await waitFor(`process holding the installation by its ${outsider.what} stopped`, () => outsider.exited, 30_000)
+      assert.match(log, new RegExp(`stopping \\S+ \\(${outsider.pid}\\), which holds `), `${outsider.what}: not stopped by the installer`)
+    }
+    console.log('processes holding the installation from outside stopped by the installer')
+  }
   console.log('contrôle de mise à jour réussi (serveur relancé et disponible)')
   if (process.platform === 'win32') await reinstallByHand()
 } catch (err) {
@@ -298,7 +343,7 @@ try {
 } finally {
   await app?.close().catch(() => {})
   server.close()
-  for (const pid of [...(launchAttempted ? appProcesses() : []), ...(leftover && !leftoverExited ? [leftover.pid] : [])]) {
+  for (const pid of [...(launchAttempted ? appProcesses() : []), ...(leftover && !leftoverExited ? [leftover.pid] : []), ...outsiders.filter((outsider) => !outsider.exited).map((outsider) => outsider.pid)]) {
     try {
       process.kill(pid)
     } catch {

@@ -72,7 +72,10 @@ export function startServer(options: ServerOptions): RunningServer {
   const log = openSync(options.logFile, 'a')
   // Let Node size its heap for the machine; 256 MiB can fail while loading user data.
   const child = spawn(options.node, [join(options.runtime, 'server', 'main.js')], {
-    cwd: options.runtime,
+    // Not the runtime: whatever the server starts without naming a working directory
+    // inherits this one, and on Windows a directory someone works in cannot be removed,
+    // which is what an update does to the installation.
+    cwd: options.dataDir,
     env: {
       ...options.env,
       NODE_ENV: 'production',
