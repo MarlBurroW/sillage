@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import './tokens.css';
 @import './typing-indicator.css';
+@import './thread-loading.css';
 @import './tools.css';
 @import './thinking.css';
 
