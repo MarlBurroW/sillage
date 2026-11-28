@@ -189,6 +189,8 @@ export const fr: Catalog = {
   "error.workspace_in_use": "Ce dossier est encore utilisé par une discussion.",
 
   'desktop.window.menu': 'Menu de l’application',
+  'desktop.window.back': 'Précédent',
+  'desktop.window.forward': 'Suivant',
   "antigravityAccounts.adc.hint": "Clé API facultative. Sans clé, Antigravity utilise les identifiants Google Application Default Credentials configurés sur cette machine.",
   "antigravityAccounts.callback.action": "Terminer la connexion",
   "antigravityAccounts.callback.hint": "Sur un serveur distant, le navigateur peut afficher une page inaccessible après l’accord de Google. Colle ici son adresse complète pour terminer. Sur Desktop, la connexion se termine normalement automatiquement.",

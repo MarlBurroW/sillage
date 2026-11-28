@@ -112,7 +112,7 @@ try {
   assert.equal(await titlebar.evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region')), 'drag')
   if (process.platform !== 'darwin') {
     assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMenuBarVisible()), false)
-    await titlebar.getByRole('button').click()
+    await titlebar.getByRole('button', { name: /Menu de l’application|Application menu/ }).click()
     await page.keyboard.press('Escape')
   }
 

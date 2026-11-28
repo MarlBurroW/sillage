@@ -336,9 +336,19 @@ function openWindow(): BrowserWindow {
   if (serving) void win.loadURL(origin)
   else void win.loadFile(join(__dirname, 'splash.html'), { query: { title: text('starting') } })
   win.webContents.on('did-finish-load', () => {
-    if (interfaceTimed || !isAppUrl(win.webContents.getURL())) return
+    if (!isAppUrl(win.webContents.getURL())) return
+    // The title bar's back arrow must never return to the startup page the interface replaced.
+    const history = win.webContents.navigationHistory
+    if (history.getAllEntries().some((entry) => !isAppUrl(entry.url))) history.clear()
+    if (interfaceTimed) return
     interfaceTimed = true
     diagnostics?.add('interface-ready', { ms: sinceLaunch() })
+  })
+  // Mouse back and forward buttons, as in a browser (Windows and Linux report them here).
+  win.on('app-command', (_event, command) => {
+    const history = win.webContents.navigationHistory
+    if (command === 'browser-backward' && history.canGoBack()) history.goBack()
+    if (command === 'browser-forward' && history.canGoForward()) history.goForward()
   })
   return win
 }

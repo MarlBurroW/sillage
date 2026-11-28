@@ -69,6 +69,7 @@ try {
           platform: width === 1440 ? 'win32' : 'darwin',
           menu: async () => { window.chromeProbe.menus++ },
           colors: async (...colors) => { window.chromeProbe.colors.push(colors) },
+          layout: async () => {},
         }, updates: {
           state: async () => state,
           subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
@@ -110,7 +111,7 @@ try {
         if (width === 1440) {
           await page.getByRole('button', { name: 'Menu de l’application' }).click()
           assert.equal(await page.evaluate(() => window.chromeProbe.menus), 1)
-        } else assert.equal(await bar.getByRole('button').count(), 0)
+        } else assert.equal(await bar.getByRole('button', { name: 'Menu de l’application' }).count(), 0)
         for (const theme of ['light', 'dark', 'dark-contrast']) {
           await page.evaluate((theme) => { document.documentElement.dataset.theme = theme }, theme)
           await page.screenshot({ path: join(shots, `${profile}-${width}-${theme}.png`) })
