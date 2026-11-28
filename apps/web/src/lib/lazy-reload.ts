@@ -18,7 +18,37 @@ function reloadedRecently(): boolean {
   }
 }
 
-/** Asks the service worker for the current build, then reloads. */
+/** How long to wait for a new service worker to install and take control before reloading anyway. */
+const TAKEOVER_MS = 8_000
+
+/**
+ * Hands control to a newer service worker. With `registerType: 'prompt'` a new worker stays
+ * waiting while this page is open, and a plain reload keeps the page overlapping, so the old
+ * worker served the old bundle again: an old build crashing on new server data stayed broken
+ * after "Reload" until a hard refresh.
+ */
+async function activateNewerWorker(registration: ServiceWorkerRegistration): Promise<void> {
+  const sw = navigator.serviceWorker
+  if (!sw.controller) return
+  const installing = registration.installing
+  if (installing && !registration.waiting) {
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        if (installing.state === 'installed' || installing.state === 'redundant' || installing.state === 'activated') resolve()
+      }
+      installing.addEventListener('statechange', done)
+      done()
+    })
+  }
+  const waiting = registration.waiting
+  if (!waiting) return
+  const takenOver = new Promise<void>((resolve) => sw.addEventListener('controllerchange', () => resolve(), { once: true }))
+  // Same message the vite-plugin-pwa prompt flow sends; the generated worker answers with skipWaiting().
+  waiting.postMessage({ type: 'SKIP_WAITING' })
+  await takenOver
+}
+
+/** Asks the service worker for the current build, lets it take over, then reloads. */
 export async function reloadForUpdate(): Promise<void> {
   try {
     sessionStorage.setItem(GUARD_KEY, String(Date.now()))
@@ -26,7 +56,11 @@ export async function reloadForUpdate(): Promise<void> {
     // Storage refused (private mode): reloading still helps.
   }
   try {
-    await (await navigator.serviceWorker?.getRegistration())?.update()
+    const registration = await navigator.serviceWorker?.getRegistration()
+    if (registration) {
+      await registration.update()
+      await Promise.race([activateNewerWorker(registration), new Promise((resolve) => setTimeout(resolve, TAKEOVER_MS))])
+    }
   } catch {
     // No service worker, or offline: the reload alone fetches what the server has.
   }

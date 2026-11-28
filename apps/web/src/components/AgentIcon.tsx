@@ -68,7 +68,11 @@ export const AGENT_LABELS: Record<AgentKind, string> = Object.fromEntries(
 
 /** Visual marker for a conversation's CLI. */
 export function AgentIcon({ agent, size = 14 }: { agent: AgentKind; size?: number }) {
-  const { label, Mark } = AGENT_META[agent]
+  // A build older than the server can receive a CLI it does not know (session lists show every
+  // CLI): draw a neutral dot rather than take the whole list down.
+  const meta = AGENT_META[agent] as AgentMeta | undefined
+  if (!meta) return <span aria-label={agent} className="inline-block rounded-full bg-current opacity-40" style={{ width: size * 0.6, height: size * 0.6, margin: size * 0.2 }} />
+  const { label, Mark } = meta
   return (
     <span aria-label={label} className="inline-flex">
       <Mark size={size} />
