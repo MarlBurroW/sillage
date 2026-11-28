@@ -6,37 +6,66 @@
   <title>Sillage: one workspace for your coding agents</title>
   <meta name="description" content="Sillage runs Claude Code, Codex, OpenCode, Grok Build, Google Antigravity and GitHub Copilot CLI in one self-hosted workspace, with your own accounts. Review their changes beside the conversation, from your desk or your phone.">
   <link rel="canonical" href="https://marlburrow.github.io/sillage/">
+  <link rel="alternate" hreflang="en" href="https://marlburrow.github.io/sillage/">
+  <link rel="alternate" hreflang="fr" href="https://marlburrow.github.io/sillage/fr/">
+  <link rel="alternate" hreflang="x-default" href="https://marlburrow.github.io/sillage/">
+  <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preload" href="fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=selection-1">
+  <link rel="stylesheet" href="style.css?v=credible-1">
   <meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sillage">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="fr_FR">
   <meta property="og:title" content="Sillage: one workspace for your coding agents">
   <meta property="og:description" content="Sillage runs Claude Code, Codex, OpenCode, Grok Build, Google Antigravity and GitHub Copilot CLI in one self-hosted workspace, with your own accounts. Review their changes beside the conversation, from your desk or your phone.">
   <meta property="og:url" content="https://marlburrow.github.io/sillage/">
   <meta property="og:image" content="https://marlburrow.github.io/sillage/og.png">
   <meta name="twitter:card" content="summary_large_image">
-  <script>try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
-  <script src="main.js?v=gallery-1" defer></script>
+  <script>document.documentElement.classList.add('js'); try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
+  <script src="main.js?v=credible-1" defer onerror="document.documentElement.classList.remove('js')"></script>
   <script src="wake.js?v=wake-8" defer></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Sillage",
+    "description": "One self-hosted workspace for Claude Code, Codex, OpenCode, Grok Build, Google Antigravity and GitHub Copilot CLI, as a desktop app or a server.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Windows, Linux",
+    "softwareVersion": "0.45.0",
+    "url": "https://marlburrow.github.io/sillage/",
+    "downloadUrl": "https://marlburrow.github.io/sillage/download.html",
+    "releaseNotes": "https://marlburrow.github.io/sillage/changelog.html",
+    "image": "https://marlburrow.github.io/sillage/og.png",
+    "license": "https://opensource.org/licenses/MIT",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Person", "name": "MarlBurroW", "url": "https://github.com/MarlBurroW" }
+  }
+  </script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="topbar">
     <div class="nav-inner wrap">
-      <a class="brand" href="index.html" aria-label="Sillage home"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <a class="brand" href="index.html" aria-label="Sillage home"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
       <nav id="site-nav" aria-label="Main navigation">
-        <a href="index.html" aria-current="page">Overview</a>
         <a href="features.html">Features</a>
         <a href="agents.html">Agents</a>
+        <a href="docs.html">Docs</a>
+        <a href="changelog.html">Changelog</a>
         <a href="download.html">Download</a>
         <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
       </nav>
       <div class="nav-actions">
-        <button class="icon-button theme-toggle" data-theme-toggle type="button" hidden aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+        <a class="lang-switch" href="fr/index.html" hreflang="fr" lang="fr" data-lang-switch title="Version française">FR</a>
+        <button class="icon-button theme-toggle" data-theme-toggle type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
         <a class="button button-small button-primary" href="download.html">Get Sillage</a>
-        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="menu"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="close"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </div>
     </div>
   </header>
@@ -44,13 +73,14 @@
     <section class="hero" aria-labelledby="hero-title">
       <canvas class="wake" data-wake aria-hidden="true"></canvas>
       <div class="hero-inner wrap">
-        <h1 id="hero-title">Your coding agents,<br> in one workspace.</h1>
-        <p class="lede">Run Claude Code, Codex, OpenCode, Grok Build, Antigravity and GitHub Copilot CLI with your own accounts. Review their changes and pick up any session from your browser.</p>
+        <h1 id="hero-title">Your coding agents,<br> <span class="keep">in one workspace.</span></h1>
+        <p class="lede">Run Claude Code, Codex, OpenCode, Grok Build, Antigravity and GitHub Copilot CLI with your own accounts. Review what they change, and pick up any session from your desk or your phone.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="download.html#install-desktop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Download app</a>
           <a class="button button-secondary" href="download.html#install">Install on a server</a>
         </div>
-        <p class="hero-terms">Free and open source. macOS, Windows and Linux.</p>
+        <p class="hero-terms">Free and open source. macOS, Windows and Linux.<span class="hero-release">Latest release: <!-- latest-release --><a href="changelog.html#v0.45.0">v0.45.0</a>, <time datetime="2026-11-27">27 November 2026</time><!-- /latest-release --></span></p>
+        <div class="hero-agents"><p>Works with</p><ul aria-label="Coding agents Sillage drives"><li><a href="agents.html#agent-claude" title="Claude Code"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true" focusable="false"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" /></svg><span class="sr-only">Claude Code</span></a></li><li><a href="agents.html#agent-codex" title="Codex"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true" focusable="false"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" /></svg><span class="sr-only">Codex</span></a></li><li><a href="agents.html#agent-opencode" title="OpenCode"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true" focusable="false"><path d="M4 1h16v22H4V1zm4 4v14h8V5H8z" /><path d="M8 10h8v9H8z" opacity="0.3" /></svg><span class="sr-only">OpenCode</span></a></li><li><a href="agents.html#agent-grok" title="Grok Build"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true" focusable="false"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815" /></svg><span class="sr-only">Grok Build</span></a></li><li><a href="agents.html#agent-antigravity" title="Antigravity"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"/></svg><span class="sr-only">Antigravity</span></a></li><li><a href="agents.html#agent-copilot" title="GitHub Copilot"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M7.998 14C4.006 14 1.11 11.457 1 10.728v-1.7c.074-.549.592-1.472 1.39-1.803l.031-.19a4 4 0 0 1 .11-.534c-.176-.444-.222-.946-.222-1.446 0-.759.112-1.544.606-2.168.507-.64 1.308-.98 2.384-1.1 1.055-.117 1.98.03 2.576.667q.066.07.121.144a2 2 0 0 1 .126-.144c.596-.638 1.52-.784 2.576-.667 1.076.12 1.877.46 2.383 1.1.495.624.607 1.41.607 2.168 0 .5-.047 1.002-.223 1.446.058.199.086.374.11.534l.033.19c.808.336 1.332 1.284 1.392 1.829v1.634C15 11.356 12.068 14 7.998 14m0-1.296c1.995 0 4.011-.969 4.377-1.25V7.738l-.02-.1c-.429.182-.94.253-1.511.253-1.003 0-1.802-.285-2.371-.865A2.82 2.812 0 0 1 8 6.38a2.835 2.828 0 0 1-.476.648c-.569.58-1.368.865-2.371.865-.57 0-1.082-.07-1.511-.254l-.02.101v3.714c.366.282 2.381 1.25 4.376 1.25M6.917 3.347c-.17-.18-.558-.36-1.472-.259-.892.099-1.294.353-1.499.611-.216.272-.323.689-.323 1.356 0 .693.113 1.022.27 1.197.142.158.454.33 1.262.33.746 0 1.171-.204 1.433-.47.275-.282.46-.722.54-1.356.102-.816-.033-1.218-.211-1.409m3.635-.259c-.913-.101-1.302.08-1.47.26-.179.19-.315.592-.212 1.408.08.634.265 1.074.54 1.356.262.266.687.47 1.434.47.807 0 1.12-.172 1.262-.33.156-.175.269-.504.269-1.197 0-.667-.108-1.084-.324-1.356-.204-.258-.606-.512-1.499-.61Z"/><path d="M6.469 8.765a.656.655 0 0 1 .656.654v1.31a.656.655 0 0 1-1.313 0V9.42a.656.655 0 0 1 .657-.654Zm3.718.654v1.31a.656.655 0 0 1-1.312 0V9.42a.656.655 0 0 1 1.313 0z"/></svg><span class="sr-only">GitHub Copilot</span></a></li></ul></div>
       </div>
       <p class="wake-note"><i>Sillage</i> is French for the wake a boat leaves on the water.</p>
     </section>
@@ -121,59 +151,78 @@
 
     </div>
 
-    <section class="section" aria-label="What Sillage adds">
-      <div class="stories wrap">
-        <article class="story">
-          <div class="story-text">
-            <h2>Read the diff while the agent is still working.</h2>
-            <p>The panel beside the conversation holds the files, the branches and the commit history. You see what a turn changed without switching to a terminal.</p>
-            <ul>
-              <li>Stage, commit and push from the same panel</li>
-              <li>An optional checkpoint before and after every turn</li>
-              <li>A file explorer, an editor and terminals next to the thread</li>
-              <li>A preview of the app the agent is running, with hot reload</li>
-            </ul>
-          </div>
-          <div class="shot crop" data-narrow style="--a:0.5978;--ratio:1522/662;--w:0.8272;--x:0.1728;--y:0;--nratio:560/500;--nw:0.3043;--nx:0.4609;--ny:0.1782"><picture><source srcset="screenshots/panel-git-dark.webp 1840w, screenshots/panel-git-2x-dark.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.272), calc(min(100vw, 1240px) * 1.572)" media="(prefers-color-scheme: dark)"><img src="screenshots/panel-git-light.webp" srcset="screenshots/panel-git-light.webp 1840w, screenshots/panel-git-2x-light.webp 3680w" sizes="(max-width: 600px) calc(100vw * 4.272), calc(min(100vw, 1240px) * 1.572)" width="1840" height="1100" alt="A conversation with the Git panel beside it: a file diff and the commit history of the branch" loading="lazy" decoding="async"></picture></div>
-        </article>
-        <article class="story">
-          <div class="story-text">
-            <h2>Run several tasks, each in its own worktree.</h2>
-            <p>Start a session on a branch Sillage creates for it. Activity lines the sessions up side by side and brings forward the ones that are waiting for you.</p>
-            <ul>
-              <li>Sessions grouped by state: needs input, running, unread</li>
-              <li>Each worktree says whether its branch has been merged</li>
-              <li>A board card keeps the sessions that work on it</li>
-            </ul>
-          </div>
-          <div class="shot crop" data-narrow style="--a:0.6250;--ratio:1283/558;--w:0.8019;--x:0.1981;--y:0;--nratio:570/470;--nw:0.3563;--nx:0.1981;--ny:0.06"><picture><source srcset="screenshots/wall-dark.webp 1600w, screenshots/wall-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" media="(prefers-color-scheme: dark)"><img src="screenshots/wall-light.webp" srcset="screenshots/wall-light.webp 1600w, screenshots/wall-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" width="1600" height="1000" alt="Two sessions side by side in Activity, one waiting for a permission" loading="lazy" decoding="async"></picture></div>
-        </article>
-        <article class="story">
-          <div class="story-text">
-            <h2>Answer from your phone.</h2>
-            <p>A permission request doesn’t have to wait until you are back at your desk. Open the same conversation on a phone, read what the agent did, then allow, deny or reply.</p>
-            <ul>
-              <li>Server keeps sessions running after you close the browser</li>
-              <li>Push notifications when a session needs you, on Server over HTTPS</li>
-              <li>Desktop can be reached privately through Tailscale while the app is open</li>
-            </ul>
-          </div>
-          <div class="devices">
-            <div class="shot crop" style="--a:0.6250;--ratio:1040/612;--w:0.65;--x:0.1981;--y:0"><picture><source srcset="screenshots/permission-dark.webp 1600w, screenshots/permission-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 2), calc(min(100vw, 1240px) * 1.54)" media="(prefers-color-scheme: dark)"><img src="screenshots/permission-light.webp" srcset="screenshots/permission-light.webp 1600w, screenshots/permission-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 2), calc(min(100vw, 1240px) * 1.54)" width="1600" height="1000" alt="A permission request for a shell command, with Allow, Allow for the session and Deny" loading="lazy" decoding="async"></picture></div>
-            <div class="shot"><picture><source srcset="screenshots/hero-mobile-dark.webp 390w, screenshots/hero-mobile-2x-dark.webp 780w" sizes="(max-width: 600px) calc(100vw * 0.91), calc(min(100vw, 1240px) * 0.273)" media="(prefers-color-scheme: dark)"><img src="screenshots/hero-mobile-light.webp" srcset="screenshots/hero-mobile-light.webp 390w, screenshots/hero-mobile-2x-light.webp 780w" sizes="(max-width: 600px) calc(100vw * 0.91), calc(min(100vw, 1240px) * 0.273)" width="390" height="844" alt="The same Sillage conversation on a phone" loading="lazy" decoding="async"></picture></div>
+    <section class="section capabilities" id="capabilities" aria-labelledby="capabilities-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="capabilities-title">Everything around the agent.</h2>
+          <p>The agents write the code. Sillage takes care of the rest: branches, context, review, schedules and costs, at your desk or on your phone.</p>
+        </div>
+      </div>
+      <!-- The names of the catalog's features, drifting. Decoration: scripts/site-currents.mjs fills it. -->
+      <div class="currents" aria-hidden="true">
+        <!-- currents -->
+        <div class="current"><div class="current-run"><span>Six native coding agents</span><span>Switch agents without starting over</span><span>Sub-agents and background work, in view</span><span>A workspace that gets out of the way</span><span>Project-aware dictation</span><span>Folders beyond the repository</span><span>A checkpoint around every turn</span><span>Clean up finished work</span><span>Preview what the agent is building</span><span>Local cards and GitHub issues</span><span>Sessions that can coordinate</span><span>Project memory across sessions</span><span>Agent-proposed integrations</span><span>Several accounts per agent</span><span>Check first, wake the agent when needed</span><span>Decisions for autonomous tasks</span><span>Connect your own tools to Sillage</span><span>Understand token consumption</span><span>Follow up and comment on runs</span><span>Review before sharing</span><span>Share a complete benchmark</span><span>Sillage Server</span><span>A guided first project</span></div><div class="current-run"><span>Six native coding agents</span><span>Switch agents without starting over</span><span>Sub-agents and background work, in view</span><span>A workspace that gets out of the way</span><span>Project-aware dictation</span><span>Folders beyond the repository</span><span>A checkpoint around every turn</span><span>Clean up finished work</span><span>Preview what the agent is building</span><span>Local cards and GitHub issues</span><span>Sessions that can coordinate</span><span>Project memory across sessions</span><span>Agent-proposed integrations</span><span>Several accounts per agent</span><span>Check first, wake the agent when needed</span><span>Decisions for autonomous tasks</span><span>Connect your own tools to Sillage</span><span>Understand token consumption</span><span>Follow up and comment on runs</span><span>Review before sharing</span><span>Share a complete benchmark</span><span>Sillage Server</span><span>A guided first project</span></div></div>
+        <div class="current"><div class="current-run"><span>Conversations that stay with you</span><span>References between conversations</span><span>Your own composer layout</span><span>Search across your conversations</span><span>A little reading while agents work</span><span>An editor that follows the work</span><span>Parallel work, separate worktrees</span><span>Terminals in your workspace</span><span>Images, audio and video in context</span><span>Connect related work</span><span>Act on your other projects</span><span>A shared skill library</span><span>Choose the tools agents get</span><span>Manage the agent installations</span><span>Webhook-triggered work</span><span>Resume after a usage limit</span><span>A session wall for parallel work</span><span>Compare models on the same work</span><span>Know what is running on your host</span><span>Public conversation links</span><span>Present a benchmark</span><span>Private access from your devices</span><span>Read an update before installing it</span></div><div class="current-run"><span>Conversations that stay with you</span><span>References between conversations</span><span>Your own composer layout</span><span>Search across your conversations</span><span>A little reading while agents work</span><span>An editor that follows the work</span><span>Parallel work, separate worktrees</span><span>Terminals in your workspace</span><span>Images, audio and video in context</span><span>Connect related work</span><span>Act on your other projects</span><span>A shared skill library</span><span>Choose the tools agents get</span><span>Manage the agent installations</span><span>Webhook-triggered work</span><span>Resume after a usage limit</span><span>A session wall for parallel work</span><span>Compare models on the same work</span><span>Know what is running on your host</span><span>Public conversation links</span><span>Present a benchmark</span><span>Private access from your devices</span><span>Read an update before installing it</span></div></div>
+        <div class="current"><div class="current-run"><span>A message queue and live steering</span><span>Tool activity, at your reading pace</span><span>A status line you choose</span><span>A command palette that acts</span><span>A file explorer beside the conversation</span><span>Git history and code review</span><span>Follow a branch through delivery</span><span>Your recurring commands, one click away</span><span>A place for each project</span><span>Keep the conversation with its task</span><span>Shared project instructions</span><span>MCP servers in one place</span><span>A browser for agents, watched live</span><span>Scheduled agent tasks</span><span>GitHub issue maintenance</span><span>An API for tasks</span><span>What a session cost and used</span><span>Compare the outputs, not just the numbers</span><span>Conversation exports that work offline</span><span>Demo links for a preview</span><span>Sillage Desktop</span><span>An installable web app with push</span><span>Desktop updates in the app</span></div><div class="current-run"><span>A message queue and live steering</span><span>Tool activity, at your reading pace</span><span>A status line you choose</span><span>A command palette that acts</span><span>A file explorer beside the conversation</span><span>Git history and code review</span><span>Follow a branch through delivery</span><span>Your recurring commands, one click away</span><span>A place for each project</span><span>Keep the conversation with its task</span><span>Shared project instructions</span><span>MCP servers in one place</span><span>A browser for agents, watched live</span><span>Scheduled agent tasks</span><span>GitHub issue maintenance</span><span>An API for tasks</span><span>What a session cost and used</span><span>Compare the outputs, not just the numbers</span><span>Conversation exports that work offline</span><span>Demo links for a preview</span><span>Sillage Desktop</span><span>An installable web app with push</span><span>Desktop updates in the app</span></div></div>
+        <!-- /currents -->
+      </div>
+      <svg class="art-sprite" width="0" height="0" aria-hidden="true" focusable="false"><symbol id="m-claude" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" /></symbol><symbol id="m-codex" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z" /></symbol><symbol id="m-opencode" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="M4 1h16v22H4V1zm4 4v14h8V5H8z" /><path d="M8 10h8v9H8z" opacity="0.3" /></symbol><symbol id="m-grok" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815" /></symbol><symbol id="m-antigravity" viewBox="0 0 16 16" fill="currentColor"><path d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"/></symbol><symbol id="m-copilot" viewBox="0 0 16 16" fill="currentColor"><path d="M7.998 14C4.006 14 1.11 11.457 1 10.728v-1.7c.074-.549.592-1.472 1.39-1.803l.031-.19a4 4 0 0 1 .11-.534c-.176-.444-.222-.946-.222-1.446 0-.759.112-1.544.606-2.168.507-.64 1.308-.98 2.384-1.1 1.055-.117 1.98.03 2.576.667q.066.07.121.144a2 2 0 0 1 .126-.144c.596-.638 1.52-.784 2.576-.667 1.076.12 1.877.46 2.383 1.1.495.624.607 1.41.607 2.168 0 .5-.047 1.002-.223 1.446.058.199.086.374.11.534l.033.19c.808.336 1.332 1.284 1.392 1.829v1.634C15 11.356 12.068 14 7.998 14m0-1.296c1.995 0 4.011-.969 4.377-1.25V7.738l-.02-.1c-.429.182-.94.253-1.511.253-1.003 0-1.802-.285-2.371-.865A2.82 2.812 0 0 1 8 6.38a2.835 2.828 0 0 1-.476.648c-.569.58-1.368.865-2.371.865-.57 0-1.082-.07-1.511-.254l-.02.101v3.714c.366.282 2.381 1.25 4.376 1.25M6.917 3.347c-.17-.18-.558-.36-1.472-.259-.892.099-1.294.353-1.499.611-.216.272-.323.689-.323 1.356 0 .693.113 1.022.27 1.197.142.158.454.33 1.262.33.746 0 1.171-.204 1.433-.47.275-.282.46-.722.54-1.356.102-.816-.033-1.218-.211-1.409m3.635-.259c-.913-.101-1.302.08-1.47.26-.179.19-.315.592-.212 1.408.08.634.265 1.074.54 1.356.262.266.687.47 1.434.47.807 0 1.12-.172 1.262-.33.156-.175.269-.504.269-1.197 0-.667-.108-1.084-.324-1.356-.204-.258-.606-.512-1.499-.61Z"/><path d="M6.469 8.765a.656.655 0 0 1 .656.654v1.31a.656.655 0 0 1-1.313 0V9.42a.656.655 0 0 1 .657-.654Zm3.718.654v1.31a.656.655 0 0 1-1.312 0V9.42a.656.655 0 0 1 1.313 0z"/></symbol><symbol id="m-sillage" viewBox="0 0 100 100" fill="currentColor"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></symbol><symbol id="m-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 3.5 8 12 12.5 20.5 8 12 3.5Z"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5"/><path d="m3.5 16.5 8.5 4.5 8.5-4.5"/></symbol></svg>
+      <div class="bento wrap">
+        <article class="tile tile-wide">
+          <div class="tile-art" aria-hidden="true"><svg viewBox="0 0 560 230" focusable="false"><defs><linearGradient id="art-tail" gradientUnits="userSpaceOnUse" x1="-92" y1="0" x2="-18" y2="0"><stop offset="0" class="art-tail-from"/><stop offset="1" class="art-tail-to"/></linearGradient><clipPath id="lane-straight"><rect x="112" y="0" width="340" height="230"/></clipPath></defs><path class="art-line" d="M0 115H44M516 115H560"/><path class="art-line" d="M44 115C82 115 82 53 120 53H440C478 53 478 115 516 115"/><path class="art-line" d="M44 115H516"/><path class="art-line" d="M44 115C82 115 82 177 120 177H440C478 177 478 115 516 115"/><circle class="lane-merge" cx="516" cy="115" r="4.5" style="--time:9s;--delay:-2s"/><circle class="lane-merge" cx="516" cy="115" r="4.5" style="--time:12s;--delay:-7s"/><circle class="lane-merge" cx="516" cy="115" r="4.5" style="--time:10.5s;--delay:-4s"/><circle class="art-dot" cx="44" cy="115" r="4.5"/><circle class="art-dot" cx="516" cy="115" r="4.5"/><g clip-path="url(#lane-straight)"><g class="lane-run" style="--y:53px;--rest:230px;--time:9s;--delay:-2s"><path class="art-tail" d="M-92 0H-18"/><circle class="art-node" r="16"/><use href="#m-claude" x="-8.5" y="-8.5" width="17" height="17"/></g><g class="lane-run" style="--y:115px;--rest:380px;--time:12s;--delay:-7s"><path class="art-tail" d="M-92 0H-18"/><circle class="art-node" r="16"/><use href="#m-codex" x="-8.5" y="-8.5" width="17" height="17"/></g><g class="lane-run" style="--y:177px;--rest:305px;--time:10.5s;--delay:-4s"><path class="art-tail" d="M-92 0H-18"/><circle class="art-node" r="16"/><use href="#m-copilot" x="-8.5" y="-8.5" width="17" height="17"/></g></g><circle class="lane-commit lane-commit-20" cx="187.6" cy="53" r="4" style="--time:9s;--delay:-2s"/><circle class="lane-commit lane-commit-45 is-ahead" cx="264.6" cy="53" r="4" style="--time:9s;--delay:-2s"/><circle class="lane-commit lane-commit-70 is-ahead" cx="341.6" cy="53" r="4" style="--time:9s;--delay:-2s"/><circle class="lane-commit lane-commit-20" cx="187.6" cy="115" r="4" style="--time:12s;--delay:-7s"/><circle class="lane-commit lane-commit-45" cx="264.6" cy="115" r="4" style="--time:12s;--delay:-7s"/><circle class="lane-commit lane-commit-70" cx="341.6" cy="115" r="4" style="--time:12s;--delay:-7s"/><circle class="lane-commit lane-commit-20" cx="187.6" cy="177" r="4" style="--time:10.5s;--delay:-4s"/><circle class="lane-commit lane-commit-45" cx="264.6" cy="177" r="4" style="--time:10.5s;--delay:-4s"/><circle class="lane-commit lane-commit-70 is-ahead" cx="341.6" cy="177" r="4" style="--time:10.5s;--delay:-4s"/></svg></div>
+          <div class="tile-text">
+            <h3>Run several agents at once.</h3>
+            <p>A branch per task, and every session in view.</p>
+            <ul class="tile-links"><li><a href="features.html#worktrees">Worktrees</a></li><li><a href="features.html#activity">Session wall</a></li><li><a href="features.html#queue-and-steer">Queue and steer</a></li><li><a href="features.html#agents-pane">Sub-agents</a></li><li><a href="features.html#handoff">CLI handoff</a></li><li><a href="features.html#coordination">Session coordination</a></li></ul>
           </div>
         </article>
-        <article class="story">
-          <div class="story-text">
-            <h2>Leave the routine to a schedule.</h2>
-            <p>Run a prompt at an interval, on a cron schedule, or when a webhook fires. A small check script can decide whether there is anything to do before an agent starts.</p>
-            <ul>
-              <li>An unattended agent can leave you a question and pick up your answer</li>
-              <li>Work resumes after a subscription limit resets</li>
-              <li>Webhook triggers need Server and a reachable address</li>
-            </ul>
+        <article class="tile">
+          <div class="tile-art" aria-hidden="true"><svg viewBox="0 0 280 190" focusable="false"><path class="art-line" d="M0 122H280"/><circle class="art-node" cx="30" cy="122" r="8.5"/><circle class="art-dot-quiet" cx="30" cy="122" r="3"/><path class="art-line" d="M30 134v9"/><circle class="art-node" cx="106" cy="122" r="8.5"/><circle class="art-dot-quiet" cx="106" cy="122" r="3"/><path class="art-line" d="M106 134v9"/><circle class="art-node" cx="182" cy="122" r="8.5"/><circle class="art-dot-quiet" cx="182" cy="122" r="3"/><path class="art-line" d="M182 134v9"/><rect class="art-node" x="25" y="148" width="10" height="10" transform="rotate(45 30 153)"/><rect class="art-node" x="177" y="148" width="10" height="10" transform="rotate(45 182 153)"/><circle class="review-ripple" cx="106" cy="153" r="8"/><g class="review-target"><rect class="art-node art-node-accent" x="101" y="148" width="10" height="10" transform="rotate(45 106 153)"/></g><path class="art-line art-accent-soft art-dash" d="M257 104C257 28 106 28 106 108"/><path class="art-line art-accent" d="M98.5 101l7.5 10.5 7.5-10.5"/><path class="art-pulse review-pulse" pathLength="100" d="M257 104C257 28 106 28 106 108"/><circle class="review-ping" cx="257" cy="122" r="16"/><g transform="translate(257 122)"><circle class="art-node" r="16"/><use href="#m-codex" x="-8.5" y="-8.5" width="17" height="17"/></g></svg></div>
+          <div class="tile-text">
+            <h3>Review every turn.</h3>
+            <p>See what each turn changed beside the conversation, and go back to a checkpoint.</p>
+            <ul class="tile-links"><li><a href="features.html#git">Git and diffs</a></li><li><a href="features.html#checkpoints">Checkpoints</a></li><li><a href="features.html#file-explorer">Explorer and editor</a></li><li><a href="features.html#terminals">Terminals</a></li><li><a href="features.html#previews">Dev-server previews</a></li><li><a href="features.html#agent-browser">Agent browser</a></li></ul>
           </div>
-          <div class="shot crop" data-narrow style="--a:0.6250;--ratio:1283/558;--w:0.8019;--x:0.1981;--y:0;--nratio:570/340;--nw:0.3563;--nx:0.35;--ny:0.128"><picture><source srcset="screenshots/schedule-dark.webp 1600w, screenshots/schedule-2x-dark.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" media="(prefers-color-scheme: dark)"><img src="screenshots/schedule-light.webp" srcset="screenshots/schedule-light.webp 1600w, screenshots/schedule-2x-light.webp 3200w" sizes="(max-width: 600px) calc(100vw * 3.649), calc(min(100vw, 1240px) * 1.621)" width="1600" height="1000" alt="An automation that checks for new CLI releases every Monday, with its run history" loading="lazy" decoding="async"></picture></div>
+        </article>
+        <article class="tile">
+          <div class="tile-art" aria-hidden="true"><svg viewBox="0 0 280 190" focusable="false"><rect class="art-node" x="24" y="48" width="112" height="74" rx="7"/><path class="art-line art-round" d="M12 133h136"/><circle class="any-ack" cx="80" cy="85" r="22"/><use class="art-brand" href="#m-sillage" x="64" y="69" width="32" height="32"/><rect class="art-node" x="204" y="36" width="54" height="108" rx="11"/><path class="art-line art-round" d="M223 47h16"/><use class="art-brand" href="#m-sillage" x="219" y="80" width="24" height="24"/><circle class="any-tap" cx="231" cy="124" r="6"/><path class="art-line art-dash" d="M142 78C162 54 184 54 200 74"/><path class="any-pulse any-out" pathLength="100" d="M142 78C162 54 184 54 200 74"/><path class="any-pulse any-back" pathLength="100" d="M200 74C184 54 162 54 142 78"/><circle class="any-ping" cx="254" cy="40" r="6.5"/><g class="any-dot"><circle class="art-dot-accent" cx="254" cy="40" r="6.5"/></g></svg></div>
+          <div class="tile-text">
+            <h3>Answer from anywhere.</h3>
+            <p>Sessions keep running on the host. Answer a question from your phone.</p>
+            <ul class="tile-links"><li><a href="features.html#persistent-sessions">Persistent sessions</a></li><li><a href="features.html#remote-access">Remote access</a></li><li><a href="features.html#notifications">Push notifications <span class="tile-tag">Server</span></a></li><li><a href="features.html#decisions">Decisions</a></li><li><a href="features.html#usage-resume">Usage-limit resume</a></li><li><a href="features.html#status-line">Status line</a></li></ul>
+          </div>
+        </article>
+        <article class="tile">
+          <div class="tile-art" aria-hidden="true"><svg viewBox="0 0 280 190" focusable="false"><path class="art-line" d="M140 57C140 104 30 92 30 136"/><path class="art-pulse ctx-pulse" pathLength="100" style="--delay:0s" d="M140 57C140 104 30 92 30 136"/><path class="art-line" d="M140 57C140 104 74 92 74 136"/><path class="art-pulse ctx-pulse" pathLength="100" style="--delay:0.5s" d="M140 57C140 104 74 92 74 136"/><path class="art-line" d="M140 57C140 104 118 92 118 136"/><path class="art-pulse ctx-pulse" pathLength="100" style="--delay:0.9s" d="M140 57C140 104 118 92 118 136"/><path class="art-line" d="M140 57C140 104 162 92 162 136"/><path class="art-pulse ctx-pulse" pathLength="100" style="--delay:1.4s" d="M140 57C140 104 162 92 162 136"/><path class="art-line" d="M140 57C140 104 206 92 206 136"/><path class="art-pulse ctx-pulse" pathLength="100" style="--delay:1.8s" d="M140 57C140 104 206 92 206 136"/><path class="art-line" d="M140 57C140 104 250 92 250 136"/><path class="art-pulse ctx-pulse" pathLength="100" style="--delay:2.2s" d="M140 57C140 104 250 92 250 136"/><circle class="art-node" cx="140" cy="38" r="19"/><use class="art-brand" href="#m-layers" x="130" y="28" width="20" height="20"/><g transform="translate(30 150)" style="--delay:0s"><circle class="art-node ctx-node" r="14"/><use href="#m-claude" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(74 150)" style="--delay:0.5s"><circle class="art-node ctx-node" r="14"/><use href="#m-codex" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(118 150)" style="--delay:0.9s"><circle class="art-node ctx-node" r="14"/><use href="#m-opencode" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(162 150)" style="--delay:1.4s"><circle class="art-node ctx-node" r="14"/><use href="#m-grok" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(206 150)" style="--delay:1.8s"><circle class="art-node ctx-node" r="14"/><use href="#m-antigravity" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(250 150)" style="--delay:2.2s"><circle class="art-node ctx-node" r="14"/><use href="#m-copilot" x="-7.5" y="-7.5" width="15" height="15"/></g></svg></div>
+          <div class="tile-text">
+            <h3>One context for every agent.</h3>
+            <p>Instructions, memory, skills and MCP servers, shared by all six.</p>
+            <ul class="tile-links"><li><a href="features.html#instructions">Instructions</a></li><li><a href="features.html#memory">Memory</a></li><li><a href="features.html#skills">Skills</a></li><li><a href="features.html#mcp">MCP servers</a></li><li><a href="features.html#session-references">Session references</a></li><li><a href="features.html#cross-projects">Cross-project work</a></li></ul>
+          </div>
+        </article>
+        <article class="tile">
+          <div class="tile-art" aria-hidden="true"><svg viewBox="0 0 280 190" focusable="false"><defs><linearGradient id="art-sweep" gradientUnits="userSpaceOnUse" x1="83.5" y1="0" x2="140" y2="0"><stop offset="0" class="art-tail-from"/><stop offset="1" class="art-tail-to"/></linearGradient></defs><circle class="art-line" cx="140" cy="95" r="64"/><path class="art-line" d="M140 39L140 31M168 46.5L172 39.6M188.5 67L195.4 63M196 95L204 95M188.5 123L195.4 127M168 143.5L172 150.4M140 151L140 159M112 143.5L108 150.4M91.5 123L84.6 127M84 95L76 95M91.5 67L84.6 63M112 46.5L108 39.6"/><g class="clock-hand"><path class="art-sweep" d="M83.5 65A64 64 0 0 1 140 31"/><path class="art-line art-ink" d="M140 95V46"/></g><circle class="dial-ripple" cx="140" cy="31" r="6" style="--delay:0s"/><g class="dial-mark" style="--delay:0s"><circle class="art-dot-accent" cx="140" cy="31" r="6"/></g><circle class="dial-ripple" cx="195.4" cy="127" r="6" style="--delay:3s"/><g class="dial-mark" style="--delay:3s"><circle class="art-dot-accent" cx="195.4" cy="127" r="6"/></g><circle class="dial-ripple" cx="84.6" cy="127" r="6" style="--delay:6s"/><g class="dial-mark" style="--delay:6s"><circle class="art-dot-accent" cx="84.6" cy="127" r="6"/></g><circle class="art-dot" cx="140" cy="95" r="5"/></svg></div>
+          <div class="tile-text">
+            <h3>Automate the routine.</h3>
+            <p>A prompt on a schedule or on an event, and a script that decides whether an agent is needed.</p>
+            <ul class="tile-links"><li><a href="features.html#schedules">Schedules</a></li><li><a href="features.html#check-scripts">Check scripts</a></li><li><a href="features.html#webhooks">Webhooks <span class="tile-tag">Server</span></a></li><li><a href="features.html#issue-maintenance">GitHub issues</a></li><li><a href="features.html#task-api">Task API</a></li><li><a href="features.html#external-mcp">External tools (MCP)</a></li></ul>
+          </div>
+        </article>
+        <article class="tile tile-wide">
+          <div class="tile-art" aria-hidden="true"><svg viewBox="0 0 560 230" focusable="false"><path class="art-line" d="M110 160H450"/><g class="measure-units"><circle class="art-unit" cx="150" cy="146" r="5" style="--k:0"/><circle class="art-unit" cx="150" cy="132" r="5" style="--k:1"/><circle class="art-unit" cx="150" cy="118" r="5" style="--k:2"/><circle class="art-unit" cx="150" cy="104" r="5" style="--k:3"/><circle class="art-unit" cx="150" cy="90" r="5" style="--k:4"/><circle class="art-unit art-unit-top" cx="150" cy="76" r="5" style="--k:5"/><circle class="art-unit" cx="202" cy="146" r="5" style="--k:0.6"/><circle class="art-unit" cx="202" cy="132" r="5" style="--k:1.6"/><circle class="art-unit" cx="202" cy="118" r="5" style="--k:2.6"/><circle class="art-unit" cx="202" cy="104" r="5" style="--k:3.6"/><circle class="art-unit" cx="202" cy="90" r="5" style="--k:4.6"/><circle class="art-unit" cx="202" cy="76" r="5" style="--k:5.6"/><circle class="art-unit" cx="202" cy="62" r="5" style="--k:6.6"/><circle class="art-unit art-unit-top" cx="202" cy="48" r="5" style="--k:7.6"/><circle class="art-unit" cx="254" cy="146" r="5" style="--k:1.2"/><circle class="art-unit" cx="254" cy="132" r="5" style="--k:2.2"/><circle class="art-unit" cx="254" cy="118" r="5" style="--k:3.2"/><circle class="art-unit art-unit-top" cx="254" cy="104" r="5" style="--k:4.2"/><circle class="art-unit" cx="306" cy="146" r="5" style="--k:1.8"/><circle class="art-unit" cx="306" cy="132" r="5" style="--k:2.8"/><circle class="art-unit" cx="306" cy="118" r="5" style="--k:3.8"/><circle class="art-unit" cx="306" cy="104" r="5" style="--k:4.8"/><circle class="art-unit art-unit-top" cx="306" cy="90" r="5" style="--k:5.8"/><circle class="art-unit" cx="358" cy="146" r="5" style="--k:2.4"/><circle class="art-unit" cx="358" cy="132" r="5" style="--k:3.4"/><circle class="art-unit art-unit-top" cx="358" cy="118" r="5" style="--k:4.4"/><circle class="art-unit" cx="410" cy="146" r="5" style="--k:3"/><circle class="art-unit" cx="410" cy="132" r="5" style="--k:4"/><circle class="art-unit" cx="410" cy="118" r="5" style="--k:5"/><circle class="art-unit" cx="410" cy="104" r="5" style="--k:6"/><circle class="art-unit" cx="410" cy="90" r="5" style="--k:7"/><circle class="art-unit" cx="410" cy="76" r="5" style="--k:8"/><circle class="art-unit art-unit-top" cx="410" cy="62" r="5" style="--k:9"/></g><g transform="translate(150 184)"><circle class="art-node" r="14"/><use href="#m-claude" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(202 184)"><circle class="art-node" r="14"/><use href="#m-codex" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(254 184)"><circle class="art-node" r="14"/><use href="#m-opencode" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(306 184)"><circle class="art-node" r="14"/><use href="#m-grok" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(358 184)"><circle class="art-node" r="14"/><use href="#m-antigravity" x="-7.5" y="-7.5" width="15" height="15"/></g><g transform="translate(410 184)"><circle class="art-node" r="14"/><use href="#m-copilot" x="-7.5" y="-7.5" width="15" height="15"/></g></svg></div>
+          <div class="tile-text">
+            <h3>Measure, compare, share.</h3>
+            <p>What each agent costs, which model does the job best, and a clean way to show it.</p>
+            <ul class="tile-links"><li><a href="features.html#consumption">Consumption</a></li><li><a href="features.html#session-details">Session cost</a></li><li><a href="features.html#benchmarks">Benchmarks</a></li><li><a href="features.html#conversation-export">Exports</a></li><li><a href="features.html#public-links">Public links <span class="tile-tag">Server</span></a></li><li><a href="features.html#demo-links">Demo links <span class="tile-tag">Server</span></a></li></ul>
+          </div>
+        </article>
+        <article class="tile tile-catalog">
+          <div class="tile-art tile-figure" aria-hidden="true"><span>69</span></div>
+          <div class="tile-text">
+            <h3>And 33 more.</h3>
+            <p>Search all 69 features, with what works in Desktop, in Server or in both.</p>
+            <p class="tile-cta"><a class="link" href="features.html">Open the catalog</a></p>
+          </div>
         </article>
       </div>
     </section>
@@ -185,8 +234,8 @@
           <p>From a conversation on a computer to a decision taken on a phone. The film has sound.</p>
         </div>
         <div class="film-stage">
-          <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film aria-label="Sillage product film, 54 seconds"><source src="film/sillage-film.mp4" type="video/mp4"><a href="film/sillage-film.mp4">Download the product film</a></video>
-          <a class="film-poster shot" data-film-open href="#film" aria-label="Play the Sillage film, 54 seconds, with sound">
+          <video controls preload="none" playsinline data-poster="film/poster.jpg" width="1920" height="1080" data-film aria-label="Sillage product film, 54 seconds"><source src="film/sillage-film.mp4" type="video/mp4"><a href="film/sillage-film.mp4">Download the product film</a></video>
+          <a class="film-poster shot" data-film-open href="#film" aria-label="Play the film, 54 seconds, with sound">
             <picture><source srcset="film/poster-dark.jpg" media="(prefers-color-scheme: dark)"><img src="film/poster-light.jpg" width="1920" height="1080" alt="" loading="lazy" decoding="async"></picture>
             <span class="film-play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="m10 8.4 5.6 3.6-5.6 3.6z" fill="currentColor" stroke="none"/></svg>Play the film</span>
           </a>
@@ -194,22 +243,35 @@
       </div>
     </section>
 
-    <section class="section" aria-labelledby="chapters-title">
+    <section class="section" id="how" aria-labelledby="how-title">
       <div class="wrap">
         <div class="section-head">
-          <h2 id="chapters-title">69 features, each one written down.</h2>
-          <p>The feature list is a plain catalog you can search, with what works in Desktop, in Server or in both.</p>
+          <h2 id="how-title">What runs where.</h2>
+          <p>Sillage runs on a machine you choose and drives the agents’ own CLIs there. Your projects and conversations stay on that machine, and the agents reach their providers the way they always do.</p>
         </div>
-        <div class="chapters">
-          <a class="chapter" href="features.html#conversations"><strong>Conversations</strong><span>Queue and steer, references, palette, status line, sub-agents</span><b>14</b></a>
-          <a class="chapter" href="features.html#code"><strong>Code and worktrees</strong><span>Explorer, editor, Git, checkpoints, dev-server previews</span><b>12</b></a>
-          <a class="chapter" href="features.html#projects"><strong>Projects and planning</strong><span>Boards, GitHub issues, linked cards, work across projects</span><b>6</b></a>
-          <a class="chapter" href="features.html#context"><strong>Context and tools</strong><span>Instructions, memory, skills, MCP, a browser for agents</span><b>9</b></a>
-          <a class="chapter" href="features.html#automation"><strong>Automation</strong><span>Schedules, webhooks, decisions, an API for tasks</span><b>8</b></a>
-          <a class="chapter" href="features.html#insights"><strong>Activity and insights</strong><span>Activity wall, consumption, session cost, model benchmarks</span><b>7</b></a>
-          <a class="chapter" href="features.html#sharing"><strong>Export and sharing</strong><span>Offline exports, public links, demo links, slideshows</span><b>6</b></a>
-          <a class="chapter" href="features.html#editions"><strong>Editions and access</strong><span>Desktop, Server, remote access, tours, release notes</span><b>7</b></a>
-        </div>
+        <ol class="flow">
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="14" height="10" rx="1.5"/><path d="M6 18h6M9 14v4"/><rect x="17" y="9" width="5" height="10" rx="1.2"/></svg>
+            <h3>Your screens</h3>
+            <p>The Desktop window, or a browser on your laptop, phone or tablet.</p>
+          </li>
+          <li class="flow-core">
+            <svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg>
+            <h3>Sillage</h3>
+            <p>Desktop on your computer, or Server on a host you control. Projects, conversations, the board and memory live in its local database.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6.5 9 3 3-3 3M12 15h5"/></svg>
+            <h3>The agents’ CLIs</h3>
+            <p>Claude Code, Codex, OpenCode, Grok Build, Antigravity and Copilot CLI run on the same machine, in your Git repositories.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.6 4.5 4.5 0 0 0 7 18.5Z"/></svg>
+            <h3>Their providers</h3>
+            <p>Each CLI signs in with your account or API key and calls its own provider. Sillage is not a proxy and has no model of its own.</p>
+          </li>
+        </ol>
+        <p class="flow-foot"><a class="link" href="security.html">What stays on your machine, and what leaves it</a></p>
       </div>
     </section>
 
@@ -224,8 +286,8 @@
             <h3>Desktop, on your computer</h3>
             <p>An app with its own server and Node runtime. Nothing to configure; it updates itself.</p>
             <div class="install-list">
-              <a data-asset="mac-arm64.dmg" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg"><span>macOS</span><span>Apple Silicon, .dmg</span></a>
-              <a data-asset="win-x64.exe" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe"><span>Windows</span><span>x64, .exe</span></a>
+              <a data-asset="mac-arm64.dmg" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-mac-arm64.dmg"><span>macOS</span><span>Apple Silicon, .dmg · <span data-asset-size="mac-arm64.dmg">186 MB</span></span></a>
+              <a data-asset="win-x64.exe" href="https://github.com/MarlBurroW/sillage/releases/latest/download/Sillage-win-x64.exe"><span>Windows</span><span>x64, .exe · <span data-asset-size="win-x64.exe">155 MB</span></span></a>
               <a href="download.html#install-desktop"><span>Linux</span><span>.deb or AppImage, x64 or arm64</span></a>
             </div>
             <a class="link" href="download.html#install-desktop">All packages and first-launch notes</a>
@@ -234,30 +296,39 @@
             <h3>Server, on a host you control</h3>
             <p>A background service on Linux or an Apple Silicon Mac. Agents keep working when you close the browser, and you reach it from any device.</p>
             <div class="command">
-              <pre><code id="home-install-command">curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code></pre>
+              <pre><code id="home-install-command">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>MarlBurroW/<wbr>sillage/<wbr>main/<wbr>install.sh | bash</code></pre>
               <button class="copy-button" type="button" data-copy="#home-install-command" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><span data-copy-label>Copy</span></button>
             </div>
             <p id="copy-status" class="sr-only" role="status" aria-live="polite"></p>
-            <a class="link" href="download.html#install">Docker, Kubernetes, WSL2 and remote access</a>
+            <div class="install-list">
+              <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/install.md#docker"><span>Docker</span><span>amd64 and arm64 image</span></a>
+              <a href="https://github.com/MarlBurroW/sillage/blob/main/deploy/helm/sillage/README.md"><span>Kubernetes</span><span>Helm chart</span></a>
+              <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md"><span>Windows</span><span>Through WSL2</span></a>
+            </div>
+            <a class="link" href="download.html#install">Requirements, guides and remote access</a>
           </div>
         </div>
       </div>
     </section>
 
 
-    <section class="section" aria-labelledby="faq-title">
+    <section class="section" id="faq" aria-labelledby="faq-title">
       <div class="faq wrap">
         <div class="faq-head">
-          <h2 id="faq-title">Before you install</h2>
+          <h2 id="faq-title">Before you install.</h2>
           <p>Something missing or unclear?</p>
           <a class="link" href="https://github.com/MarlBurroW/sillage/issues">Open an issue</a>
         </div>
         <div class="rows">
           <details><summary>Is Sillage free?</summary><p>Yes. Sillage is free and open source under the MIT license. You bring the accounts, subscriptions or API keys your agents require. There is no Sillage subscription.</p></details>
           <details><summary>Does it replace my coding agents?</summary><p>No. Sillage runs the native Claude Code, Codex, OpenCode, Grok Build, Google Antigravity and GitHub Copilot CLI tools. They keep their own capabilities and permission flows, and share one interface for your projects and conversations.</p></details>
+          <details><summary>What do I need before installing?</summary><p>For Desktop, the app and Git: macOS has it with Apple’s Command Line Tools, Windows needs Git for Windows, and the Linux .deb installs it. For Server, a Linux host with systemd or an Apple Silicon Mac, with curl, tar and Git; the installer brings Node.js if needed. Then install the agent CLIs from Sillage’s settings and sign in with your accounts.</p><a class="link" href="download.html#install-desktop">System requirements</a></details>
           <details><summary>Where do my code and conversations live?</summary><p>Sillage stores its workspace on the computer or server you choose. Your agents still talk to their configured AI providers: hosting Sillage yourself doesn’t make those models local. OpenCode can use local models when its providers support them.</p></details>
+          <details><summary>Does Sillage collect data about me?</summary><p>No. There is no telemetry, analytics or crash reporting, and nothing about you or your code goes to its author. Sillage does contact a few services on its own, such as GitHub to check for updates; the security page lists each one, and when.</p><a class="link" href="security.html#leaves">What Sillage sends, and when</a></details>
           <details><summary>Can I use it from my phone?</summary><p>Yes. Open Sillage Server in your phone’s browser, or enable Remote access in Desktop, which uses Tailscale. Desktop has to stay open; Server runs as a service. In both cases the host must stay awake. Push notifications are available in the Server edition.</p></details>
           <details><summary>Can I share my server with a team?</summary><p>Server supports several accounts and shared projects for people you trust. Agents run under the same system account, so it is not an isolated environment for untrusted users. Put it behind a VPN or a protected HTTPS address. <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Remote access guide</a></p></details>
+          <details><summary>How do updates work?</summary><p>Desktop checks GitHub for a new release when it starts and every four hours, downloads it in the background, and installs it when you choose <strong>Restart and update</strong>. Server updates from Settings › About or by running the install command again, and keeps the two previous versions on disk. With Docker, pull a newer image.</p></details>
+          <details><summary>How mature is Sillage?</summary><p>Young, and moving fast: <!-- release-count -->53<!-- /release-count --> releases since July 2026, each listed with its notes. Much of Sillage is built from inside Sillage, so its everyday paths get constant use. Bugs and rough edges go to GitHub issues.</p><a class="link" href="changelog.html">Read the changelog</a></details>
         </div>
       </div>
     </section>
@@ -275,23 +346,64 @@
         </div>
       </div>
     </section>
+    <section class="section closing" aria-labelledby="closing-title">
+      <div class="next-step wrap">
+        <div><h2 id="closing-title">Try it on your next task.</h2><p>Free and open source. Install the desktop app, or put Sillage on a server you control.</p></div>
+        <div class="next-actions">
+          <a class="button button-primary" href="download.html#install-desktop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Download app</a>
+          <a class="button button-secondary" href="download.html#install">Install on a server</a>
+        </div>
+      </div>
+    </section>
   </main>
   <footer class="footer">
     <div class="footer-inner wrap">
-      <div>
-        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <div class="footer-brand">
+        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+        <p class="footer-tagline">One workspace for your coding agents.</p>
         <p>Free and open source under the MIT license. Independent, and not affiliated with the agent providers.</p>
+        <p class="footer-release"><!-- release-badge --><a class="release-badge" href="changelog.html#v0.45.0"><span class="release-dot" aria-hidden="true"></span><span>Latest release</span> <strong>v0.45.0</strong><span class="release-sep" aria-hidden="true">·</span><time datetime="2026-11-27">27 November 2026</time></a><!-- /release-badge --></p>
       </div>
-      <nav aria-label="Footer">
-        <a href="features.html">Features</a>
-        <a href="agents.html">Agents</a>
-        <a href="download.html">Download</a>
-        <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/features.md">Documentation</a>
-        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
-        <a href="https://github.com/MarlBurroW/sillage/issues">Report an issue</a>
-        <a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">License</a>
+      <nav class="footer-nav" aria-label="Footer">
+        <div>
+          <h2>Product</h2>
+          <ul>
+            <li><a href="index.html">Overview</a></li>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="agents.html">Agents</a></li>
+            <li><a href="download.html">Download</a></li>
+            <li><a href="changelog.html">Changelog</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Resources</h2>
+          <ul>
+            <li><a href="docs.html">Documentation</a></li>
+            <li><a href="docs.html#start">Getting started</a></li>
+            <li><a href="security.html">Security and privacy</a></li>
+            <li><a href="download.html#compare">Desktop or Server</a></li>
+            <li><a href="index.html#faq">Questions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/MarlBurroW/sillage">Source code</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases">All releases</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases.atom">Release feed</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/issues">Report an issue</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">MIT license</a></li>
+          </ul>
+        </div>
       </nav>
     </div>
+    <div class="footer-base wrap">
+      <p>© 2026 MarlBurroW</p>
+      <p class="footer-languages" data-lang-menu><span aria-current="true" lang="en">English</span><a href="fr/index.html" hreflang="fr" lang="fr">Français</a></p>
+      <p>No cookies, no analytics. Your theme choice stays in your browser.</p>
+      <a class="footer-top" href="#main"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m0 0-5 5m5-5 5 5"/></svg>Back to top</a>
+    </div>
+    <div class="footer-mark" aria-hidden="true"><div data-word="Sillage"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg></div></div>
   </footer>
   <dialog class="zoom-dialog" data-zoom-dialog aria-label="Product screenshot">
     <div class="viewer-toolbar"><p data-zoom-title></p><button type="button" class="viewer-size" data-zoom-size aria-pressed="false">Zoom in</button><button class="icon-button" type="button" data-dialog-close aria-label="Close screenshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>

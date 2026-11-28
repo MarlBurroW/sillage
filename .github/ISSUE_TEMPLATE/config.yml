@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/MarlBurroW/sillage/security/advisories/new
+    about: Please report security problems privately, not in a public issue.
+  - name: Documentation
+    url: https://marlburrow.github.io/sillage/docs.html
+    about: Getting started, installation, remote access and the other guides.

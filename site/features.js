@@ -7,6 +7,8 @@
   const clearSearch = document.querySelector('[data-clear-search]')
   if (!controls || !search || !edition || !resultCount || !empty || !clearSearch) return
 
+  // The French page is built from this one; only the count below is written by this script.
+  const french = document.documentElement.lang === 'fr'
   const normalize = (value) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase()
   const categories = [...document.querySelectorAll('[data-feature-category]')]
   const links = [...document.querySelectorAll('[data-category]')]
@@ -68,7 +70,9 @@
       }
     })
     const filtered = words.length > 0 || edition.value !== 'all' || category !== 'all'
-    resultCount.textContent = `${total} ${total === 1 ? 'feature' : 'features'}${filtered ? ` of ${features.length}` : ' to explore'}`
+    resultCount.textContent = french
+      ? `${total} ${total === 1 ? 'fonctionnalité' : 'fonctionnalités'}${filtered ? ` sur ${features.length}` : ' à découvrir'}`
+      : `${total} ${total === 1 ? 'feature' : 'features'}${filtered ? ` of ${features.length}` : ' to explore'}`
     empty.hidden = total > 0
     clearSearch.hidden = !search.value
     document.querySelector('.catalog-results-bar [data-reset-filters]').hidden = !filtered
@@ -126,6 +130,15 @@
   document.querySelectorAll('[data-reset-filters]').forEach((button) => button.addEventListener('click', reset))
   addEventListener('hashchange', () => restoreUrl({ scroll: true }))
   addEventListener('popstate', () => restoreUrl({ scroll: true }))
+  // "/" jumps to the search, as on documentation sites, unless the reader is already typing.
+  addEventListener('keydown', (event) => {
+    if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
+    const target = event.target
+    if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
+    event.preventDefault()
+    search.focus()
+    search.select()
+  })
   controls.hidden = false
   restoreUrl({ scroll: Boolean(location.hash) })
 })()

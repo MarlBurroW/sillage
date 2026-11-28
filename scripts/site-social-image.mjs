@@ -1,12 +1,19 @@
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 const root = new URL('../', import.meta.url)
 
-/** Render the social card from the same local brand and product assets. The site and the app share it, so a link to either previews the same product. */
-export async function renderSiteSocialImage(browser) {
+const homeCard = {
+  en: { title: 'One workspace for Claude Code, Codex, OpenCode, Grok Build, Antigravity and GitHub Copilot.', line: 'Self-hosted and open source', files: ['site/og.png', 'apps/web/public/og.png'] },
+  // French runs longer: one size down keeps the headline on three lines, clear of the capture.
+  fr: { title: 'Un espace de travail pour Claude Code, Codex, OpenCode, Grok Build, Antigravity et GitHub Copilot.', line: 'Auto-hébergé et open source', files: ['site/og/fr/home.png'], size: 52 },
+}
+
+/** Render the social card from the same local brand and product assets. The site and the app share the English one, so a link to either previews the same product. */
+export async function renderSiteSocialImage(browser, language = 'en') {
+  const card = homeCard[language]
   const [symbol, font, screenshot] = await Promise.all([
     readFile(new URL('docs/brand/symbol.svg', root), 'utf8'),
     readFile(new URL('site/fonts/archivo-latin.woff2', root)),
@@ -20,20 +27,23 @@ export async function renderSiteSocialImage(browser) {
       body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #f0f2f6; color: #0c1a2b; font-family: Archivo, sans-serif; }
       .brand { position: absolute; top: 52px; left: 64px; display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 680; font-stretch: 112%; letter-spacing: -0.9px; }
       .brand svg { width: 42px; height: 42px; color: #3b4bdb; }
-      h1 { position: absolute; left: 64px; top: 150px; width: 1040px; margin: 0; font-size: 60px; line-height: 1.04; letter-spacing: -1.7px; font-weight: 620; font-stretch: 114%; }
+      h1 { position: absolute; left: 64px; top: 150px; width: 1070px; margin: 0; font-size: ${card.size || 60}px; line-height: 1.04; letter-spacing: -1.7px; font-weight: 620; font-stretch: 114%; }
       p { position: absolute; left: 64px; bottom: 54px; margin: 0; font-size: 24px; color: #47566b; }
       .product { position: absolute; top: 392px; left: 640px; width: 760px; background: #fff; border: 1px solid #d3d9e3; border-radius: 10px; box-shadow: 0 24px 60px -18px #0c1a2b40; overflow: hidden; }
       .product img { display: block; width: 100%; }
     </style></head><body>
       <div class="brand">${symbol}<span>Sillage</span></div>
-      <h1>One workspace for Claude Code, Codex, OpenCode, Grok Build, Antigravity and GitHub Copilot.</h1>
-      <p>Self-hosted and open source</p>
+      <h1>${card.title}</h1>
+      <p>${card.line}</p>
       <div class="product"><img src="data:image/webp;base64,${screenshot.toString('base64')}" alt=""></div>
     </body></html>`)
     await page.evaluate(() => document.fonts.ready)
     await page.locator('.product img').evaluate((image) => image.decode())
-    const card = await page.screenshot()
-    await Promise.all(['site/og.png', 'apps/web/public/og.png'].map((path) => writeFile(fileURLToPath(new URL(path, root)), card)))
+    const image = await page.screenshot()
+    await Promise.all(card.files.map(async (path) => {
+      await mkdir(dirname(fileURLToPath(new URL(path, root))), { recursive: true })
+      await writeFile(fileURLToPath(new URL(path, root)), image)
+    }))
   } finally {
     await page.close()
   }
@@ -119,10 +129,73 @@ export async function renderFilmPosters(browser) {
   }
 }
 
+/** Pages whose links deserve their own card rather than the product one. Static text only: no count that would go stale. */
+const pageCards = {
+  en: [
+    ['changelog', 'Changelog', 'Every release of Sillage, newest first, with its notes.'],
+    ['docs', 'Documentation', 'Getting started, then the guides for Desktop, Server and your agents.'],
+    ['security', 'Security and privacy', 'What stays on your machine, what leaves it, and how to report a problem.'],
+    ['download', 'Download Sillage', 'The desktop app for macOS, Windows and Linux, or a server you control.'],
+    ['features', 'Features', 'Everything Sillage does, with the editions each feature works in.'],
+    ['agents', 'Agents', 'Claude Code, Codex, OpenCode, Grok Build, Antigravity and GitHub Copilot, each through its own CLI.'],
+  ],
+  fr: [
+    ['changelog', 'Nouveautés', 'Chaque version de Sillage, de la plus récente à la plus ancienne, avec ses notes.'],
+    ['docs', 'Documentation', 'Pour démarrer, puis les guides de Desktop, de Server et de tes agents.'],
+    ['security', 'Sécurité et confidentialité', 'Ce qui reste sur ta machine, ce qui en sort, et comment signaler un problème.'],
+    ['download', 'Télécharger Sillage', 'L’app de bureau pour macOS, Windows et Linux, ou un serveur que tu contrôles.'],
+    ['features', 'Fonctionnalités', 'Tout ce que fait Sillage, avec les éditions où chaque fonctionnalité marche.'],
+    ['agents', 'Agents', 'Claude Code, Codex, OpenCode, Grok Build, Antigravity et GitHub Copilot, chacun par son propre CLI.'],
+  ],
+}
+
+/** Render a card per page in `site/og/` (`site/og/<lang>/` for a translation): the brand, the page's title and the water with its wake. */
+export async function renderPageCards(browser, language = 'en') {
+  const folder = language === 'en' ? 'site/og/' : `site/og/${language}/`
+  await mkdir(fileURLToPath(new URL(folder, root)), { recursive: true })
+  const [symbol, font] = await Promise.all([
+    readFile(new URL('docs/brand/symbol.svg', root), 'utf8'),
+    readFile(new URL('site/fonts/archivo-latin.woff2', root)),
+  ])
+  const theme = posterThemes.light
+  const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 })
+  try {
+    for (const [name, title, line] of pageCards[language]) {
+      await page.setContent(`<!doctype html><html lang="en"><head><style>
+        @font-face { font-family: Archivo; src: url(data:font/woff2;base64,${font.toString('base64')}); font-weight: 100 900; font-stretch: 62% 125%; }
+        body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: radial-gradient(70% 90% at 85% 25%, ${theme.foam}, ${theme.paper} 72%); color: ${theme.ink}; font-family: Archivo, sans-serif; }
+        .water { position: absolute; inset: 0; width: 100%; height: 100%; }
+        /* Still water under the text, the wake on the right: the same mask as the home page's hero. */
+        .calm { position: absolute; inset: 0; background: linear-gradient(90deg, ${theme.paper} 0 40%, transparent 74%); }
+        .brand { position: absolute; top: 52px; left: 64px; display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 680; font-stretch: 112%; letter-spacing: -0.9px; }
+        .brand svg { width: 42px; height: 42px; color: ${theme.wake}; }
+        /* Title and line stack, so a title on two lines pushes the line down instead of covering it. */
+        .copy { position: absolute; left: 64px; top: 0; bottom: 96px; width: 940px; display: flex; flex-direction: column; justify-content: center; gap: 26px; }
+        h1 { margin: 0; font-size: ${title.length > 16 ? 78 : 92}px; line-height: 1; letter-spacing: -2.4px; font-weight: 620; font-stretch: 114%; text-wrap: balance; }
+        p { margin: 0; width: 780px; font-size: 30px; line-height: 1.3; color: #47566b; }
+        small { position: absolute; left: 64px; bottom: 52px; font-size: 22px; color: #47566b; }
+      </style></head><body>
+        <svg class="water" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden="true">${posterWater(theme)}</svg>
+        <div class="calm"></div>
+        <div class="brand">${symbol}<span>Sillage</span></div>
+        <div class="copy"><h1>${title}</h1><p>${line}</p></div>
+        <small>marlburrow.github.io/sillage</small>
+      </body></html>`)
+      await page.evaluate(() => document.fonts.ready)
+      await page.screenshot({ path: fileURLToPath(new URL(`${folder}${name}.png`, root)) })
+    }
+  } finally {
+    await page.close()
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const browser = await chromium.launch({ chromiumSandbox: true })
   try {
-    await renderSiteSocialImage(browser)
+    for (const language of ['en', 'fr']) {
+      await renderSiteSocialImage(browser, language)
+      await renderPageCards(browser, language)
+    }
     await renderFilmPosters(browser)
   } finally {
     await browser.close()

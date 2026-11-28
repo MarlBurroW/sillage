@@ -1,0 +1,1122 @@
+<!doctype html>
+<!-- Built by scripts/site-i18n.mjs from ../changelog.html: edit the English page and the catalog, not this file. -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nouveautés : Sillage</title>
+  <meta name="description" content="Toutes les versions de Sillage, la plus récente en premier : ce qui a changé pour Desktop et Server, avec les liens vers les paquets et le code.">
+  <link rel="canonical" href="https://marlburrow.github.io/sillage/fr/changelog.html">
+  <link rel="alternate" hreflang="en" href="https://marlburrow.github.io/sillage/changelog.html">
+  <link rel="alternate" hreflang="fr" href="https://marlburrow.github.io/sillage/fr/changelog.html">
+  <link rel="alternate" hreflang="x-default" href="https://marlburrow.github.io/sillage/changelog.html">
+  <link rel="icon" href="../favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="alternate" type="application/atom+xml" title="Versions de Sillage" href="https://github.com/MarlBurroW/sillage/releases.atom">
+  <link rel="preload" href="../fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../style.css?v=credible-1">
+  <meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sillage">
+  <meta property="og:locale" content="fr_FR">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:title" content="Nouveautés de Sillage">
+  <meta property="og:description" content="Toutes les versions de Sillage, la plus récente en premier : ce qui a changé pour Desktop et Server, avec les liens vers les paquets et le code.">
+  <meta property="og:url" content="https://marlburrow.github.io/sillage/fr/changelog.html">
+  <meta property="og:image" content="https://marlburrow.github.io/sillage/og/fr/changelog.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script>document.documentElement.classList.add('js'); try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
+  <script src="../main.js?v=credible-1" defer onerror="document.documentElement.classList.remove('js')"></script>
+  <script src="../changelog.js?v=credible-1" defer onerror="document.querySelector('[data-changelog-search]').hidden = true"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Aller au contenu</a>
+  <header class="topbar">
+    <div class="nav-inner wrap">
+      <a class="brand" href="index.html" aria-label="Accueil de Sillage"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <nav id="site-nav" aria-label="Navigation principale"><a href="features.html">Fonctionnalités</a> <a href="agents.html">Agents</a> <a href="docs.html">Docs</a> <a href="changelog.html" aria-current="page">Nouveautés</a> <a href="download.html">Télécharger</a> <a href="https://github.com/MarlBurroW/sillage">GitHub</a></nav>
+      <div class="nav-actions">
+        <a class="lang-switch" href="../changelog.html" hreflang="en" lang="en" data-lang-switch title="English version">EN</a>
+        <button class="icon-button theme-toggle" data-theme-toggle type="button" aria-label="Changer de thème"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+        <a class="button button-small button-primary" href="download.html">Installer Sillage</a>
+        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Ouvrir la navigation" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="menu"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="close"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="page-intro wrap" aria-labelledby="changelog-title">
+      <h1 id="changelog-title">Nouveautés</h1>
+      <p class="lede">Ce qui a changé à chaque version, la plus récente en premier. Desktop et Server sont construits à partir du même code et sortent ensemble.</p>
+      <p class="changelog-stats"><!-- changelog:stats -->53 versions depuis le <time datetime="2026-07-28">28 juillet 2026</time>. La dernière, v0.45.0, est sortie le <time datetime="2026-11-27">27 novembre 2026</time>.<!-- /changelog:stats --></p>
+      <div class="page-intro-meta"><a class="link" href="https://github.com/MarlBurroW/sillage/releases.atom">Suivre les versions avec le flux Atom</a> <a class="link" href="https://github.com/MarlBurroW/sillage/releases">Les paquets de chaque version</a></div>
+      <div class="changelog-search" data-changelog-search>
+        <div class="catalog-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><label class="sr-only" for="release-search">Chercher dans les versions</label><input type="search" id="release-search" placeholder="Chercher dans les versions" autocomplete="off" spellcheck="false" aria-controls="changelog-list" aria-keyshortcuts="/"><kbd class="search-key" aria-hidden="true">/</kbd><button type="button" data-clear-search aria-label="Effacer la recherche" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button></div>
+        <p id="release-search-status" class="changelog-results" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+    <div class="changelog wrap">
+      <nav class="changelog-jump" aria-label="Versions par mois"><!-- changelog:months --><a href="#month-2026-11">Novembre 2026</a><a href="#month-2026-10">Octobre 2026</a><a href="#month-2026-09">Septembre 2026</a><a href="#month-2026-08">Août 2026</a><a href="#month-2026-07">Juillet 2026</a><!-- /changelog:months --></nav>
+      <div class="changelog-list" id="changelog-list">
+        <!-- changelog:releases -->
+        <section class="release-month" id="month-2026-11" aria-labelledby="month-2026-11-title">
+          <h2 class="month-heading" id="month-2026-11-title">Novembre 2026 <span>17 versions</span></h2>
+          <article class="release-entry" id="v0.45.0" aria-labelledby="v0.45.0-title">
+            <header class="release-meta">
+              <h3 id="v0.45.0-title"><a href="#v0.45.0">Version 0.45.0</a></h3>
+              <time datetime="2026-11-27">27 novembre 2026</time><span class="release-latest">Dernière</span>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">GitHub Copilot CLI arrive comme sixième agent, tu peux choisir les polices de l’interface et du code, et la réflexion se lit désormais à part des appels d’outils, Codex montrant enfin la sienne.</p>
+              <div class="release-notes">
+                <h4>GitHub Copilot CLI</h4>
+                <ul><li>Copilot CLI (1.0.116, par ACP) se choisit comme les autres agents : modèles lus auprès de Copilot lui-même avec Auto en tête, son profil de routage (efficacité, équilibre, intelligence) proposé quand le modèle est Auto, appels d’outils et modifications affichés comme pour les autres CLI, et une jauge de quota qui suit le budget mensuel du forfait.</li><li>Pas encore là : les comptes Copilot supplémentaires dans les réglages, et une page sur le site.</li></ul>
+                <h4>Apparence</h4>
+                <ul><li>Réglages › Apparence › Polices permet à chaque compte de choisir une police pour l’interface et une pour le code parmi les Google Fonts. Les polices sont livrées avec Sillage : aucune requête ne quitte l’instance et Desktop fonctionne hors ligne ; une famille ne se télécharge qu’une fois choisie. Le terminal suit la police du code.</li></ul>
+                <h4>Conversations</h4>
+                <ul><li>La réflexion se lit en prose italique derrière un filet fin, au lieu d’un encadré qui ressemblait à un appel d’outil. Elle se déplie pendant qu’elle s’écrit et se replie dès que la réponse commence.</li><li>Les sessions Codex montrent désormais leurs résumés de réflexion : Sillage ne les demandait pas, si bien que Codex n’affichait jamais la moindre réflexion.</li><li>Les appels au navigateur des agents portent le logo Sillage et des libellés lisibles, au lieu d’un nom brut d’outil MCP.</li><li>Les lignes d’outil montrent le niveau d’effort d’un sous-agent, et signalent quand Read prend un gros fichier en entier.</li><li>Les détails de session donnent la version de Claude Code que la session fait réellement tourner, qui peut différer de celle installée après une mise à jour, et indiquent si le compte a de l’usage supplémentaire ou s’arrête à la limite.</li></ul>
+                <h4>Aperçus des serveurs de dev</h4>
+                <ul><li>Les agents peuvent donner un titre à la carte de chaque serveur qu’ils lancent, la faire pointer vers une page précise, ou la garder hors du fil (elle reste dans l’onglet Aperçu) : une API, un worker et une app web ne partagent plus une même carte générique.</li><li>Un serveur qui s’arrête laisse une ligne dans le fil au lieu de disparaître. La carte peut copier l’adresse et créer un lien de démo.</li></ul>
+                <h4>Réglages</h4>
+                <ul><li>Une nouvelle page Réglages › Notes de version liste les versions récentes, en marquant celle qui est installée et celles qui ne le sont pas encore. À propos y renvoie.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li>Un message qui n’a jamais atteint son CLI, ou un CLI mort au lancement, ne laisse plus la conversation réfléchir indéfiniment ; « Interrompre l’agent » clôt désormais un tel tour. Un dossier de travail manquant est nommé au lieu d’être signalé comme un binaire cassé.</li><li>Créer un projet dans le dossier d’un projet existant (le piège <code>project/project</code>) déclenche désormais un avertissement et propose plutôt d’ajouter le dossier parent.</li><li>Les tâches planifiées, les automatisations et les tâches de l’API qui utilisent Claude attendent la fin des surcharges de l’API (jusqu’à 30 minutes) au lieu d’échouer après quelques tentatives. Les conversations interactives échouent toujours vite.</li><li>Après une reprise, Codex exécute chaque tour dans le mode qu’affiche le composer, Plan ou Default.</li><li><code>remove_worktree</code> ne refuse plus un worktree qu’un agent vient de fusionner dans son shell.</li><li>Les projets archivés n’acceptent plus les demandes d’autres sessions, et le plafond de 20 tâches ne compte que les tâches créées par des agents : tes propres planifications ne peuvent plus bloquer les agents.</li><li>Antigravity ne laisse plus de dossier <code>skills/system</code> non suivi dans les projets.</li><li>Un message en file envoyé pour infléchir le tour n’est plus perdu si le chargement de la conversation échoue. OpenCode réessaie quand son port est déjà pris au démarrage.</li></ul>
+                <h4>Agents</h4>
+                <ul><li>Versions ciblées : Claude Code 2.1.332 (SDK 0.3.332) et Codex 0.172.0. Avec un Claude Code assez récent, les serveurs MCP passent par la requête initialize plutôt que par la ligne de commande, où leurs secrets étaient visibles de tous les utilisateurs de la machine via <code>ps</code>.</li></ul>
+                <h4>Sous le capot</h4>
+                <ul><li>Le gestionnaire de sessions, la page de conversation et l’explorateur de fichiers sont découpés en modules plus petits, l’app web reçoit un harnais de tests unitaires, et les sections des réglages se chargent à la demande, ce qui laisse de la marge sous la limite de précache de la PWA.</li></ul>
+                <p>Éditions Server et Desktop. Deux migrations de base de données (0078, 0079), appliquées automatiquement au démarrage.</p>
+              </div>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.45.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.44.0...v0.45.0">Changements depuis la v0.44.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.44.0" aria-labelledby="v0.44.0-title">
+            <header class="release-meta">
+              <h3 id="v0.44.0-title"><a href="#v0.44.0">Version 0.44.0</a></h3>
+              <time datetime="2026-11-26">26 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Les mentions <code>@</code> proposent désormais les dossiers et fonctionnent dans tous les projets, le composer nomme ses raccourcis de saisie, et une radio joue depuis le rail.</p>
+              <div class="release-notes">
+                <h4>Mentions</h4>
+                <ul><li>Taper <code>@</code> propose désormais les dossiers en plus des fichiers. Un dossier se mentionne sous la forme <code>@path/</code> : Entrée ou un clic le mentionne, Tab ou le chevron de la ligne l’ouvre pour choisir quelque chose à l’intérieur (le chevron fonctionne sur les écrans tactiles). Claude Code reçoit la liste du contenu du dossier ; Codex et les autres CLI reçoivent le chemin et le lisent avec leurs outils.</li><li>Corrigé : dans un dossier de projet ignoré par un dépôt Git englobant (par exemple un dépôt de dotfiles dans ton dossier personnel), <code>@</code> répondait « Aucun fichier ne correspond » pour tout. Sillage parcourt maintenant le dossier quand Git ne liste rien, ce qui corrige aussi la recherche de l’explorateur et la palette dans ce cas. Un listage en échec le dit désormais, au lieu de ressembler à un résultat vide.</li></ul>
+                <h4>Composer</h4>
+                <ul><li>Le composer vide liste les préfixes qu’il comprend (<code>@</code> fichiers et dossiers, <code>@@</code> sessions, <code>#</code> tickets…), et le menu Insérer devient « Raccourcis » : citer une session ou un ticket ne demande plus de recherche.</li></ul>
+                <h4>Radio</h4>
+                <ul><li>Un interrupteur marche/arrêt dans le rail lance Claude FM en arrière-plan ; la lecture continue pendant que tu navigues. Réglages › Personnel › Radio permet à chaque compte de choisir une autre vidéo ou un autre live YouTube.</li></ul>
+                <p>Éditions Server et Desktop. Aucune migration de base de données.</p>
+              </div>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.44.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.43.1...v0.44.0">Changements depuis la v0.43.1</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.43.1" aria-labelledby="v0.43.1-title">
+            <header class="release-meta">
+              <h3 id="v0.43.1-title"><a href="#v0.43.1">Version 0.43.1</a></h3>
+              <time datetime="2026-11-26">26 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Les aperçus des serveurs de dev fonctionnent désormais dans Docker et Kubernetes, et Sillage explique comment les mettre en place.</p>
+              <div class="release-notes">
+                <h4>Correctifs</h4>
+                <ul><li>Le service d’aperçu n’écoutait que sur le loopback du conteneur, et ni l’image, ni l’exemple compose, ni le chart Helm n’exposaient son port : les aperçus ne pouvaient pas fonctionner dans Docker ou Kubernetes. Il écoute désormais sur la même interface que Sillage (<code>SILLAGE_HOST</code>), l’image expose <code>7318</code>, l’exemple compose le publie en loopback, et le chart ajoute le port à son Service avec un Ingress générique facultatif pour le domaine des aperçus (<code>previews.enabled</code>, <code>previews.domain</code>, <code>previews.tls</code>).</li></ul>
+                <h4>Configurer les aperçus</h4>
+                <ul><li><strong>Réglages › Aperçus</strong> vérifie la configuration : Sillage demande un hôte d’aperçu par ton adresse publique et nomme le premier maillon en échec (DNS, certificat, serveur injoignable, cible du proxy, règle <code>pv-*</code> manquante, port d’aperçu occupé), avec ce qu’il faut corriger.</li><li>Un nouveau guide, <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/previews.md">docs/previews.md</a>, explique ce dont chaque édition a besoin (Desktop fonctionne sans configuration), pourquoi les aperçus demandent leur propre domaine, et donne des configurations pour Caddy, nginx, Docker Compose et Helm. Les réglages et l’onglet Aperçu y renvoient.</li></ul>
+                <p>Éditions Server et Desktop. Aucune migration de base de données.</p>
+              </div>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.43.1">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.43.0...v0.43.1">Changements depuis la v0.43.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.43.0" aria-labelledby="v0.43.0-title">
+            <header class="release-meta">
+              <h3 id="v0.43.0-title"><a href="#v0.43.0">Version 0.43.0</a></h3>
+              <time datetime="2026-11-25">25 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Les agents ont un navigateur que tu peux regarder, tu choisis quels outils Sillage ils reçoivent, et les serveurs de dev qu’ils lancent s’ouvrent directement dans Sillage.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.43.0</summary><div class="release-notes">
+                <h4>Aperçus des serveurs de dev</h4>
+                <ul><li>Quand un agent lance un serveur de dev, une carte au-dessus du composer le signale, avec un bouton <strong>Ouvrir l’aperçu</strong>. L’onglet <strong>Aperçu</strong> du panneau de la conversation montre l’app, avec le choix du port, le rechargement, l’ouverture dans un onglet et la copie de l’adresse. Les ports de <strong>Services</strong> l’ouvrent aussi.</li><li>Sur Server, chaque aperçu a son propre hôte, <code>pv-&lt;id&gt;.&lt;preview domain&gt;</code>, jamais l’adresse de Sillage : l’app ne peut donc pas agir avec ta session Sillage. Un administrateur règle le domaine dans <strong>Réglages › Aperçus</strong> et route ses hôtes <code>pv-*</code> vers le service d’aperçu (port principal + 1, ou <code>SILLAGE_PREVIEW_PORT</code>) ; la page montre un exemple pour Caddy. Chaque personne qui regarde se connecte par un lien valable une minute et n’atteint que les ports qu’elle voit dans Services.</li><li>L’app reçoit des requêtes pour <code>localhost:&lt;port&gt;</code> : Vite, Next ou Django n’ont besoin d’aucun réglage d’hôtes autorisés, et le hot reload passe.</li><li><strong>Liens de démo</strong> (Server) : une adresse publique pour les personnes sans compte Sillage, valable une heure, un jour, une semaine ou 30 jours, révocable. Elle ne sert l’app que tant que son serveur de dev tourne, et demande aux moteurs de recherche de ne pas l’indexer.</li><li><strong>Choisir un élément</strong> : un réticule met en évidence ce que survole le pointeur dans l’aperçu ; un clic ajoute l’élément à ton message avec sa page, son sélecteur CSS, son texte, sa boîte et son HTML.</li><li>Desktop ouvre directement le port en loopback ; hors Linux, indique le port toi-même. Les liens de démo et le choix d’un élément demandent Server.</li></ul>
+                <p><strong>Un navigateur pour les agents</strong> (facultatif, désactivé par défaut)</p>
+                <ul><li>Les agents de tous les CLI reçoivent des outils de navigation (Playwright MCP, installé à la demande depuis <strong>Réglages › Outils des agents</strong>) qui pilotent un Chromium headless que le daemon lance pour leur conversation. Le Chrome de la machine ou le cache Playwright est réutilisé, sinon Sillage en télécharge un ; rien n’est embarqué dans les versions publiées.</li><li>Regarder la page en direct dans l’onglet <strong>Navigateur</strong> de la conversation, ouvert depuis n’importe quel appel d’outil de navigation ou depuis la ligne au-dessus du composer, et <strong>prendre la main</strong> pour se connecter ou passer un challenge, puis la rendre. <strong>Services › Navigateurs</strong> liste tous les navigateurs ouverts.</li></ul>
+                <h4>Choisir les outils que reçoivent les agents</h4>
+                <ul><li>Les outils propres à Sillage se rangent en familles (historique, board, coordination, automatisations, worktrees, actions, consignes, configuration du projet), plus le navigateur. Les administrateurs fixent les réglages par défaut de l’instance dans <strong>Réglages › Outils des agents</strong> ou à l’étape des agents de la première visite ; les propriétaires de projet peuvent choisir autrement, famille par famille, dans l’onglet <strong>Agents</strong> du projet. Une famille désactivée disparaît entièrement de la session, ce qui raccourcit le contexte des sessions Codex, OpenCode, Grok et Antigravity.</li></ul>
+                <h4>Et aussi</h4>
+                <ul><li>Le popover des détails d’une session s’ouvre sur l’état en direct, puis le coût équivalent API, les appels d’outils et les tours, la fenêtre de contexte sous forme de jauge et les outils les plus utilisés.</li><li>Les fichiers, skills et commandes joints à un message envoyé sont teintés dans sa bulle, comme dans le composer.</li></ul>
+                <p>Migrations de base de données : 0076 (familles d’outils des agents par projet) et 0077 (liens de démo), toutes deux additives.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.43.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.42.0...v0.43.0">Changements depuis la v0.42.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.42.0" aria-labelledby="v0.42.0-title">
+            <header class="release-meta">
+              <h3 id="v0.42.0-title"><a href="#v0.42.0">Version 0.42.0</a></h3>
+              <time datetime="2026-11-25">25 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Des retours d’utilisateurs d’OpenCode : un sélecteur de modèle où l’on se repère, et un composer qui montre ce qui part avec ton message.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.42.0</summary><div class="release-notes">
+                <h4>Modèles OpenCode</h4>
+                <ul><li>Le sélecteur de modèle range les modèles d’OpenCode par fournisseur (GitHub Copilot, Anthropic, OpenCode Go…) sous des titres de section, au lieu d’une seule liste triée par nom où le même modèle apparaissait une fois par fournisseur.</li><li>Le modèle <strong>Auto</strong> de GitHub Copilot, qui laisse le routeur de Copilot choisir le modèle de chaque session, ouvre la section Copilot quand ton compte dispose d’un pool Auto.</li><li>Une section Récents, en haut, liste les derniers modèles que tu as utilisés avec OpenCode. La recherche la laisse de côté, pour que chaque modèle n’apparaisse qu’une fois dans les résultats.</li><li>Réglages › Défauts des CLI utilise le même panneau avec recherche dès qu’un CLI liste plus de huit modèles : un modèle OpenCode par défaut peut donc s’y choisir aussi.</li></ul>
+                <h4>Composer</h4>
+                <ul><li>Les fichiers choisis dans les suggestions <code>@</code>, les skills choisis avec <code>$</code> et une <code>/command</code> en tête que le CLI connaît sont teintés dans la zone de saisie : teinté veut dire joint. Un chemin tapé à la main reste sans teinte, car il n’est pas envoyé comme fichier.</li></ul>
+                <p>Disponible dans les éditions Server et Desktop. Aucune migration de base de données.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.42.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.41.0...v0.42.0">Changements depuis la v0.41.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.41.0" aria-labelledby="v0.41.0-title">
+            <header class="release-meta">
+              <h3 id="v0.41.0-title"><a href="#v0.41.0">Version 0.41.0</a></h3>
+              <time datetime="2026-11-25">25 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Une palette de commandes qui fonctionne dans le projet courant et agit sur la session ouverte, une première visite plus courte, et un tour guidé de l’interface.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.41.0</summary><div class="release-notes">
+                <h4>Palette de commandes</h4>
+                <ul><li>Ouverte dans un projet, la palette cherche dans ce projet. Le projet s’affiche comme un jeton devant le champ. Retire-le avec Retour arrière en début de champ, avec son ×, ou avec un nouveau Cmd/Ctrl+K, qui bascule alors entre le projet et partout sans perdre ce que tu as tapé.</li><li>Tab sur un résultat de projet cherche dans ce projet. Une dernière ligne compte les résultats trouvés ailleurs et élargit la recherche. Quand le projet n’a rien, ce sont les résultats des autres projets qui s’affichent.</li><li>Les actions de la session ouverte ont leur propre groupe : renommer, mettre en favori, archiver, copier sa référence, lier ou détacher un ticket, exporter, compacter, interrompre, continuer dans un autre CLI, déplacer, et ouvrir un onglet du panneau. Le nouveau nom et le ticket à lier se saisissent dans la palette elle-même.</li><li>Le texte tapé peut lancer une nouvelle session (il arrive dans le brouillon) ou créer un ticket. Après un ticket, la palette reste ouverte pour le suivant.</li><li>Avant toute saisie, ce qui t’attend vient en premier : décisions en attente, sessions qui attendent une réponse, erreurs que tu n’as pas vues. Les lignes de session montrent leur état en direct.</li><li><code>&gt;</code> ne garde que les commandes, <code>#</code> les tickets, <code>/</code> les fichiers.</li><li>Cmd/Ctrl+Entrée ouvre un résultat dans un nouvel onglet, ou dans une nouvelle fenêtre dans l’app de bureau.</li><li>Les résultats que tu choisis souvent remontent parmi les résultats proches. C’est mémorisé par navigateur.</li></ul>
+                <h4>Premier lancement</h4>
+                <ul><li>La première visite ne demande plus rien d’emblée et elle est plus courte. L’étape des agents montre ce qui est déjà installé et connecté. Consignes et mémoire forment une seule étape, découpée en consignes globales, consignes du projet et mémoire du projet.</li><li>L’étape de l’adresse n’enregistre plus une adresse qui ne répond pas, ce qui pouvait couper l’accès d’un administrateur.</li><li>Sillage Desktop gagne une étape d’accès distant (Tailscale Serve), désactivé par défaut.</li><li>Un court tour de l’interface démarre à la première conversation : rail, colonne, choix de l’agent, composer, panneau, palette. Il ne passe qu’une fois par compte et se rejoue depuis Réglages › À propos. Les comptes existants ne sont pas interrompus.</li></ul>
+                <h4>Projets</h4>
+                <ul><li>Les réglages du projet sont à un clic : une ligne Réglages dans la colonne du projet, l’avatar de la colonne et le menu contextuel du rail.</li><li>Le bouton et la fenêtre des consignes disent où vivent les consignes d’un projet : tenues par Sillage, ou dans l’AGENTS.md / CLAUDE.md du dépôt. Le changement de mode passe dans une fenêtre à part.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li>Le panneau latéral ne vole plus le focus clavier d’une fenêtre ouverte pendant le chargement d’une page.</li></ul>
+                <p>Disponible dans les éditions Server et Desktop. Aucune migration de base de données.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.41.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.40.0...v0.41.0">Changements depuis la v0.40.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.40.0" aria-labelledby="v0.40.0-title">
+            <header class="release-meta">
+              <h3 id="v0.40.0-title"><a href="#v0.40.0">Version 0.40.0</a></h3>
+              <time datetime="2026-11-24">24 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">La prise en charge d’OpenCode 2, des agents de workflow lisibles, et une vue plus claire de ce que font les sous-agents.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.40.0</summary><div class="release-notes">
+                <h4>OpenCode 2</h4>
+                <ul><li>Sillage installe désormais OpenCode 2 (<code>@opencode/cli</code> 2.4.1) comme OpenCode géré, et fonctionne toujours avec la 1.x. La version est détectée au démarrage d’une conversation.</li><li>Les sous-agents et les shells en arrière-plan se suivent et s’arrêtent depuis le panneau Agents, avec la sortie des shells en direct. Les skills de la bibliothèque et les sessions lancées hors de Sillage sont aussi pris en charge.</li><li>Le premier démarrage d’OpenCode 2 migre sur place sa base locale de sessions. La page Versions des CLI l’explique avant la mise à jour.</li></ul>
+                <h4>Sous-agents et workflows</h4>
+                <ul><li>Les agents des workflows (Claude Code) s’ouvrent désormais depuis le panneau Agents. Leurs fils sont lus dans les transcripts qu’écrit Claude Code et se mettent à jour à quelques secondes d’intervalle pendant qu’ils tournent. Les workflows terminés restent accessibles depuis leur carte.</li><li>Le fil d’un sous-agent se termine désormais par le même indicateur d’activité qu’une conversation, et affiche une courte ligne d’état que Claude écrit sur chaque sous-agent en cours.</li><li>Un sous-agent lancé en arrière-plan peut être arrêté seul, depuis son fil.</li><li>Quand un sous-agent laisse une commande tourner en arrière-plan, sa fin apparaît désormais dans le fil de ce sous-agent plutôt que dans le fil principal.</li><li>Les tuiles d’Activité montrent la fin du fil principal même quand un sous-agent est occupé. Avant, une tuile pouvait ne montrer qu’une seule carte.</li></ul>
+                <h4>Contexte des sessions</h4>
+                <ul><li>La liste des sessions voisines, ainsi que les rappels de titre, de carte et d’image, partent désormais avec le premier message de chaque lancement plutôt que dans le prompt système. Claude garde le premier prompt système à la reprise d’une session, si bien que cette liste restait figée. OpenCode ne perd plus son cache de prompt à chaque tour.</li></ul>
+                <p>Disponible dans les éditions Server et Desktop. Aucune migration de base de données. Les workflows lancés avant cette version n’enregistrent pas les identifiants de leurs agents : leurs fils ne peuvent pas être ouverts.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.40.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.39.0...v0.40.0">Changements depuis la v0.39.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.39.0" aria-labelledby="v0.39.0-title">
+            <header class="release-meta">
+              <h3 id="v0.39.0-title"><a href="#v0.39.0">Version 0.39.0</a></h3>
+              <time datetime="2026-11-23">23 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Les projets peuvent désormais relier des dossiers supplémentaires dans Fichiers : les expériences et les travaux connexes hors du dépôt principal restent à portée de main.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.39.0</summary><div class="release-notes">
+                <ul><li>Rattacher des dossiers existants à un projet et les retrouver dans toutes ses sessions et sur tous les appareils. Les propriétaires du projet gèrent ces liens ; les membres peuvent parcourir et modifier les fichiers partagés.</li><li>Changer de dossier dans le panneau Fichiers, et revenir à tes dossiers récents personnels sans changer le dossier de travail de l’agent.</li><li>Inclure des dossiers supplémentaires à la création d’un projet. Les agents peuvent lister et rattacher des dossiers de projet avec les outils de Sillage.</li><li>Disponible dans les éditions Server et Desktop.</li></ul>
+                <p>Base de données : deux migrations additives pour les dossiers personnels de l’explorateur et les dossiers partagés des projets (0074–0075), appliquées automatiquement au premier démarrage.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.39.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.38.0...v0.39.0">Changements depuis la v0.38.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.38.0" aria-labelledby="v0.38.0-title">
+            <header class="release-meta">
+              <h3 id="v0.38.0-title"><a href="#v0.38.0">Version 0.38.0</a></h3>
+              <time datetime="2026-11-21">21 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Des benchmarks faits pour publier des comparaisons, des sessions qui peuvent atteindre tes autres projets, et une passe de robustesse : Sillage continue désormais de fonctionner, et garde des données cohérentes, quand quelque chose se passe mal.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.38.0</summary><div class="release-notes">
+                <ul><li><strong>Benchmarks.</strong><ul><li><strong>Presets et compositions.</strong> Enregistrer comme preset une composition avec ses réglages d’exécution et ses comparaisons, ordonner les variantes, comparer côte à côte deux modèles ou plus, et présenter les résultats en diaporama. Les variantes portent des noms de modèle publics et courts.</li><li><strong>Retours.</strong> Un run terminé accepte un nouveau prompt dans la même session. Ses mesures s’additionnent et le run est marqué comme ayant reçu un retour, y compris sur la page partagée et dans les diapos.</li><li><strong>Commentaires.</strong> Écrire ce que tu penses d’un résultat, avec ou sans étoiles. Les commentaires peuvent figurer sur les pages partagées et dans les diapos si tu choisis de les inclure.</li><li><strong>Temps de travail.</strong> Les durées ne comptent que le temps de travail : attendre ta réponse ou rester inactif entre deux tours ne compte plus. Le temps écoulé reste affiché à côté, et un run qui attend une réponse apparaît dans Activité, dans le rail et sur la page de son benchmark.</li><li>Chaque réglage d’exécution (runs par variante, exécutions simultanées, durée maximale) peut changer après le lancement. La liste des benchmarks est la colonne de navigation, et les mesures tiennent sur une ligne par variante.</li></ul></li><li><strong>Des sessions qui agissent sur tes autres projets.</strong> Un nouveau réglage de projet, désactivé par défaut, permet à ses sessions de lire les autres projets du compte et d’y agir : historique, cartes, sessions, références de session. Quand il est désactivé, l’agent te dit que ce réglage existe. Un outil <code>work_log</code> additionne le temps passé par jour et par projet.</li><li><strong>Panneau Agents.</strong> Les shells en arrière-plan se déplient sur ce qu’ils affichent (Claude Code).</li><li><strong>Rail.</strong> Ajouter des projets au rail depuis un « + » placé à côté ; la fenêtre des projets est repensée.</li><li><strong>Les tâches planifiées</strong> préviennent leur propriétaire quand elles se mettent à échouer : lancements ratés, vérifications en échec ou hors délai, et exécutions en échec ou qui ont dépassé leur durée. Cette notification peut se désactiver à part.</li><li><strong>Robustesse.</strong><ul><li>Une tâche de fond en échec est journalisée au lieu d’arrêter le serveur ; une boucle d’événements bloquée et des clés de configuration ignorées sont signalées.</li><li>Un seul serveur par base de données : un second Sillage sur le même dossier de données refuse de démarrer au lieu de le partager.</li><li>L’arrêt du serveur clôt chaque tour en cours, et une interruption demandée pendant qu’un CLI démarre encore prend effet aussitôt, au lieu d’envoyer le message malgré tout.</li><li>Les cinq CLI partagent un même cycle de vie des tours : une réponse tardive ne peut plus clore le tour suivant, et une interruption Codex restée sans réponse ne laisse plus la conversation occupée.</li><li>Une erreur d’interface reste circonscrite à l’élément ou à la page en cause, avec une porte de sortie, au lieu d’une page blanche.</li><li>Les demandes des agents ne s’exécutent jamais deux fois, même après un redémarrage ; un worktree n’est jamais tenu pour introuvable parce que git a échoué ; les modifications du board résistent à un refus de GitHub ; la restauration d’un point de reprise peut être annulée ; les mesures d’un benchmark survivent à la suppression d’un fil.</li><li>Les forks, les transferts entre CLI et les lectures par l’API ne chargent plus des journaux entiers en mémoire.</li><li>Les versions installent exactement l’arbre de dépendances sur lequel les tests ont tourné, et ne sont publiées que depuis un commit dont les contrôles passent.</li></ul></li><li><strong>La liste des modèles Claude</strong> reste complète d’un redémarrage ou d’un rafraîchissement à l’autre.</li></ul>
+                <p>Base de données : six migrations additives (presets et options de partage des benchmarks, retours sur les runs, réglage d’accès aux autres projets, réservation des demandes des agents, noms de worktree réutilisables, un index pour les recherches de cycle de vie). La dernière indexe la table des événements : sur une grande base, attends-toi à un premier démarrage un peu plus long.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.38.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.37.0...v0.38.0">Changements depuis la v0.37.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.37.0" aria-labelledby="v0.37.0-title">
+            <header class="release-meta">
+              <h3 id="v0.37.0-title"><a href="#v0.37.0">Version 0.37.0</a></h3>
+              <time datetime="2026-11-16">16 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Un tableau de bord de consommation qui chiffre les tokens de chaque CLI aux tarifs publics des API, des pages de benchmark à partager, et le mur fondu dans Activité.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.37.0</summary><div class="release-notes">
+                <ul><li><strong>La consommation, au prix des API.</strong> Une nouvelle entrée <strong>Consommation</strong> dans le rail montre les tokens traités par ton instance et ce que le même travail coûterait par les API publiques : les totaux d’une période, un graphique par jour ou par mois et par CLI, et une répartition à la fois, par CLI, modèle, projet, compte ou session.<ul><li>Les prix viennent des listes publiques de <a href="https://github.com/BerriAI/litellm">LiteLLM</a> et de <a href="https://models.dev/">models.dev</a>, vérifiées chaque jour et à la demande d’un administrateur : Codex, OpenCode et Antigravity ont donc eux aussi un coût. Une copie est livrée avec chaque version, pour une instance qui n’a pas encore eu accès au réseau.</li><li>Les prix s’appliquent à la lecture de la page : un prix corrigé corrige aussi le passé. C’est un équivalent, pas une facture, qui ignore les paliers de long contexte, le traitement prioritaire et les outils facturés à la requête comme la recherche web.</li><li>Les sessions antérieures à la mise à jour sont lues une fois dans leur journal au premier démarrage, en arrière-plan.</li><li>Chaque compte voit toute l’instance.</li></ul></li><li><strong>Benchmarks.</strong><ul><li>Le coût des runs suit désormais les mêmes prix publics : un run Codex et un run Claude se comparent à armes égales. Un modèle sans prix public laisse le coût vide plutôt que de classer une variante sur un chiffre partiel.</li><li>Pages repensées : chaque ligne de la liste est un petit tableau des scores, et la page de détail montre côte à côte la page, le fichier ou la réponse de chaque variante, dans la disposition de ton choix.</li><li>Partager un benchmark sous forme de page autonome, ou le télécharger en zip avec la même page. Les liens publics demandent Sillage Server avec une URL publique ; Desktop propose le zip.</li><li>Régler le nombre de runs qui tournent à la fois, et le changer tant que des runs attendent.</li><li>Les noms de variante par défaut nomment le modèle qui a réellement répondu, au lieu de « default » ou d’un alias.</li><li>Statistiques corrigées : l’entrée en cache et les modèles auxiliaires sont comptés, un coût non rapporté reste vide au lieu de passer pour gratuit, et les coûts cumulés de Claude comme les attentes qui se chevauchent ne sont plus comptés deux fois. Les benchmarks existants sont réparés.</li></ul></li><li><strong>Activité et le mur.</strong> L’entrée Activité ouvre désormais le mur avec sa liste à côté : un titre de section remplit le mur avec cette section, une ligne fait passer sa tuile au premier plan. Un nouveau filtre <strong>En erreur</strong> trouve les sessions arrêtées sur une erreur, et une nouvelle fenêtre construit des vues enregistrées à partir des boutons de filtre plutôt que d’une requête. Les tuiles sont plus légères et montrent leur état sur la ligne du titre.</li><li><strong>Worktrees et pull requests.</strong> Le travail fusionné par une pull request GitHub est reconnu comme fusionné, avec l’état de la PR et ses contrôles affichés dans les vues des worktrees.</li><li><strong>Fiabilité.</strong> Les requêtes de navigateur venues d’une autre origine sont refusées ; les échecs de découverte des outils MCP sont affichés ; les administrateurs sont prévenus avant l’expiration de la connexion Claude de l’hôte ; les choix de permission de Claude et le retrait d’un serveur MCP suivent le CLI natif.</li><li><strong>Le bouton du panneau</strong> se trouve à l’extrême droite de chaque en-tête, sous le pointeur qui a ouvert le panneau.</li><li><strong>CLI pris en charge</strong> : Claude Code 2.1.325, Codex 0.169.0, OpenCode 1.19.5.</li></ul>
+                <p>Corrigé : le coût enregistré d’une conversation Claude additionnait à chaque tour le total cumulé du CLI, si bien qu’une longue conversation affichait un coût plusieurs fois supérieur à ce qu’elle avait consommé. Les totaux sont reconstruits à partir des tours enregistrés au premier démarrage.</p>
+                <p>Base de données : trois migrations additives (concurrence des benchmarks, partages de benchmarks, usage par tour et listes de prix).</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.37.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.36.1...v0.37.0">Changements depuis la v0.36.1</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.36.1" aria-labelledby="v0.36.1-title">
+            <header class="release-meta">
+              <h3 id="v0.36.1-title"><a href="#v0.36.1">Version 0.36.1</a></h3>
+              <time datetime="2026-11-14">14 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Même version que la <a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.36.0">v0.36.0</a>, cette fois avec les apps de bureau : leur contrôle de lancement cherchait encore l’ancienne barre latérale et les bloquait. Aucun changement de code dans Sillage lui-même.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.36.1</summary><div class="release-notes">
+                <p>Ce qu’apporte la v0.36.0, pour qui met à jour depuis la v0.35 :</p>
+                <p>La navigation est reconstruite autour d’un rail et d’une colonne, et une session lancée dans le mauvais projet peut désormais changer de projet avec tout son historique.</p>
+                <ul><li><strong>Navigation en rail et colonne.</strong> La barre latérale empilait les menus, les compteurs et la liste des sessions. Un rail d’icônes choisit désormais un espace (Activité, le mur, les discussions, les benchmarks, tes projets, les services, les réglages) et une colonne liste ce que contient cet espace, et rien d’autre.<ul><li>La colonne d’un projet garde Board, Chantiers et Automatisations, puis donne à ses sessions toute la hauteur restante : fini le « afficher plus ».</li><li><strong>Activité</strong> rassemble ce qui était éparpillé en quatre endroits : les sessions qui t’attendent et les décisions en attente, les sessions en cours, les non lues et les favorites, tous projets confondus, chaque ligne indiquant son projet. Elle reste sélectionnée pendant que tu ouvres des sessions depuis elle.</li><li>Chaque projet du rail porte un seul point, pour son état le plus pressant : ambre s’il t’attend, couleur d’accent s’il travaille, blanc s’il a du non-lu. L’icône Activité indique combien de sessions t’attendent.</li><li>Le rail montre tes projets épinglés (épingle-les depuis <strong>⋯ › Tous les projets</strong>), ou tes projets récents tant que tu n’en as épinglé aucun. Fais-les glisser pour changer leur ordre.</li><li>Cliquer sur l’entrée courante du rail replie la colonne ; le rail et ses badges restent.</li><li>Sur téléphone, le tiroir montre le rail et la colonne côte à côte.</li></ul></li><li><strong>Déplacer une session entre projets.</strong> Depuis la barre d’outils de la conversation, ou par l’agent avec <code>move_session</code>. La session garde son identifiant et tout son historique ; un déplacement demandé pendant un tour attend la fin de ce tour, puis l’agent redémarre dans le projet de destination avec ses consignes et son contexte. Les fichiers et la mémoire du projet restent où ils étaient.</li></ul>
+                <p>Retirés avec l’ancienne barre latérale : la vue en arbre de tous les projets, les exécutions planifiées listées sous leur tâche (elles restent sur la page Automatisations du projet) et le bouton flottant « afficher la navigation ».</p>
+                <p>Base de données : une migration additive (<code>conversation_project_moves</code>). Édition Desktop : même navigation, sans le menu du compte.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.36.1">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.36.0...v0.36.1">Changements depuis la v0.36.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.36.0" aria-labelledby="v0.36.0-title">
+            <header class="release-meta">
+              <h3 id="v0.36.0-title"><a href="#v0.36.0">Version 0.36.0</a></h3>
+              <time datetime="2026-11-14">14 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <details class="release-more"><summary>Toutes les notes de la v0.36.0</summary><div class="release-notes">
+                <blockquote><p><strong>Les apps de bureau ne sont pas jointes à cette version</strong> : leur contrôle de lancement a échoué sur un test qui cherchait encore l’ancienne barre latérale. Elles arrivent avec la v0.36.1, qui ne contient rien d’autre. Les archives Server et les images Docker publiées ici sont complètes.</p></blockquote>
+                <p>La navigation est reconstruite autour d’un rail et d’une colonne, et une session lancée dans le mauvais projet peut désormais changer de projet avec tout son historique.</p>
+                <ul><li><strong>Navigation en rail et colonne.</strong> La barre latérale empilait les menus, les compteurs et la liste des sessions. Un rail d’icônes choisit désormais un espace (Activité, le mur, les discussions, les benchmarks, tes projets, les services, les réglages) et une colonne liste ce que contient cet espace, et rien d’autre.<ul><li>La colonne d’un projet garde Board, Chantiers et Automatisations, puis donne à ses sessions toute la hauteur restante : fini le « afficher plus ».</li><li><strong>Activité</strong> rassemble ce qui était éparpillé en quatre endroits : les sessions qui t’attendent et les décisions en attente, les sessions en cours, les non lues et les favorites, tous projets confondus, chaque ligne indiquant son projet. Elle reste sélectionnée pendant que tu ouvres des sessions depuis elle.</li><li>Chaque projet du rail porte un seul point, pour son état le plus pressant : ambre s’il t’attend, couleur d’accent s’il travaille, blanc s’il a du non-lu. L’icône Activité indique combien de sessions t’attendent.</li><li>Le rail montre tes projets épinglés (épingle-les depuis <strong>⋯ › Tous les projets</strong>), ou tes projets récents tant que tu n’en as épinglé aucun. Fais-les glisser pour changer leur ordre.</li><li>Cliquer sur l’entrée courante du rail replie la colonne ; le rail et ses badges restent.</li><li>Sur téléphone, le tiroir montre le rail et la colonne côte à côte.</li></ul></li><li><strong>Déplacer une session entre projets.</strong> Depuis la barre d’outils de la conversation, ou par l’agent avec <code>move_session</code>. La session garde son identifiant et tout son historique ; un déplacement demandé pendant un tour attend la fin de ce tour, puis l’agent redémarre dans le projet de destination avec ses consignes et son contexte. Les fichiers et la mémoire du projet restent où ils étaient.</li></ul>
+                <p>Retirés avec l’ancienne barre latérale : la vue en arbre de tous les projets, les exécutions planifiées listées sous leur tâche (elles restent sur la page Automatisations du projet) et le bouton flottant « afficher la navigation ».</p>
+                <p>Base de données : une migration additive (<code>conversation_project_moves</code>). Édition Desktop : même navigation, sans le menu du compte.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.36.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.35.0...v0.36.0">Changements depuis la v0.35.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.35.0" aria-labelledby="v0.35.0-title">
+            <header class="release-meta">
+              <h3 id="v0.35.0-title"><a href="#v0.35.0">Version 0.35.0</a></h3>
+              <time datetime="2026-11-12">12 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Les sessions arrêtées par la limite d’usage d’un abonnement peuvent désormais reprendre d’elles-mêmes, et le sélecteur de modèles Claude garde sa liste complète.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.35.0</summary><div class="release-notes">
+                <ul><li><strong>Reprise après une limite d’usage</strong> (#23). Quand Claude Code ou Codex arrête un tour sur la limite de ton abonnement, Sillage te prévient une fois, avec l’heure de levée de la limite : notification push, toast dans l’app et ligne visible dans le fil. Active la reprise automatique dans <strong>Réglages › Limites d’usage</strong> et la session reçoit un message de reprise (texte de ton choix) une fois la limite levée. Une session reprend une fois par limite, jamais si tu l’as interrompue, si tu y as écrit ou si tu l’as archivée entre-temps, et pas si la limite se lève plus tard que ton seuil (12 heures par défaut). Les exécutions planifiées sont seulement signalées : la suivante repart de zéro. La reprise en attente est enregistrée sur le serveur, elle survit donc à un redémarrage du daemon. Désactivée par défaut : le travail repris consomme ton quota.</li><li><strong>Liste complète des modèles Claude.</strong> Avec Claude Code 2.1.318, le CLI peut répondre avec sa liste compilée au lieu du catalogue servi par Anthropic ; le sélecteur ne retombe plus sur la courte liste de cinq alias (Défaut : Opus / Opus / Fable / Sonnet / Haiku). Le bouton de rafraîchissement prend toujours la réponse du CLI. Une session laissée sur « Défaut » démarre désormais sur le modèle annoncé par le sélecteur (par exemple Fable 5.1) au lieu de celui que le CLI choisit pour ce processus.</li></ul>
+                <p>Base de données : une migration additive (<code>usage_limit_resumes</code>). Édition Desktop : pas de push, donc l’arrêt sur limite s’affiche en toast et dans le fil.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.35.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.34.2...v0.35.0">Changements depuis la v0.34.2</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.34.2" aria-labelledby="v0.34.2-title">
+            <header class="release-meta">
+              <h3 id="v0.34.2-title"><a href="#v0.34.2">Version 0.34.2</a></h3>
+              <time datetime="2026-11-11">11 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Correctifs pour Sillage Desktop sous Windows : installation, démarrage et fermeture.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.34.2</summary><div class="release-notes">
+                <ul><li><strong>« Sillage est déjà lancé » pendant l’installation.</strong> L’installateur vérifie désormais lui-même ce qui tourne encore depuis le dossier d’installation : il attend un Sillage en train de quitter, demande avant d’en fermer un ouvert, arrête ce qu’un Sillage fermé a laissé derrière lui, et note ce qu’il a fait dans <code>%LOCALAPPDATA%\Sillage\logs\installer.log</code>.</li><li><strong>Le serveur ne bloque plus quand on quitte avec un terminal ouvert.</strong> Sous Windows, il restait jusqu’à 15 s après la fermeture de l’app, jusqu’à ce que l’app le tue. Il s’arrête désormais en 0,1 s environ. Les deux éditions ferment aussi elles-mêmes une connexion WebSocket refusée, au lieu d’attendre le client.</li><li><strong>Erreurs au lancement.</strong> Un démarrage raté est retenté une fois automatiquement. S’il échoue encore, Sillage demande s’il faut réessayer, télécharger la dernière version ou quitter, et dit pourquoi et où se trouve le journal.</li><li><strong>Plus de fenêtre vide au démarrage.</strong> La page de démarrage et l’interface montrent le même symbole jusqu’à l’apparition du premier écran.</li><li><strong>Les mises à jour Windows s’installent depuis Réglages › À propos</strong>, derrière un installateur visible, et plus en silence à la fermeture.</li><li>Les diagnostics exportés incluent désormais les temps de démarrage et d’arrêt.</li></ul>
+                <p>La mise à jour depuis une version antérieure passe encore par l’ancienne procédure de fermeture : ferme les terminaux de Sillage avant de mettre à jour.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.34.2">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.34.1...v0.34.2">Changements depuis la v0.34.1</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.34.1" aria-labelledby="v0.34.1-title">
+            <header class="release-meta">
+              <h3 id="v0.34.1-title"><a href="#v0.34.1">Version 0.34.1</a></h3>
+              <time datetime="2026-11-11">11 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Sillage Desktop depuis tes autres appareils</span><span>Mur des sessions</span><span>Agents</span><span>Correctifs</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.34.1</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <h5>Sillage Desktop depuis tes autres appareils</h5>
+                <ul><li><strong>Réglages › Accès distant</strong> ouvre Sillage Desktop à ton téléphone et à tes autres ordinateurs grâce à <a href="https://tailscale.com/">Tailscale</a>. Sillage reste à l’écoute sur <code>127.0.0.1</code> et demande à Tailscale Serve de rediriger vers lui l’adresse HTTPS privée de la machine. Rien n’est ouvert sur ton routeur.</li><li>Il n’y a rien à approuver ensuite : un appareil connecté au compte Tailscale propriétaire de la machine est aussitôt connecté à Sillage, sans mot de passe. Les autres membres du tailnet et les visiteurs Funnel sont refusés.</li><li>La page affiche l’adresse et un QR code. Tant que l’accès distant est actif, l’app empêche la machine de se mettre en veille.</li><li>Quand Tailscale ne laisse pas Sillage configurer Serve lui-même (Linux sans l’option operator), la page affiche la commande à lancer une fois. <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md#remote-access">Accès distant de Desktop</a></li></ul>
+                <h5>Mur des sessions</h5>
+                <ul><li>Un nouveau mur montre plusieurs sessions côte à côte, chaque tuile étant la fin en direct de son fil : réponds à une demande sans quitter l’écran.</li><li>Une requête à la GitHub décide des sessions affichées (<code>is:</code>, <code>project:</code>, <code>cli:</code>, <code>worktree:</code>, <code>active:</code>, <code>sort:</code>, <code>limit:</code>). Les boutons de filtre réécrivent la requête, et les vues enregistrées suivent ton compte d’un appareil à l’autre et apparaissent dans la palette de commandes.</li></ul>
+                <h5>Agents</h5>
+                <ul><li>Les requêtes des agents comme <code>list_models</code> et <code>start_session</code> sont traitées simultanément, et les catalogues de modèles sont sondés en parallèle. Sur Windows Desktop, elles n’échouent plus avec « the CLI is slow to start » pendant qu’un CLI démarre à froid.</li></ul>
+                <h5>Correctifs</h5>
+                <ul><li>La page À propos se recharge d’elle-même une fois une mise à jour intégrée terminée, et la carte de progression se place au-dessus des notes de version.</li><li>La boîte d’export dit d’emblée qu’un lien de partage demande une URL publique, et où un administrateur la définit.</li></ul>
+                <h4>Notes de mise à jour</h4>
+                <ul><li>Aucune migration de base de données.</li><li>L’accès distant de Desktop est désactivé par défaut et demande Tailscale, avec les certificats HTTPS activés sur le tailnet. Les notifications push et l’installation de Sillage comme app sur le téléphone restent des fonctionnalités de Sillage Server.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.34.1">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.33.0...v0.34.1">Changements depuis la v0.33.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.33.0" aria-labelledby="v0.33.0-title">
+            <header class="release-meta">
+              <h3 id="v0.33.0-title"><a href="#v0.33.0">Version 0.33.0</a></h3>
+              <time datetime="2026-11-05">5 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Benchmarks</span><span>Serveurs MCP</span><span>Une règle pour savoir qui modifie quoi</span><span>Agents et délégation</span><span>Interface</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.33.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <h5>Benchmarks</h5>
+                <ul><li>Une nouvelle section <strong>Benchmarks</strong>, sous Discussions, exécute un même prompt sur plusieurs modèles, niveaux d’effort et CLI. Les runs démarrent sans mémoire personnelle ni prompt de plateforme, si bien que chaque variante reçoit le même texte.</li><li>Chaque run indique la durée, les tokens, le coût, les appels d’outils et plus encore. Les valeurs qu’un CLI ne fournit jamais restent vides au lieu de passer en tête du classement.</li><li>Ajouter des fichiers de départ et un script de vérification, puis comparer côte à côte les réponses et les fichiers produits, pages rendues comprises.</li><li>Évaluer les runs à l’aveugle, tracer une mesure d’une variante à l’autre, exporter en CSV ou en JSON, et relancer un benchmark pour le suivre au fil des versions des CLI.</li></ul>
+                <h5>Serveurs MCP</h5>
+                <ul><li>Les agents peuvent proposer un serveur MCP avec <code>install_mcp_server</code>. Rien n’est écrit tant que tu n’as pas confirmé le formulaire dans la conversation, et les secrets que tu saisis n’atteignent jamais le journal ni le modèle.</li><li>Les serveurs peuvent désormais appartenir à un projet : ils atteignent toutes les conversations de ce projet et aucune autre, et disparaissent avec lui. Deux projets peuvent avoir chacun leur propre <code>postgres</code>.</li><li>Les serveurs d’un projet se gèrent depuis une nouvelle section MCP sur sa page ; les serveurs globaux restent dans les réglages.</li></ul>
+                <h5>Une règle pour savoir qui modifie quoi</h5>
+                <ul><li>La configuration globale appartient aux administrateurs, celle d’un projet à son propriétaire, et les membres d’un projet partagé la lisent sans la modifier. La même règle couvre désormais les consignes, la mémoire, les skills et les serveurs MCP, dans l’interface comme dans les outils des agents.</li></ul>
+                <h5>Agents et délégation</h5>
+                <ul><li>Un agent peut lancer autant de sessions qu’un travail le demande : la limite de six lancements par heure disparaît. La limite de deux niveaux de chaînes de lancement reste.</li></ul>
+                <h5>Interface</h5>
+                <ul><li>Un sélecteur de projets avec recherche, qui montre les logos des projets, sert désormais à la portée MCP, aux permissions d’API, aux destinations des skills et aux filtres des services.</li><li>Les avertissements répétés des agents sont regroupés en encarts compacts, dont le texte complet reste accessible. Les erreurs restent aussi visibles qu’avant.</li><li>Les liens <code>file://</code> écrits par les agents ne s’affichent plus en Markdown brut : un fichier de l’espace de travail s’ouvre dans l’éditeur, tout le reste s’affiche en texte simple.</li></ul>
+                <h4>Notes de mise à jour</h4>
+                <ul><li>Trois migrations de base de données (0060 à 0062) s’exécutent au premier démarrage : tables des benchmarks, portée projet des serveurs MCP, et suppression de l’index unique, à l’échelle de l’instance, sur les noms des serveurs MCP.</li><li>Les propriétaires de projet qui ne sont pas administrateurs peuvent désormais gérer les serveurs MCP de leur projet, et un agent dans un projet partagé ne peut plus réécrire les consignes ou l’image du projet pour le compte d’un membre qui n’en est pas propriétaire.</li><li>La limite horaire de lancements couvrait aussi l’API et les clients MCP externes : ils ne sont donc plus plafonnés non plus. Restreins tes jetons d’API si tu comptais dessus. Les limites des automatisations et du board GitHub ne changent pas.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.33.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.32.0...v0.33.0">Changements depuis la v0.32.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.32.0" aria-labelledby="v0.32.0-title">
+            <header class="release-meta">
+              <h3 id="v0.32.0-title"><a href="#v0.32.0">Version 0.32.0</a></h3>
+              <time datetime="2026-11-01">1 novembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Les workflows Claude, phase par phase</span><span>Explorateur de fichiers et éditeur</span><span>Pièces jointes</span><span>Correctifs</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.32.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <h5>Les workflows Claude, phase par phase</h5>
+                <ul><li>Quand Claude Code exécute un workflow, le panneau Agents montre désormais ses phases et chaque agent avec son état (en attente, en cours, terminé, en échec), et la carte Workflow de la conversation montre la même progression. Avant, un workflow apparaissait comme une seule tâche de fond dont le titre sautait d’un agent à l’autre.</li></ul>
+                <h5>Explorateur de fichiers et éditeur</h5>
+                <ul><li>L’arborescence reste rapide et consultable dans les grands espaces de travail, cherche dans le contenu des fichiers comme dans leurs noms, et montre les liens symboliques.</li><li>Les fichiers ouverts suivent ce que les agents écrivent sur le disque ; un fichier qui a un brouillon non enregistré peut être comparé à la version du disque, et un fichier supprimé sur le disque est signalé au lieu d’être gardé en silence.</li><li>L’éditeur garde ta position quand tu reviens sur un fichier, et adapte sa mise en page à chaque fichier.</li><li>Les dossiers parents prennent la couleur de changement dès qu’un fichier qu’ils contiennent change, et l’espace vide de l’explorateur a son propre menu contextuel.</li><li>Modifier un fichier depuis le panneau latéral ne risque plus de l’abîmer.</li></ul>
+                <h5>Pièces jointes</h5>
+                <ul><li>L’audio et la vidéo joints à un message ou à un ticket se lisent sur place avec les commandes du navigateur, et l’on peut s’y déplacer. Le lien de téléchargement reste.</li></ul>
+                <h5>Correctifs</h5>
+                <ul><li>Sillage Desktop : le bouton de fermeture du visualisateur d’images était caché sous la barre de titre de la fenêtre ; le visualisateur et la boîte d’export commencent désormais en dessous.</li><li>La sortie tardive d’un sous-agent ne rouvre plus un tour terminé.</li><li>Google Antigravity : les lignes d’outils restent cohérentes quand les événements de clôture arrivent en retard ou sont diffusés.</li></ul>
+                <h4>Notes de mise à jour</h4>
+                <ul><li>Aucune nouvelle migration de base de données depuis 0.31.x.</li><li>Les mises à jour de Sillage Desktop depuis 0.31.1 utilisent le programme de mise à jour Windows renforcé livré dans cette version.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.32.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.31.1...v0.32.0">Changements depuis la v0.31.1</a></p>
+            </div>
+          </article>
+        </section>
+        <section class="release-month" id="month-2026-10" aria-labelledby="month-2026-10-title">
+          <h2 class="month-heading" id="month-2026-10-title">Octobre 2026 <span>26 versions</span></h2>
+          <article class="release-entry" id="v0.31.1" aria-labelledby="v0.31.1-title">
+            <header class="release-meta">
+              <h3 id="v0.31.1-title"><a href="#v0.31.1">Version 0.31.1</a></h3>
+              <time datetime="2026-10-30">30 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Sillage Desktop : des mises à jour qui ne cassent plus l’installation sous Windows</span><span>Sillage Desktop : une fenêtre dès le clic</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.31.1</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <h5>Sillage Desktop : des mises à jour qui ne cassent plus l’installation sous Windows</h5>
+                <ul><li>L’installateur Windows refuse de remplacer des fichiers qu’un processus tient encore, et te demandait de fermer Sillage avec Réessayer/Annuler alors que l’app était déjà fermée : un CLI ou un serveur MCP lancé sous le Node embarqué pouvait encore tourner depuis le dossier d’installation. Annuler à ce moment-là laissait une installation à moitié remplacée, qui ne démarrait plus et affichait « le serveur s’est arrêté au démarrage (code 1) ».</li><li>Avant de passer la main à l’installateur, Sillage arrête désormais tout ce qui tourne encore depuis son propre dossier et attend que ce dossier soit libre. Si quelque chose ne peut pas être arrêté, À propos le nomme et la mise à jour attend un nouvel essai au lieu de finir dans l’impasse de l’installateur. Il en va de même quand la mise à jour s’installe à la fermeture de l’app.</li><li>Sillage quitte pour de bon quelques secondes après s’être fermé pour une mise à jour, si bien qu’une page qui refuse de se décharger ne peut plus faire attendre l’installateur.</li><li>Si Sillage ne démarre toujours pas après une mise à jour, la boîte d’erreur propose de retélécharger l’installateur : le lancer remplace l’installation et garde tes données.</li></ul>
+                <h5>Sillage Desktop : une fenêtre dès le clic</h5>
+                <ul><li>La fenêtre s’ouvre aussitôt sur une page de démarrage avec le symbole de Sillage, puis passe à l’interface dès que le serveur embarqué répond. Le lancement ne semble plus ignoré pendant les secondes que Node et le serveur mettent à démarrer, Windows compris.</li></ul>
+                <h4>Notes de mise à jour</h4>
+                <ul><li>Ces changements vivent dans l’app elle-même : ils protègent les mises à jour lancées à partir de cette version. La mise à jour vers 0.31.1 passe encore par l’ancien programme de mise à jour : ferme donc Sillage, vérifie que plus rien ne tourne depuis <code>AppData\Local\Programs\@sillagedesktop</code>, et si la mise à jour échoue, lance l’installateur de cette version par-dessus l’installation existante. Tes données sont conservées.</li><li>Aucune migration de base de données. Sillage Server ne change pas dans cette version.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.31.1">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.31.0...v0.31.1">Changements depuis la v0.31.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.31.0" aria-labelledby="v0.31.0-title">
+            <header class="release-meta">
+              <h3 id="v0.31.0-title"><a href="#v0.31.0">Version 0.31.0</a></h3>
+              <time datetime="2026-10-30">30 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Exporter et partager une conversation</span><span>Des worktrees pour les sessions longues et autonomes</span><span>Des serveurs MCP qui reviennent</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.31.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <h5>Exporter et partager une conversation</h5>
+                <ul><li><strong>Exporter et partager</strong>, dans la barre d’outils de la conversation, transforme une session en page HTML autonome : titre, introduction et pseudonyme facultatif modifiables, extrait entre deux messages, et messages retirés un à un.</li><li>L’activité des outils est résumée par défaut, sans arguments, résultats ni chemins. Masque-la, ou inclus les entrées et sorties appel par appel.</li><li>Les secrets, adresses e-mail, adresses IP et chemins personnels sont détectés localement et masqués par défaut. Passe en revue chaque détection, masque à la main des mots ou des sélections, et vérifie chaque image que tu choisis d’inclure.</li><li>L’aperçu, le téléchargement HTML et la page publiée sont le même fichier. Il fonctionne hors ligne et n’exécute aucun JavaScript.</li><li>Sillage Server, avec une URL publique, peut publier la page sous forme de lien anonyme qui expire par défaut au bout de 30 jours et se révoque depuis <strong>Liens partagés</strong>. Sillage Desktop propose le téléchargement HTML.</li></ul>
+                <h5>Des worktrees pour les sessions longues et autonomes</h5>
+                <ul><li><strong>Tout nettoyer</strong>, dans la vue Chantiers, supprime en une seule confirmation tous les arbres fusionnés ou introuvables. Décoche les arbres à garder ; les arbres où une session travaille sont laissés de côté, et chaque arbre est réévalué sur le serveur avant sa suppression.</li><li>Nouvel outil MCP <code>remove_worktree</code> : les agents suppriment les arbres qu’ils ont créés une fois le travail fusionné. Un travail non fusionné est refusé sauf en forçant, et un agent ne peut pas supprimer son propre arbre. Seules les sessions qui ont vécu dans l’arbre sont archivées.</li><li>Un worktree Sillage supprimé avec un simple <code>git worktree remove</code> est désormais oublié au lieu de rester affiché pour toujours comme introuvable.</li><li>Une session qui a écrit dans plusieurs worktrees porte, dans la barre latérale, l’étiquette du dernier qu’elle a touché plutôt que celle du plus alarmant.</li></ul>
+                <h5>Des serveurs MCP qui reviennent</h5>
+                <ul><li>Un serveur MCP en échec se reconnecte depuis le panneau MCP sans redémarrer la session. Claude Code retente aussi les serveurs en échec au début de chaque tour, si bien qu’un backend démarré après la session est pris en compte tout seul. OpenCode gère la reconnexion serveur par serveur ; Codex, Grok Build et Antigravity indiquent qu’ils ne le peuvent pas.</li></ul>
+                <h4>Notes de mise à jour</h4>
+                <ul><li>Une migration de base de données (0059, partages de conversation) s’exécute automatiquement au premier démarrage.</li><li>Le partage public demande que l’URL publique soit définie dans les Réglages de Sillage Server. Les fichiers exportés sont stockés dans le dossier de données, sous <code>conversation-exports/</code>.</li><li>Server et Desktop se comportent de la même façon pour tous les autres changements de cette version.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.31.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.30.0...v0.31.0">Changements depuis la v0.30.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.30.0" aria-labelledby="v0.30.0-title">
+            <header class="release-meta">
+              <h3 id="v0.30.0-title"><a href="#v0.30.0">Version 0.30.0</a></h3>
+              <time datetime="2026-10-29">29 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Tags du board et cartes reliées aux conversations</span><span>Worktrees fusionnés avec des fichiers restants</span><span>Retours de la bibliothèque de skills</span><span>Correctifs</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.30.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <h5>Tags du board et cartes reliées aux conversations</h5>
+                <ul><li>Taguer les cartes pour trier le board. Les agents peuvent créer des tags, sauf si le propriétaire du projet le désactive dans les réglages des tags du board.</li><li>Rattacher une conversation à sa carte depuis la barre d’outils de la conversation, ou laisser l’agent le faire avec les nouveaux outils MCP <code>attach_card</code> / <code>detach_card</code>. Le numéro de la carte s’affiche sur la ligne de la barre latérale et dans l’en-tête de la conversation, et un onglet Carte dans le panneau montre ses détails.</li></ul>
+                <h5>Worktrees fusionnés avec des fichiers restants</h5>
+                <ul><li>Un worktree dont la branche est fusionnée mais qui contient encore des fichiers (une capture, un script de démo) apparaît désormais en <strong>Fusionné, fichiers restants</strong> et non plus comme du travail non commité, avec les fichiers nommés dans la barre latérale, l’aperçu de la session, la barre de la conversation et la vue Chantiers.</li><li>Garder ces fichiers, et l’arbre compte comme fusionné tant qu’ils ne changent pas ; toute écriture ultérieure fait revenir l’état.</li></ul>
+                <h5>Retours de la bibliothèque de skills</h5>
+                <ul><li>La recherche, le chargement, l’installation et les mises à jour groupées montrent clairement leur progression ; les lectures en échec se distinguent des résultats vides, et les enregistrements sont confirmés.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li>Le signal « Liaison coupée » ne clignote plus au-dessus du composer quand on change de conversation : il suit désormais la connexion réelle plutôt que le chargement du fil.</li></ul>
+                <h4>Notes de mise à jour</h4>
+                <ul><li>Deux migrations de base de données (0057 fichiers restants des worktrees, 0058 tags du board) s’exécutent automatiquement au premier démarrage.</li><li>Server et Desktop se comportent de la même façon pour tous les changements de cette version.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.30.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.29.0...v0.30.0">Changements depuis la v0.29.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.29.0" aria-labelledby="v0.29.0-title">
+            <header class="release-meta">
+              <h3 id="v0.29.0-title"><a href="#v0.29.0">Version 0.29.0</a></h3>
+              <time datetime="2026-10-29">29 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Conversations</span><span>Réglages et intégrations</span><span>Téléchargements</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.29.0</summary><div class="release-notes">
+                <h4>Conversations</h4>
+                <ul><li>Réparer les images Markdown en ligne enregistrées dans un worktree relié après le début de la conversation. Les images s’affichent dans le fil et s’ouvrent dans le visualisateur d’images.</li><li>Ajouter le mode concentration : masquer la navigation alentour et les contrôles secondaires en préservant les brouillons et la position de lecture.</li><li>Présenter les actions de la conversation en icônes avec des infobulles rapides, et dans une rangée d’actions séparée au téléphone.</li><li>Choisir l’effort de raisonnement avec un curseur qui glisse en continu et se cale au relâchement, au clavier comme au toucher.</li><li>Afficher les messages envoyés immédiatement, avant que le CLI ait fini de démarrer.</li><li>Réparer les liens de fichiers Windows dans les conversations, y compris vers des fichiers audio.</li></ul>
+                <h4>Réglages et intégrations</h4>
+                <ul><li>Organiser les réglages en groupes de navigation fixes et simplifier le pied de la barre latérale.</li><li>Montrer descriptions et liens en parcourant les skills avant de les ajouter.</li><li>Appliquer les serveurs MCP activés en cours de session, et ajouter une aide à la configuration des jetons Bearer.</li><li>Refuser les CLI désactivés dans la configuration du serveur.</li></ul>
+                <p>Ces améliorations sont communes à Sillage Server et Sillage Desktop. Aucune nouvelle migration de base de données depuis v0.28.0. Après la mise à jour de Server, recharge une conversation déjà ouverte pour retenter les images qui manquaient jusque-là.</p>
+                <h4>Téléchargements</h4>
+                <ul><li><strong>Windows</strong> : <code>Sillage-win-x64.exe</code></li><li><strong>macOS Apple Silicon</strong> : <code>Sillage-mac-arm64.dmg</code></li><li><strong>Linux</strong> : paquets <code>.deb</code> et AppImage pour x64 et arm64</li><li><strong>Server</strong> : archives Linux x64/arm64 et macOS arm64 ; image Docker <code>ghcr.io/marlburrow/sillage:0.29.0</code></li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.29.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.28.0...v0.29.0">Changements depuis la v0.28.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.28.0" aria-labelledby="v0.28.0-title">
+            <header class="release-meta">
+              <h3 id="v0.28.0-title"><a href="#v0.28.0">Version 0.28.0</a></h3>
+              <time datetime="2026-10-28">28 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Correctifs</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.28.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>Mises à jour des CLI dans les réglages</strong> : consulte les versions installées et recommandées, puis installe ou mets à jour les agents gérés par Sillage. Le remplacement attend la fin des sessions actives et rafraîchit ensuite les modèles disponibles.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li><strong>Codex et MCP</strong> : une configuration utilisateur contenant déjà un serveur HTTP nommé <code>sillage</code> ne bloque plus le lancement d’une session. Le serveur intégré utilise désormais <code>sillage_builtin</code>. Les erreurs de configuration affichent le serveur concerné plutôt qu’une erreur interne, y compris à la reprise d’une session.</li><li><strong>Desktop Windows</strong> : progression de mise à jour visible et message explicite lorsqu’un paquet n’est pas encore disponible.</li></ul>
+                <p>Le correctif MCP s’applique à Sillage Server et Desktop. Les anciens historiques restent lisibles et les configurations utilisateur sont conservées.</p>
+                <p>Les paquets Desktop Windows, macOS et Linux sont disponibles. La mise à jour est proposée dans <strong>Réglages → À propos</strong>.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.28.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.27.0...v0.28.0">Changements depuis la v0.27.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.27.0" aria-labelledby="v0.27.0-title">
+            <header class="release-meta">
+              <h3 id="v0.27.0-title"><a href="#v0.27.0">Version 0.27.0</a></h3>
+              <time datetime="2026-10-28">28 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Discussions personnelles et assistant</span><span>Comptes et modèles</span><span>Permissions API et MCP</span><span>Skills</span><span>Claude Code 2.1.312</span><span>Corrections</span><span>Installation et mise à jour</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.27.0</summary><div class="release-notes">
+                <h4>Discussions personnelles et assistant</h4>
+                <p>Chaque compte dispose désormais de conversations hors projet, avec un espace de travail durable et une mémoire personnelle partagée entre les CLI. Une idée née dans une discussion se poursuit dans un projet avec un brief explicite et les fichiers choisis ; les assistants personnels pilotent les sessions de projet qu’ils lancent et découvrent les modèles sans emprunter un autre projet.</p>
+                <h4>Comptes et modèles</h4>
+                <ul><li>Ajouter un abonnement Claude ne demande plus qu’un seul code : la jauge d’usage est lue depuis le même jeton, sans seconde connexion. Le CLI n’ouvre plus d’onglet de son côté sur Desktop.</li><li>La liste des modèles suit le compte choisi pour Codex, Claude et Grok Build : chaque compte est sondé avec sa propre authentification, et Codex ne partage plus son cache de modèles entre comptes.</li><li>Le panneau des modèles a un bouton pour recharger la liste depuis le CLI, sans attendre l’expiration du cache.</li></ul>
+                <h4>Permissions API et MCP</h4>
+                <p>Chaque clé autorise indépendamment ses CLI, modèles et efforts, avec la même politique appliquée par l’API REST et par le serveur MCP. Les permissions se modifient sans régénérer le secret, et les réglages « API et MCP » sont réorganisés autour des clés et des guides de connexion.</p>
+                <h4>Skills</h4>
+                <p>Skills installés, découverte, sources et mises à jour sont séparés en onglets. La création d’une source s’ouvre dans sa propre fenêtre, le périmètre de recherche est explicite, et l’installation reste centrée sur le skill choisi.</p>
+                <h4>Claude Code 2.1.312</h4>
+                <p>Sillage vise Claude Code 2.1.312 et l’Agent SDK 0.3.312. Les permissions, questions, revues de plan et élicitations expirent quand le CLI abandonne la demande, au lieu de rester ouvertes sans personne pour écouter. « Ne pas répondre » marque la question comme ignorée dans le résultat de l’outil.</p>
+                <h4>Corrections</h4>
+                <ul><li>Réordonner les sessions de la barre latérale fonctionne à nouveau après le premier dépôt.</li><li>Les migrations préservent les références héritées d’anciennes versions au lieu de refuser une base par ailleurs valide.</li></ul>
+                <h4>Installation et mise à jour</h4>
+                <p>Les paquets Desktop sont disponibles pour Windows x64, macOS Apple Silicon et Linux x64/arm64. Les archives Server et l’image Docker multiarchitecture sont également publiées. Desktop télécharge la mise à jour automatiquement ; elle s’installe depuis <strong>Réglages → À propos</strong> ou à la fermeture de l’app, sauf pour le paquet <code>.deb</code>.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.27.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.26.0...v0.27.0">Changements depuis la v0.26.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.26.0" aria-labelledby="v0.26.0-title">
+            <header class="release-meta">
+              <h3 id="v0.26.0-title"><a href="#v0.26.0">Version 0.26.0</a></h3>
+              <time datetime="2026-10-24">24 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Une fenêtre Desktop intégrée</span><span>Google Gemini avec Antigravity</span><span>Lisibilité et stabilité</span><span>Installation et mise à jour</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.26.0</summary><div class="release-notes">
+                <h4>Une fenêtre Desktop intégrée</h4>
+                <p>La barre de fenêtre suit désormais le thème de Sillage. Elle remplace l’empilement de la barre de titre et du menu natifs par un en-tête compact, déplaçable à la souris.</p>
+                <ul><li>Windows et Linux conservent les boutons natifs réduire, agrandir et fermer. Le menu de l’application est accessible par un bouton discret, avec les raccourcis clavier habituels.</li><li>macOS conserve les trois pastilles à gauche et le menu dans la barre système.</li><li>L’onboarding et les écrans de chargement réservent aussi l’espace de cette barre. Sillage Server dans le navigateur garde sa présentation habituelle.</li></ul>
+                <h4>Google Gemini avec Antigravity</h4>
+                <p>Sillage prend en charge la distribution ACP officielle Google Antigravity : comptes Google et clés API Gemini, choix du modèle et de l’effort, permissions, commandes, skills, MCP et import d’historique. L’intégration est disponible dans Server et Desktop.</p>
+                <p>Le transfert vers un autre agent et les reprises depuis un tour utilisent le contexte portable de Sillage lorsque le protocole ne propose pas de fork natif. La compaction manuelle et le guidage en cours de tour ne sont pas disponibles dans ce protocole. <a href="https://github.com/MarlBurroW/sillage/blob/v0.26.0/docs/antigravity-integration.md">Couverture et limites</a>.</p>
+                <h4>Lisibilité et stabilité</h4>
+                <ul><li>Les appels d’outils privilégient leurs descriptions destinées aux humains et conservent leurs arguments finaux, y compris après une reconnexion.</li><li>Les recherches et ouvertures web présentent mieux leurs cibles et leurs entrées.</li><li>Correction du plantage qui pouvait survenir lors du redimensionnement des panneaux latéraux.</li><li>Les consignes communes des agents restent en anglais tout en leur demandant de respecter la langue de l’utilisateur.</li></ul>
+                <h4>Installation et mise à jour</h4>
+                <p>Les paquets Desktop sont disponibles pour Windows x64, macOS Apple Silicon et Linux x64/arm64. Les archives Server et l’image Docker multiarchitecture sont également publiées.</p>
+                <p>Desktop télécharge la mise à jour automatiquement ; elle peut être installée depuis <strong>Réglages → À propos</strong> ou à la fermeture de l’app, sauf pour le paquet <code>.deb</code>, qui demande une installation explicite.</p>
+                <p>Cette version officielle met à jour <strong>Sillage</strong>. L’édition séparée <strong>Sillage Test</strong> utilisée pour essayer la barre de fenêtre conserve ses propres données et peut être désinstallée indépendamment.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.26.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.25.0...v0.26.0">Changements depuis la v0.25.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.25.0" aria-labelledby="v0.25.0-title">
+            <header class="release-meta">
+              <h3 id="v0.25.0-title"><a href="#v0.25.0">Version 0.25.0</a></h3>
+              <time datetime="2026-10-23">23 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage v0.25.0 facilite la lecture des conversations et le passage d’une session à l’autre, sur Server comme sur Desktop.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.25.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>Références entre conversations</strong> : saisissez <code>@@</code> pour retrouver et citer une session. Les références dans les messages et les réponses des agents donnent accès à un aperçu et au fil d’origine. Le menu <strong>Insérer</strong> présente les raccourcis pour les fichiers, sessions, tickets, commandes et skills.</li><li><strong>Six présentations des outils</strong> : lignes discrètes, chronologie, regroupement par intention, aperçus, console compacte ou affichage classique. Les détails exposent entrées, sorties et changements de fichiers ; les échecs restent repérables dans les groupes repliés.</li><li><strong>Navigation revue</strong> : liste des sessions simplifiée, titres donnés par les agents et réglages organisés pour réduire les longs défilements.</li><li><strong>Mises à jour automatiques de Desktop</strong> : téléchargement en arrière-plan, installation depuis À propos ou à la fermeture. Les paquets Debian demandent une autorisation administrateur ; sur macOS, l’application doit être dans Applications.</li></ul>
+                <h4>Fluidité et corrections</h4>
+                <ul><li>Chargement progressif des longues conversations et récupération des sorties complètes d’outils à la demande.</li><li>Réduction de la mémoire utilisée par les historiques, les images et les transcriptions Claude ; annulation des chargements devenus inutiles.</li><li>Le panneau latéral ne se rouvre plus lorsqu’on change de conversation via son repère de worktree.</li><li>Reprise des mises à jour Desktop fiabilisée, notamment sous Windows et avec les AppImage Linux.</li></ul>
+                <p>Le README, le guide des fonctionnalités et le site présentent les nouveaux usages. Les références, affichages et améliorations de navigation concernent les deux éditions ; la mise à jour automatique concerne Desktop.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.25.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.24.2...v0.25.0">Changements depuis la v0.24.2</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.24.2" aria-labelledby="v0.24.2-title">
+            <header class="release-meta">
+              <h3 id="v0.24.2-title"><a href="#v0.24.2">Version 0.24.2</a></h3>
+              <time datetime="2026-10-22">22 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Correctif du plantage de Sillage Desktop lorsque le serveur atteint 256 Mo de mémoire JavaScript, même sur une machine disposant de RAM libre.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.24.2</summary><div class="release-notes">
+                <ul><li>Supprimer le plafond fixe de 256 Mo du serveur embarqué : Node adapte désormais sa limite mémoire à la machine.</li><li>Le correctif concerne Sillage Desktop sous Windows, macOS et Linux. Les paramètres mémoire de Sillage Server ne changent pas.</li><li>La documentation et les commentaires du dépôt sont désormais en anglais ; le README et les guides ont également été réorganisés.</li></ul>
+                <p>Pour mettre à jour une ancienne version Desktop, fermer Sillage puis lancer le nouvel installeur. Cette version ne contient pas encore la mise à jour automatique. Elle remplace aussi le correctif manuel de la limite mémoire appliqué dans app.asar.</p>
+                <p>Validation : vérification des types, lint et 355 tests réussis. Un essai du lanceur Desktop avec une allocation supérieure à 300 Mo a confirmé le démarrage et l’arrêt du processus. Le redémarrage avec les données de l’utilisateur Windows concerné reste à confirmer.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.24.2">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.24.1...v0.24.2">Changements depuis la v0.24.1</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.24.1" aria-labelledby="v0.24.1-title">
+            <header class="release-meta">
+              <h3 id="v0.24.1-title"><a href="#v0.24.1">Version 0.24.1</a></h3>
+              <time datetime="2026-10-22">22 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Correctif du lancement de Claude Code en mode « Tout autoriser », commun à Sillage Server et Sillage Desktop.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.24.1</summary><div class="release-notes">
+                <ul><li>Transmettre explicitement l’autorisation requise par le SDK Claude, en plus du mode de permissions, pour les nouvelles conversations comme pour les reprises.</li><li>Demander une relance du processus Claude dans les deux sens lors d’un passage vers ou depuis « Tout autoriser ».</li><li>Ajouter des traces de diagnostic lorsque Claude annonce un autre mode ou demande une permission malgré ce réglage, sans journaliser les arguments des outils.</li></ul>
+                <p>Ce correctif répond au signalement de demandes Bash inattendues sur Desktop Windows. La disparition de ce symptôme sur l’installation concernée reste à confirmer.</p>
+                <p>Validation : 355 tests, vérification des types et lint réussis. Les nouveaux tests passent par le vrai SDK pour vérifier les arguments de lancement et de reprise.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.24.1">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.24.0...v0.24.1">Changements depuis la v0.24.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.24.0" aria-labelledby="v0.24.0-title">
+            <header class="release-meta">
+              <h3 id="v0.24.0-title"><a href="#v0.24.0">Version 0.24.0</a></h3>
+              <time datetime="2026-10-21">21 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Veille pendant les tours</span><span>Des conversations plus confortables</span><span>Correctif Windows</span><span>Installation et mise à jour</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.24.0</summary><div class="release-notes">
+                <h4>Veille pendant les tours</h4>
+                <p>Sillage peut afficher des articles pendant que l’agent travaille : un titre à la fois, renouvelé toutes les 12 secondes, avec sa source, sa date et un lien vers l’article. La lecture se met en pause au survol ou au focus clavier ; des boutons permettent aussi de suspendre la rotation, de passer au titre suivant ou de masquer la veille pour le tour.</p>
+                <p>Dans <strong>Réglages → Veille</strong>, activez la fonctionnalité et composez votre sélection de flux RSS ou Atom. Hugging Face, Google DeepMind et OpenAI sont proposés au départ. Vous pouvez tester une source avant de l’ajouter, la désactiver ou la retirer, et retrouver les articles récents après la fin du tour.</p>
+                <p>La veille est <strong>désactivée par défaut</strong>. Elle fonctionne sans appel à un modèle IA, avec une collecte horaire et un cache local à l’instance. Chaque compte Server conserve ses préférences ; sur Desktop, elles appartiennent au compte local. Les téléchargements sont bornés et les adresses réseau internes sont refusées.</p>
+                <h4>Des conversations plus confortables</h4>
+                <ul><li><strong>Indicateur d’activité personnalisable</strong> dans Apparence : Sillage, Onde, Orbite, Encre, Constellation ou Souffle, avec aperçu avant sélection.</li><li><strong>Largeur du contenu réglable</strong>, de 768 à 1 600 pixels, dans Apparence.</li><li><strong>Aperçu des images avant envoi</strong> : cliquez sur une pièce jointe du brouillon pour l’ouvrir dans le visualisateur.</li><li><strong>Activité regroupée par projet</strong> dans une liste unique, avec des repères pour distinguer les états des sessions.</li></ul>
+                <h4>Correctif Windows</h4>
+                <p>Les worktrees existants ne sont plus signalés à tort comme introuvables lorsque Git et Windows utilisent des séparateurs de chemins différents. La lecture des chemins contenant des accents est également corrigée.</p>
+                <h4>Installation et mise à jour</h4>
+                <p>Les archives <strong>Sillage Server</strong> sont disponibles pour Linux x64/arm64 et macOS Apple Silicon. <strong>Sillage Desktop</strong> est disponible pour Windows x64, macOS Apple Silicon et Linux x64/arm64.</p>
+                <p>Cette version ajoute la migration SQLite <code>0049_natural_tenebrous</code>, appliquée automatiquement au démarrage pour créer le cache des flux. Les préférences existantes sont conservées.</p>
+                <p>Validation : typecheck, lint, 351 tests serveur, build de production et parcours Playwright sur ordinateur et téléphone. Les profils Server et Desktop ont également été vérifiés sur le paquet assemblé.</p>
+                <p><strong>Toutes les modifications :</strong> <a href="https://github.com/MarlBurroW/sillage/compare/v0.23.0...v0.24.0">v0.23.0...v0.24.0</a></p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.24.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.23.0...v0.24.0">Changements depuis la v0.23.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.23.0" aria-labelledby="v0.23.0-title">
+            <header class="release-meta">
+              <h3 id="v0.23.0-title"><a href="#v0.23.0">Version 0.23.0</a></h3>
+              <time datetime="2026-10-21">21 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Tickets modifiables et relations entre tickets</span><span>Worktrees et décisions</span><span>Correctifs Git</span><span>Installation et validation</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.23.0</summary><div class="release-notes">
+                <h4>Tickets modifiables et relations entre tickets</h4>
+                <ul><li>Toute session peut modifier le titre et la description de n’importe quel ticket de son projet et y ajouter des notes, sans devoir y être rattachée.</li><li>Nouvelle section <strong>Relations</strong> : bloque / est bloqué par, est lié à, doublon, parent / sous-ticket et remplacement. Recherche par numéro ou titre, navigation vers le ticket lié et suppression depuis les deux sens.</li><li>Les agents disposent de <code>update_card</code>, <code>link_cards</code> et <code>unlink_cards</code> ; <code>read_card</code> affiche les relations. Les liens restent informatifs et locaux à Sillage, même pour les issues GitHub. Les mentions <code>#n</code> restent de simples références.</li><li>Les liens vers soi-même et les cycles sont refusés ; un sous-ticket a un seul parent.</li></ul>
+                <h4>Worktrees et décisions</h4>
+                <ul><li><strong>À décider</strong> se concentre sur les décisions demandées par les agents autonomes. Les propositions automatiques de nettoyage des worktrees disparaissent.</li><li>La branche, l’état du worktree et son nettoyage avec confirmation sont accessibles directement dans la conversation.</li></ul>
+                <h4>Correctifs Git</h4>
+                <ul><li>Les listes de plusieurs milliers de fichiers restent utilisables grâce à la recherche et à la pagination ; les actions globales traitent aussi les fichiers hors de la page affichée.</li><li>Les chemins sont correctement résolus depuis un sous-dossier du dépôt, et les erreurs de diff sont affichées.</li></ul>
+                <h4>Installation et validation</h4>
+                <p>Disponible pour <strong>Sillage Server et Sillage Desktop</strong>. Migration additive des relations entre tickets appliquée automatiquement au démarrage.</p>
+                <p>Validation : 343 tests, typecheck, lint et build réussis ; parcours des relations vérifié sur Server et Desktop, en grand écran et au format téléphone.</p>
+                <p><strong>Tous les changements :</strong> <a href="https://github.com/MarlBurroW/sillage/compare/v0.22.0...v0.23.0">v0.22.0...v0.23.0</a></p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.23.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.22.0...v0.23.0">Changements depuis la v0.22.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.22.0" aria-labelledby="v0.22.0-title">
+            <header class="release-meta">
+              <h3 id="v0.22.0-title"><a href="#v0.22.0">Version 0.22.0</a></h3>
+              <time datetime="2026-10-20">20 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Les agents peuvent maintenant déplacer les cartes du board, les cartes citées dans les réponses s’ouvrent d’un clic, et l’installation d’un CLI depuis l’interface montre enfin ce qu’elle fait.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.22.0</summary><div class="release-notes">
+                <h4>Board</h4>
+                <ul><li>Les agents déplacent les cartes avec le nouvel outil <code>move_card</code>, à la demande ou pour passer leur propre carte en « À vérifier » quand le travail est prêt à relire ; « Terminé » et « Abandonné » restent à l’utilisateur, sauf s’il le demande. Chaque déplacement laisse une ligne dans l’activité de la carte.</li><li>Une carte en cours ou à vérifier passe en « Terminé » quand son worktree est fusionné dans la branche de base, une fois toutes ses sessions au repos. Une carte ramenée en arrière à la main n’est pas renvoyée. Sur un board relié à GitHub, l’issue se ferme ensuite.</li><li>Les <code>#12</code> des réponses, des descriptions et des notes deviennent des liens vers la carte, avec un aperçu au survol (colonne, titre, début de la description). Seules les cartes qui existent dans le projet sont liées.</li><li>Trier chaque colonne par arrivée, récentes ou anciennes en tête, ou garder l’ordre manuel. Le choix est mémorisé par compte et par projet, et chaque carte affiche depuis quand elle est dans sa colonne.</li><li>Une carte se saisit par n’importe quel point pour la glisser, et le tiroir d’une carte se referme d’un clic à côté.</li></ul>
+                <h4>Installation et choix des CLI</h4>
+                <ul><li>Installer un CLI depuis la visite ou la page de nouvelle session montre l’avancement : fichiers reçus, fichier en cours, temps écoulé.</li><li>Masquer les CLI qu’on n’utilise pas : le rang « Installer » disparaît tant que le CLI manque, et se retrouve d’un clic.</li></ul>
+                <h4>Interface</h4>
+                <ul><li>Clic droit sur une session ou un projet de la barre latérale pour ouvrir son menu, sans viser le bouton « … ».</li><li>Sélectionner du texte dans une cellule d’un tableau ne déborde plus sur les cellules voisines.</li><li>Sur Sillage Desktop, la création d’un projet ne demande plus s’il est privé ou partagé.</li><li>Les sessions Claude Code à reprendre sont retrouvées même quand la casse du chemin diffère de celle du projet (Windows, macOS).</li></ul>
+                <h4>Versions et mise à jour</h4>
+                <p>Versions CLI ciblées inchangées : <strong>Claude Code 2.1.301</strong> (SDK 0.3.301), <strong>Codex 0.163.0</strong>, <strong>OpenCode 1.19.3</strong>, <strong>Grok Build 1.0.62</strong>.</p>
+                <p>Une migration additive depuis v0.21.0, appliquée au démarrage : <code>0047_card_arrival</code> (colonnes <code>cards.column_entered_at</code> et <code>cards.done_by_merge</code>, deux déclencheurs). Conserver une sauvegarde des données avant la mise à jour.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.22.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.21.0...v0.22.0">Changements depuis la v0.21.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.21.0" aria-labelledby="v0.21.0-title">
+            <header class="release-meta">
+              <h3 id="v0.21.0-title"><a href="#v0.21.0">Version 0.21.0</a></h3>
+              <time datetime="2026-10-19">19 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage Desktop arrive sur Windows, se télécharge en un clic depuis le site, et chaque nouvelle installation s’ouvre sur une visite qui règle Sillage pour de vrai.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.21.0</summary><div class="release-notes">
+                <h4>Sillage Desktop sur Windows</h4>
+                <ul><li>Installer Sillage sur Windows (x64) avec un installeur par utilisateur, sans droits d’administrateur. L’app embarque le serveur et son Node, comme sur macOS et Linux.</li><li>Les terminaux s’ouvrent dans PowerShell (PowerShell 7 s’il est installé). Les actions de projet et les scripts de vérification, écrits en syntaxe <code>sh</code>, passent par le bash de Git for Windows, désormais requis.</li><li>Lancer les quatre CLI sous Windows, y compris installés par l’app avec son npm embarqué. Sillage lit les lanceurs <code>.cmd</code> de npm pour lancer leur vraie cible : un binaire natif (Claude Code, OpenCode) ou un script Node (Codex, Grok).</li><li>Gérer aussi les autres particularités de Windows : chemins <code>C:\</code> et lecteurs dans le sélecteur de dossier, jonctions à la place des liens symboliques, arrêt propre du serveur, aucune fenêtre de console. Les données vont dans <code>%LOCALAPPDATA%\Sillage</code>.</li><li>L’app n’est pas encore signée : SmartScreen demande de confirmer le premier lancement (« Informations complémentaires », puis « Exécuter quand même »).</li></ul>
+                <h4>Téléchargement direct</h4>
+                <ul><li>Les paquets portent des noms stables (<code>Sillage-win-x64.exe</code>, <code>Sillage-mac-arm64.dmg</code>, <code>Sillage-linux-amd64.deb</code>…), que <code>releases/latest/download/</code> sert toujours dans leur dernière version.</li><li>Le site propose le paquet du système du visiteur et liste tous les autres ; le README et le guide donnent les mêmes liens directs.</li></ul>
+                <h4>Visite de première ouverture</h4>
+                <ul><li>À la première connexion, un parcours en étapes explique chaque idée de Sillage en la réglant : profil, apparence, agents (CLI détectés, installation, comptes supplémentaires), façon de travailler de chaque CLI, consignes et mémoire, puis récapitulatif. Il se rejoue depuis Réglages › À propos.</li><li>En hébergé, le premier compte se crée depuis le navigateur quand la base n’en a aucun, plus besoin de passer par le terminal. L’adresse publique devient un réglage d’instance, lu par les webhooks, l’API et les tâches planifiées.</li><li>Dans l’app de bureau, la visite est plus courte : ni compte, ni adresse, ni téléphone.</li><li>Choisir où vivent les consignes et la mémoire des nouveaux projets, et laisser au besoin la mémoire d’un projet à chaque CLI.</li><li>Les projets d’essai écrits par Sillage deviennent une origine de l’écran Nouveau projet.</li></ul>
+                <h4>Comptes Grok</h4>
+                <ul><li>Ajouter des comptes Grok supplémentaires, comme pour Claude et Codex : connexion par code d’appareil ou clé xAI, jauge de consommation par compte, choix du compte dans le composeur.</li></ul>
+                <h4>Versions et mise à jour</h4>
+                <p>Versions CLI ciblées inchangées : <strong>Claude Code 2.1.301</strong> (SDK 0.3.301), <strong>Codex 0.163.0</strong>, <strong>OpenCode 1.19.3</strong>, <strong>Grok Build 1.0.62</strong>.</p>
+                <p>Deux migrations additives depuis v0.20.0, appliquées au démarrage : <code>0045_grok_accounts</code> (table des comptes Grok) et <code>0046_memory_mode</code> (colonne <code>projects.memory_mode</code>, défaut <code>sillage</code>). Conserver une sauvegarde des données avant la mise à jour.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.21.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.20.0...v0.21.0">Changements depuis la v0.20.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.20.0" aria-labelledby="v0.20.0-title">
+            <header class="release-meta">
+              <h3 id="v0.20.0-title"><a href="#v0.20.0">Version 0.20.0</a></h3>
+              <time datetime="2026-10-19">19 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage s’installe aussi comme une application de bureau, sur macOS et Linux : pas de serveur à monter, pas de compte à créer.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.20.0</summary><div class="release-notes">
+                <h4>Application de bureau (macOS, Linux)</h4>
+                <ul><li>Télécharger Sillage comme une application, depuis cette release : <code>.dmg</code> (et <code>.zip</code>) pour les Mac Apple Silicon, <code>.deb</code> et AppImage pour Linux x64 et arm64. L’app embarque le serveur de la release et son propre Node, et ouvre Sillage dans sa fenêtre.</li><li>Les agents sont les CLI de l’utilisateur, avec ses connexions. L’app lit l’environnement de son shell de connexion : les CLI installés par Homebrew, npm ou nvm sont trouvés comme dans le terminal. Elle peut aussi installer les CLI manquants avec le npm qu’elle embarque.</li><li>Aucune connexion : l’app ouvre elle-même la session de son unique utilisateur. Son serveur écoute sur <code>127.0.0.1</code> et ne sert que la fenêtre de l’app (contrôle de <code>Host</code> et d’<code>Origin</code>).</li><li>L’interface s’adapte au profil de l’instance, annoncé par <code>GET /api/system/instance</code>. En bureau, elle masque le mot de passe, la déconnexion, les notifications push, les comptes d’utilisateurs et le service worker, et « À propos » renvoie à la nouvelle version à télécharger. Les instances hébergées ne changent pas.</li><li>L’app n’est pas encore notarisée par Apple : au premier lancement, l’autoriser dans Réglages Système &gt; Confidentialité et sécurité (« Ouvrir quand même »). Sur Ubuntu 24.04 et après, préférer le <code>.deb</code>, qui installe le profil AppArmor dont Chromium a besoin.</li><li>Les agents travaillent tant que l’app tourne, sur cet ordinateur seulement : ni accès depuis le téléphone, ni notifications push, ni webhooks venus d’Internet. Pour cela, un serveur reste la bonne voie. Le guide <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md"><code>docs/desktop.md</code></a> détaille ce qui change, où vivent les données et comment désinstaller.</li><li>Chaque release construit l’app sur les runners natifs de chaque plateforme et la lance pour de vrai avant de la publier. La CI fait de même pour Linux à chaque PR.</li></ul>
+                <h4>Interface</h4>
+                <ul><li>Montrer la branche et le worktree dans l’en-tête d’une conversation, avec un point quand l’arbre a des changements non commités ; un clic ouvre l’onglet Git.</li><li>Centrer les états vides de tous les onglets du panneau latéral.</li><li>Aligner les icônes de la PWA et la vignette de partage sur l’accent indigo de l’application.</li></ul>
+                <h4>Versions et mise à jour</h4>
+                <p>Versions CLI ciblées inchangées : <strong>Claude Code 2.1.301</strong> (SDK 0.3.301), <strong>Codex 0.163.0</strong>, <strong>OpenCode 1.19.3</strong>, <strong>Grok Build 1.0.62</strong>.</p>
+                <p>Aucune migration de base depuis v0.19.0. Le site et le README présentent l’application de bureau.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.20.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.19.0...v0.20.0">Changements depuis la v0.19.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.19.0" aria-labelledby="v0.19.0-title">
+            <header class="release-meta">
+              <h3 id="v0.19.0-title"><a href="#v0.19.0">Version 0.19.0</a></h3>
+              <time datetime="2026-10-17">17 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage pilote désormais Grok Build, suit chaque worktree jusqu’à son nettoyage, montre ce que chaque tour a changé dans le dépôt et laisse une conversation continuer dans un autre CLI.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.19.0</summary><div class="release-notes">
+                <h4>Un quatrième CLI : Grok Build</h4>
+                <ul><li>Piloter Grok Build (xAI) par l’Agent Client Protocol, à côté de Claude Code, Codex et OpenCode : mêmes consignes, même mémoire, même board, mêmes outils de coordination. Installation depuis les réglages, adaptateur documenté dans <code>docs/GROK.md</code>.</li></ul>
+                <h4>Worktrees, graphe et points de reprise</h4>
+                <ul><li>Suivre l’avancement des worktrees : la page du projet compare chaque arbre connu de git, y compris ceux créés au shell, avec la branche par défaut (non commité, à fusionner, fusionné, dossier manquant) et montre les sessions qui y travaillent. La barre latérale affiche la branche et l’état de chaque conversation.</li><li>Nettoyer un worktree en un geste, après un récapitulatif de ce qui serait perdu ; proposer le nettoyage dans <strong>À décider</strong> quand un arbre est fusionné et propre.</li><li>Donner aux agents <code>create_worktree</code> et <code>list_worktrees</code>, pour que Sillage voie les arbres qu’ils créent.</li><li>Afficher l’historique Git en graphe de branches et de fusions, sur la branche courante ou toutes, avec un inspecteur de diff par commit ; le panneau latéral devient un rail vertical d’icônes.</li><li>Capturer le dépôt avant et après chaque tour (option « Points de reprise par tour » du projet) : chaque tour liste les fichiers qu’il a changés, les ouvre en diff et peut être annulé, avec une bifurcation facultative de la conversation depuis ce point.</li><li>Continuer une conversation dans un autre CLI : le nouvel agent reçoit une sélection budgétée du fil, en messages complets, avec des références lisibles par le serveur MCP de Sillage.</li></ul>
+                <h4>Interface</h4>
+                <ul><li>Réunir modèle et effort dans une puce sous le composer, et ranger les réglages épinglables en deux niveaux, triables ; au téléphone, la puce seule.</li><li>Ouvrir les images des conversations (pièces jointes, captures lues par les agents, sorties MCP) dans un visualisateur : zoom, déplacement, rotation, copie PNG, téléchargement.</li><li>Regrouper la mise à jour des skills : sources récupérées en une fois, application groupée, diff lisible.</li><li>Montrer l’API et le serveur MCP comme deux portes distinctes dans les réglages, avec un guide générique de branchement d’un client MCP ; laisser un client MCP extérieur lire, attendre, relancer et interrompre les sessions existantes.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li>Clore proprement une réponse Codex coupée par un message steeré, et journaliser ce message avant la réponse qu’il provoque.</li><li>Garder la barre de saisie en vue quand le clavier mobile s’ouvre ; garder l’effort visible sous une longue liste de modèles.</li><li>Charger le catalogue français à la demande ; traduire côté web les efforts et les erreurs écrites par le serveur.</li><li>Rendre le helper git des dépôts clonés indépendant de la release installée.</li><li>Protéger la lecture des transcripts Claude et refuser un binaire OpenCode 2.</li></ul>
+                <h4>Versions et mise à jour</h4>
+                <p>Versions CLI ciblées : <strong>Claude Code 2.1.301</strong> (SDK 0.3.301), <strong>Codex 0.163.0</strong>, <strong>OpenCode 1.19.3</strong>, <strong>Grok Build 1.0.62</strong>.</p>
+                <p>Cette version applique trois migrations depuis v0.18.0 (<code>0042</code> à <code>0044</code>) pour les transferts entre CLI, les points de reprise et le suivi des worktrees. Le premier démarrage rattrape les chemins des conversations existantes (quelques secondes sur une grande base). Les migrations s’appliquent au démarrage ; conserver une sauvegarde des données avant la mise à jour.</p>
+                <p>Le site et le README sont actualisés, avec de nouvelles captures (graphe Git, worktrees, rail du panneau, composer).</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.19.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.18.0...v0.19.0">Changements depuis la v0.18.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.18.0" aria-labelledby="v0.18.0-title">
+            <header class="release-meta">
+              <h3 id="v0.18.0-title"><a href="#v0.18.0">Version 0.18.0</a></h3>
+              <time datetime="2026-10-14">14 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage relie désormais le travail à GitHub et aux événements externes, permet aux sessions autonomes de demander une décision, et laisse choisir le compte Claude ou Codex pour chaque conversation.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.18.0</summary><div class="release-notes">
+                <h4>GitHub, automatisations et décisions</h4>
+                <ul><li>Relier le board aux issues GitHub : cartes locales et issues côte à côte, commentaires synchronisés, colonnes reliées aux labels et à l’état de l’issue. Choisir si les nouvelles cartes restent locales ou deviennent des issues.</li><li>Activer la maintenance sur une nouvelle issue ou un commentaire, avec ses propres instructions, CLI, modèle et permissions. Une session par issue reçoit les commentaires suivants, dans un worktree dédié ou à la racine du projet.</li><li>Déclencher des sessions par webhook : modèles GitHub pour une issue étiquetée, une commande en commentaire, une PR ouverte ou une CI en échec ; conditions et prompts construits depuis le payload ; filtre JavaScript facultatif en bac à sable. Un simulateur et un journal des appels permettent de vérifier les règles sans lancer d’agent. Dédoublonnage et limites horaires encadrent les lancements.</li><li>Exécuter un script avant une tâche planifiée : sortie 0 pour réveiller l’agent avec le résultat, sortie 10 pour passer sans ouvrir de session. Un script proposé par un agent attend une validation visible depuis la conversation.</li><li>Autoriser les sessions autonomes à poser une question dans <strong>À décider</strong>, avec échéance et choix par défaut facultatif. La réponse revient à la session. Cette option est désactivée par défaut pour chaque source et reste distincte des permissions natives du CLI.</li><li>Recevoir les questions et décisions par toast dans l’application et par push sur les autres appareils, sans notifier une conversation déjà sous les yeux. Gérer les appareils et tester les notifications depuis les réglages.</li></ul>
+                <h4>Comptes et espace de travail</h4>
+                <ul><li>Ajouter plusieurs abonnements ou clés API Claude et Codex depuis Sillage, avec une connexion guidée. Choisir le compte dès la création de la conversation ou dans son composer ; les comptes supplémentaires appartiennent à l’utilisateur Sillage qui les a ajoutés.</li><li>Comparer l’usage des abonnements avant de choisir. Les abonnements Claude supplémentaires proposent une seconde connexion guidée pour activer leur jauge ; les clés API n’ont pas de jauge d’abonnement.</li><li>Épingler les réglages souhaités sous le composer, avec une disposition propre à chaque CLI : permissions, compte, vitesse, conseiller et autres contrôles disponibles.</li><li>Enregistrer des actions de projet : tests, serveur de développement ou script à lancer depuis l’en-tête, le panneau ou la palette. Les tâches gardent leur sortie et leur code de retour ; les services utilisent systemd sur Linux, avec un repli en terminal ailleurs. Les commandes proposées par les agents se relisent avant leur premier lancement depuis l’interface.</li><li>Organiser la navigation du projet en sections Board, Sessions et Automatisations.</li></ul>
+                <h4>API et MCP</h4>
+                <ul><li>Créer des projets avec <code>POST /api/v1/projects</code>, la portée <code>projects:write</code> et un jeton sans restriction de projets.</li><li>Connecter un CLI externe au MCP de Sillage en mode global : parcourir les projets, lire historique, board, consignes et mémoire, puis lancer du travail au nom d’un compte.</li><li>Accéder au MCP à distance par Streamable HTTP sur <code>/api/v1/mcp</code>, avec un jeton portant la portée <code>mcp</code> et, au besoin, une liste de projets autorisés. Le mode stdio local ou par SSH reste disponible. Les messages entre sessions restent réservés aux sessions Sillage.</li></ul>
+                <h4>Correctifs et documentation</h4>
+                <ul><li>Réparer le fork d’une conversation Codex avec le protocole actuel.</li><li>Recaler le document à la fermeture du clavier iOS pour limiter les décalages de toucher dans la PWA.</li><li>Fiabiliser les connexions guidées : URL d’autorisation complète, code collé, suivi des tentatives et rafraîchissement des comptes sans boucle de requêtes.</li><li>Actualiser le README, le site et 24 captures, et corriger le débordement du menu du site sur tablette.</li><li>Aligner la vérification CI des bindings OpenCode sur la version déjà ciblée par Sillage.</li><li>Masquer aussi les descriptions de services générées par les anciennes versions de systemd, qui recopiaient les arguments de commande sans le préfixe reconnu par Sillage.</li><li>Aligner l’image par défaut du chart Helm sur v0.18.0.</li></ul>
+                <h4>Versions et mise à jour</h4>
+                <p>Versions CLI ciblées : <strong>Claude Code 2.1.296</strong> (SDK 0.3.296), <strong>Codex 0.162.1</strong>, <strong>OpenCode 1.19.0</strong>. L’adaptateur OpenCode vise la ligne 1.x.</p>
+                <p>Cette version applique neuf migrations depuis v0.17.0 (<code>0033</code> à <code>0041</code>) pour les actions, automatisations, vérifications planifiées, board GitHub, décisions, comptes et demandes MCP hors session. Les migrations s’appliquent au démarrage ; conserver une sauvegarde des données avant la mise à jour.</p>
+                <p>Validation : typage, lint, 235 tests serveur, build complet, bindings Codex et OpenCode ; site vérifié avec Playwright en clair et sombre à 320, 390, 768 et 1440 pixels, avec et sans JavaScript.</p>
+                <p>CI Linux/macOS et installation macOS validées. Archive Linux x64 démarrée sur une base jetable : version 0.18.0, accueil, ressources JavaScript, repli SPA et authentification MCP vérifiés. Chart Helm validé par lint et rendu des manifests.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.18.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.17.0...v0.18.0">Changements depuis la v0.17.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.17.0" aria-labelledby="v0.17.0-title">
+            <header class="release-meta">
+              <h3 id="v0.17.0-title"><a href="#v0.17.0">Version 0.17.0</a></h3>
+              <time datetime="2026-10-09">9 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Git</span><span>Palette de commandes</span><span>Explorateur de fichiers</span><span>Services</span><span>Réglages et navigation</span><span>Validation</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.17.0</summary><div class="release-notes">
+                <h4>Git</h4>
+                <ul><li>Faire le workflow git courant depuis l’onglet Git, sans terminal : indexer et retirer des fichiers, commiter ou amender (Ctrl/⌘+Entrée), fetch, pull avec merge ou rebase, push ou publier la branche, push forcé avec bail.</li><li>Gérer les branches locales et distantes (créer, changer, fusionner, supprimer) et les stashs (créer, appliquer, pop, jeter).</li><li>Agir sur un commit : nouvelle branche ici, revert, reset soft, mixed ou hard, expliqués et confirmés.</li><li>Piloter une opération en cours (merge, rebase, revert arrêtés sur des conflits) : marquer les fichiers résolus, continuer ou abandonner.</li><li>Transformer les refus de git en remèdes proposés : forcer avec bail, stasher puis changer, supprimer quand même.</li><li>Tout passe par le binaire git du dépôt : hooks, configuration, signature et helper de credentials s’appliquent comme depuis le shell.</li></ul>
+                <h4>Palette de commandes</h4>
+                <ul><li>Une seule saisie, sans filtre : projets, conversations, texte des messages, fichiers de tous les dépôts (correspondance floue à la VS Code), tickets, tâches planifiées, skills, serveurs MCP, sections de réglages et quelques commandes.</li><li>Résultats groupés par projet, le projet courant en tête à pertinence égale ; Tab passe au groupe suivant.</li><li>Nommer un projet restreint la recherche à lui (« nimbus cache »), et un type de résultat liste ce type (« skill », « mcp », « ticket »).</li><li>Ouvrir un fichier l’affiche dans le panneau, worktree compris, avec le curseur dans l’éditeur.</li></ul>
+                <h4>Explorateur de fichiers</h4>
+                <ul><li>Sélection multiple par Ctrl-clic, Maj-clic et Ctrl+A ; clavier complet (flèches, Entrée, Espace, F2, Suppr, saut par frappe) ; raccourcis affichés dans les menus.</li><li>Couper, copier, coller, dupliquer, copier le chemin absolu ou relatif, glisser plusieurs entrées, télécharger un dossier ou une sélection en zip streamé.</li><li>Les dossiers dépliés survivent à une recherche ou à la fermeture de la colonne, et un onglet suit son fichier renommé ou déplacé, brouillon compris.</li><li>Au téléphone, « Sélectionner » dans le menu d’une ligne passe en mode sélection.</li></ul>
+                <h4>Services</h4>
+                <ul><li>La page liste désormais les apps durables (<code>sillage-app-*</code>) avec leur état, leurs ports et leur origine, et permet de les arrêter, relancer ou retirer.</li><li>Les commandes lancées par les agents et terminaux sont repliées en une ligne par arbre de processus, avec sous-processus, ports et mémoire cumulée ; l’enrobage de Claude Code est déplié et les valeurs qui ressemblent à un secret sont masquées.</li><li>Les processus détachés du daemon forment une troisième liste.</li></ul>
+                <h4>Réglages et navigation</h4>
+                <ul><li>Pages MCP, Secrets, Accès git, Jetons d’API et Comptes : la liste vient d’abord, le formulaire de création s’ouvre à la demande ; interrupteur pour activer un serveur MCP, boîte de confirmation de l’app pour supprimer un compte, portées des jetons expliquées.</li><li>Les projets épinglés sont persistés côté serveur, par compte, et suivent l’utilisateur d’un appareil à l’autre ; les épingles locales existantes sont reprises une fois.</li><li>Les états vides des panneaux Sub-agents et MCP sont centrés.</li></ul>
+                <h4>Validation</h4>
+                <p>Typage, lint, 180 tests serveur, build complet et parcours Playwright de la palette, de l’onglet Git, de l’explorateur et des services sur ordinateur et téléphone validés. Une migration additive depuis v0.16.0 : <code>0032_project_pins</code> (table <code>project_pins</code>).</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.17.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.16.0...v0.17.0">Changements depuis la v0.16.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.16.0" aria-labelledby="v0.16.0-title">
+            <header class="release-meta">
+              <h3 id="v0.16.0-title"><a href="#v0.16.0">Version 0.16.0</a></h3>
+              <time datetime="2026-10-08">8 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Skills</span><span>Interface</span><span>Validation</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.16.0</summary><div class="release-notes">
+                <h4>Skills</h4>
+                <ul><li>Parcourir les skills du composer dans une fenêtre plus large, avec deux vues distinctes pour la bibliothèque Sillage et l’inventaire de la session. Les longues descriptions se déplient à la demande et l’accès à la gestion de la bibliothèque reste visible.</li><li>Installer plusieurs skills depuis un catalogue Git en une seule opération : cases à cocher, sélection de tous les résultats filtrés et destination commune. Le catalogue reste ouvert sur la même source après l’installation.</li><li>Conserver les installations réussies lorsqu’un skill échoue et corriger les conflits de nom depuis l’aperçu, sans recommencer tout le parcours.</li><li>Sur téléphone, passer de la liste à l’aperçu sans perdre sa sélection.</li><li>Clarifier le parcours de mise à jour existant : rafraîchir la source, consulter les différences, puis appliquer les changements.</li></ul>
+                <h4>Interface</h4>
+                <ul><li>Mieux hiérarchiser l’activité globale et celle du projet, avec des états et des repères visuels plus lisibles.</li><li>Afficher des infobulles sur les commandes de l’interface pour faciliter leur identification à la souris et au clavier.</li></ul>
+                <h4>Validation</h4>
+                <p>Typage, lint, 142 tests serveur, build complet et parcours Playwright des skills et du composer sur ordinateur et téléphone validés. Aucune nouvelle migration de base de données depuis v0.15.0.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.16.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.15.0...v0.16.0">Changements depuis la v0.15.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.15.0" aria-labelledby="v0.15.0-title">
+            <header class="release-meta">
+              <h3 id="v0.15.0-title"><a href="#v0.15.0">Version 0.15.0</a></h3>
+              <time datetime="2026-10-06">6 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-topics"><span>Interface</span><span>Vérification et mise à jour</span></p>
+              <details class="release-more"><summary>Toutes les notes de la v0.15.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li>Planifier des tâches ponctuelles ou récurrentes : chaque exécution ouvre une nouvelle conversation, avec accès aux prochaines échéances et à l’historique depuis la sidebar. Les agents peuvent également programmer des tâches via le MCP Sillage.</li><li>Créer un projet directement depuis le sélecteur et accéder aux réglages du projet actif à côté de son nom. Les projets quittent les paramètres généraux.</li><li>Consulter les skills depuis le composer : recherche, descriptions, portée globale ou projet, bibliothèque configurée et inventaire annoncé par le CLI. Claude expose ses skills et commandes dans une même liste, explicitement signalée.</li></ul>
+                <h4>Interface</h4>
+                <ul><li>Afficher « Paramètres » à la place du nom d’utilisateur et conserver la sélection dans toutes les sous-pages.</li><li>Conserver une sélection uniforme dans le sélecteur de projets, y compris au survol et près du bouton d’épingle.</li><li>Garder Ultracode dans les réglages détaillés du composer, avec une icône d’équipe et sans raccourci supplémentaire.</li><li>Présenter les tâches planifiées et le film de démonstration sur le site.</li></ul>
+                <h4>Vérification et mise à jour</h4>
+                <p>Typecheck, 142 tests serveur, lint et parcours Playwright sur ordinateur et téléphone validés. Cette version ajoute la migration additive des tâches planifiées pour les installations venant de v0.14.0.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.15.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.14.0...v0.15.0">Changements depuis la v0.14.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.14.0" aria-labelledby="v0.14.0-title">
+            <header class="release-meta">
+              <h3 id="v0.14.0-title"><a href="#v0.14.0">Version 0.14.0</a></h3>
+              <time datetime="2026-10-06">6 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.14.0 vise Claude Code 2.1.291 et garde Ultracode actif quand tu changes l’effort.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.14.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>Claude Code 2.1.291.</strong> La version préférée de Claude Code passe de 2.1.273 à 2.1.291, et l’Agent SDK à 0.3.291. Les réglages signalent un CLI plus ancien et proposent d’installer celui-ci. Opus 5.5 et Sonnet 5.5 apparaissent d’eux-mêmes dans la liste des modèles, puisque cette liste est lue depuis le CLI.</li><li><strong>Ultracode n’est plus un niveau d’effort.</strong> Depuis Claude Code 2.1.284, Ultracode est un interrupteur à part et tient à n’importe quel effort. L’activer dans Sillage laisse désormais l’effort où il est. Changer l’effort d’une conversation en Ultracode ne le coupe plus dans le dos du composer : le CLI abandonne Ultracode quand l’effort change sans lui, et Sillage envoie désormais les deux. Ultracode reste proposé uniquement sur les modèles qui ont un niveau d’effort très élevé, ce que le CLI exige.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li><strong>Les conversations sur un modèle renommé par le CLI gardent leurs réglages.</strong> Claude Code a retiré <code>opus[1m]</code> de sa liste (Opus a désormais un contexte de 1M par défaut) et liste Fable 5.1 sous <code>fable</code>. Les conversations enregistrées sous les anciens noms affichaient un identifiant brut et perdaient leurs réglages d’effort, de vitesse et d’Ultracode. Elles retrouvent désormais le modèle qu’elles désignent.</li><li><strong>Les plugins que Claude Code n’a pas pu charger sont signalés</strong> dans la conversation, une fois, au lieu que leurs skills disparaissent sans un mot. Sillage charge sa bibliothèque de skills sous forme de plugins.</li><li><strong>Un contexte effacé dit pourquoi</strong> : <code>/clear</code>, ou un plan approuvé sur un contexte effacé.</li></ul>
+                <h4>Déploiement</h4>
+                <ul><li>Le modèle de service Linux plafonne désormais la mémoire à 75 % de la RAM (<code>MemoryHigh=75%</code>) au lieu de 2G. Les agents et les serveurs de développement qu’ils lancent comptent dans ce plafond, et à 2G le noyau pouvait ralentir le service jusqu’à figer le daemon. <strong>Les installations Linux existantes gardent leur valeur actuelle</strong> : la mise à jour intégrée ne réécrit pas l’unité. Relance <code>install.sh</code>, ou fixe ta propre valeur avec <code>systemctl --user edit sillage</code>.</li></ul>
+                <h4>Limite connue</h4>
+                <p>Claude Code arrête une commande que Claude lance en arrière-plan une fois son délai expiré : 30 minutes par défaut, 2 heures au plus. Depuis 2.1.288, cela ne s’applique qu’aux sessions qu’il considère comme sans surveillance, ce qui inclut toutes les sessions qu’un hôte SDK comme Sillage démarre. Un serveur de développement que Claude lance en arrière-plan s’arrête donc au bout de 30 minutes, sauf si Claude demande plus longtemps. Cette version n’y change rien.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.14.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.13.0...v0.14.0">Changements depuis la v0.13.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.13.0" aria-labelledby="v0.13.0-title">
+            <header class="release-meta">
+              <h3 id="v0.13.0-title"><a href="#v0.13.0">Version 0.13.0</a></h3>
+              <time datetime="2026-10-06">6 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.13.0 s’installe nativement sur macOS avec Apple Silicon, avec le même script en une ligne que sous Linux.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.13.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>macOS (Apple Silicon).</strong> Lance <code>curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash</code> depuis Terminal. L’installateur récupère Node si le Mac n’en a pas de suffisamment récent, met en place un agent launchd qui démarre avec ta session et continue de tourner une fois Terminal fermé, crée le premier compte et ouvre Sillage dans le navigateur. Les mises à jour passent ensuite par Réglages › À propos, comme sous Linux. Il faut git : lance d’abord <code>xcode-select --install</code> si les Command Line Tools manquent. Les logs vont dans <code>~/.local/share/sillage/logs/sillage.log</code>. Les Mac Intel ne sont pas pris en charge.</li><li><strong>Les terminaux se comportent comme dans Terminal.</strong> Sur macOS, Sillage ouvre des shells de connexion : <code>~/.zprofile</code> s’exécute et Homebrew est dans le PATH. Le délai d’inactivité épargne toujours un shell qui fait tourner un serveur de développement.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li><strong>Les identifiants git de Sillage passent en premier.</strong> Un dépôt cloné par Sillage efface désormais les credential helpers hérités de la configuration git système et globale avant d’ajouter le sien. Jusqu’ici, un tel helper répondait en premier : <code>osxkeychain</code>, configuré par git sur chaque Mac, fournissait tes propres identifiants puis gardait le jeton de Sillage dans le trousseau. Il en allait de même pour un helper global sous Linux. Cela s’applique aux dépôts clonés à partir de maintenant.</li><li><strong>Node 22 avant 22.14 est écarté.</strong> better-sqlite3 a besoin de N-API 10, arrivé avec Node 22.14. Un Node plus ancien le chargeait sans un mot, puis plantait à la première requête. L’installateur n’utilise désormais le Node du système qu’à partir de 22.14, et installe le sien sinon. La vérification du module natif, dans l’installateur et dans la mise à jour intégrée, exécute une requête au lieu d’un simple <code>require</code>.</li><li><strong>Le premier compte est demandé dès qu’il n’en existe aucun.</strong> L’installateur ne le demandait que lorsque la base n’existait pas encore. Une exécution qui échouait après le démarrage du service laissait une base vide, et l’exécution suivante ne demandait rien.</li><li><strong>Une release sans archive pour ta plateforme le dit</strong> au lieu de signaler un téléchargement échoué.</li></ul>
+                <h4>Déploiement</h4>
+                <ul><li>Les releases incluent désormais l’archive <code>sillage-vX.Y.Z-darwin-arm64.tar.gz</code>, construite et installée de bout en bout sur Apple Silicon par la CI.</li><li><code>SILLAGE_ARCHIVE=path/to/sillage-*.tar.gz</code> installe une archive déjà présente sur le disque.</li><li>Le Node minimal est désormais 22.14, pour l’installateur comme pour le développement.</li></ul>
+                <h4>Hors de cette version</h4>
+                <p>Sur macOS, la vue des processus (Services) reste réservée à Linux, et le fichier de log n’est pas soumis à rotation. Le credential helper d’un dépôt cloné pointe toujours dans le dossier de la release avec laquelle il a été cloné, qui disparaît après trois mises à jour.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.13.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.12.0...v0.13.0">Changements depuis la v0.12.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.12.0" aria-labelledby="v0.12.0-title">
+            <header class="release-meta">
+              <h3 id="v0.12.0-title"><a href="#v0.12.0">Version 0.12.0</a></h3>
+              <time datetime="2026-10-06">6 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.12.0 ajoute OpenCode comme troisième CLI, à côté de Claude Code et Codex, et un nouveau logo.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.12.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>OpenCode, le troisième CLI.</strong> Choisis OpenCode au lancement d’une conversation, comme tu choisirais Claude Code ou Codex. Il apporte tous les fournisseurs et modèles qu’OpenCode peut joindre, y compris ses modèles gratuits qui ne demandent aucun compte. Sillage lance un <code>opencode serve</code> par conversation et le traduit dans le même fil que les deux autres : outils, demandes de permission, questions, infléchissement d’un tour en cours, interruption, reprise, fork, compaction, sous-agents, et consommation de tokens et coût du tour. Le composer propose ses propres réglages : modèle, variante, agent principal (<code>build</code>, <code>plan</code> ou le tien), et une règle par famille d’outils (modifications de fichiers, commandes, accès web : demander, autoriser, refuser, ou ton <code>opencode.json</code>). Sillage l’installe depuis l’interface comme les autres (<code>opencode-ai</code> sur npm).</li><li><strong>Tout ce que Sillage partage, OpenCode le reçoit aussi.</strong> Les serveurs MCP du registre et le serveur MCP de Sillage, la bibliothèque de skills (invoqués par <code>/name</code> ou déclenchés par leur description), SILLAGE.md et la mémoire du projet. Tout passe par une configuration injectée : rien n’est écrit dans <code>~/.config/opencode</code>. OpenCode reçoit les consignes avec chaque message, donc une modification l’atteint dès le suivant.</li><li><strong>Un nouveau logo.</strong> Sillage adopte L’écho, trois ondes, dans l’interface, les icônes et les images de partage.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li>Un CLI installé depuis l’interface apparaît désormais tout de suite, au lieu que l’écran revienne au bouton « Installer » pendant une minute.</li><li>Les étiquettes d’origine des skills n’indiquent plus « Claude seul » ou « Codex seul » pour les dossiers qu’OpenCode lit aussi.</li></ul>
+                <h4>Déploiement</h4>
+                <ul><li>Docker et Helm : OpenCode garde ses identifiants <strong>et ses sessions</strong> dans <code>~/.local/share/opencode</code>. L’exemple Compose le monte, et le chart (désormais en 0.3.0) le monte depuis le volume <code>home</code>, si bien que les conversations reprennent après le remplacement du conteneur.</li><li>Quand un projet garde ses consignes dans Sillage, les <code>AGENTS.md</code> et <code>CLAUDE.md</code> du dépôt sont masqués à OpenCode avec <code>OPENCODE_DISABLE_PROJECT_CONFIG</code>. C’est le seul interrupteur d’OpenCode pour cela, et il fait aussi ignorer le <code>opencode.json</code> et le dossier <code>.opencode/</code> du projet.</li></ul>
+                <h4>Hors de cette version</h4>
+                <p>La connexion des fournisseurs OpenCode depuis l’interface (utilise <code>opencode auth login</code>), l’import de sessions démarrées dans OpenCode. Ce sur quoi l’adaptateur s’appuie, tel que sondé sur OpenCode 1.18.25, est décrit dans <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/OPENCODE.md">docs/OPENCODE.md</a>.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.12.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.11.0...v0.12.0">Changements depuis la v0.11.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.11.0" aria-labelledby="v0.11.0-title">
+            <header class="release-meta">
+              <h3 id="v0.11.0-title"><a href="#v0.11.0">Version 0.11.0</a></h3>
+              <time datetime="2026-10-05">5 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.11.0 donne à Claude et Codex des consignes partagées et une mémoire de projet partagée, et permet à une session d’en lancer une autre.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.11.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>SILLAGE.md : un seul jeu de consignes pour Claude et Codex.</strong> Les consignes vivent désormais dans Sillage et non plus dans des fichiers propres à chaque CLI, et sont injectées dans le prompt système des deux CLI : une partie globale (administrateurs) et une par projet (propriétaire), modifiables depuis les Réglages, la page du projet et l’en-tête d’une conversation. Chaque projet choisit où vivent ses consignes : dans Sillage, qui masque aux agents les <code>CLAUDE.md</code>, <code>CLAUDE.local.md</code> et <code>AGENTS.md</code> de l’espace de travail sans y toucher, ou dans le fichier du dépôt, modifié depuis l’interface. Les projets existants restent sur leur dépôt, avec un import proposé en un clic. Les agents lisent et modifient SILLAGE.md avec les outils MCP <code>read_instructions</code>, <code>edit_instructions</code> et <code>write_instructions</code>.</li><li><strong>Une mémoire de projet partagée par Claude et Codex.</strong> La mémoire automatique de Claude Code passe dans les données de Sillage, un dossier par projet. Claude l’utilise comme la sienne, Codex reçoit l’index au démarrage de la session et écrit avec les outils <code>read_memory</code>, <code>write_memory</code> et <code>delete_memory</code>, et une carte Mémoire sur la page du projet te permet de relire, corriger et supprimer les notes. La mémoire Claude de la racine de l’espace de travail est importée une fois, au premier lancement.</li><li><strong>Les sessions peuvent lancer des sessions et ouvrir des cartes.</strong> Nouveaux outils MCP : <code>start_session</code> lance une conversation Sillage avec une mission qui se suffit à elle-même, en choisissant CLI, modèle et effort, à la racine ou dans un worktree neuf, éventuellement sur une carte ; <code>create_card</code> ouvre une carte « À faire » qui note quelle session l’a ouverte ; <code>list_models</code> liste les catalogues et les valeurs par défaut. Les lancements sont limités à deux niveaux d’enchaînement et à six par session et par heure.</li><li><strong>Les mises à jour se voient depuis tous les écrans.</strong> Quand une nouvelle version est publiée, les administrateurs voient désormais un point sur l’entrée Réglages de la barre latérale, et sur le bouton de navigation au téléphone, et plus seulement dans Réglages › À propos.</li><li><strong>Installer un skill de skills.sh en une étape.</strong> Le bouton d’un résultat de recherche indique désormais « Installer… » et ouvre le catalogue sur ce skill, son <code>SKILL.md</code> prêt à installer ; le dépôt devient une source au passage.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li>Un sous-agent Codex qui reçoit un message après avoir fini ne repasse plus « en cours » pour toujours, ce qui gardait une tâche de fond comptée jusqu’au redémarrage du daemon.</li><li>Le <code>NODE_ENV</code> du serveur ne fuit plus dans les processus des agents.</li><li>Le chart Helm vise 0.11.0.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.11.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.10.0...v0.11.0">Changements depuis la v0.10.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.10.0" aria-labelledby="v0.10.0-title">
+            <header class="release-meta">
+              <h3 id="v0.10.0-title"><a href="#v0.10.0">Version 0.10.0</a></h3>
+              <time datetime="2026-10-04">4 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.10.0 donne aux sessions Claude et Codex une bibliothèque de skills partagée, alimentée par des dépôts git, et permet à chaque projet d’avoir une image.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.10.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>Une bibliothèque de skills pour Claude et Codex.</strong> Sillage garde ses propres skills, globaux ou par projet, et les remet à chaque session comme skills natifs : <code>/name</code> dans Claude, <code>$name</code> dans Codex, déclenchés aussi par leur description. Rien n’est écrit dans <code>~/.claude</code> ni dans <code>~/.codex</code>. Les skills se gèrent depuis Réglages › Skills et depuis chaque page de projet : en écrire un, importer une archive <code>.zip</code> ou <code>.skill</code> ou un dossier, ou adopter un skill déjà présent sur la machine, puis le modifier en pleine largeur avec ses fichiers annexes. Les sessions déjà ouvertes prennent en compte les changements, et un réglage par conversation désactive la bibliothèque.</li><li><strong>Des skills depuis des dépôts git.</strong> anthropics/skills et openai/skills sont préconfigurés, et les administrateurs peuvent ajouter tout autre dépôt, y compris privé grâce aux identifiants d’Accès git. Un skill s’installe après lecture de son <code>SKILL.md</code> et de sa liste de fichiers, où les scripts sont signalés, et reste épinglé à son commit. Quand la source avance, la mise à jour se relit sous forme de diff et s’applique à la demande. Les administrateurs peuvent aussi chercher dans skills.sh pour trouver des dépôts.</li><li><strong>Des images de projet.</strong> Un projet peut avoir une image (PNG, JPEG, GIF, WebP ou SVG, jusqu’à 1 Mo), affichée dans la barre latérale, le sélecteur de projets, le panneau d’activité et la page du projet. Les agents en définissent une avec l’outil MCP <code>set_project_image</code>, et reçoivent un rappel tant qu’un projet n’en a pas.</li><li><strong>Des listes de sessions synchronisées.</strong> Une session supprimée, renommée ou déplacée dans un onglet met désormais à jour les autres. Un téléphone qui se réveille vérifie sa connexion et se reconnecte si elle était devenue silencieuse, et un bouton d’actualisation ainsi que le geste « tirer pour actualiser » forcent une resynchronisation.</li><li><strong>Des longues conversations qui s’ouvrent plus vite.</strong> Le replay saute les événements remplacés par des événements ultérieurs, découpe ses pages par taille plutôt que par nombre d’événements, et ne récupère les grosses sorties d’outils qu’à l’ouverture de leur carte.</li><li><strong>L’apparence suit le compte.</strong> Le thème, la palette du code et les curseurs d’apparence sont enregistrés sur le compte, et passent d’un appareil à l’autre.</li><li><strong>Ultracode comme réglage de session.</strong> Les sessions Claude peuvent garder Ultracode actif pendant toute la session, sur les modèles qui acceptent l’effort xhigh.</li></ul>
+                <h4>Correctifs</h4>
+                <ul><li>La page de nouvelle session affiche toujours les jauges d’usage, au lieu de les replier.</li><li>Un fil principal Codex n’est plus pris pour un sous-agent, ce qui laissait la conversation affichée comme en cours.</li><li>Sur mobile, ouvrir un lien de fichier ne laisse plus le panneau latéral décalé hors de l’écran.</li></ul>
+                <p>Le site a aussi été refait autour de l’usage quotidien de Sillage.</p>
+                <h4>Mise à jour</h4>
+                <p>Les installations faites avec l’installateur se mettent à jour depuis Réglages › À propos, ou en relançant la commande d’installation. Deux migrations de base de données (images de projet, bibliothèque de skills) s’appliquent au démarrage ; les deux ne font qu’ajouter des tables.</p>
+                <h4>Distribution</h4>
+                <p>Les archives Linux x64 et arm64 sont jointes. L’image Docker multi-architecture est disponible sous <code>ghcr.io/marlburrow/sillage:0.10.0</code>. Le chart Helm de <code>main</code> utilise cette version par défaut ; depuis le tag <code>v0.10.0</code>, passe <code>--set image.tag=0.10.0</code>.</p>
+                <h4>Validation</h4>
+                <p>Typage, lint, build, vérification des bindings Codex et 89 tests serveur réussis. La release a été démarrée sur une base au schéma de production : les deux migrations se sont appliquées, et la version précédente démarrait toujours sur la base migrée. La bibliothèque de skills a été éprouvée avec de vraies sessions Claude et Codex, et dans Chromium avec GitHub et skills.sh.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.10.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.9.0...v0.10.0">Changements depuis la v0.9.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.9.0" aria-labelledby="v0.9.0-title">
+            <header class="release-meta">
+              <h3 id="v0.9.0-title"><a href="#v0.9.0">Version 0.9.0</a></h3>
+              <time datetime="2026-10-04">4 octobre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.9.0 tourne sous Windows via WSL2, et permet aux sessions d’un projet de se coordonner entre elles.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.9.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li><strong>Windows via WSL2.</strong> L’installateur en une ligne fonctionne désormais dans WSL2. Il active systemd quand la distribution ne l’a pas, et ajoute une entrée <strong>Sillage</strong> au menu Démarrer, et en option à l’ouverture de session Windows, qui garde WSL en marche une fois le terminal fermé et ouvre Sillage dans le navigateur de Windows. Voir le <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md">guide WSL2</a>.</li><li><strong>Plus de prérequis Node.js.</strong> Sans Node 22+ dans le PATH, l’installateur télécharge la version LTS actuelle de Node (somme de contrôle vérifiée) sous <code>~/.local/share/sillage/node</code>, pour le seul service. Le script est aussi lu en entier avant de s’exécuter : un téléchargement tronqué, ou une commande qui lit stdin, ne peut plus exécuter un demi-installateur.</li><li><strong>Des sessions qui se parlent.</strong> Le serveur MCP intégré gagne <code>send_session_message</code>, <code>read_session_messages</code>, <code>notify_when_done</code> et <code>broadcast_session_message</code>, et <code>list_sessions</code> indique la branche et les fichiers modifiés de chaque arbre. Le daemon relaie les messages, la conversation les montre comme venant d’une session, et un échange est mis en attente après six allers-retours pour que deux agents ne puissent pas tourner en boucle.</li><li><strong>Des reprises Codex plus légères.</strong> Reprendre ou forker un fil Codex ne rapatrie plus tout son historique (48 Mo pour un seul fil), ce qui pouvait mettre le daemon à court de mémoire.</li><li><strong>Liens dans l’aperçu Markdown.</strong> Les liens relatifs et les images de l’aperçu de l’éditeur se résolvent depuis le dossier du document, comme sur GitHub, et sont cliquables depuis un panneau de projet.</li></ul>
+                <h4>Mise à jour</h4>
+                <p>Les installations faites avec l’installateur se mettent à jour depuis Réglages › À propos, ou en relançant la commande d’installation. Une migration de base de données (messages entre sessions) s’applique au démarrage.</p>
+                <h4>Distribution</h4>
+                <p>Les archives Linux x64 et arm64 sont jointes. L’image Docker multi-architecture est disponible sous <code>ghcr.io/marlburrow/sillage:0.9.0</code>. Le chart Helm de <code>main</code> utilise cette version par défaut ; depuis le tag <code>v0.9.0</code>, passe <code>--set image.tag=0.9.0</code>.</p>
+                <h4>Validation</h4>
+                <p>Typage, lint, build, vérification des bindings Codex et 47 tests serveur réussis, et migrations appliquées à une base vide. L’installateur WSL2 a été éprouvé de bout en bout dans une machine virtuelle Windows 11 (WSL 3.0.1, Ubuntu 26.04 et 24.04) : installation neuve et relance, systemd désactivé, fermeture du terminal, redémarrage de Windows, installation de Codex depuis l’interface, et désinstallation.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.9.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.8.0...v0.9.0">Changements depuis la v0.8.0</a></p>
+            </div>
+          </article>
+        </section>
+        <section class="release-month" id="month-2026-09" aria-labelledby="month-2026-09-title">
+          <h2 class="month-heading" id="month-2026-09-title">Septembre 2026 <span>2 versions</span></h2>
+          <article class="release-entry" id="v0.8.0" aria-labelledby="v0.8.0-title">
+            <header class="release-meta">
+              <h3 id="v0.8.0-title"><a href="#v0.8.0">Version 0.8.0</a></h3>
+              <time datetime="2026-09-23">23 septembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.8.0 améliore la navigation entre projets, le board, les contrôles des agents et le panneau de l’espace de travail.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.8.0</summary><div class="release-notes">
+                <h4>Nouveautés</h4>
+                <ul><li>Sélecteur de projets et barre latérale d’activité repensée, avec une vue d’ensemble, tous projets confondus, des sessions en cours et des conversations qui attendent une réponse.</li><li>Board et éditeur de tickets rafraîchis : aperçu Markdown, brouillons conservés, pièces jointes, notes et accès plus simple aux sessions liées.</li><li>Contrôles de conversation compacts pour les modèles, l’effort, les permissions et le MCP, avec plus de réglages Claude, des suggestions de prompt et des notifications d’exécution plus claires.</li><li>Lecture audio/vidéo et aperçu des modèles 3D dans le panneau de l’espace de travail, avec une meilleure fiabilité de l’éditeur, des téléchargements et des favoris.</li><li>Une vue des services Linux pour les processus lancés par Sillage, qui montre leur origine et leurs ports et permet d’arrêter les processus éligibles.</li><li>Création de projet dans un dossier parent choisi, et meilleure gestion des événements Claude/Codex.</li><li>Captures du site et du README rafraîchies, en thème clair comme en thème sombre.</li></ul>
+                <h4>Distribution</h4>
+                <p>Les archives Linux x64 et arm64 sont jointes. L’image Docker multi-architecture est disponible sous <code>ghcr.io/marlburrow/sillage:0.8.0</code>. Le chart Helm utilise cette version par défaut.</p>
+                <h4>Validation</h4>
+                <p>Typage, lint, build, vérification des bindings Codex et 37 tests serveur réussis, ainsi que des vérifications dans le navigateur sur le board, les contrôles de conversation, l’éditeur, les aperçus de médias, les téléchargements et les favoris.</p>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.8.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.7.0...v0.8.0">Changements depuis la v0.7.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.7.0" aria-labelledby="v0.7.0-title">
+            <header class="release-meta">
+              <h3 id="v0.7.0-title"><a href="#v0.7.0">Version 0.7.0</a></h3>
+              <time datetime="2026-09-13">13 septembre 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage 0.7.0 renforce la prise en charge de Codex et d’Astra : les questions structurées deviennent des formulaires interactifs, et les activités du CLI restent visibles pendant le travail.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.7.0</summary><div class="release-notes">
+                <ul><li>Questions bloquantes et asynchrones, réponses libres, demandes simultanées et annulations ciblées, y compris pour les sous-agents.</li><li>Plans, diffs, sorties d’outils en direct, recherches, images, hooks, avertissements et événements inconnus consultables.</li><li>Connexion App Server actualisée pour Codex 0.153.2 et consommation de jetons corrigée.</li><li>Favoris personnels, dépôt de fichiers et dossiers avec progression, réglages Claude/Codex par projet et plafond des sessions configurable.</li><li>Erreurs de tour explicites ; liens de fichiers du fil et chart Helm inclus depuis la précédente release. Le chart 0.2.0 utilise l’image 0.7.0 par défaut.</li></ul>
+                <p>Les anciens journaux et préréglages restent lisibles. La migration des favoris s’applique automatiquement au démarrage.</p>
+                <p>Validé par 18 tests, des contrôles navigateur ordinateur/mobile et des sondes réelles Astra, ainsi que le typage, le lint, la compilation et le contrôle du protocole.</p>
+                <h4>What’s Changed</h4>
+                <ul><li>Ouvre les liens et les images du fil qui désignent un fichier du work… by @MarlBurroW in <a href="https://github.com/MarlBurroW/sillage/pull/10">#10</a></li><li>Ajoute un chart Helm pour déployer Sillage sur Kubernetes by @MarlBurroW in <a href="https://github.com/MarlBurroW/sillage/pull/11">#11</a></li><li>Fiabilise Codex et complète la gestion des projets et sessions by @MarlBurroW in <a href="https://github.com/MarlBurroW/sillage/pull/12">#12</a></li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.7.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.6.0...v0.7.0">Changements depuis la v0.6.0</a></p>
+            </div>
+          </article>
+        </section>
+        <section class="release-month" id="month-2026-08" aria-labelledby="month-2026-08-title">
+          <h2 class="month-heading" id="month-2026-08-title">Août 2026 <span>5 versions</span></h2>
+          <article class="release-entry" id="v0.6.0" aria-labelledby="v0.6.0-title">
+            <header class="release-meta">
+              <h3 id="v0.6.0-title"><a href="#v0.6.0">Version 0.6.0</a></h3>
+              <time datetime="2026-08-28">28 août 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Une nouvelle conversation Claude Code propose ses commandes <code>/</code> avant le premier message.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.6.0</summary><div class="release-notes">
+                <ul><li>Les commandes sont lues depuis le dossier de la conversation et mises en cache par dossier ; un échec de lecture s’affiche dans le composer.</li><li>Changements internes : les sondes Claude des modèles, de l’usage et des commandes partagent un même cycle de vie, avec un plafond de sessions simultanées, et une sonde qui expire le dit au lieu d’annoncer « Query closed ».</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.6.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.5.1...v0.6.0">Changements depuis la v0.5.1</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.5.1" aria-labelledby="v0.5.1-title">
+            <header class="release-meta">
+              <h3 id="v0.5.1-title"><a href="#v0.5.1">Version 0.5.1</a></h3>
+              <time datetime="2026-08-28">28 août 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Des correctifs pour l’installateur et la mise à jour intégrée, et des longues conversations qui s’ouvrent plus vite.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.5.1</summary><div class="release-notes">
+                <ul><li>L’installateur vérifie le module natif de base de données avant de démarrer le service et le recompile au besoin, active le lingering, signale l’échec de la création du premier compte, et n’annonce la fin qu’une fois que le serveur répond. La mise à jour intégrée fait la même vérification avant de changer de version.</li><li>Le service écrit ses logs dans le journal système, et une limite de démarrages arrête une boucle de plantages au cinquième échec.</li><li>La liste des modèles Claude et la jauge d’usage passent par le CLI installé : Claude ne semble plus absent quand son CLI est installé.</li><li><code>better-sqlite3</code> passe en 13.x : les archives de release tournent sous Node 22 et Node 24 sans recompilation.</li><li>Les longues conversations s’ouvrent plus vite : le replay fusionne les fragments de texte reçus en flux, et les sorties d’outils de plus de 8 Ko sont envoyées en aperçu puis chargées en entier à l’ouverture de leur carte.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.5.1">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.5.0...v0.5.1">Changements depuis la v0.5.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.5.0" aria-labelledby="v0.5.0-title">
+            <header class="release-meta">
+              <h3 id="v0.5.0-title"><a href="#v0.5.0">Version 0.5.0</a></h3>
+              <time datetime="2026-08-17">17 août 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Surtout du travail sur le site et le README, plus des changements dans les terminaux et dans ce que reçoivent les sessions Codex.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.5.0</summary><div class="release-notes">
+                <ul><li>Les terminaux appartiennent au projet et non plus à une conversation, s’ouvrent dans le worktree de la session ou dans le dossier du projet, et reviennent marqués comme interrompus après un redémarrage du serveur. Le panneau latéral s’ouvre aussi sur les pages du board et des brouillons.</li><li>Le copier-coller fonctionne dans les terminaux quand Sillage est ouvert en HTTP simple.</li><li>Les sessions Codex reçoivent l’aperçu du projet et la carte sur laquelle elles travaillent, comme les sessions Claude Code le faisaient déjà.</li><li>Le site est refait autour de vraies captures en thème clair et sombre, avec un sélecteur de thème, et le README suit.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.5.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.4.0...v0.5.0">Changements depuis la v0.4.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.4.0" aria-labelledby="v0.4.0-title">
+            <header class="release-meta">
+              <h3 id="v0.4.0-title"><a href="#v0.4.0">Version 0.4.0</a></h3>
+              <time datetime="2026-08-10">10 août 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Chaque projet a son board, que les agents peuvent lire et modifier, les conversations inactives sont archivées automatiquement, et les prompts se dictent.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.4.0</summary><div class="release-notes">
+                <ul><li>Un board par projet, avec glisser-déposer et une session lancée depuis une carte. Les agents le lisent avec <code>list_cards</code> et <code>read_card</code>, et ajoutent des notes à leur carte avec <code>add_card_note</code>.</li><li>Les conversations peuvent être archivées, et les conversations lues restées inactives sont archivées automatiquement. Le délai et l’heure de passage se choisissent dans les réglages, et un passage peut être lancé à la main.</li><li>Dicter un prompt par un fournisseur de transcription IA (une API compatible OpenAI comme Mistral, Groq, OpenAI ou un Whisper auto-hébergé), avec un vumètre du micro.</li><li>Le composer propose les commandes du CLI après <code>/</code> (Claude Code) et ses skills après <code>$</code> (Codex).</li><li>La création d’un projet peut cloner un dépôt.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.4.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.3.0...v0.4.0">Changements depuis la v0.3.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.3.0" aria-labelledby="v0.3.0-title">
+            <header class="release-meta">
+              <h3 id="v0.3.0-title"><a href="#v0.3.0">Version 0.3.0</a></h3>
+              <time datetime="2026-08-04">4 août 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Les agents reçoivent un serveur MCP Sillage intégré pour chercher dans les conversations passées du projet et voir ce que font les autres sessions, et la barre latérale signale les conversations non lues.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.3.0</summary><div class="release-notes">
+                <ul><li>Le serveur MCP intégré propose <code>search_history</code> et <code>read_conversation</code> pour l’historique du projet, <code>list_sessions</code> et <code>count_active_sessions</code> pour les sessions au travail, et <code>find_file_edits</code> pour savoir quelle session a modifié un fichier. Il est activé par défaut et se désactive par conversation, par préréglage de projet ou pour toute l’instance.</li><li>Les sessions Claude Code démarrent avec un court aperçu de ce qui se passe déjà dans le projet.</li><li>Les conversations non lues sont signalées dans la barre latérale, pour chaque compte.</li><li>Sillage vise Codex 0.146, la version qui liste ses modèles GPT-5.6.</li><li>Le sélecteur du dossier racine peut créer un dossier, et les images lues par un outil Read s’affichent dans l’appel d’outil.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.3.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.2.1...v0.3.0">Changements depuis la v0.2.1</a></p>
+            </div>
+          </article>
+        </section>
+        <section class="release-month" id="month-2026-07" aria-labelledby="month-2026-07-title">
+          <h2 class="month-heading" id="month-2026-07-title">Juillet 2026 <span>3 versions</span></h2>
+          <article class="release-entry" id="v0.2.1" aria-labelledby="v0.2.1-title">
+            <header class="release-meta">
+              <h3 id="v0.2.1-title"><a href="#v0.2.1">Version 0.2.1</a></h3>
+              <time datetime="2026-07-29">29 juillet 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Corrige l’app installée sur iOS : le bas de l’interface ne passe plus sous l’indicateur d’accueil, et le fond descend jusqu’au bord inférieur de l’écran.</p>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.2.1">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.2.0...v0.2.1">Changements depuis la v0.2.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.2.0" aria-labelledby="v0.2.0-title">
+            <header class="release-meta">
+              <h3 id="v0.2.0-title"><a href="#v0.2.0">Version 0.2.0</a></h3>
+              <time datetime="2026-07-29">29 juillet 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Sillage lance désormais les CLI d’agents installés sur la machine et sait les installer lui-même, donne aux sous-agents leur propre vue, et ajoute la gestion des serveurs MCP et une API de tâches.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.2.0</summary><div class="release-notes">
+                <ul><li>Sillage lance Claude Code et Codex tels qu’installés sur la machine, au lieu d’une copie livrée avec la release, montre quels CLI sont installés et dans quelle version, et peut installer ceux qui manquent depuis l’interface. L’image Docker n’inclut plus les CLI.</li><li>Les sous-agents quittent le fil principal : leurs fils complets s’ouvrent dans un onglet du panneau latéral, et un bandeau au-dessus du composer montre ceux qui tournent encore.</li><li>Les serveurs MCP se déclarent une seule fois pour tous les CLI, depuis un écran de réglages, et s’activent par conversation. Leurs en-têtes et variables d’environnement peuvent faire référence à des secrets d’un nouveau dépôt de secrets chiffré.</li><li>Une API de tâches sous <code>/api/v1</code> pour les clients machine, avec jetons d’API, webhooks signés et conversations marquées comme pilotées par l’API.</li><li>L’interface est disponible en anglais et en français, avec un sélecteur de langue dans Apparence.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.2.0">Publication sur GitHub</a><a href="https://github.com/MarlBurroW/sillage/compare/v0.1.0...v0.2.0">Changements depuis la v0.1.0</a></p>
+            </div>
+          </article>
+          <article class="release-entry" id="v0.1.0" aria-labelledby="v0.1.0-title">
+            <header class="release-meta">
+              <h3 id="v0.1.0-title"><a href="#v0.1.0">Version 0.1.0</a></h3>
+              <time datetime="2026-07-28">28 juillet 2026</time>
+            </header>
+            <div class="release-body">
+              <p class="release-summary">Première version publique de Sillage : une interface web auto-hébergée, pensée d’abord pour le mobile, qui pilote les CLI Claude Code et Codex sur ta propre machine.</p>
+              <details class="release-more"><summary>Toutes les notes de la v0.1.0</summary><div class="release-notes">
+                <ul><li>Des conversations avec Claude Code et Codex dans une application web installable, pilotées par un serveur qui supervise les CLI.</li><li>Les sessions Claude Code lancées dans un terminal s’importent depuis l’écran de nouvelle conversation, et les tours joués dans le terminal sont rattrapés à l’ouverture de la conversation.</li><li>Un panneau latéral avec un explorateur de fichiers (menu contextuel, recherche de fichiers), un éditeur, des diffs et des terminaux.</li><li>Des réglages par catégorie, dont des réglages de lecture pour le texte des messages : taille, interligne et douceur de l’encre.</li><li>Installation par une image Docker ou par un script en une ligne pour Linux x64/arm64 avec systemd. Réglages › À propos affiche la version installée, et un administrateur peut mettre à jour en un clic une installation faite avec l’installateur.</li></ul>
+              </div></details>
+              <p class="release-links"><a href="https://github.com/MarlBurroW/sillage/releases/tag/v0.1.0">Publication sur GitHub</a></p>
+            </div>
+          </article>
+        </section>
+        <!-- /changelog:releases -->
+        <div class="catalog-empty" data-changelog-empty hidden><h2>Aucune version ne correspond.</h2><p>Essaie un autre mot, ou vérifie l’orthographe.</p><button type="button" class="button button-secondary" data-reset-search>Afficher toutes les versions</button></div>
+      </div>
+    </div>
+  </main>
+  <footer class="footer">
+    <div class="footer-inner wrap">
+      <div class="footer-brand">
+        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+        <p class="footer-tagline">Un espace de travail pour tes agents de code.</p>
+        <p>Gratuit et open source, sous licence MIT. Indépendant, et sans lien avec les fournisseurs des agents.</p>
+        <p class="footer-release"><!-- release-badge --><a class="release-badge" href="changelog.html#v0.45.0"><span class="release-dot" aria-hidden="true"></span><span>Dernière version</span> <strong>v0.45.0</strong><span class="release-sep" aria-hidden="true">·</span><time datetime="2026-11-27">27 novembre 2026</time></a><!-- /release-badge --></p>
+      </div>
+      <nav class="footer-nav" aria-label="Pied de page">
+        <div>
+          <h2>Produit</h2>
+          <ul>
+            <li><a href="index.html">Présentation</a></li>
+            <li><a href="features.html">Fonctionnalités</a></li>
+            <li><a href="agents.html">Agents</a></li>
+            <li><a href="download.html">Télécharger</a></li>
+            <li><a href="changelog.html">Nouveautés</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Ressources</h2>
+          <ul>
+            <li><a href="docs.html">Documentation</a></li>
+            <li><a href="docs.html#start">Premiers pas</a></li>
+            <li><a href="security.html">Sécurité et confidentialité</a></li>
+            <li><a href="download.html#compare">Desktop ou Server</a></li>
+            <li><a href="index.html#faq">Questions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Projet</h2>
+          <ul>
+            <li><a href="https://github.com/MarlBurroW/sillage">Code source</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases">Toutes les versions</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases.atom">Flux des versions</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/issues">Signaler un problème</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">Licence MIT</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="footer-base wrap">
+      <p>© 2026 MarlBurroW</p>
+      <p class="footer-languages" data-lang-menu><a href="../changelog.html" hreflang="en" lang="en">English</a><span aria-current="true" lang="fr">Français</span></p>
+      <p>Ni cookies ni statistiques. Ton choix de thème reste dans ton navigateur.</p>
+      <a class="footer-top" href="#main"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m0 0-5 5m5-5 5 5"/></svg>Haut de page</a>
+    </div>
+    <div class="footer-mark" aria-hidden="true"><div data-word="Sillage"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg></div></div>
+  </footer>
+</body>
+</html>

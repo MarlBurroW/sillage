@@ -1,0 +1,13 @@
+{
+  "Changelog: Sillage": "Nouveautés : Sillage",
+  "What changed in each release, newest first. Desktop and Server are built from the same code and ship together.": "Ce qui a changé à chaque version, la plus récente en premier. Desktop et Server sont construits à partir du même code et sortent ensemble.",
+  "<0>Follow releases with the Atom feed</0> <1>Packages for every version</1>": "<0>Suivre les versions avec le flux Atom</0> <1>Les paquets de chaque version</1>",
+  "Search the releases": "Chercher dans les versions",
+  "No release matches.": "Aucune version ne correspond.",
+  "Try another word, or check the spelling.": "Essaie un autre mot, ou vérifie l’orthographe.",
+  "Show every release": "Afficher toutes les versions",
+  "Every Sillage release, newest first: what changed for Desktop and Server, with links to the packages and the code.": "Toutes les versions de Sillage, la plus récente en premier : ce qui a changé pour Desktop et Server, avec les liens vers les paquets et le code.",
+  "Sillage releases": "Versions de Sillage",
+  "Sillage changelog": "Nouveautés de Sillage",
+  "Releases by month": "Versions par mois"
+}
