@@ -37,6 +37,8 @@
   --gutter: clamp(1.25rem, 4vw, 3rem);
   --section: clamp(4.5rem, 9vw, 8.5rem);
   --topbar: 4rem;
+  /* Every heading-and-text composition splits here, so second columns line up down a page. */
+  --cols: minmax(0, 5fr) minmax(0, 7fr);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -53,11 +55,13 @@
     --foam: #1a2548;
     --ok: #6fd3a8;
     --shadow: 0 1px 2px #0006, 0 24px 60px -20px #000c;
+    --lift: none;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --lift: none;
   --paper: #0a1220;
   --surface: #111b2d;
   --sunken: #070d18;
@@ -72,6 +76,19 @@
 }
 
 /* Base */
+
+@view-transition { navigation: auto; }
+.topbar { view-transition-name: topbar; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.2s; }
+
+/* A theme switch is a circle of the new theme spreading from the toggle (main.js), not a fade. */
+html[data-theme-switching] .topbar { view-transition-name: none; }
+html[data-theme-switching]::view-transition-old(root),
+html[data-theme-switching]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+}
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -120,6 +137,14 @@ p { text-wrap: pretty; }
 a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
 
 code, pre, kbd { font-family: var(--mono); font-size: 0.875em; }
+
+:where(p, li, dd, td, summary, h3) > code {
+  padding: 0.05em 0.32em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  font-size: 0.84em;
+  overflow-wrap: anywhere;
+}
 
 :focus-visible {
   outline: 2px solid var(--wake);
@@ -276,7 +301,8 @@ code, pre, kbd { font-family: var(--mono); font-size: 0.875em; }
 #site-nav { display: flex; gap: 0.25rem; margin-right: auto; }
 
 #site-nav a {
-  padding: 0.4rem 0.75rem;
+  --pad: 0.75rem;
+  padding: 0.4rem var(--pad);
   border-radius: 6px;
   color: var(--muted);
   font-size: 0.9875rem;
@@ -285,13 +311,28 @@ code, pre, kbd { font-family: var(--mono); font-size: 0.875em; }
 }
 
 #site-nav a:hover { color: var(--ink); }
-#site-nav a[aria-current="page"] { color: var(--ink); font-weight: 620; }
+#site-nav a[aria-current="page"] { position: relative; color: var(--ink); font-weight: 620; }
+
+@media (min-width: 851px) {
+  #site-nav a[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    left: var(--pad);
+    right: var(--pad);
+    bottom: -0.2rem;
+    height: 2px;
+    background: var(--wake);
+  }
+}
 
 .nav-actions { display: flex; align-items: center; gap: 0.5rem; }
 .theme-toggle [data-icon="sun"] { display: none; }
 :root[data-theme="dark"] .theme-toggle [data-icon="sun"] { display: block; }
 :root[data-theme="dark"] .theme-toggle [data-icon="moon"] { display: none; }
 .menu-toggle { display: none; }
+.menu-toggle [data-icon="close"],
+.menu-toggle[aria-expanded="true"] [data-icon="menu"] { display: none; }
+.menu-toggle[aria-expanded="true"] [data-icon="close"] { display: block; }
 
 @media (max-width: 850px) {
   .nav-inner { gap: 1rem; flex-wrap: wrap; }
@@ -299,13 +340,26 @@ code, pre, kbd { font-family: var(--mono); font-size: 0.875em; }
   #site-nav { order: 3; flex-basis: 100%; flex-wrap: wrap; padding-bottom: 0.75rem; margin-inline: -0.75rem; }
 
   /* With JavaScript the links fold behind the menu button. */
-  .topbar[data-enhanced] .menu-toggle { display: inline-grid; }
-  .topbar[data-enhanced] #site-nav { display: none; }
-  .topbar[data-enhanced][data-open] #site-nav { display: grid; gap: 0; padding-bottom: 1rem; }
-  .topbar[data-enhanced] #site-nav a { padding: 0.8rem 0.75rem; font-size: 1.125rem; color: var(--ink); }
+  .js .menu-toggle { display: inline-grid; }
+  .js .topbar #site-nav { display: none; }
+  .js .topbar[data-open] #site-nav { display: grid; gap: 0; padding-bottom: 1rem; }
+  .js .topbar #site-nav a { padding: 0.8rem 0.75rem; border-radius: 0; font-size: 1.125rem; color: var(--ink); }
+  .js .topbar #site-nav a + a { border-top: 1px solid var(--line); }
+  /* The current page carries a square mark on its left edge. */
+  .js .topbar #site-nav a[aria-current="page"] { box-shadow: inset 2px 0 0 var(--wake); }
 }
 
-@media (max-width: 380px) {
+/* Six links still fit beside the brand down to the menu breakpoint once the spacing tightens. */
+@media (min-width: 851px) and (max-width: 1080px) {
+  .nav-inner { gap: 1.25rem; }
+  #site-nav a { --pad: 0.5rem; }
+  /* French labels run longer: the header button gives way to the navigation's own download link. */
+  html[lang="fr"] .nav-actions .button { display: none; }
+}
+
+/* On phones the brand, the language, the theme and the menu fill the bar: the call to action
+   gives way. The page's own download button and the menu's Download link remain. */
+@media (max-width: 480px) {
   .nav-actions .button { display: none; }
 }
 
@@ -327,6 +381,32 @@ code, pre, kbd { font-family: var(--mono); font-size: 0.875em; }
 .shot img { width: 100%; }
 button.shot { cursor: zoom-in; }
 button.shot:disabled { cursor: default; }
+
+/* A capture that opens in the viewer says so on hover or focus: a magnifier in its corner. */
+button.shot:not(:disabled)::before,
+button.shot:not(:disabled)::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+button.shot:not(:disabled)::before { border-radius: 50%; background: var(--ink); box-shadow: var(--lift); }
+
+button.shot:not(:disabled)::after {
+  background: var(--paper);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6'/%3E%3Cpath d='m15 15 5 5M10.5 8v5M8 10.5h5'/%3E%3C/svg%3E") center / 1.1rem no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6'/%3E%3Cpath d='m15 15 5 5M10.5 8v5M8 10.5h5'/%3E%3C/svg%3E") center / 1.1rem no-repeat;
+}
+
+button.shot:hover::before, button.shot:hover::after,
+button.shot:focus-visible::before, button.shot:focus-visible::after { opacity: 1; }
 
 /*
  * A crop shows one region of a full capture. --w and --h are the region's size
@@ -385,8 +465,17 @@ button.shot:disabled { cursor: default; }
 .tabs [role="tab"] svg { width: 1.15rem; height: 1.15rem; flex: none; }
 
 /* Without JavaScript every panel is listed, so the tab strip would mislead. */
-[data-tabs]:not([data-enhanced]) > .tabs { display: none; }
-[data-tabs]:not([data-enhanced]) [role="tabpanel"] + [role="tabpanel"] { margin-top: 3rem; }
+html:not(.js) [data-tabs] > .tabs { display: none; }
+html:not(.js) [data-tabs] [role="tabpanel"] + [role="tabpanel"] { margin-top: 3rem; }
+
+/*
+ * The page knows from its first line whether scripts run (the "js" class, set in the head and
+ * taken back if main.js cannot load). With scripts, what they will arrange is laid out at once:
+ * one panel per tab group, the folded menu, the controls. Nothing jumps when the script arrives,
+ * and a hidden panel's captures are not fetched.
+ */
+.js [data-tabs]:not([data-enhanced]) > [role="tabpanel"] ~ [role="tabpanel"] { display: none; }
+html:not(.js) :is([data-theme-toggle], [data-catalog-controls], [data-changelog-search], [data-platform-filter]) { display: none; }
 
 /* Home: hero */
 
@@ -400,6 +489,12 @@ button.shot:disabled { cursor: default; }
 }
 
 .hero h1 { font-size: clamp(2.2rem, 5.6vw, 5.75rem); line-height: 0.99; }
+
+/* The headline's second phrase stays whole once a phone is wide enough to hold it: no line
+   ends on "in" or "au". Narrower screens let it wrap rather than overflow. */
+@media (min-width: 375px) {
+  .hero h1 .keep { white-space: nowrap; }
+}
 .hero .lede { max-width: min(100%, 32em); }
 
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; margin-top: 0.5rem; }
@@ -417,6 +512,28 @@ button.shot:disabled { cursor: default; }
 .film-link svg { width: 1.5rem; height: 1.5rem; color: var(--wake); }
 
 .hero-terms { font-size: 0.9375rem; color: var(--muted); }
+.hero-release { display: block; margin-top: 0.15rem; }
+
+/* The six agents as their marks: a glance answers "does it work with mine?". */
+.hero-agents { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-top: 0.35rem; }
+.hero-agents p { font-size: 0.9375rem; color: var(--muted); }
+.hero-agents ul { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-left: -0.45rem; }
+
+.hero-agents a {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 8px;
+  color: var(--muted);
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.hero-agents a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.hero-agents svg { width: 1.3rem; height: 1.3rem; }
+.hero-agents p + ul { margin-left: 0; }
+.hero-release a { color: var(--ink); text-decoration-color: var(--line-strong); }
+.hero-release a:hover { text-decoration-color: currentColor; }
 
 /*
  * The wake: lines of still water that a passing point disturbs. It sits behind
@@ -463,10 +580,10 @@ button.shot:disabled { cursor: default; }
 .gallery .film-link { margin-top: 1.25rem; font-size: 0.9375rem; }
 .gallery .film-link small { color: var(--muted); font-weight: 400; }
 .gallery [role="tabpanel"] { min-width: 0; }
-.gallery:not([data-enhanced]) .tabs { display: none; }
+html:not(.js) .gallery .tabs { display: none; }
 
 @media (min-width: 851px) {
-  .gallery[data-enhanced] {
+  .js .gallery {
     display: grid;
     grid-template-columns: clamp(11rem, 15vw, 14rem) minmax(0, 1fr);
     gap: clamp(2rem, 4vw, 4rem);
@@ -484,20 +601,36 @@ button.shot:disabled { cursor: default; }
 }
 
 @media (max-width: 850px) {
-  .gallery .tabs { gap: .3rem 1rem; flex-wrap: wrap; overflow: visible; border: 0; }
-  .gallery .tabs [role="tab"] { font-size: .9375rem; }
-  .gallery[data-enhanced] { display: flex; flex-direction: column; gap: .9rem; }
-  .gallery[data-enhanced] .gallery-index { display: contents; }
-  .gallery[data-enhanced] .film-link { align-self: start; order: 1; margin: 0; }
+  /* Two rows of tabs read as a choice when each one is a pill, like the download filters. */
+  .gallery .tabs { gap: .5rem; flex-wrap: wrap; overflow: visible; border: 0; }
+  .gallery .tabs [role="tab"] {
+    gap: .45rem;
+    padding: .45rem .85rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 99px;
+    font-size: .9375rem;
+  }
+  .gallery .tabs [role="tab"][aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .gallery .tabs [role="tab"][aria-selected="true"] svg { color: var(--paper); }
+  .gallery .tabs [role="tab"]:focus-visible { outline-offset: 2px; }
+  .js .gallery { display: flex; flex-direction: column; gap: .9rem; }
+  .js .gallery .gallery-index { display: contents; }
+  .js .gallery .film-link { align-self: start; order: 1; margin: 0; }
+}
+
+/* On a phone the labels alone keep the five screens on two lines. */
+@media (max-width: 600px) {
+  .gallery .tabs [role="tab"] svg { display: none; }
 }
 
 /* Home: agents */
 
 .section { padding-block: var(--section); border-top: 1px solid var(--line); }
+main:not(:has(.hero)) { --section: clamp(4rem, 7.5vw, 6.5rem); }
 
 .section-head {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  grid-template-columns: var(--cols);
   gap: 1.25rem 4rem;
   align-items: end;
   margin-bottom: clamp(2.25rem, 4vw, 3.5rem);
@@ -547,52 +680,7 @@ button.shot:disabled { cursor: default; }
   .agent-more { display: none; }
 }
 
-/* Home: stories */
-
-.stories { display: grid; gap: clamp(4rem, 8vw, 7rem); }
-
-.story {
-  display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
-  gap: 2rem 4rem;
-  align-items: center;
-}
-
-.story-text { display: grid; gap: 1rem; }
-.story-text p { color: var(--muted); }
-.story-text ul { display: grid; gap: 0.5rem; margin-top: 0.25rem; }
-
-.story-text li {
-  position: relative;
-  padding-left: 1.15rem;
-  font-size: 1rem;
-}
-
-.story-text li::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.62em;
-  width: 0.55rem;
-  height: 2px;
-  background: var(--wake);
-}
-
-/* Desktop and phone captures of the same conversation, to scale with each other. */
-.devices { display: grid; grid-template-columns: minmax(0, 1fr) 29%; gap: 1.5rem; align-items: end; }
-
-/* A phone is its own evidence: show the phone capture alone, at reading size. */
-@media (max-width: 600px) {
-  .devices { grid-template-columns: 1fr; justify-items: center; }
-  .devices .crop { display: none; }
-  .devices .shot { width: min(100%, 17rem); }
-}
-
-@media (max-width: 850px) {
-  .story { grid-template-columns: 1fr; }
-}
-
-/* Home: feature chapters */
+/* Chapter rows: the guides on Docs and the way back on the 404 page. */
 
 .chapters {
   display: grid;
@@ -604,6 +692,8 @@ button.shot:disabled { cursor: default; }
 .chapter {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  /* A taller neighbour stretches the row: the title stays with its description at the top. */
+  align-content: start;
   gap: 0.2rem 1.5rem;
   padding: 1.25rem 0.25rem;
   border-bottom: 1px solid var(--line);
@@ -614,18 +704,7 @@ button.shot:disabled { cursor: default; }
 .chapter strong { font-size: 1.3125rem; font-weight: 640; font-stretch: 108%; letter-spacing: -0.015em; }
 .chapter span { grid-column: 1; color: var(--muted); font-size: 1rem; }
 
-.chapter b {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  align-self: center;
-  font-size: 2rem;
-  font-weight: 300;
-  font-stretch: 125%;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
 
-.chapters-foot { margin-top: 1.75rem; }
 
 @media (max-width: 850px) {
   .chapters { grid-template-columns: 1fr; }
@@ -634,17 +713,22 @@ button.shot:disabled { cursor: default; }
 /* Install: desktop packages beside the server command */
 
 .install { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.install-way { display: grid; gap: 1rem; align-content: start; padding: 0.25rem 3rem 0.25rem 0; }
+/* A column per edition; their lists of systems settle at the same height at the bottom. */
+.install-way { display: flex; flex-direction: column; gap: 1rem; min-width: 0; padding: 0.25rem 3rem 0.25rem 0; }
+/* The install command scrolls inside its box rather than widening the column. */
+.install-way > * { min-width: 0; }
+.install-way .install-list { margin-top: auto; }
 .install-way + .install-way { padding: 0.25rem 0 0.25rem 3rem; border-left: 1px solid var(--line); }
 .install-way > p { color: var(--muted); }
-.install-way .button { justify-self: start; margin-top: 0.5rem; }
+.install-way > .link { align-self: start; }
+.install-way .button { align-self: start; margin-top: 0.5rem; }
 
-.install-list { display: grid; gap: 0; border-top: 1px solid var(--line); margin-top: 0.5rem; }
+.install-list { display: grid; gap: 0; border-top: 1px solid var(--line); }
 .install-list a { display: flex; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.25rem; border-bottom: 1px solid var(--line); text-decoration: none; }
 .install-list a span:last-child { color: var(--muted); font-size: 0.9375rem; }
 
 @media (max-width: 850px) {
-  .install { grid-template-columns: 1fr; gap: 3rem; }
+  .install { grid-template-columns: minmax(0, 1fr); gap: 3rem; }
   .install-way, .install-way + .install-way { padding: 0; border-left: 0; }
   .install-way + .install-way { padding-top: 3rem; border-top: 1px solid var(--line); }
 }
@@ -669,7 +753,7 @@ button.shot:disabled { cursor: default; }
   line-height: 1.5;
 }
 
-.command code { font-size: inherit; white-space: pre; }
+.command code { font-size: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .copy-button {
   flex: none;
@@ -685,11 +769,25 @@ button.shot:disabled { cursor: default; }
 }
 
 .copy-button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+
+/* On a phone the command gets the width: the button keeps its icon, the label stays for screen readers. */
+@media (max-width: 600px) {
+  .copy-button { padding: 0 0.85rem; }
+
+  .copy-button [data-copy-label] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 .copy-button svg { width: 1rem; height: 1rem; }
 
 /* Film */
 
-.film { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 2rem 4rem; align-items: center; }
+.film { display: grid; grid-template-columns: var(--cols); gap: 2rem 4rem; align-items: center; }
 .film-text { display: grid; gap: 1rem; }
 .film-text p { color: var(--muted); }
 .film video { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); box-shadow: var(--shadow); }
@@ -699,7 +797,9 @@ button.shot:disabled { cursor: default; }
  * Without JavaScript the inline player stays and the still is not shown.
  */
 .film-poster { position: relative; display: none; }
-#film[data-film-enhanced] .film-poster { display: block; }
+.js #film .film-poster { display: block; }
+/* The player moves to its dialog when the script runs; until then the still stands in for it. */
+.js #film video { display: none; }
 .film-poster img { width: 100%; transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .film-poster:hover img { transform: scale(1.015); }
 
@@ -763,9 +863,22 @@ details[open] > summary .feature-toggle { background-size: 100% 1.5px, 1.5px 0; 
 
 .rows details > p,
 .rows details > div { padding: 0 0.25rem 1.4rem; max-width: 46em; color: var(--muted); }
-.rows details > a { display: inline-block; margin: -0.6rem 0.25rem 1.4rem; }
+.rows details > a { display: inline-block; margin: -0.9rem 0.25rem 1.4rem; }
 
-.faq { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 2rem 4rem; align-items: start; }
+/* Disclosures open and close at the pace of a turning page where the browser can animate to auto. */
+@supports (interpolate-size: allow-keywords) {
+  :root { interpolate-size: allow-keywords; }
+
+  details::details-content {
+    height: 0;
+    overflow: clip;
+    transition: height 0.28s cubic-bezier(0.2, 0.7, 0.2, 1), content-visibility 0.28s allow-discrete;
+  }
+
+  details[open]::details-content { height: auto; }
+}
+
+.faq { display: grid; grid-template-columns: var(--cols); gap: 2rem 4rem; align-items: start; }
 .faq-head { display: grid; gap: 1rem; justify-items: start; }
 .faq-head p { color: var(--muted); }
 
@@ -776,16 +889,16 @@ details[open] > summary .feature-toggle { background-size: 100% 1.5px, 1.5px 0; 
 /* On open lists, let the label carry the interaction while descriptions stay quiet. */
 @media (hover: hover) {
   .chapter:hover strong, .install-list a:hover span:first-child,
-  .package-link:hover strong, .rows summary:hover,
+  .rows summary:hover,
   .feature-row summary:hover .feature-title { color: var(--wake); }
 }
 
-:is(.chapter, .install-list a, .package-link, .rows summary, .feature-row summary):focus-visible {
+:is(.chapter, .install-list a, .rows summary, .feature-row summary):focus-visible {
   outline: none;
 }
 
 .chapter:focus-visible strong, .install-list a:focus-visible span:first-child,
-.package-link:focus-visible strong, .rows summary:focus-visible,
+.rows summary:focus-visible,
 .feature-row summary:focus-visible .feature-title {
   text-decoration: underline;
   text-decoration-thickness: 2px;
@@ -803,7 +916,11 @@ details[open] > summary .feature-toggle { background-size: 100% 1.5px, 1.5px 0; 
   font-stretch: 106%;
   letter-spacing: -0.02em;
   text-wrap: balance;
+  text-indent: -0.42em;
 }
+
+/* A French quotation opens with « and a no-break space: a wider mark to hang. */
+html[lang="fr"] .origin blockquote { text-indent: -0.78em; }
 
 .origin-text { display: grid; gap: 1rem; color: var(--muted); }
 
@@ -816,25 +933,134 @@ details[open] > summary .feature-toggle { background-size: 100% 1.5px, 1.5px 0; 
   .origin { grid-template-columns: 1fr; }
 }
 
-/* Footer */
+/*
+ * Footer. The brand with its line and the latest release, three columns of links; under a rule,
+ * the legal line, the languages and a way back up; at the very bottom, the name sinking out of
+ * view like a wake fading behind a boat.
+ */
 
-.footer { border-top: 1px solid var(--line); padding-block: 3rem 3.5rem; }
+.footer { position: relative; overflow: hidden; border-top: 1px solid var(--line); padding-top: clamp(3.5rem, 6vw, 5rem); }
 
 .footer-inner {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2rem 3rem;
+  grid-template-columns: var(--cols);
+  gap: 2.75rem 4rem;
   align-items: start;
 }
 
-.footer p { margin-top: 0.75rem; max-width: 26em; font-size: 0.9375rem; color: var(--muted); }
-.footer nav { display: flex; flex-wrap: wrap; gap: 0.6rem 1.75rem; justify-content: flex-end; }
-.footer nav a { font-size: 0.9875rem; text-decoration: none; }
-.footer nav a:hover { text-decoration: underline; }
+.footer-brand { display: grid; justify-items: start; gap: 0.55rem; }
+.footer-brand .brand { margin-bottom: 0.45rem; }
+.footer-brand p { max-width: 27em; font-size: 0.9375rem; color: var(--muted); }
+.footer-brand .footer-tagline { font-size: 1.1875rem; font-weight: 560; letter-spacing: -0.01em; color: var(--ink); }
+.footer-release { margin-top: 0.75rem; }
+
+/* The latest release, as a status: a green dot, the version, its date. */
+.release-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.85rem 0.35rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.release-badge strong { color: var(--ink); font-weight: 620; font-variant-numeric: tabular-nums; }
+.release-sep { color: var(--line-strong); }
+.release-badge:hover { border-color: var(--ink); color: var(--ink); }
+.release-dot { width: 0.5rem; height: 0.5rem; flex: none; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+
+.footer-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+
+.footer-nav h2 {
+  margin-bottom: 0.9rem;
+  font-size: 0.9375rem;
+  font-weight: 640;
+  font-stretch: 100%;
+  letter-spacing: 0;
+}
+
+.footer-nav ul { display: grid; gap: 0.6rem; }
+.footer-nav a { color: var(--muted); font-size: 0.9375rem; text-decoration: none; }
+.footer-nav a:hover { color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-strong); }
+
+.footer-base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.75rem;
+  margin-top: clamp(3rem, 5vw, 4rem);
+  padding-block: 1.35rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* Each language in its own name; the current one is marked, the other leads to this page in it. */
+.footer-languages { display: flex; gap: 0.2rem; margin-right: auto; }
+.footer-languages > * { padding: 0.2rem 0.65rem; border-radius: 99px; text-decoration: none; }
+.footer-languages a { color: var(--muted); }
+.footer-languages a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.footer-languages [aria-current] { color: var(--ink); font-weight: 560; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+
+.footer-top { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); text-decoration: none; }
+.footer-top:hover { color: var(--ink); }
+.footer-top svg { width: 1rem; height: 1rem; transition: transform 0.18s cubic-bezier(0.3, 0.6, 0.3, 1); }
+.footer-top:hover svg { transform: translateY(-2px); }
+
+/* The name spans the content's width exactly (sized on its container), faint, its lower part
+   below the edge of the page. */
+.footer-mark {
+  container-type: inline-size;
+  width: min(100% - 2 * var(--gutter), 77.5rem);
+  margin: clamp(0.5rem, 2vw, 1.5rem) auto 0;
+  color: color-mix(in srgb, var(--ink) 7%, transparent);
+  user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 20%, transparent 88%);
+  mask-image: linear-gradient(to bottom, #000 20%, transparent 88%);
+}
+
+.footer-mark > div {
+  display: flex;
+  align-items: center;
+  gap: 0.08em;
+  margin-bottom: -0.2em;
+  font-size: clamp(4rem, 17.4vw, 15.75rem);
+  font-size: 23.3cqi;
+  font-weight: 680;
+  font-stretch: 112%;
+  letter-spacing: -0.045em;
+  line-height: 0.8;
+}
+
+.footer-mark svg { width: 0.92em; height: 0.92em; flex: none; overflow: visible; color: color-mix(in srgb, var(--wake) 22%, transparent); }
+/* The word is drawn by CSS: decoration, not text, for audits and screen readers alike. */
+.footer-mark > div::after { content: attr(data-word); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .footer-mark:hover path { animation: stroke-ripple 0.9s cubic-bezier(0.3, 0.6, 0.3, 1); }
+  .footer-mark:hover path:nth-child(2) { animation-delay: 0.08s; }
+  .footer-mark:hover path:nth-child(3) { animation-delay: 0.16s; }
+}
 
 @media (max-width: 850px) {
   .footer-inner { grid-template-columns: 1fr; }
-  .footer nav { justify-content: flex-start; }
+}
+
+/* Phones: the copyright and the way up share a line, the languages and the note follow. */
+@media (max-width: 600px) {
+  .footer-base > p:first-child { order: 1; }
+  .footer-top { order: 2; margin-left: auto; }
+  .footer-languages { order: 3; flex-basis: 100%; margin: 0 0 0 -0.65rem; }
+  .footer-base > p:nth-of-type(3) { order: 4; flex-basis: 100%; }
+}
+
+@media (max-width: 520px) {
+  .footer-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 2.25rem; }
 }
 
 /* Dialogs */
@@ -867,6 +1093,23 @@ dialog::backdrop { background: #050a14b8; -webkit-backdrop-filter: blur(3px); ba
 .film-dialog { width: min(100% - 2rem, 72rem); }
 .film-modal-content video { width: 100%; max-height: calc(100dvh - 7rem); background: #000; }
 
+/* Secondary pages: each section heading links to itself (added by main.js). */
+.anchor {
+  margin-left: 0.3em;
+  color: var(--line-strong);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+:is(h2, h3):hover > .anchor, .anchor:focus-visible { opacity: 1; }
+.anchor:hover { color: var(--wake); }
+
+@media (hover: none) {
+  .anchor { display: none; }
+}
+
 /* Secondary pages: intro */
 
 .page-intro {
@@ -895,12 +1138,14 @@ dialog::backdrop { background: #050a14b8; -webkit-backdrop-filter: blur(3px); ba
 
 .agent-panel {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: 2.5rem 5rem;
+  grid-template-columns: var(--cols);
+  gap: 2.5rem 4rem;
   align-items: start;
 }
 
 .agent-summary { display: grid; gap: 1.1rem; justify-items: start; }
+/* Each agent's claim sits in the narrower column: one step smaller than section headings. */
+.agent-summary h2 { font-size: clamp(1.7rem, 1.2rem + 1.5vw, 2.3rem); }
 .agent-summary p { color: var(--muted); font-size: 1.125rem; }
 
 .agent-maker { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 550; color: var(--muted); }
@@ -950,7 +1195,7 @@ dialog::backdrop { background: #050a14b8; -webkit-backdrop-filter: blur(3px); ba
   .steps li p { grid-column: 2; }
 }
 
-.split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 2rem 4rem; align-items: start; }
+.split { display: grid; grid-template-columns: var(--cols); gap: 2rem 4rem; align-items: start; }
 .split-text { display: grid; gap: 1rem; justify-items: start; }
 .split-text p { color: var(--muted); }
 .footnote { margin-top: 1.25rem; font-size: 0.9375rem; color: var(--muted); }
@@ -992,47 +1237,86 @@ dialog::backdrop { background: #050a14b8; -webkit-backdrop-filter: blur(3px); ba
 .platform-filter button:hover { border-color: var(--ink); }
 .platform-filter button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 
-.package-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.5rem 3rem; align-items: start; }
-.package-grid[data-filtered] { grid-template-columns: minmax(0, 28rem); }
-.package-heading { padding-bottom: 0.9rem; border-bottom: 1px solid var(--ink); }
+.package-grid { display: grid; border-top: 1px solid var(--ink); }
+
+/* One row per system: its name on the shared grid line, its packages beside it, two to a line. */
+.package-group {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 0.9rem 4rem;
+  align-items: start;
+  padding-block: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
 .package-heading h3 { font-size: 1.5rem; font-stretch: 110%; letter-spacing: -0.02em; }
-.package-heading p { color: var(--muted); font-size: 0.9375rem; }
+.package-heading p { margin-top: 0.2rem; color: var(--muted); font-size: 0.9375rem; }
+.package-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 
 .package-link {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
   align-items: center;
-  padding: 0.9rem 0.25rem;
-  border-bottom: 1px solid var(--line);
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
   text-decoration: none;
-  outline-offset: -2px;
+  transition: border-color 0.15s, background-color 0.15s;
 }
 
+.package-link:hover {
+  border-color: color-mix(in srgb, var(--wake) 55%, var(--line));
+  background: color-mix(in srgb, var(--wake) 5%, var(--surface));
+}
+
+.package-link:focus-visible { outline: 2px solid var(--wake); outline-offset: 2px; }
 .package-link strong { display: block; font-weight: 620; }
-.package-link small { font-size: 0.875rem; color: var(--muted); }
+.package-link small { font-size: 0.875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .package-link svg { width: 1.2rem; height: 1.2rem; color: var(--wake); }
 
 @media (max-width: 850px) {
-  .package-grid { grid-template-columns: 1fr; }
+  .package-group { grid-template-columns: 1fr; }
 }
 
-.first-launch { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 1.5rem 4rem; align-items: start; }
+@media (max-width: 600px) {
+  .package-links { grid-template-columns: 1fr; }
+}
+
+.first-launch { display: grid; grid-template-columns: var(--cols); gap: 1.5rem 4rem; align-items: start; }
 .first-launch > div:first-child { display: grid; gap: 0.75rem; }
 .first-launch > div:first-child p { color: var(--muted); }
 .first-launch summary { font-size: 1.0625rem; }
 
-.server-install { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 2.5rem 4rem; align-items: start; }
-.server-command { display: grid; gap: 0.9rem; justify-items: start; }
-.server-command .command { width: 100%; }
-.server-command > p { color: var(--muted); font-size: 0.9375rem; }
-.server-steps .steps li { grid-template-columns: 2rem 1fr; }
-.server-steps .steps li p { grid-column: 2; }
+.server-install { display: grid; grid-template-columns: var(--cols); gap: 1.5rem 4rem; align-items: start; }
+.server-lead { display: grid; gap: 0.75rem; justify-items: start; }
+.server-lead p { color: var(--muted); }
+.server-run { display: grid; gap: 1.5rem; min-width: 0; }
+.server-run .steps li { grid-template-columns: 2rem minmax(0, 2fr) minmax(0, 3fr); }
+.server-guides .install-list { border-top-color: var(--ink); }
+.server-guides .install-list a { align-items: center; }
 
-.guides { display: flex; flex-wrap: wrap; gap: 0.6rem 2rem; }
+/* These rows leave the site for the repository: they carry the same mark as other such links. */
+.server-guides .install-list a::after {
+  content: "";
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-left: -0.35rem;
+  background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 1.5h7v7M10.5 1.5 1.5 10.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 1.5h7v7M10.5 1.5 1.5 10.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.server-guides .install-list a span:first-child { margin-right: auto; }
+.server-guides .install-list a:hover::after { background: var(--wake); }
+
 
 @media (max-width: 850px) {
-  .first-launch, .server-install { grid-template-columns: 1fr; }
+  .first-launch, .server-install { grid-template-columns: minmax(0, 1fr); }
+  .server-run .steps li { grid-template-columns: 2rem 1fr; }
+  .server-run .steps li p { grid-column: 2; }
 }
 
 .table-scroll { overflow-x: auto; border-top: 1px solid var(--ink); }
@@ -1093,15 +1377,59 @@ td { color: var(--muted); }
   width: 2.4rem;
   height: 2.4rem;
   margin-top: -1.2rem;
+  display: grid;
+  place-items: center;
   border: 0;
   border-radius: 6px;
   background: none;
-  font-size: 1.4rem;
-  line-height: 1;
   color: var(--muted);
 }
 
-.edition-filter select { padding: 0 2.25rem 0 0.95rem; font-weight: 550; }
+.catalog-search button:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+
+/* The "/" shortcut, shown while the field is empty and unfocused. */
+.search-key {
+  position: absolute;
+  right: 0.85rem;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  margin-top: -0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  pointer-events: none;
+}
+
+.catalog-search input:focus ~ .search-key,
+.catalog-search input:not(:placeholder-shown) ~ .search-key { display: none; }
+
+@media (hover: none) {
+  .search-key { display: none; }
+}
+.catalog-search button svg { width: 1.1rem; height: 1.1rem; }
+
+.edition-filter { position: relative; }
+.edition-filter select { padding: 0 2.6rem 0 0.95rem; font-weight: 550; appearance: none; cursor: pointer; }
+
+.edition-filter::after {
+  content: "";
+  position: absolute;
+  right: 0.95rem;
+  top: 50%;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: -0.4rem;
+  background: var(--muted);
+  pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.5 4.5 3.5 3.5 3.5-3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.5 4.5 3.5 3.5 3.5-3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.edition-filter select:hover { border-color: var(--ink); }
 
 .catalog-container {
   display: grid;
@@ -1214,12 +1542,14 @@ td { color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  *, *::before, *::after { transition: none !important; animation: none !important; }
+  *, *::before, *::after, ::details-content { transition: none !important; animation: none !important; }
 }
 
 @media (max-width: 600px) {
   /* Both edition tabs must stay in view; their panels repeat what the hints said. */
   .editions > .tabs small { display: none; }
+  .platform-filter { gap: 0.4rem; }
+  .platform-filter button { padding: 0.4rem 0.8rem; }
 }
 
 /*
@@ -1230,7 +1560,9 @@ td { color: var(--muted); }
 
 :root {
   --water: repeating-linear-gradient(to bottom, transparent 0 11px, color-mix(in srgb, var(--ink) 7%, transparent) 11px 12px);
-  --lift: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent), 0 14px 36px -18px color-mix(in srgb, var(--ink) 30%, transparent);
+  /* Cards lie flat: their surface and border set them apart. A hairline under them in the light
+     theme; none in the dark one, where any shadow drawn from the ink colour glows white. */
+  --lift: 0 1px 2px rgb(12 26 43 / 0.06);
 }
 
 html { overflow-x: clip; }
@@ -1315,8 +1647,6 @@ main:not(:has(.hero))::before {
   .soundings::before { mask-size: auto 100%; mask-position: 26% center; opacity: .07; }
 }
 
-/* Chapter counts carry the accent, so the index reads as a table of depths. */
-.chapter b { color: var(--wake); font-weight: 350; }
 
 /* Secondary pages open on the same water, still. */
 main:not(:has(.hero)) { position: relative; isolation: isolate; }
@@ -1359,12 +1689,22 @@ main:not(:has(.hero))::before {
 .category-heading:has(+ .category-figure) { border-bottom: 0; padding-bottom: 0; }
 .category-figure + * { border-top: 1px solid var(--ink); margin-top: 1.75rem; }
 
+/* The first screen settles in: heading, text and actions rise a few pixels as they appear. */
+@keyframes settle {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+.hero-inner > *, .page-intro > * { animation: settle 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.hero-inner > :nth-child(2), .page-intro > :nth-child(2) { animation-delay: 0.06s; }
+.hero-inner > :nth-child(3), .page-intro > :nth-child(3) { animation-delay: 0.12s; }
+.hero-inner > :nth-child(n+4), .page-intro > :nth-child(n+4) { animation-delay: 0.18s; }
+
 /* A panel that was just chosen comes in. */
 @keyframes panel-in {
   from { opacity: 0; transform: translateY(6px); }
 }
 
-[data-enhanced] > [role="tabpanel"] { animation: panel-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1); }
+[role="tabpanel"][data-chosen] { animation: panel-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1); }
 
 /* Agents: two real threads side by side, and the handoff dialog under its explanation. */
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 1.5rem; margin-top: clamp(2.5rem, 5vw, 4rem); }
@@ -1381,18 +1721,815 @@ main:not(:has(.hero))::before {
 }
 
 /*
- * Home stories: the claim and its details share one line across two columns,
- * then the capture takes the full width, large enough to read.
+ * Changelog. Generated from the GitHub releases by scripts/site-changelog.mjs: one ruled row per
+ * release, its version and date held at the left while its notes scroll by.
  */
-.story { grid-template-columns: 1fr; gap: clamp(1.75rem, 3.5vw, 2.75rem); }
-.story-text { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); column-gap: 4rem; align-items: start; }
-.story-text h2 { grid-row: 1 / span 2; }
-.story-text p, .story-text ul { grid-column: 2; }
-.story-text p { font-size: 1.125rem; }
-.devices { grid-template-columns: minmax(0, 1fr) 21%; }
+.changelog-stats { font-size: 1.0625rem; }
+.changelog { padding-bottom: var(--section); }
+
+.changelog-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: clamp(2rem, 4vw, 3rem);
+  font-size: 0.9375rem;
+}
+
+.changelog-jump a { color: var(--muted); text-underline-offset: 0.25em; text-decoration-color: var(--line-strong); }
+.changelog-jump a:hover { color: var(--ink); text-decoration-color: currentColor; }
+
+.release-month + .release-month { margin-top: clamp(3.5rem, 6vw, 5rem); }
+
+.month-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ink);
+  font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.2rem);
+  scroll-margin-top: calc(var(--topbar) + 1.5rem);
+}
+
+.month-heading span { font-size: 0.9375rem; font-weight: 400; font-stretch: 100%; letter-spacing: 0; color: var(--muted); }
+
+.release-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(0, 1fr);
+  gap: 0.75rem 3.5rem;
+  padding-block: 2.25rem;
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: var(--topbar);
+}
+
+.release-meta {
+  position: sticky;
+  top: calc(var(--topbar) + 1.5rem);
+  align-self: start;
+  display: grid;
+  justify-items: start;
+  gap: 0.2rem;
+}
+
+.release-meta h3 { font-size: 1.375rem; font-stretch: 112%; font-weight: 640; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.release-meta h3 a { text-decoration: none; }
+.release-meta h3 a:hover { color: var(--wake); }
+.release-meta time { color: var(--muted); font-size: 0.9375rem; }
+.release-entry:target .release-meta h3 { color: var(--wake); }
+
+.release-latest {
+  margin-top: 0.5rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid currentColor;
+  border-radius: 99px;
+  color: var(--wake);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.release-body { display: grid; gap: 1.1rem; max-width: 47rem; min-width: 0; }
+.release-summary { font-size: 1.1875rem; line-height: 1.5; }
+.release-notes { display: grid; gap: 0.8rem; color: var(--muted); }
+.release-notes :is(h4, h5, h6) { margin: 0.9rem 0 0; color: var(--ink); font-size: 1.0625rem; font-weight: 650; line-height: 1.35; }
+.release-notes :is(h5, h6) { margin-top: 0.4rem; font-size: 1rem; font-weight: 620; }
+.release-notes > :first-child { margin-top: 0; }
+.release-notes ul { display: grid; gap: 0.5rem; }
+.release-notes li { position: relative; padding-left: 1.15rem; }
+
+.release-notes li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.75em;
+  width: 0.5rem;
+  height: 1.5px;
+  background: var(--line-strong);
+}
+
+.release-notes li ul { margin-top: 0.5rem; }
+.release-notes strong { color: var(--ink); font-weight: 620; }
+
+.release-body a:not(.link) {
+  color: var(--wake);
+  text-decoration-color: color-mix(in srgb, var(--wake) 35%, transparent);
+}
+
+.release-body a:not(.link):hover { text-decoration-color: currentColor; }
+
+/* A warning at the top of some notes. Square on its rule, like every marker on the left edge. */
+.release-notes blockquote {
+  padding: 0.8rem 1rem;
+  border-left: 2px solid var(--wake);
+  background: color-mix(in srgb, var(--foam) 70%, transparent);
+  color: var(--ink);
+}
+
+.release-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--wake);
+  font-weight: 550;
+  cursor: pointer;
+  list-style: none;
+}
+
+.release-more > summary::-webkit-details-marker { display: none; }
+
+.release-more > summary::after {
+  content: "";
+  width: 0.75rem;
+  height: 0.75rem;
+  background:
+    linear-gradient(currentColor, currentColor) center / 100% 1.5px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1.5px 100% no-repeat;
+  transition: background-size 0.2s;
+}
+
+.release-more[open] > summary::after { background-size: 100% 1.5px, 1.5px 0; }
+.release-more[open] > summary { margin-bottom: 1rem; }
+.release-more > summary:focus-visible { outline-offset: 4px; }
+
+.release-links { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; font-size: 0.9375rem; }
+.release-body .release-links a { color: var(--muted); text-decoration-color: var(--line-strong); }
+.release-body .release-links a:hover { color: var(--ink); text-decoration-color: currentColor; }
 
 @media (max-width: 850px) {
-  .story-text { grid-template-columns: 1fr; }
-  .story-text h2 { grid-row: auto; }
-  .story-text p, .story-text ul { grid-column: 1; }
+  .release-entry { grid-template-columns: 1fr; padding-block: 1.75rem; }
+  .release-meta { position: static; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.9rem; }
+  .release-latest { margin-top: 0; }
+}
+
+/*
+ * Home: where everything runs. Four stops on one line, from the screen to the provider; Sillage
+ * is the stop drawn in the wake colour.
+ */
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2.5rem; }
+
+.flow li {
+  position: relative;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  padding-top: 3.25rem;
+}
+
+/* The line runs from each stop to the next one. */
+.flow li::before {
+  content: "";
+  position: absolute;
+  top: 1.1rem;
+  left: 2.75rem;
+  right: -2.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line-strong), var(--line-strong) 70%, transparent);
+}
+
+.flow li:last-child::before { display: none; }
+
+.flow svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0.45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.flow .flow-core svg { border-color: var(--wake); background: var(--wake); color: var(--paper); box-shadow: 0 0 0 6px color-mix(in srgb, var(--wake) 16%, transparent); }
+.flow h3 { font-size: 1.1875rem; }
+.flow p { color: var(--muted); font-size: 1rem; }
+.flow-foot { margin-top: clamp(2rem, 4vw, 3rem); }
+
+/* On narrow screens the line turns downward and the stops stack along it. */
+@media (max-width: 850px) {
+  .flow { grid-template-columns: 1fr; gap: 1.75rem; }
+  .flow li { padding: 0.2rem 0 0 3.5rem; }
+  .flow li::before { top: 2.75rem; bottom: -1.75rem; left: 1.125rem; right: auto; width: 1px; height: auto; background: var(--line-strong); }
+}
+
+/* Download: what each edition needs, in the same ruled rows as the facts on the agents page. */
+.requirements { display: grid; grid-template-columns: var(--cols); gap: 1.5rem 4rem; align-items: start; }
+.requirements > div:first-child { display: grid; gap: 0.75rem; }
+.requirements > div:first-child p { color: var(--muted); }
+.requirements dt { font-weight: 620; }
+.requirements dd { margin: 0; color: var(--muted); }
+.package-link small span { white-space: nowrap; }
+
+@media (max-width: 850px) {
+  .requirements { grid-template-columns: 1fr; }
+}
+
+/* Docs: six steps on a band, then the guides as ruled rows that open on GitHub. */
+.start-steps .link { white-space: nowrap; }
+.guide-group + .guide-group { margin-top: clamp(3.5rem, 6vw, 5rem); }
+
+.guide-head {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 0.75rem 4rem;
+  align-items: end;
+  margin-bottom: 1.75rem;
+}
+
+.guide-head h2 { font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.2rem); }
+.guide-head p { color: var(--muted); font-size: 1.0625rem; }
+
+/* Each guide carries the mark of links that leave the site, where chapters carry a count. */
+.guide::after {
+  content: "";
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 1.5h7v7M10.5 1.5 1.5 10.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 1.5h7v7M10.5 1.5 1.5 10.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.guide strong { font-size: 1.1875rem; }
+.guide:hover::after { background: var(--wake); }
+.guides-notes a { color: var(--wake); }
+.next-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+
+@media (max-width: 850px) {
+  .guide-head { grid-template-columns: 1fr; }
+}
+
+/* Missing pages: the home page's water, then the four places to start again. */
+.not-found .hero-inner { padding-block: clamp(3rem, 8vw, 7rem); }
+.not-found-next { padding-top: clamp(2.5rem, 5vw, 4rem); border-top: 0; }
+
+/* Notes without a summary sentence show what they cover. */
+.release-topics { display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; }
+
+.release-topics span {
+  padding: 0.15rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 99px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* Security: four short answers under the intro, then each topic as facts beside its heading. */
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.25rem 2.5rem;
+  margin-top: 1rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ink);
+}
+
+.pillars li { display: grid; gap: 0.35rem; align-content: start; }
+.pillars svg { width: 1.6rem; height: 1.6rem; margin-bottom: 0.4rem; color: var(--wake); }
+.pillars strong { font-size: 1.1875rem; font-weight: 640; font-stretch: 108%; letter-spacing: -0.015em; }
+.pillars span { color: var(--muted); font-size: 0.9875rem; }
+
+.security-checked { font-size: 0.9375rem; color: var(--muted); }
+.security-checked a { color: var(--ink); text-decoration-color: var(--line-strong); }
+.requests thead th { font-size: 0.9375rem; font-weight: 620; font-stretch: 100%; letter-spacing: 0; color: var(--muted); vertical-align: bottom; }
+.requests tbody th { width: 27%; }
+.requests td:last-child { width: 24%; }
+
+.leaves-notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 4rem;
+  margin-top: 1.75rem;
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+.report-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
+
+@media (max-width: 1000px) {
+  .pillars { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .leaves-notes { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  .pillars { grid-template-columns: 1fr; }
+}
+
+/* Language switch: the other language's code, beside the theme toggle. */
+.lang-switch {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.5rem;
+  height: 2.5rem;
+  padding: 0 0.5rem;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+}
+
+.lang-switch:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+
+/* Changelog: notes shown in another language than the page. */
+.release-language {
+  margin-top: 0.5rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 99px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+@media (max-width: 850px) {
+  .release-language { margin-top: 0; }
+}
+
+/*
+ * Motion. Small, and always about the wake: the mark ripples, a reading line follows the page,
+ * a pulse runs through the diagram, captures surface as they come into view. Readers who ask
+ * for less motion get none of it (see the reduced-motion rule above), and nothing here hides
+ * content where an effect is unsupported.
+ */
+
+/* The mark's three strokes ripple one after the other under the pointer. */
+.brand svg { overflow: visible; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .topbar .brand:hover path { animation: stroke-ripple 0.7s cubic-bezier(0.3, 0.6, 0.3, 1); }
+  .topbar .brand:hover path:nth-child(2) { animation-delay: 0.07s; }
+  .topbar .brand:hover path:nth-child(3) { animation-delay: 0.14s; }
+}
+
+@keyframes stroke-ripple { 35% { transform: translateX(9px); } }
+
+/* Marks that point somewhere lean that way under the pointer. */
+.link[href^="https://"]::after,
+.guide::after,
+.server-guides .install-list a::after,
+.package-link svg { transition: transform 0.18s cubic-bezier(0.3, 0.6, 0.3, 1), background-color 0.15s; }
+
+.link[href^="https://"]:hover::after,
+.guide:hover::after,
+.server-guides .install-list a:hover::after { transform: translate(1.5px, -1.5px); }
+
+.package-link:hover svg { transform: translateY(2px); }
+
+/* A copied command says so with a check, in the colour of success. */
+.copy-button[data-copied] { color: var(--ok); }
+.copy-button[data-copied] svg { display: none; }
+
+.copy-button[data-copied]::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Long pages: a line in the wake colour grows under the top bar as the reader goes down. */
+@supports (animation-timeline: scroll()) {
+  body:not(:has(.hero)) .topbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--wake);
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    animation: read-progress linear both;
+    animation-timeline: scroll(root block);
+  }
+}
+
+@keyframes read-progress { to { transform: scaleX(1); } }
+
+/* Changelog search: the catalog's field, its result count beside it, the words marked in the notes. */
+.changelog-search { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; margin-top: 0.5rem; }
+.changelog-search .catalog-search { flex: 1 1 22rem; }
+.changelog-results { color: var(--muted); font-size: 0.9375rem; }
+::highlight(release-match) { background-color: color-mix(in srgb, var(--wake) 24%, transparent); color: var(--ink); }
+
+/* What runs where: a pulse goes from the screens to the providers, one connector after another. */
+@media (prefers-reduced-motion: no-preference) {
+  .flow li:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    top: calc(1.1rem - 0.5px);
+    left: 2.75rem;
+    right: -2.5rem;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0 42%, var(--wake) 50%, transparent 58% 100%) 100% 0 / 300% 100% no-repeat;
+    animation: flow-pulse 4.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  }
+
+  .flow li:nth-child(2)::after { animation-delay: 1.2s; }
+  .flow li:nth-child(3)::after { animation-delay: 2.4s; }
+}
+
+@media (max-width: 850px) and (prefers-reduced-motion: no-preference) {
+  .flow li:not(:last-child)::after {
+    top: 2.75rem;
+    bottom: -1.75rem;
+    left: calc(1.125rem - 0.5px);
+    right: auto;
+    width: 2px;
+    height: auto;
+    background: linear-gradient(180deg, transparent 0 42%, var(--wake) 50%, transparent 58% 100%) 0 100% / 100% 300% no-repeat;
+    animation-name: flow-pulse-down;
+  }
+}
+
+@keyframes flow-pulse { 0% { background-position: 100% 0; } 28%, 100% { background-position: 0% 0; } }
+@keyframes flow-pulse-down { 0% { background-position: 0 100%; } 28%, 100% { background-position: 0 0; } }
+
+/* Captures surface as they come into view, rising a little and taking their shadow. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .category-figure,
+    .pair .shot,
+    .handoff-detail .shot,
+    .film-stage {
+      animation: surface linear both;
+      animation-timeline: view();
+      animation-range: entry 5% cover 30%;
+    }
+  }
+}
+
+@keyframes surface { from { opacity: 0.3; transform: translateY(32px) scale(0.98); box-shadow: none; } }
+
+/*
+ * Home: everything around the agent. The catalog's names drift in three currents, like the
+ * water rows of the hero, then six illustrated tiles say what Sillage does, each with its
+ * features as links into the catalog. The currents are decoration: the tiles carry the links.
+ */
+/* Clipped, not hidden: a hidden overflow would make the section a scroller of its own, and the
+   currents' scroll timeline would follow it instead of the page. */
+.capabilities { overflow: hidden; overflow: clip; }
+
+.currents {
+  display: grid;
+  gap: 0.85rem;
+  margin-block: clamp(0.25rem, 1.5vw, 1rem) clamp(3rem, 5vw, 4.5rem);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+.current { display: flex; width: max-content; }
+.current-run { display: flex; align-items: center; flex: none; }
+
+.current-run span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: clamp(1.05rem, 0.9rem + 0.65vw, 1.5rem);
+  font-weight: 520;
+  font-stretch: 108%;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+}
+
+/* The middle current runs nearer the surface; the outer two lie deeper, smaller. Their muted
+   colour is as faint as text may go and still be read. */
+.current:nth-child(2) .current-run span { color: var(--ink); }
+.current:nth-child(odd) .current-run span { font-size: clamp(0.95rem, 0.84rem + 0.5vw, 1.3rem); }
+
+.current-run span::before {
+  content: "";
+  width: 0.78em;
+  height: 0.78em;
+  margin-inline: 1.15em;
+  background: color-mix(in srgb, var(--wake) 45%, transparent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79ZM23 79C47 79 39 21 65 21H78C54 21 62 79 36 79ZM42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .current { animation: drift 150s linear infinite; }
+  .current:nth-child(1) { animation-delay: -40s; }
+  .current:nth-child(2) { animation-duration: 190s; animation-direction: reverse; animation-delay: -75s; }
+  .current:nth-child(3) { animation-duration: 170s; animation-delay: -110s; }
+  .currents:hover .current { animation-play-state: paused; }
+}
+
+/* Scrolling past stirs the water: the outer currents slip one way, the middle one the other. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .currents { view-timeline-name: --currents; }
+    .current-run { animation: current-stir linear both; animation-timeline: --currents; }
+    .current:nth-child(2) .current-run { animation-direction: reverse; }
+  }
+}
+
+@keyframes current-stir { from { translate: 5vw 0; } to { translate: -5vw 0; } }
+
+/* Each row holds its names twice, so drifting half its width loops without a seam. */
+@keyframes drift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* Readers who ask for less motion see three still rows, each cut at a different name. */
+@media (prefers-reduced-motion: reduce) {
+  .current:nth-child(1) { transform: translateX(-4%); }
+  .current:nth-child(2) { transform: translateX(-11%); }
+  .current:nth-child(3) { transform: translateX(-7%); }
+}
+
+/*
+ * The capabilities as six illustrated tiles. Each drawing is a diagram of an idea, with the
+ * agents' own marks as its characters: never a picture of the interface, which only real
+ * captures may show. Under it, a title, one line, and the features as links to the catalog.
+ */
+.art-sprite { position: absolute; }
+.bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }
+
+.tile {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--lift);
+  overflow: hidden;
+}
+
+/* Drawings and texts share rows across a line of tiles. A wide tile has less text for its
+   width: its drawing takes the height the others give to theirs. */
+@supports (grid-template-rows: subgrid) {
+  .tile { grid-row: span 2; grid-template-rows: subgrid; row-gap: 0; }
+  .tile-wide { grid-template-rows: minmax(0, 1fr) auto; }
+}
+
+.tile-wide { grid-column: span 2; }
+
+.tile-art {
+  position: relative;
+  align-self: stretch;
+  justify-self: stretch;
+  aspect-ratio: 280 / 170;
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(90% 130% at 88% -10%, color-mix(in srgb, var(--foam) 95%, transparent), transparent 68%),
+    color-mix(in srgb, var(--sunken) 45%, var(--surface));
+  overflow: hidden;
+}
+
+/* A faint grid of points, like the paper a diagram is drawn on, fading toward the edges. */
+.tile-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ink) 16%, transparent) 0.9px, transparent 1.3px) center / 16px 16px;
+  -webkit-mask-image: radial-gradient(75% 85% at 50% 45%, #000 25%, transparent 80%);
+  mask-image: radial-gradient(75% 85% at 50% 45%, #000 25%, transparent 80%);
+}
+
+.tile-wide .tile-art { aspect-ratio: auto; min-height: 13rem; }
+/* A drawing is fitted whole in its box, whatever the box's shape. */
+.tile-art svg { position: absolute; inset: 0.6rem 0; width: 100%; height: calc(100% - 1.2rem); }
+
+/* The last tile's drawing is a figure: how many features the catalog holds. */
+.tile-figure { display: grid; place-items: center; }
+
+.tile-figure span {
+  position: relative;
+  font-size: clamp(5.5rem, 9vw, 8rem);
+  font-weight: 300;
+  font-stretch: 125%;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--wake);
+  /* Two digits wide from the start, so the count does not shift as it runs up. */
+  min-width: 2ch;
+  text-align: center;
+}
+
+.tile-cta { margin-top: 0.4rem; }
+.tile-text .tile-cta a { font-size: 1rem; }
+.tile-text { display: grid; align-content: start; gap: 0.55rem; padding: 1.2rem 1.35rem 1.4rem; }
+.tile-text h3 { font-size: 1.25rem; font-stretch: 108%; letter-spacing: -0.015em; }
+.tile-text p { color: var(--muted); font-size: 0.9875rem; }
+.tile-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.55rem; }
+
+.tile-links a {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.tile-links a:hover { border-color: color-mix(in srgb, var(--wake) 60%, var(--line)); background: color-mix(in srgb, var(--wake) 6%, transparent); color: var(--wake); }
+
+/* A feature that only one edition has says which, inside its link. */
+.tile-tag {
+  margin-left: 0.1rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  vertical-align: 0.1em;
+}
+
+.tile-links a:hover .tile-tag { background: color-mix(in srgb, var(--wake) 14%, transparent); }
+
+/* The drawings' parts. */
+.art-line { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.art-round { stroke-width: 2.5; stroke-linecap: round; }
+.art-accent { stroke: var(--wake); stroke-linecap: round; stroke-linejoin: round; }
+.art-accent-soft { stroke: color-mix(in srgb, var(--wake) 60%, transparent); }
+.art-ink { stroke: var(--ink); stroke-width: 2.25; stroke-linecap: round; }
+.art-dash { stroke-dasharray: 4 6; }
+.art-node { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.5; }
+.art-node-accent { fill: color-mix(in srgb, var(--wake) 22%, var(--surface)); stroke: var(--wake); }
+.art-dot { fill: var(--ink); }
+.art-dot-quiet { fill: var(--line-strong); }
+.art-dot-accent { fill: var(--wake); }
+.tile-art use { color: var(--ink); }
+.tile-art .art-brand { color: var(--wake); }
+.art-tail { fill: none; stroke: url("#art-tail"); stroke-width: 3; stroke-linecap: round; }
+.art-sweep { fill: none; stroke: url("#art-sweep"); stroke-width: 3; stroke-linecap: round; }
+.art-tail-from { stop-color: var(--wake); stop-opacity: 0; }
+.art-tail-to { stop-color: var(--wake); stop-opacity: 0.9; }
+
+/* What travels: a short dash running along its path. Its gap is longer than the path, so the
+   dash never shows twice. What answers: a ring that widens. */
+.art-pulse, .any-pulse { fill: none; stroke: var(--wake); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 9 191; stroke-dashoffset: 9; opacity: 0; }
+.any-pulse { stroke-dasharray: 22 178; stroke-dashoffset: 22; }
+.lane-merge, .review-ripple, .review-ping, .any-ping, .any-tap, .any-ack, .dial-ripple { fill: none; stroke: var(--wake); stroke-width: 1.5; opacity: 0; }
+.lane-merge, .lane-commit, .review-ripple, .review-ping, .review-target, .any-ping, .any-tap, .any-ack, .any-dot, .dial-ripple, .dial-mark { transform-box: fill-box; transform-origin: center; }
+
+/* At rest, each drawing shows the moment that sums it up: the runs halfway with their commits,
+   the way back drawn, the question waiting on the phone, the columns full. */
+.lane-run { transform: translate(var(--rest), var(--y)); }
+.lane-commit { fill: var(--surface); stroke: var(--wake); stroke-width: 1.75; }
+.lane-commit.is-ahead { opacity: 0; }
+.clock-hand { transform-box: view-box; transform-origin: 140px 95px; transform: rotate(48deg); }
+
+/* The units of the last drawing read one shared fill level: each shows once the level passes its
+   rank, so the columns fill one unit after another from a single animated number. */
+@property --fill { syntax: "<number>"; inherits: true; initial-value: 1; }
+
+.art-unit {
+  --step: clamp(0, var(--fill) * 10 - var(--k), 1);
+  fill: color-mix(in srgb, var(--ink) 24%, transparent);
+  opacity: var(--step);
+  transform: translateY(calc((1 - var(--step)) * 10px));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.art-unit-top { fill: var(--wake); transform: translateY(calc((1 - var(--step)) * 10px)) scale(calc(1 + var(--step) * (1 - var(--step)) * 1.8)); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .lane-run { animation: lane-run var(--time) linear var(--delay) infinite; }
+  .lane-commit { animation: lane-commit-20 var(--time) linear var(--delay) infinite; }
+  .lane-commit-45 { animation-name: lane-commit-45; }
+  .lane-commit-70 { animation-name: lane-commit-70; }
+  .lane-merge { animation: lane-merge var(--time) ease-out var(--delay) infinite; }
+  .review-ping { animation: review-ping 6s ease-out infinite; }
+  .review-pulse { animation: review-pulse 6s infinite; }
+  .review-target { animation: review-target 6s ease-out infinite; }
+  .review-ripple { animation: review-ripple 6s ease-out infinite; }
+  .any-out { animation: any-out 8s infinite; }
+  .any-dot { animation: any-dot 8s ease-out infinite; }
+  .any-ping { animation: any-ping 8s ease-out infinite; }
+  .any-tap { animation: any-tap 8s ease-out infinite; }
+  .any-back { animation: any-back 8s infinite; }
+  .any-ack { animation: any-ack 8s ease-out infinite; }
+  .ctx-pulse { animation: art-pulse 3.6s cubic-bezier(0.45, 0, 0.3, 1) var(--delay) infinite; }
+  .ctx-node { animation: ctx-node 3.6s ease-out var(--delay) infinite; }
+  .clock-hand { animation: clock-hand 9s linear infinite; }
+  .dial-ripple { animation: dial-ripple 9s ease-out var(--delay) infinite; }
+  .dial-mark { animation: dial-mark 9s ease-out var(--delay) infinite; }
+  .measure-units { animation: measure-fill 8s ease-in-out infinite; }
+}
+
+/* The tiles rise a little as they come into view, the right-hand columns a moment later. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .tile { animation: tile-rise linear both; animation-timeline: view(); animation-range: entry 0% entry 70%; }
+    .tile:nth-child(4) { animation-range: entry 12% entry 82%; }
+    .tile:nth-child(2), .tile:nth-child(5), .tile:nth-child(7) { animation-range: entry 24% entry 94%; }
+  }
+}
+
+@keyframes tile-rise { from { transform: translateY(2.5rem); } }
+
+/* Off screen the drawings wait, and each starts its story when its tile comes into view (main.js). */
+.js .tile-art:not([data-running]) *,
+.js .currents:not([data-running]) .current { animation-play-state: paused; }
+
+/* Run several agents at once: an agent crosses its lane, its commits drop behind it once it has
+   passed, and its lane merges back with a ripple as the next run begins. */
+@keyframes lane-run {
+  0% { transform: translate(126px, var(--y)); opacity: 0; }
+  7%, 93% { opacity: 1; }
+  100% { transform: translate(434px, var(--y)); opacity: 0; }
+}
+
+@keyframes lane-commit-20 { 0%, 26% { opacity: 0; transform: scale(0.2); } 31% { opacity: 1; transform: scale(1.35); } 35%, 93% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1); } }
+@keyframes lane-commit-45 { 0%, 51% { opacity: 0; transform: scale(0.2); } 56% { opacity: 1; transform: scale(1.35); } 60%, 93% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1); } }
+@keyframes lane-commit-70 { 0%, 76% { opacity: 0; transform: scale(0.2); } 81% { opacity: 1; transform: scale(1.35); } 85%, 93% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1); } }
+@keyframes lane-merge { 0% { opacity: 0.9; transform: scale(1); } 14%, 100% { opacity: 0; transform: scale(3.4); } }
+
+/* Review every turn: the current turn pings, a pulse runs back to the second checkpoint, which
+   swells and ripples. */
+@keyframes review-ping { 0% { opacity: 0.8; transform: scale(1); } 22%, 100% { opacity: 0; transform: scale(2.1); } }
+
+@keyframes review-pulse {
+  0%, 8% { stroke-dashoffset: 9; opacity: 0; animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1); }
+  12%, 36% { opacity: 1; }
+  42%, 100% { stroke-dashoffset: -91; opacity: 0; }
+}
+
+@keyframes review-target { 0%, 38% { transform: scale(1); } 44% { transform: scale(1.5); } 54%, 100% { transform: scale(1); } }
+@keyframes review-ripple { 0%, 39% { opacity: 0; transform: scale(1); } 40% { opacity: 0.9; transform: scale(1); } 64%, 100% { opacity: 0; transform: scale(3.2); } }
+
+/* Answer from anywhere: a question crosses to the phone, which lights up; a tap answers, and the
+   answer travels back to the computer. */
+@keyframes any-out {
+  0% { stroke-dashoffset: 22; opacity: 0; animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1); }
+  3%, 14% { opacity: 1; }
+  18%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
+
+@keyframes any-dot { 0%, 17% { opacity: 0; transform: scale(0.2); } 21% { opacity: 1; transform: scale(1.25); } 25%, 45% { opacity: 1; transform: scale(1); } 50%, 100% { opacity: 0; transform: scale(0.2); } }
+@keyframes any-ping { 0%, 18% { opacity: 0; transform: scale(1); } 19% { opacity: 0.8; transform: scale(1); } 36%, 100% { opacity: 0; transform: scale(2.4); } }
+@keyframes any-tap { 0%, 40% { opacity: 0; transform: scale(0.5); } 41% { opacity: 0.9; transform: scale(0.5); } 54%, 100% { opacity: 0; transform: scale(2.4); } }
+
+@keyframes any-back {
+  0%, 50% { stroke-dashoffset: 22; opacity: 0; animation-timing-function: cubic-bezier(0.45, 0, 0.3, 1); }
+  53%, 64% { opacity: 1; }
+  68%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
+
+@keyframes any-ack { 0%, 67% { opacity: 0; transform: scale(0.85); } 68% { opacity: 0.85; transform: scale(0.85); } 88%, 100% { opacity: 0; transform: scale(1.55); } }
+
+/* One context for every agent: a pulse leaves the stack for each agent in turn, and the agent
+   lights up as it arrives. */
+@keyframes art-pulse {
+  0% { stroke-dashoffset: 9; opacity: 0; }
+  12%, 72% { opacity: 1; }
+  88%, 100% { stroke-dashoffset: -91; opacity: 0; }
+}
+
+@keyframes ctx-node {
+  0%, 74% { stroke: var(--line-strong); fill: var(--surface); }
+  84% { stroke: var(--wake); fill: color-mix(in srgb, var(--wake) 16%, var(--surface)); }
+  100% { stroke: var(--line-strong); fill: var(--surface); }
+}
+
+/* Automate the routine: the hand drags a wake along the rim; each scheduled mark swells and
+   ripples as it passes. */
+@keyframes clock-hand { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes dial-ripple { 0% { opacity: 0.9; transform: scale(1); } 18%, 100% { opacity: 0; transform: scale(3.4); } }
+@keyframes dial-mark { 0% { transform: scale(1.5); } 9%, 100% { transform: scale(1); } }
+
+/* Measure, compare, share: the columns fill, hold, and fade before the next count. */
+@keyframes measure-fill {
+  0% { --fill: 0; opacity: 1; }
+  48%, 84% { --fill: 1; opacity: 1; }
+  94% { --fill: 1; opacity: 0; }
+  100% { --fill: 0; opacity: 0; }
+}
+
+@media (max-width: 1000px) {
+  .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Alone on its line, a wide tile's drawing sets its own height. */
+  .tile-wide .tile-art { aspect-ratio: 560 / 220; min-height: 0; }
+  /* The closing tile lies down across the two columns: its figure beside its text. */
+  .tile-catalog { grid-column: span 2; grid-row: auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto; }
+  .tile-catalog .tile-art { aspect-ratio: auto; min-height: 11rem; border-bottom: 0; border-right: 1px solid var(--line); }
+  .tile-catalog .tile-text { align-content: center; }
+}
+
+@media (max-width: 640px) {
+  .bento { grid-template-columns: 1fr; }
+  .tile-wide { grid-column: auto; }
+  .tile-catalog { grid-column: auto; grid-template-columns: 1fr; }
+  .tile-catalog .tile-art { border-right: 0; border-bottom: 1px solid var(--line); min-height: 0; }
+  /* A wide drawing shows its middle on a phone, at the size of the others. */
+  .tile-wide .tile-art { aspect-ratio: 280 / 170; }
+  .tile-wide .tile-art svg { left: -32%; width: 164%; max-width: none; }
+  .tile-catalog .tile-art { aspect-ratio: 280 / 130; }
+  .currents { gap: 0.6rem; }
 }

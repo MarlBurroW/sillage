@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security and privacy: Sillage</title>
+  <meta name="description" content="What Sillage keeps on your machine, every request it makes on its own, how accounts and agents are protected, its limits, and how to report a vulnerability.">
+  <link rel="canonical" href="https://marlburrow.github.io/sillage/security.html">
+  <link rel="alternate" hreflang="en" href="https://marlburrow.github.io/sillage/security.html">
+  <link rel="alternate" hreflang="fr" href="https://marlburrow.github.io/sillage/fr/security.html">
+  <link rel="alternate" hreflang="x-default" href="https://marlburrow.github.io/sillage/security.html">
+  <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preload" href="fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=credible-1">
+  <meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sillage">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="fr_FR">
+  <meta property="og:title" content="Sillage security and privacy">
+  <meta property="og:description" content="What Sillage keeps on your machine, every request it makes on its own, how accounts and agents are protected, its limits, and how to report a vulnerability.">
+  <meta property="og:url" content="https://marlburrow.github.io/sillage/security.html">
+  <meta property="og:image" content="https://marlburrow.github.io/sillage/og/security.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script>document.documentElement.classList.add('js'); try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
+  <script src="main.js?v=credible-1" defer onerror="document.documentElement.classList.remove('js')"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="nav-inner wrap">
+      <a class="brand" href="index.html" aria-label="Sillage home"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <nav id="site-nav" aria-label="Main navigation">
+        <a href="features.html">Features</a>
+        <a href="agents.html">Agents</a>
+        <a href="docs.html">Docs</a>
+        <a href="changelog.html">Changelog</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/MarlBurroW/sillage">GitHub</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="lang-switch" href="fr/security.html" hreflang="fr" lang="fr" data-lang-switch title="Version française">FR</a>
+        <button class="icon-button theme-toggle" data-theme-toggle type="button" aria-label="Switch theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+        <a class="button button-small button-primary" href="download.html">Get Sillage</a>
+        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="menu"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="close"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="page-intro wrap" aria-labelledby="security-title">
+      <h1 id="security-title">Security and privacy</h1>
+      <p class="lede">Sillage runs coding agents that read and change files on a machine you own. Here is what it keeps, what it sends, who can reach it, and where its protection stops.</p>
+      <p class="security-checked">Checked against the code of <a href="changelog.html#v0.45.0">v0.45.0</a> on <time datetime="2026-11-27">27 November 2026</time>.</p>
+      <nav class="page-intro-meta" aria-label="On this page">
+        <a class="link" href="#stays">What stays</a>
+        <a class="link" href="#leaves">What leaves</a>
+        <a class="link" href="#access">Who can reach it</a>
+        <a class="link" href="#agents">What agents can do</a>
+        <a class="link" href="#sharing">Previews and links</a>
+        <a class="link" href="#updates">Updates</a>
+        <a class="link" href="#report">Report a vulnerability</a>
+      </nav>
+      <ul class="pillars" aria-label="In short">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A9.8 9.8 0 0 1 12 5c5 0 8.5 4.2 9.5 7-.4 1.1-1.2 2.4-2.3 3.6M6.4 6.5C4.5 7.8 3.1 9.8 2.5 12c1 2.8 4.5 7 9.5 7 1.9 0 3.6-.6 5-1.5M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg><strong>No telemetry</strong><span>No analytics, usage tracking or crash reports, from the server, the app or the web interface.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg><strong>On your machine</strong><span>Projects, conversations and settings stay in a local database on the computer or server you chose.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16.5 6.5l2.5 2.5M14 9l2 2"/></svg><strong>Your accounts</strong><span>Each agent signs in with your subscription or key and talks to its provider directly. Sillage is not a proxy.</span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg><strong>Open source</strong><span>MIT licensed. Everything on this page can be checked in the code.</span></li>
+      </ul>
+    </section>
+
+    <section class="section band" id="stays" aria-labelledby="stays-title">
+      <div class="split wrap">
+        <div class="split-text">
+          <h2 id="stays-title">What stays on your machine</h2>
+          <p>Server keeps its data in <code>~/.local/share/sillage</code> unless you choose another folder. Desktop uses the app’s own data folder.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/install.md#back-up-and-restore">Back up and restore</a>
+        </div>
+        <div class="facts">
+            <div><h3>Your workspace</h3><p>Projects, conversations, the board, memory and settings live in a SQLite database, next to attachments, worktrees and logs. There is no built-in backup: copy the data folder as the guide explains.</p></div>
+            <div><h3>Agent sign-ins</h3><p>Each CLI keeps its own sign-in in its own folder, as it does in a terminal. Extra accounts get a folder of their own inside the data folder, except extra Claude sign-ins, which are encrypted in the database.</p></div>
+            <div><h3>Secrets</h3><p>MCP server secrets, Git credentials and extra Claude sign-ins are encrypted with AES-256-GCM, and saved secrets are never sent back to the browser. The key sits in the data folder, readable only by your user: this protects a copied database, not a machine whose disk someone can read.</p></div>
+            <div><h3>MCP servers</h3><p>Secrets reach an agent when its session starts. Recent Claude Code versions and the other CLIs receive their MCP servers over a private channel, not on a command line that other users of the machine could read with <code>ps</code>.</p></div>
+            <div><h3>Agent transcripts</h3><p>The CLIs also keep their own transcripts in their own folders. Deleting a conversation in Sillage leaves those files alone.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="leaves" aria-labelledby="leaves-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="leaves-title">What leaves it</h2>
+          <p>Your agents send your prompts and the code they read to their providers, under those providers’ terms, exactly as they would from a terminal. Sillage itself sends nothing about you or your code to its author. These are the requests it makes on its own.</p>
+        </div>
+        <p class="table-help">Scroll sideways to read the whole table.</p>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Requests Sillage makes on its own">
+          <table class="requests">
+            <thead><tr><th scope="col">Where</th><th scope="col">When</th><th scope="col">What for</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">GitHub releases API</th><td>When an administrator opens Sillage, at most once an hour. Desktop: at launch, then every four hours.</td><td>Update checks</td></tr>
+              <tr><th scope="row">Public price lists (LiteLLM on GitHub, models.dev)</th><td>At startup, then once a day</td><td>Prices for the consumption dashboard</td></tr>
+              <tr><th scope="row">clau.de</th><td>Every 30 minutes; the player itself loads only once you switch the radio on</td><td>The address of the Claude FM radio stream</td></tr>
+              <tr><th scope="row">npm registry, dl.google.com</th><td>When an administrator installs or updates a CLI</td><td>Agent CLIs (Antigravity’s archive is checked against a pinned checksum)</td></tr>
+              <tr><th scope="row">Your Git remotes, GitHub</th><td>Every two minutes, for projects with a remote or a board linked to GitHub</td><td>Branch, pull request and issue status</td></tr>
+              <tr><th scope="row">Skill sources, skills.sh</th><td>When an administrator refreshes or searches the skill library</td><td>Skills</td></tr>
+              <tr><th scope="row">Feeds you add</th><td>Hourly, once news is switched on (off by default)</td><td>Headlines while agents work</td></tr>
+              <tr><th scope="row">Browser push services</th><td>When a session needs you, on Server, if you turned notifications on</td><td>Notifications</td></tr>
+              <tr><th scope="row">Addresses you configure</th><td>Webhook calls and dictation, when you set them up</td><td>Automations, speech to text</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="leaves-notes">
+          <p>Grok Build and GitHub Copilot CLI run with their client telemetry switched off, and OpenCode with sharing off. Claude Code, Codex and Antigravity keep their own settings.</p>
+          <p>An image a message embeds from a web address is loaded by your browser from that address. Fonts ship with Sillage: nothing is fetched from a font service.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section band" id="access" aria-labelledby="access-title">
+      <div class="split wrap">
+        <div class="split-text">
+          <h2 id="access-title">Who can reach it</h2>
+          <p>Server listens on <code>127.0.0.1</code>, port 7317. Reach it through Tailscale, another VPN or an HTTPS reverse proxy, and never expose that port to the internet directly.</p>
+          <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Remote access guide</a>
+        </div>
+        <div class="facts">
+            <div><h3>Accounts on Server</h3><p>Passwords are hashed with Argon2id. A session is a random token, stored hashed, in an HttpOnly cookie that is Secure over HTTPS, valid 30 days. Changing a password signs out the account’s other sessions. There is no two-factor authentication yet.</p></div>
+            <div><h3>Requests</h3><p>Five sign-in attempts per minute per address, then a pause. A request that changes something, or opens a live connection, must come from Sillage’s own origin.</p></div>
+            <div><h3>API keys</h3><p>Scoped to projects, tasks, autonomous tasks or MCP. A key can also be limited to some projects, models or a budget, and given an expiry date. Shown once, stored hashed, revocable. A key cannot create another key.</p></div>
+            <div><h3>Desktop</h3><p>Listens on <code>127.0.0.1</code> only and opens its window with a session handed over at launch: no password exists. Remote access is off by default; through Tailscale, it admits only the devices of the account that owns the machine.</p></div>
+            <div><h3>Who decides</h3><p>Administrators own the instance-wide configuration, a project’s owner owns that project’s, and members work in a shared project without changing it.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="agents" aria-labelledby="agents-title">
+      <div class="split wrap">
+        <div class="split-text">
+          <h2 id="agents-title">What agents can do</h2>
+          <p>Agents and terminals run as the system user that runs Sillage, with that user’s files and network. Sillage shows and controls what they do; it is not a sandbox.</p>
+        </div>
+        <div class="facts">
+            <div><h3>Asking first</h3><p>No CLI starts with approvals off. Each begins in a mode that asks before acting, or, for Codex, works inside the workspace and asks before going beyond it. Modes that allow everything are a choice the conversation’s owner makes, or a project’s owner for its presets.</p></div>
+            <div><h3>Agents starting agents</h3><p>A session that starts another one cannot give it wider permissions, and an API key needs the autonomous tasks scope to run without approvals.</p></div>
+            <div><h3>Containing a task</h3><p>Give a task its own worktree so it works on its own branch, and turn on checkpoints to put files back as they were before a turn.</p></div>
+            <div><h3>Shared servers</h3><p>Server accounts are meant for people you trust. Every agent runs under the same system account, so accounts separate projects and settings, not files. Do not host people you would not give a shell to.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section band" id="sharing" aria-labelledby="sharing-title">
+      <div class="split wrap">
+        <div class="split-text">
+          <h2 id="sharing-title">Previews and public links</h2>
+          <p>Previews show what an agent is building, inside Sillage. Demo links and shared conversations show it to people without an account: both need Server, and you can revoke either at any time.</p>
+        </div>
+        <div class="facts">
+            <div><h3>Dev-server previews</h3><p>Each preview gets a host of its own, never Sillage’s, so the app you preview never receives your Sillage session. Viewers sign in through a link valid for one minute. Desktop shows previews from the computer’s loopback address.</p></div>
+            <div><h3>Demo links</h3><p>A public address for a running preview, valid for an hour, a day, a week or 30 days, revocable, and marked so search engines leave it out.</p></div>
+            <div><h3>Shared conversations</h3><p>A static snapshot. Tool inputs and outputs stay out unless you add them, images are reviewed one by one, and a scan masks secrets, email addresses, IP addresses and home paths before anything is published. Links expire after 30 days by default; revoking one deletes the file.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="updates" aria-labelledby="updates-title">
+      <div class="split wrap">
+        <div class="split-text">
+          <h2 id="updates-title">Releases and updates</h2>
+          <p>Every release is built by GitHub Actions from a tagged commit, once tests, type checks, lint and the build pass on it.</p>
+          <a class="link" href="changelog.html">Changelog</a>
+        </div>
+        <div class="facts">
+            <div><h3>Desktop</h3><p>Checks GitHub at launch and every four hours, and checks each download against the checksum published with its release. The packages are not code-signed or notarized yet, which is why macOS and Windows warn on first launch.</p></div>
+            <div><h3>Server</h3><p>Updates from Settings › About or by running the installer again, and keeps the two previous versions on disk. The installer checks Node.js against its official checksums.</p></div>
+            <div><h3>The installer</h3><p>One shell script you can read before running it. It checks the system and the tools it needs, installs into Sillage’s folder and registers a user service with systemd or launchd. On Linux it turns on lingering, so Sillage keeps running after you log out.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section band" id="report" aria-labelledby="report-title">
+      <div class="split wrap">
+        <div class="split-text">
+          <h2 id="report-title">Report a vulnerability</h2>
+          <p>Please report security problems privately rather than in a public issue.</p>
+          <div class="report-actions">
+            <a class="button button-primary" href="https://github.com/MarlBurroW/sillage/security/advisories/new">Report a vulnerability</a>
+            <a class="button button-secondary" href="https://github.com/MarlBurroW/sillage/blob/main/SECURITY.md">Security policy</a>
+          </div>
+        </div>
+        <div class="facts">
+            <div><h3>How</h3><p>Use GitHub’s private vulnerability reporting on the repository: <strong>Security › Report a vulnerability</strong>. Describe the problem, how to reproduce it, the version, the edition and the system.</p></div>
+            <div><h3>What happens next</h3><p>Fixes ship in a regular release, and its notes say what was fixed once an update is available. Only the latest release receives fixes.</p></div>
+            <div><h3>The rest</h3><p>Bugs without a security impact, and questions about this page, go to GitHub issues.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="footer-inner wrap">
+      <div class="footer-brand">
+        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+        <p class="footer-tagline">One workspace for your coding agents.</p>
+        <p>Free and open source under the MIT license. Independent, and not affiliated with the agent providers.</p>
+        <p class="footer-release"><!-- release-badge --><a class="release-badge" href="changelog.html#v0.45.0"><span class="release-dot" aria-hidden="true"></span><span>Latest release</span> <strong>v0.45.0</strong><span class="release-sep" aria-hidden="true">·</span><time datetime="2026-11-27">27 November 2026</time></a><!-- /release-badge --></p>
+      </div>
+      <nav class="footer-nav" aria-label="Footer">
+        <div>
+          <h2>Product</h2>
+          <ul>
+            <li><a href="index.html">Overview</a></li>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="agents.html">Agents</a></li>
+            <li><a href="download.html">Download</a></li>
+            <li><a href="changelog.html">Changelog</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Resources</h2>
+          <ul>
+            <li><a href="docs.html">Documentation</a></li>
+            <li><a href="docs.html#start">Getting started</a></li>
+            <li><a href="security.html">Security and privacy</a></li>
+            <li><a href="download.html#compare">Desktop or Server</a></li>
+            <li><a href="index.html#faq">Questions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/MarlBurroW/sillage">Source code</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases">All releases</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases.atom">Release feed</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/issues">Report an issue</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">MIT license</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="footer-base wrap">
+      <p>© 2026 MarlBurroW</p>
+      <p class="footer-languages" data-lang-menu><span aria-current="true" lang="en">English</span><a href="fr/security.html" hreflang="fr" lang="fr">Français</a></p>
+      <p>No cookies, no analytics. Your theme choice stays in your browser.</p>
+      <a class="footer-top" href="#main"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m0 0-5 5m5-5 5 5"/></svg>Back to top</a>
+    </div>
+    <div class="footer-mark" aria-hidden="true"><div data-word="Sillage"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg></div></div>
+  </footer>
+</body>
+</html>

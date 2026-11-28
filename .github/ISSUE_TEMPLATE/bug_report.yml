@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Sillage does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. For a security problem, please use the private report linked on the previous page instead of an issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Sillage did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a Codex conversation on a worktree
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Sillage version
+      description: Settings › About shows it.
+      placeholder: v0.45.0
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Edition
+      options:
+        - Desktop
+        - Server, installed with the script
+        - Server, in Docker or Kubernetes
+        - Running from source
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      placeholder: macOS 15 on Apple Silicon, Windows 11, Ubuntu 24.04 on arm64…
+    validations:
+      required: true
+  - type: dropdown
+    id: agents
+    attributes:
+      label: Agents involved
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+        - Grok Build
+        - Google Antigravity
+        - GitHub Copilot CLI
+        - None in particular
+  - type: textarea
+    id: details
+    attributes:
+      label: Logs and screenshots
+      description: Anything that helps. Remove tokens, keys, addresses and anything private first.

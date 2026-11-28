@@ -1,0 +1,145 @@
+<!doctype html>
+<!-- Built by scripts/site-i18n.mjs from ../docs.html: edit the English page and the catalog, not this file. -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation : Sillage</title>
+  <meta name="description" content="Prends Sillage en main et trouve les guides : installation de Desktop ou de Server, connexion de tes agents, accès distant, aperçus, API et serveur MCP.">
+  <link rel="canonical" href="https://marlburrow.github.io/sillage/fr/docs.html">
+  <link rel="alternate" hreflang="en" href="https://marlburrow.github.io/sillage/docs.html">
+  <link rel="alternate" hreflang="fr" href="https://marlburrow.github.io/sillage/fr/docs.html">
+  <link rel="alternate" hreflang="x-default" href="https://marlburrow.github.io/sillage/docs.html">
+  <link rel="icon" href="../favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="preload" href="../fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../style.css?v=credible-1">
+  <meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sillage">
+  <meta property="og:locale" content="fr_FR">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta property="og:title" content="Documentation de Sillage">
+  <meta property="og:description" content="Prends Sillage en main et trouve les guides : installation de Desktop ou de Server, connexion de tes agents, accès distant, aperçus, API et serveur MCP.">
+  <meta property="og:url" content="https://marlburrow.github.io/sillage/fr/docs.html">
+  <meta property="og:image" content="https://marlburrow.github.io/sillage/og/fr/docs.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script>document.documentElement.classList.add('js'); try { const theme = localStorage.getItem('sillage-site-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme } catch {}</script>
+  <script src="../main.js?v=credible-1" defer onerror="document.documentElement.classList.remove('js')"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Aller au contenu</a>
+  <header class="topbar">
+    <div class="nav-inner wrap">
+      <a class="brand" href="index.html" aria-label="Accueil de Sillage"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+      <nav id="site-nav" aria-label="Navigation principale"><a href="features.html">Fonctionnalités</a> <a href="agents.html">Agents</a> <a href="docs.html" aria-current="page">Docs</a> <a href="changelog.html">Nouveautés</a> <a href="download.html">Télécharger</a> <a href="https://github.com/MarlBurroW/sillage">GitHub</a></nav>
+      <div class="nav-actions">
+        <a class="lang-switch" href="../docs.html" hreflang="en" lang="en" data-lang-switch title="English version">EN</a>
+        <button class="icon-button theme-toggle" data-theme-toggle type="button" aria-label="Changer de thème"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="moon"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+        <a class="button button-small button-primary" href="download.html">Installer Sillage</a>
+        <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="Ouvrir la navigation" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="menu"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="close"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="page-intro wrap" aria-labelledby="docs-title">
+      <h1 id="docs-title">Documentation</h1>
+      <p class="lede">Commence par les six étapes ci-dessous. Les guides se trouvent dans le dépôt, à côté du code qu’ils décrivent, et évoluent avec lui.</p>
+      <div class="page-intro-meta"><a class="link" href="#install-guides">Installer et faire tourner</a> <a class="link" href="#work-guides">Travailler avec tes agents</a> <a class="link" href="#integrate-guides">Connecter d’autres outils</a></div>
+    </section>
+
+    <section class="section band" id="start" aria-labelledby="start-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="start-title">Premiers pas</h2>
+          <p>De zéro à une première conversation. Desktop se passe de compte ; sur Server, la visite guidée du premier lancement crée le tien.</p>
+        </div>
+        <ol class="steps start-steps">
+          <li><h3>Installe Sillage</h3><p>Desktop est une application pour ton ordinateur. Server est un service sur un hôte que tu contrôles, joignable depuis tes autres appareils. <a class="link" href="download.html">Choisir et télécharger</a></p></li>
+          <li><h3>Ouvre-le</h3><p>Desktop s’ouvre dans sa propre fenêtre. Server répond à l’adresse <code>http://127.0.0.1:7317</code> sur l’hôte, et sa visite guidée du premier lancement crée le premier compte, celui de l’administrateur.</p></li>
+          <li><h3>Connecte tes agents</h3><p>Installe les CLI que tu veux depuis la visite guidée ou depuis Réglages, puis connecte-toi avec tes propres abonnements ou clés API. Les connexions déjà présentes sur la machine sont réutilisées. <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md">Comptes des agents</a></p></li>
+          <li><h3>Ouvre un projet</h3><p>Un projet est un dossier sur cette machine. Ouvre un dépôt existant, ou crée un projet dans le dossier que tu veux utiliser.</p></li>
+          <li><h3>Lance une conversation</h3><p>Choisis un agent et l’endroit où il travaille : la racine du projet, un worktree existant, ou une nouvelle branche que Sillage crée pour la tâche. Essaie « Explique comment ce projet est organisé. » <a class="link" href="features.html#conversations">Ce qu’offre une conversation</a></p></li>
+          <li><h3>Reprends ailleurs</h3><p>Server garde les sessions actives une fois le navigateur fermé. Ouvre-le depuis ton téléphone par Tailscale ou une adresse HTTPS. <a class="link" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md">Accès distant</a></p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section guide-index" aria-label="Guides">
+      <div class="wrap">
+      <section class="guide-group" id="install-guides" aria-labelledby="install-guides-title">
+        <div class="guide-head"><h2 id="install-guides-title">Installer et faire tourner</h2><p>Installe Sillage sur un ordinateur ou un serveur, et garde-le en service.</p></div>
+        <div class="chapters guides-list"><a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/install.md"><strong>Installer Sillage Server</strong><span>Le script en une ligne, Docker, Kubernetes, macOS et WSL2, puis les mises à jour.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/desktop.md"><strong>Sillage Desktop</strong><span>Les paquets, le premier lancement sur chaque système, les mises à jour et ce qui diffère de Server.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/remote-access.md"><strong>Accès distant</strong><span>Accéder à Sillage depuis un téléphone ou un autre ordinateur, par Tailscale ou HTTPS.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/install.md#back-up-and-restore"><strong>Sauvegarder et restaurer</strong><span>Ce qu’il faut copier pour reconstruire un espace de travail sur une autre machine.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/windows.md"><strong>Windows avec WSL2</strong><span>Faire tourner Server dans WSL2 et le garder actif en arrière-plan.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/deploy/helm/sillage/README.md"><strong>Kubernetes</strong><span>Le chart Helm : ce qu’il déploie, ses valeurs et les mises à niveau.</span></a></div>
+      </section>
+      <section class="guide-group" id="work-guides" aria-labelledby="work-guides-title">
+        <div class="guide-head"><h2 id="work-guides-title">Travailler avec tes agents</h2><p>Comptes, conversations, contexte et ce que les agents laissent tourner.</p></div>
+        <div class="chapters guides-list"><a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/features.md"><strong>Référence des fonctionnalités</strong><span>Conversations, partage, consignes et mémoire, en détail.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/accounts.md"><strong>Comptes des agents</strong><span>Plusieurs connexions par CLI, et celle qu’utilise chaque conversation.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/cli-handoff.md#what-the-new-agent-receives"><strong>Continuer dans un autre CLI</strong><span>Ce que reçoit le prochain agent quand une conversation change de mains.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/sillage-md.md#where-project-instructions-live"><strong>Consignes partagées</strong><span>Où se trouvent les consignes de projet, et quand les agents voient une modification.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/previews.md"><strong>Aperçus des serveurs de dev</strong><span>L’onglet Aperçu, les liens de démo, et le domaine dont les aperçus ont besoin sur Server.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/services.md"><strong>Services</strong><span>Les processus que tes agents ont lancés sur Linux, et comment les arrêter.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/session-project-transfer.md"><strong>Déplacer une session</strong><span>Déplacer une conversation vers un autre projet avec son historique.</span></a></div>
+      </section>
+      <section class="guide-group" id="integrate-guides" aria-labelledby="integrate-guides-title">
+        <div class="guide-head"><h2 id="integrate-guides-title">Connecter d’autres outils</h2><p>Pilote Sillage depuis des scripts, la CI ou un agent qui tourne ailleurs.</p></div>
+        <div class="chapters guides-list"><a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/api.md"><strong>API publique</strong><span>Lancer des actions de projet, démarrer des sessions et créer des projets avec une clé API.</span></a> <a class="chapter guide" href="https://github.com/MarlBurroW/sillage/blob/main/docs/mcp.md"><strong>Le serveur MCP de Sillage</strong><span>Donner ses outils à un CLI hors de Sillage, en HTTP ou en stdio.</span></a></div>
+      </section>
+        <p class="footnote guides-notes">Comment chaque agent est intégré, avec le protocole et les versions de CLI sur lesquelles il a été vérifié : <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/CODEX.md">Codex</a>, <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/OPENCODE.md">OpenCode</a>, <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/GROK.md">Grok Build</a>, <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/antigravity-integration.md">Antigravity</a>, <a href="https://github.com/MarlBurroW/sillage/blob/main/docs/COPILOT.md">GitHub Copilot</a>.</p>
+      </div>
+    </section>
+
+    <section class="section closing">
+      <div class="next-step wrap">
+        <div><h2>Quelque chose manque ou est inexact ?</h2><p>Les questions, les bugs et les corrections de la documentation passent par les issues GitHub. Les signalements de sécurité ont leur propre canal.</p></div>
+        <div class="next-actions"><a class="button button-primary" href="https://github.com/MarlBurroW/sillage/issues">Ouvrir une issue</a> <a class="button button-secondary" href="security.html#report">Signaler une vulnérabilité</a></div>
+      </div>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="footer-inner wrap">
+      <div class="footer-brand">
+        <a class="brand" href="index.html"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg><span>Sillage</span></a>
+        <p class="footer-tagline">Un espace de travail pour tes agents de code.</p>
+        <p>Gratuit et open source, sous licence MIT. Indépendant, et sans lien avec les fournisseurs des agents.</p>
+        <p class="footer-release"><!-- release-badge --><a class="release-badge" href="changelog.html#v0.45.0"><span class="release-dot" aria-hidden="true"></span><span>Dernière version</span> <strong>v0.45.0</strong><span class="release-sep" aria-hidden="true">·</span><time datetime="2026-11-27">27 novembre 2026</time></a><!-- /release-badge --></p>
+      </div>
+      <nav class="footer-nav" aria-label="Pied de page">
+        <div>
+          <h2>Produit</h2>
+          <ul>
+            <li><a href="index.html">Présentation</a></li>
+            <li><a href="features.html">Fonctionnalités</a></li>
+            <li><a href="agents.html">Agents</a></li>
+            <li><a href="download.html">Télécharger</a></li>
+            <li><a href="changelog.html">Nouveautés</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Ressources</h2>
+          <ul>
+            <li><a href="docs.html">Documentation</a></li>
+            <li><a href="docs.html#start">Premiers pas</a></li>
+            <li><a href="security.html">Sécurité et confidentialité</a></li>
+            <li><a href="download.html#compare">Desktop ou Server</a></li>
+            <li><a href="index.html#faq">Questions</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Projet</h2>
+          <ul>
+            <li><a href="https://github.com/MarlBurroW/sillage">Code source</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases">Toutes les versions</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/releases.atom">Flux des versions</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/issues">Signaler un problème</a></li>
+            <li><a href="https://github.com/MarlBurroW/sillage/blob/main/LICENSE">Licence MIT</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="footer-base wrap">
+      <p>© 2026 MarlBurroW</p>
+      <p class="footer-languages" data-lang-menu><a href="../docs.html" hreflang="en" lang="en">English</a><span aria-current="true" lang="fr">Français</span></p>
+      <p>Ni cookies ni statistiques. Ton choix de thème reste dans ton navigateur.</p>
+      <a class="footer-top" href="#main"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m0 0-5 5m5-5 5 5"/></svg>Haut de page</a>
+    </div>
+    <div class="footer-mark" aria-hidden="true"><div data-word="Sillage"><svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z"/><path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z"/><path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z"/></svg></div></div>
+  </footer>
+</body>
+</html>

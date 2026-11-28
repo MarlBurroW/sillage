@@ -6,26 +6,63 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'install.sh', '.github/workflows/pages.yml']
+    paths: ['site/**', 'install.sh', 'scripts/site-changelog.mjs', 'scripts/site-changelog/**', 'scripts/site-i18n.mjs', 'scripts/site-i18n/**', 'scripts/site-currents.mjs', '.github/workflows/pages.yml']
+  # Release notes are written once the release exists, with `gh release edit`: that edit
+  # refreshes the changelog and the latest version shown on the site.
+  release:
+    types: [published, edited]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # A release event runs on its tag, which the github-pages environment does not accept, and
+  # would deploy the site as it was at that tag: hand over to a run on the default branch.
+  redeploy:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+  deploy:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The French pages follow the English ones: a text not translated yet stays in English
+      # rather than blocking the deployment (the UI check is where a missing one fails).
+      - name: Build the translated pages
+        run: node scripts/site-i18n.mjs --lenient
+      # The home page names every feature of the catalog, in each language.
+      - name: Fill the home page's currents from the catalog
+        run: node scripts/site-currents.mjs
+      # The changelog, the latest version and the package sizes follow the releases, in every
+      # language. If GitHub's API fails, the pages deploy as committed.
+      - name: Refresh the changelog from the releases
+        run: node scripts/site-changelog.mjs
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
       # Installer also served from site: short URL
       # marlburrow.github.io/sillage/install.sh remains valid.
       - run: cp install.sh site/install.sh

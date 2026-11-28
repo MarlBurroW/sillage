@@ -308,6 +308,10 @@ Sillage password. Server also listens on loopback by default: use a VPN or a
 protected HTTPS reverse proxy for remote access. Do not expose its port directly
 to the Internet. [Set up remote access](docs/remote-access.md)
 
+[Security and privacy](https://marlburrow.github.io/sillage/security.html) lists what
+stays on your machine, what Sillage contacts, and how to report a vulnerability
+([SECURITY.md](SECURITY.md)).
+
 ## Working on Sillage
 
 The project uses TypeScript, React, Fastify, SQLite and Electron.
@@ -334,7 +338,9 @@ site/              Public website and screenshots
 ## Releases
 
 Get the latest apps, server archives and release notes on
-[GitHub Releases](https://github.com/MarlBurroW/sillage/releases/latest).
+[GitHub Releases](https://github.com/MarlBurroW/sillage/releases/latest). The
+[changelog](https://marlburrow.github.io/sillage/changelog.html) on the website lists
+every release since the first one.
 Settings > CLI versions shows installed and recommended agent versions. You can
 install or update managed CLIs there; Sillage waits for active sessions before
 replacing a binary and refreshes the available models afterward.
