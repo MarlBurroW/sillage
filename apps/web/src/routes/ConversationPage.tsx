@@ -1,6 +1,6 @@
 import { conversationPath } from '@sillage/protocol'
 import { useConcentration } from '../lib/concentration'
-import { Loader } from 'lucide-react'
+import { ThreadLoading } from '../components/ThreadLoading'
 import { useEffect, useMemo, useRef } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -349,11 +349,7 @@ export function ConversationPage() {
         <div className="relative flex min-h-0 flex-1 flex-col">
           {!placed && slowReplay ? (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-              <Loader
-                size={22}
-                className="animate-spin text-ink-faint"
-                aria-label={t('conversation.loading')}
-              />
+              <ThreadLoading label={t('conversation.loading')} />
             </div>
           ) : null}
 

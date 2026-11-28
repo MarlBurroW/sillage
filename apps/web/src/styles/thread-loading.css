@@ -1,0 +1,77 @@
+/*
+ * Thread loading mark. Arrives with a short fade so a replay that ends just after the delay does
+ * not flash, then the waves travel left to right like the wake behind a boat.
+ */
+.sg-thread-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--sg-accent);
+  animation: sg-thread-loading-in 0.36s ease-out both;
+}
+
+.sg-thread-loading-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+/* Soft halo in the accent, same idea as the desktop splash, scaled down for a pane. */
+.sg-thread-loading-mark::before {
+  content: '';
+  position: absolute;
+  inset: -36px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--sg-accent) 16%, transparent), transparent);
+  animation: sg-thread-loading-halo 2.4s ease-in-out infinite;
+}
+.sg-thread-loading-mark svg { position: relative; overflow: visible; }
+.sg-thread-loading-mark path {
+  opacity: 0.35;
+  animation: sg-thread-loading-wave 2.4s ease-in-out infinite;
+}
+.sg-thread-loading-mark path:nth-child(2) { animation-delay: 0.24s; }
+.sg-thread-loading-mark path:nth-child(3) { animation-delay: 0.48s; }
+
+.sg-thread-loading-wake {
+  width: 72px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
+  opacity: 0.5;
+  transform-origin: left center;
+  animation: sg-thread-loading-wake 2.4s ease-in-out infinite;
+}
+
+.sg-thread-loading-label {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--sg-ink-faint);
+  /* The label comes after the mark: on a short wait only the mark is seen. */
+  animation: sg-thread-loading-in 0.4s ease-out 0.5s both;
+}
+
+@keyframes sg-thread-loading-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sg-thread-loading-wave {
+  0%, 70%, 100% { opacity: 0.35; transform: translateX(-3px); }
+  30% { opacity: 1; transform: translateX(2px); }
+}
+@keyframes sg-thread-loading-halo {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+@keyframes sg-thread-loading-wake {
+  0% { transform: scaleX(0.15); opacity: 0; }
+  45% { transform: scaleX(1); opacity: 0.5; }
+  100% { transform: scaleX(1) translateX(24px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-thread-loading,
+  .sg-thread-loading-label,
+  .sg-thread-loading-mark::before,
+  .sg-thread-loading-mark path { animation: none; opacity: 1; }
+  .sg-thread-loading-wake { display: none; }
+}
