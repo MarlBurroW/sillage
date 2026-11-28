@@ -2,7 +2,9 @@
  * Navigation in two levels: a rail that selects a space, and a column listing what that space
  * holds. Scoped to navigation: pages and dialogs keep their presentation.
  */
-.sidebar-layout { --nav-rail-width: 52px; display: flex; height: 100%; min-height: 0; }
+/* Root-level: the desktop title bar lines its mark up with the rail (index.css). */
+:root { --nav-rail-width: 52px; }
+.sidebar-layout { display: flex; height: 100%; min-height: 0; }
 
 /* Rail: every entry behaves alike, so they share one shape. */
 .nav-rail { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; width: var(--nav-rail-width); min-height: 0; padding: 10px 0 8px; background: var(--sg-canvas); border-right: 1px solid var(--sg-line); }

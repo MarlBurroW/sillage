@@ -8,7 +8,11 @@ export const UPDATE_CHANNELS = {
   changed: 'sillage:updates:changed',
 } as const
 
-export const WINDOW_CHANNELS = { menu: 'sillage:window:menu', colors: 'sillage:window:colors' } as const
+export const WINDOW_CHANNELS = {
+  menu: 'sillage:window:menu',
+  colors: 'sillage:window:colors',
+  layout: 'sillage:window:layout',
+} as const
 
 export const DIAGNOSTIC_CHANNELS = { export: 'sillage:diagnostics:export', record: 'sillage:diagnostics:record' } as const
 

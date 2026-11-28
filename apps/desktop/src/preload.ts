@@ -8,8 +8,9 @@ import { DIAGNOSTIC_CHANNELS, REMOTE_ACCESS_CHANNELS, UPDATE_CHANNELS, WINDOW_CH
 const bridge: DesktopBridge = {
   window: {
     platform: process.platform as 'darwin' | 'win32' | 'linux',
-    menu: () => ipcRenderer.invoke(WINDOW_CHANNELS.menu) as Promise<void>,
+    menu: (at) => ipcRenderer.invoke(WINDOW_CHANNELS.menu, at) as Promise<void>,
     colors: (background, foreground) => ipcRenderer.invoke(WINDOW_CHANNELS.colors, background, foreground) as Promise<void>,
+    layout: (height) => ipcRenderer.invoke(WINDOW_CHANNELS.layout, height) as Promise<void>,
   },
   diagnostics: {
     export: () => ipcRenderer.invoke(DIAGNOSTIC_CHANNELS.export) as Promise<void>,

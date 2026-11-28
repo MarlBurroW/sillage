@@ -91,8 +91,11 @@ export type DesktopUpdateUnsupportedReason = 'development' | 'package' | 'locati
 export interface DesktopBridge {
   window?: {
     platform: 'darwin' | 'win32' | 'linux'
-    menu(): Promise<void>
+    /** Opens the application menu, at this point of the page (CSS pixels) or else at the pointer. */
+    menu(at?: { x: number; y: number }): Promise<void>
     colors(background: string, foreground: string): Promise<void>
+    /** Height of the interface's title bar in CSS pixels: the native controls take the same. */
+    layout(height: number): Promise<void>
   }
   diagnostics?: {
     export(): Promise<void>

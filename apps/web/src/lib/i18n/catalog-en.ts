@@ -196,6 +196,8 @@ export const en = {
   "error.workspace_in_use": "This folder is still used by a discussion.",
 
   'desktop.window.menu': 'Application menu',
+  'desktop.window.back': 'Back',
+  'desktop.window.forward': 'Forward',
   "antigravityAccounts.adc.hint": "Optional API key. Without a key, Antigravity uses Google Application Default Credentials configured on this machine.",
   "antigravityAccounts.callback.action": "Complete sign-in",
   "antigravityAccounts.callback.hint": "On a remote server, your browser may show an unreachable page after Google approves. Copy its complete address here to finish. On Desktop, sign-in normally completes automatically.",

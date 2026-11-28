@@ -17,6 +17,7 @@ import { lazyWithReload } from '../lib/lazy-reload'
 import '../styles/concentration.css'
 import '../styles/sidebar.css'
 import { DecisionDialog } from './decisions/DecisionDialog'
+import { DesktopTitleSearch } from './DesktopTitleBar'
 import { Logo } from './Logo'
 import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigation'
 import { Navigation } from './nav/Navigation'
@@ -176,12 +177,14 @@ export function AppShell() {
           <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
         </Suspense>
       ) : null}
+      {/* Sillage Desktop: the title bar's field opens the same palette. */}
+      <DesktopTitleSearch onOpen={() => setSearchOpen(true)} />
       {/* Mounting the prompt registers the service worker: without PWA, mount neither. */}
       {pwa ? <UpdatePrompt /> : null}
 
       <div
         inert={!wide && navOpen && !concentration}
-        className={cx('flex min-w-0 flex-1 flex-col', contextualHeader && 'pt-safe md:pt-0')}
+        className={cx('app-main flex min-w-0 flex-1 flex-col', contextualHeader && 'pt-safe md:pt-0')}
       >
         {!contextualHeader ? (
         <header
