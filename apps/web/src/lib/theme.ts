@@ -49,6 +49,11 @@ export function currentTheme(): Theme {
   return THEMES.includes(value as Theme) ? (value as Theme) : 'dark'
 }
 
+/** Until a theme is chosen, index.html picks one from the system's appearance at each load. */
+export function hasChosenTheme(): boolean {
+  return localStorage.getItem(STORAGE_KEY) !== null
+}
+
 export function subscribeTheme(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)

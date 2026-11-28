@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Search } from 'lucide-react'
 import { useTranslate } from '../lib/i18n'
 import { PALETTE_SHORTCUT } from '../lib/palette'
 import { useProjects } from '../lib/projects'
+import { currentTheme, hasChosenTheme } from '../lib/theme'
 import { Logo } from './Logo'
 import { Tooltip } from './ui/Tooltip'
 
@@ -52,8 +53,15 @@ export function DesktopTitleBar() {
     }
     const sync = () => {
       const style = getComputedStyle(root)
-      // Chromium resolves our OKLCH theme; Electron's overlay accepts sRGB colors.
-      void chrome.colors(color(style.getPropertyValue('--sg-canvas')), color(style.getPropertyValue('--sg-ink-soft'))).catch(() => {})
+      const token = (name: string) => color(style.getPropertyValue(name))
+      // Chromium resolves our OKLCH theme; Electron's overlay accepts sRGB colors. The app keeps
+      // the rest for its startup page, which opens next launch before this page can.
+      void chrome.colors(token('--sg-canvas'), token('--sg-ink-soft'), {
+        ink: token('--sg-ink'),
+        accent: token('--sg-accent'),
+        dark: currentTheme() !== 'light',
+        followsSystem: !hasChosenTheme(),
+      }).catch(() => {})
     }
     // The controls take the bar's height in window pixels, which zoom changes.
     let height = 0

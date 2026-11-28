@@ -87,13 +87,28 @@ export type DesktopUpdateState =
 /** Unsupported development build, package format, or read-only/translocated macOS bundle. */
 export type DesktopUpdateUnsupportedReason = 'development' | 'package' | 'location'
 
+/** The theme's colours for Sillage Desktop's startup page, as `#rrggbb`. */
+export interface DesktopStartupColors {
+  /** `--sg-ink`: the name under the mark. */
+  ink: string
+  /** `--sg-accent`: the mark, its halo and the water. */
+  accent: string
+  dark: boolean
+  /** No theme chosen yet: the interface follows the system's appearance. */
+  followsSystem: boolean
+}
+
 /** The preload exposes this narrow API as window.sillageDesktop. */
 export interface DesktopBridge {
   window?: {
     platform: 'darwin' | 'win32' | 'linux'
     /** Opens the application menu, at this point of the page (CSS pixels) or else at the pointer. */
     menu(at?: { x: number; y: number }): Promise<void>
-    colors(background: string, foreground: string): Promise<void>
+    /**
+     * Title bar colours (`#rrggbb`), sent whenever the theme changes. `startup` carries what the
+     * startup page needs to open in the same theme next launch; older apps ignore it.
+     */
+    colors(background: string, foreground: string, startup?: DesktopStartupColors): Promise<void>
     /** Height of the interface's title bar in CSS pixels: the native controls take the same. */
     layout(height: number): Promise<void>
   }

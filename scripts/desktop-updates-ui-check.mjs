@@ -118,7 +118,11 @@ try {
         }
         const colors = await page.evaluate(() => window.chromeProbe.colors)
         assert.ok(new Set(colors.map(([background]) => background)).size >= 3)
-        assert.ok(colors.flat().every((color) => /^#[0-9a-f]{6}$/.test(color)))
+        const hex = (color) => /^#[0-9a-f]{6}$/.test(color)
+        assert.ok(colors.every(([background, foreground]) => hex(background) && hex(foreground)))
+        // What the startup page needs next launch: the app only stores it.
+        assert.ok(colors.every(([, , startup]) => hex(startup.ink) && hex(startup.accent) && typeof startup.followsSystem === 'boolean'))
+        assert.deepEqual([...new Set(colors.map(([, , startup]) => startup.dark))].sort(), [false, true])
       }
       const refresh = page.getByRole('button', { name: 'Vérifier maintenant' })
       const install = page.getByRole('button', { name: 'Redémarrer et mettre à jour', exact: true })

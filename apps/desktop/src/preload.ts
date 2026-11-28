@@ -9,7 +9,7 @@ const bridge: DesktopBridge = {
   window: {
     platform: process.platform as 'darwin' | 'win32' | 'linux',
     menu: (at) => ipcRenderer.invoke(WINDOW_CHANNELS.menu, at) as Promise<void>,
-    colors: (background, foreground) => ipcRenderer.invoke(WINDOW_CHANNELS.colors, background, foreground) as Promise<void>,
+    colors: (background, foreground, startup) => ipcRenderer.invoke(WINDOW_CHANNELS.colors, background, foreground, startup) as Promise<void>,
     layout: (height) => ipcRenderer.invoke(WINDOW_CHANNELS.layout, height) as Promise<void>,
   },
   diagnostics: {

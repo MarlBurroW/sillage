@@ -6,14 +6,19 @@
          can be loaded. Same background as the window and the interface's first paint.
          The interface then shows the same mark at the same place, with the same echo,
          until its first screen (apps/web/index.html): keep the two in step.
-         The main process passes the localized title as ?title=. -->
+         The main process passes the localized title as ?title=, and the colours the
+         interface last reported (desktop src/window-theme.ts) as ?canvas=&ink=&inkSoft=
+         &accent=&scheme=, so this page opens in the user's theme. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
     <style>
-      /* Favicon colours: the interface's own theme is not known before it loads. */
-      :root { --background: #f7f7fb; --text: #5b5f78; --name: #23263b; --mark: #535cda; --halo: rgb(83 92 218 / 0.13); --water: #535cda; }
+      /* Favicon colours, for a first launch: the script below replaces them with the theme's. */
+      :root { --background: #f7f7fb; --text: #5b5f78; --name: #23263b; --mark: #535cda; --halo-mix: 13%; }
       @media (prefers-color-scheme: dark) {
-        :root { --background: #0b0d1c; --text: #8f93ab; --name: #e6e8f5; --mark: #8f9bff; --halo: rgb(143 155 255 / 0.16); --water: #8f9bff; }
+        :root { --background: #0b0d1c; --text: #8f93ab; --name: #e6e8f5; --mark: #8f9bff; --halo-mix: 16%; }
       }
+      :root[data-scheme='light'] { --halo-mix: 13%; }
+      :root[data-scheme='dark'] { --halo-mix: 16%; }
+      :root { --halo: color-mix(in srgb, var(--mark) var(--halo-mix), transparent); }
       html, body { height: 100%; margin: 0; background: var(--background); color: var(--text); overflow: hidden; }
       body { font: 13px system-ui, sans-serif; user-select: none; -webkit-font-smoothing: antialiased; }
       /* Keeps the frameless window draggable, like the interface's title bar. */
@@ -52,6 +57,23 @@
         .halo, .caption, canvas { animation: none; }
       }
     </style>
+    <script>
+      // Before the first paint: the theme the interface last reported, if any.
+      ;(() => {
+        const params = new URLSearchParams(location.search)
+        const root = document.documentElement
+        const hex = /^#[0-9a-f]{6}$/i
+        for (const [param, variable] of [['canvas', '--background'], ['ink', '--name'], ['inkSoft', '--text'], ['accent', '--mark']]) {
+          const value = params.get(param)
+          if (value && hex.test(value)) root.style.setProperty(variable, value)
+        }
+        const scheme = params.get('scheme')
+        if (scheme === 'dark' || scheme === 'light') {
+          root.dataset.scheme = scheme
+          root.style.colorScheme = scheme
+        }
+      })()
+    </script>
   </head>
   <body>
     <div class="bar"></div>
@@ -92,7 +114,7 @@
           canvas.width = Math.round(width * ratio)
           canvas.height = Math.round(height * ratio)
           context.setTransform(ratio, 0, 0, ratio, 0, 0)
-          colour = getComputedStyle(document.documentElement).getPropertyValue('--water').trim()
+          colour = getComputedStyle(document.documentElement).getPropertyValue('--mark').trim()
         }
 
         function draw(time) {

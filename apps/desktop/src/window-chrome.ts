@@ -1,5 +1,6 @@
 import { BrowserWindow, Menu, ipcMain, type BrowserWindowConstructorOptions, type IpcMainInvokeEvent } from 'electron'
 import { WINDOW_CHANNELS } from './ipc'
+import { isHexColor, isStartupColors, type WindowTheme, type WindowThemeStore } from './window-theme'
 
 /** The interface's title bar (`--sg-window-bar`), until it reports its height at the current zoom. */
 const BAR_HEIGHT = 36
@@ -9,19 +10,18 @@ const LIGHTS_HEIGHT = 14
 
 const lightsIn = (height: number) => ({ x: LIGHTS_X, y: Math.round((height - LIGHTS_HEIGHT) / 2) })
 
-/** Startup page colours until the interface sends its own (`colors` below). */
-export function windowChromeOptions(dark: boolean): BrowserWindowConstructorOptions {
+/** The colours the interface last reported (window-theme.ts), until it sends them again (`colors` below). */
+export function windowChromeOptions(theme: WindowTheme): BrowserWindowConstructorOptions {
   return {
     titleBarStyle: 'hidden',
     autoHideMenuBar: true,
-    titleBarOverlay: dark
-      ? { height: BAR_HEIGHT, color: '#0b0d1c', symbolColor: '#e1e3ef' }
-      : { height: BAR_HEIGHT, color: '#f7f7fb', symbolColor: '#2a2d42' },
+    backgroundColor: theme.canvas,
+    titleBarOverlay: { height: BAR_HEIGHT, color: theme.canvas, symbolColor: theme.inkSoft },
     ...(process.platform === 'darwin' ? { trafficLightPosition: lightsIn(BAR_HEIGHT) } : {}),
   }
 }
 
-export function setupWindowChrome(isAppUrl: (url: string) => boolean): void {
+export function setupWindowChrome(isAppUrl: (url: string) => boolean, themes: WindowThemeStore): void {
   const windowFor = (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     // Only the top-level application may control its own window.
@@ -36,12 +36,15 @@ export function setupWindowChrome(isAppUrl: (url: string) => boolean): void {
     const zoom = event.sender.getZoomFactor()
     Menu.getApplicationMenu()?.popup({ window: win, ...(placed ? { x: Math.round(x * zoom), y: Math.round(y * zoom) } : {}) })
   })
-  ipcMain.handle(WINDOW_CHANNELS.colors, (event, background: unknown, foreground: unknown) => {
+  ipcMain.handle(WINDOW_CHANNELS.colors, (event, background: unknown, foreground: unknown, startup: unknown) => {
     const win = windowFor(event)
-    const hex = /^#[0-9a-f]{6}$/i
-    if (typeof background !== 'string' || typeof foreground !== 'string' || !hex.test(background) || !hex.test(foreground)) throw new Error('invalid colors')
+    if (!isHexColor(background) || !isHexColor(foreground)) throw new Error('invalid colors')
     if (process.platform !== 'darwin') win.setTitleBarOverlay({ color: background, symbolColor: foreground })
     win.setBackgroundColor(background)
+    if (isStartupColors(startup)) {
+      const { ink, accent, dark, followsSystem } = startup
+      themes.remember({ canvas: background, inkSoft: foreground, ink, accent, dark, followsSystem })
+    }
   })
   ipcMain.handle(WINDOW_CHANNELS.layout, (event, height: unknown) => {
     const win = windowFor(event)

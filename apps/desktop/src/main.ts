@@ -10,6 +10,7 @@ import { stablePort } from './port'
 import { ServerStartError, startServer, type RunningServer } from './server'
 import { loginShellEnv, pathKey } from './shell-env'
 import { text } from './texts'
+import { windowThemeStore } from './window-theme'
 import { fileLogger, setupUpdates } from './updates'
 
 /**
@@ -23,12 +24,6 @@ import { fileLogger, setupUpdates } from './updates'
 
 /** Must match `SESSION_COOKIE` (apps/server/src/auth/sessions.ts). */
 const SESSION_COOKIE = 'sillage_session'
-
-/**
- * The startup page's background (public/splash.html), which follows the system theme:
- * a window created in another colour flashes before its first paint.
- */
-const BACKGROUND = { dark: '#0b0d1c', light: '#f7f7fb' }
 
 /** A server that exits at once is often the previous one still letting go of the port or database. */
 const RETRY_PAUSE_MS = 2_000
@@ -82,6 +77,8 @@ else if (process.platform === 'win32' && process.env.LOCALAPPDATA) app.setPath('
 const userData = app.getPath('userData')
 const logFile = join(userData, 'logs', 'server.log')
 const portFile = join(userData, 'desktop.json')
+/** Read now: the first window opens before anything else, in the user's theme. */
+const windowThemes = windowThemeStore(join(userData, 'window-theme.json'))
 
 // Packaged apps find server and Node in resources; repository launches use
 // `stage/`, populated by `scripts/desktop-stage.mjs`.
@@ -119,7 +116,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function boot(): Promise<void> {
-  setupWindowChrome(isAppUrl)
+  setupWindowChrome(isAppUrl, windowThemes)
   ipcMain.on(REMOTE_ACCESS_CHANNELS.changed, (event, enabled: unknown) => {
     if (isAppUrl(event.senderFrame?.url ?? '')) keepAwake(enabled === true)
   })
@@ -313,16 +310,16 @@ async function leaveInstallDir(): Promise<void> {
 
 /** Open on the interface, or on the startup page until the server announces itself. */
 function openWindow(): BrowserWindow {
-  const dark = nativeTheme.shouldUseDarkColors
+  // A window created in another colour than its first page flashes before that page paints.
+  const theme = windowThemes.current(nativeTheme.shouldUseDarkColors)
   const win = new BrowserWindow({
-    ...windowChromeOptions(dark),
+    ...windowChromeOptions(theme),
     width: 1440,
     height: 920,
     minWidth: 720,
     minHeight: 480,
     show: false,
     title: 'Sillage',
-    backgroundColor: dark ? BACKGROUND.dark : BACKGROUND.light,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -334,7 +331,10 @@ function openWindow(): BrowserWindow {
   win.setMenuBarVisibility(false)
   win.once('ready-to-show', () => win.show())
   if (serving) void win.loadURL(origin)
-  else void win.loadFile(join(__dirname, 'splash.html'), { query: { title: text('starting') } })
+  else {
+    const { canvas, ink, inkSoft, accent, dark } = theme
+    void win.loadFile(join(__dirname, 'splash.html'), { query: { title: text('starting'), canvas, ink, inkSoft, accent, scheme: dark ? 'dark' : 'light' } })
+  }
   win.webContents.on('did-finish-load', () => {
     if (!isAppUrl(win.webContents.getURL())) return
     // The title bar's back arrow must never return to the startup page the interface replaced.
@@ -416,6 +416,7 @@ app.on('activate', () => {
 // close the database instead of leaving orphaned CLIs. That takes seconds, during which
 // the app is still there with nothing on screen.
 app.on('before-quit', (event) => {
+  windowThemes.flush()
   if (quitNow) return
   event.preventDefault()
   if (stopping) return
